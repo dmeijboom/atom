@@ -38,10 +38,10 @@ peg::parser! {
             = call_expr() / ident_expr() / literal_expr()
 
         rule expr() -> Expr = precedence!{
-            //left:(@) _ "||" _ right:@ { Node::new(left.pos, Expr::Logical(Logical { left, op: LogicalOp::Or, right }.into())) }
-            //--
-            //left:(@) _ "&&" _ right:@ { Node::new(left.pos, Expr::Logical(Logical { left, op: LogicalOp::And, right }.into())) }
-            //--
+            left:(@) _ "||" _ right:@ { Expr::Logical(LogicalExpr { pos: (left.pos().start..right.pos().end), left, op: LogicalOp::Or, right }.into()) }
+            --
+            left:(@) _ "&&" _ right:@ { Expr::Logical(LogicalExpr { pos: (left.pos().start..right.pos().end), left, op: LogicalOp::And, right }.into()) }
+            --
             left:(@) _ "|" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (left.pos().start..right.pos().end), left, op: ArithmeticOp::BitOr, right }.into()) }
             left:(@) _ "&" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (left.pos().start..right.pos().end), left, op: ArithmeticOp::BitAnd, right }.into()) }
             --

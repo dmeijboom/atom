@@ -23,6 +23,12 @@ pub enum ArithmeticOp {
 }
 
 #[derive(Debug)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+#[derive(Debug)]
 pub struct ComparisonExpr {
     pub left: Expr,
     pub right: Expr,
@@ -42,6 +48,14 @@ pub struct ArithmeticExpr {
     pub left: Expr,
     pub right: Expr,
     pub op: ArithmeticOp,
+    pub pos: Pos,
+}
+
+#[derive(Debug)]
+pub struct LogicalExpr {
+    pub left: Expr,
+    pub right: Expr,
+    pub op: LogicalOp,
     pub pos: Pos,
 }
 
@@ -76,6 +90,7 @@ pub enum Expr {
     Not(NotExpr),
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
+    Logical(Box<LogicalExpr>),
 }
 
 impl Expr {
@@ -87,6 +102,7 @@ impl Expr {
             Self::Not(not) => not.pos.clone(),
             Self::Arithmetic(arithmetic) => arithmetic.pos.clone(),
             Self::Comparison(comparison) => comparison.pos.clone(),
+            Self::Logical(logical) => logical.pos.clone(),
         }
     }
 }
