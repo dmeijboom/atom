@@ -2,7 +2,7 @@ use std::ops::Range;
 
 pub type Pos = Range<usize>;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ComparisonOp {
     Lt,
     Lte,
@@ -12,7 +12,7 @@ pub enum ComparisonOp {
     Neq,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum ArithmeticOp {
     Mul,
     Div,
@@ -22,13 +22,13 @@ pub enum ArithmeticOp {
     BitOr,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum LogicalOp {
     And,
     Or,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ComparisonExpr {
     pub left: Expr,
     pub right: Expr,
@@ -36,14 +36,14 @@ pub struct ComparisonExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CallExpr {
-    pub name: String,
+    pub callee: Expr,
     pub args: Vec<Expr>,
     pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct ArithmeticExpr {
     pub left: Expr,
     pub right: Expr,
@@ -51,7 +51,7 @@ pub struct ArithmeticExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct LogicalExpr {
     pub left: Expr,
     pub right: Expr,
@@ -59,35 +59,59 @@ pub struct LogicalExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct IdentExpr {
     pub name: String,
     pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct NotExpr {
     pub expr: Box<Expr>,
     pub pos: Pos,
 }
 
-#[derive(Debug)]
-pub enum Literal {
-    Int(i64),
+#[derive(Debug, PartialEq)]
+pub struct ArrayExpr {
+    pub items: Vec<Expr>,
+    pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub struct KeyValue {
+    pub key: Expr,
+    pub value: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct MapExpr {
+    pub key_values: Vec<KeyValue>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub enum Literal {
+    Int(i64),
+    Bool(bool),
+    Char(char),
+    String(String),
+}
+
+#[derive(Debug, PartialEq)]
 pub struct LiteralExpr {
     pub literal: Literal,
     pub pos: Pos,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
-    Call(CallExpr),
+    Call(Box<CallExpr>),
     Not(NotExpr),
+    Array(ArrayExpr),
+    Map(MapExpr),
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
@@ -100,6 +124,8 @@ impl Expr {
             Self::Ident(ident) => ident.pos.clone(),
             Self::Call(call) => call.pos.clone(),
             Self::Not(not) => not.pos.clone(),
+            Self::Array(array) => array.pos.clone(),
+            Self::Map(map) => map.pos.clone(),
             Self::Arithmetic(arithmetic) => arithmetic.pos.clone(),
             Self::Comparison(comparison) => comparison.pos.clone(),
             Self::Logical(logical) => logical.pos.clone(),
@@ -107,8 +133,30 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
+pub struct ExprStmt {
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct LetStmt {
+    pub name: String,
+    pub value: Expr,
+    pub mutable: bool,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct LetDeclStmt {
+    pub name: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
-    Expr(Expr),
+    Expr(ExprStmt),
+    Let(LetStmt),
+    LetDecl(LetDeclStmt),
 }
 
