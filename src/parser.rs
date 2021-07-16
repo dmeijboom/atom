@@ -118,14 +118,26 @@ peg::parser! {
         rule let_stmt() -> Stmt
             = start:pos() "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Let(LetStmt { mutable: mutable.is_some(), name, value, pos: (start..end) }) }
 
+        rule fn_arg() -> FnArg
+            = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
+
+        rule fn_decl_stmt() -> Stmt
+            = start:pos() "fn" _ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::FnDecl(FnDeclStmt { name, args, body, pos: (start..end) }) }
+
         rule stmt() -> Stmt
             = expr_stmt() / let_stmt() / let_decl_stmt()
+
+        rule top_level_stmt() -> Stmt
+            = fn_decl_stmt()
 
         rule stmt_list() -> Vec<Stmt>
             = stmt() ** _
 
+        rule top_level_stmt_list() -> Vec<Stmt>
+            = (top_level_stmt() / stmt()) ** _
+
         pub rule parse() -> Vec<Stmt>
-            = _ stmts:stmt_list() _ { stmts }
+            = _ stmts:top_level_stmt_list() _ { stmts }
     }
 }
 

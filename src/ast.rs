@@ -154,9 +154,25 @@ pub struct LetDeclStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct FnArg {
+    pub name: String,
+    pub mutable: bool,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FnDeclStmt {
+    pub name: String,
+    pub args: Vec<FnArg>,
+    pub body: Vec<Stmt>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     Expr(ExprStmt),
     Let(LetStmt),
     LetDecl(LetDeclStmt),
+    FnDecl(FnDeclStmt),
 }
 
