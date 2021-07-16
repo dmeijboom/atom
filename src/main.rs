@@ -3,8 +3,13 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
+use crate::compiler::Compiler;
+
 mod ast;
 mod parser;
+mod compiler;
+mod ir;
+mod module;
 
 #[derive(Clap)]
 struct Opts {
@@ -33,7 +38,15 @@ fn main() {
             let tree = parser::parse(&contents)
                 .expect("syntax error");
 
+            println!("AST");
             println!("{:?}", tree);
+
+            let compiler = Compiler::new(tree);
+            let module = compiler.compile()
+                .expect("compile error");
+
+            println!("\nIR");
+            println!("{:?}", module.funcs);
         }
     }
 }

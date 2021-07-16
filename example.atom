@@ -1,1 +1,5 @@
-let age = 10;
+fn main() {
+    let name = "Hello world";
+
+    println(name, 1 > 2, "hi");
+}
