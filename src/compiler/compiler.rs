@@ -5,6 +5,7 @@ use std::rc::Rc;
 
 use crate::ast::{ArithmeticOp, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt};
 use crate::compiler::{Func, FuncArg, IR, Module};
+use crate::compiler::ir::Code;
 use crate::compiler::scope::{Local, Scope};
 
 #[derive(Debug)]
@@ -53,14 +54,22 @@ impl Compiler {
         self.pos = expr.pos();
 
         match &expr {
-            Expr::Literal(literal_expr) => match &literal_expr.literal {
-                Literal::Int(val) => ir.push(vec![IR::ConstInt(*val)]),
-                Literal::Float(val) => ir.push(vec![IR::ConstFloat(*val)]),
-                Literal::Bool(val) => ir.push(vec![IR::ConstBool(*val)]),
-                Literal::String(val) => ir.push(vec![IR::ConstString(val.clone())]),
-                Literal::Char(val) => ir.push(vec![IR::ConstChar(*val)]),
-            }
-            Expr::Ident(ident) => ir.push(vec![IR::Load(ident.name.clone())]),
+            Expr::Literal(literal_expr) => ir.push(vec![
+                IR::new(
+                    match &literal_expr.literal {
+                        Literal::Int(val) => Code::ConstInt(*val),
+                        Literal::Float(val) => Code::ConstFloat(*val),
+                        Literal::Bool(val) => Code::ConstBool(*val),
+                        Literal::String(val) => Code::ConstString(val.clone()),
+                        Literal::Char(val) => Code::ConstChar(*val),
+                    },
+                    literal_expr.pos.clone(),
+                ),
+            ]),
+            Expr::Ident(ident) => ir.push(vec![IR::new(
+                Code::Load(ident.name.clone()),
+                ident.pos.clone(),
+            )]),
             Expr::Call(call_expr) => {
                 ir.push(self.compile_expr(&call_expr.callee)?);
 
@@ -68,18 +77,27 @@ impl Compiler {
                     ir.push(self.compile_expr(arg)?);
                 }
 
-                ir.push(vec![IR::Call(call_expr.args.len())]);
+                ir.push(vec![IR::new(
+                    Code::Call(call_expr.args.len()),
+                    call_expr.pos.clone(),
+                )]);
             }
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
-                ir.push(vec![IR::Not]);
+                ir.push(vec![IR::new(
+                    Code::Not,
+                    not_expr.pos.clone(),
+                )]);
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
                     ir.push(self.compile_expr(item)?);
                 }
 
-                ir.push(vec![IR::MakeArray(array_expr.items.len())]);
+                ir.push(vec![IR::new(
+                    Code::MakeArray(array_expr.items.len()),
+                    array_expr.pos.clone(),
+                )]);
             }
             Expr::Map(map_expr) => {
                 for keyval in map_expr.key_values.iter() {
@@ -87,39 +105,51 @@ impl Compiler {
                     ir.push(self.compile_expr(&keyval.value)?);
                 }
 
-                ir.push(vec![IR::MakeMap(map_expr.key_values.len())]);
+                ir.push(vec![IR::new(
+                    Code::MakeMap(map_expr.key_values.len()),
+                    map_expr.pos.clone(),
+                )]);
             }
             Expr::Arithmetic(arithmetic_expr) => {
                 ir.push(self.compile_expr(&arithmetic_expr.left)?);
                 ir.push(self.compile_expr(&arithmetic_expr.right)?);
-                ir.push(vec![match arithmetic_expr.op {
-                    ArithmeticOp::Mul => IR::ArithmeticMul,
-                    ArithmeticOp::Div => IR::ArithmeticDiv,
-                    ArithmeticOp::Add => IR::ArithmeticAdd,
-                    ArithmeticOp::Sub => IR::ArithmeticSub,
-                    ArithmeticOp::BitAnd => IR::ArithmeticBitAnd,
-                    ArithmeticOp::BitOr => IR::ArithmeticBitOr,
-                }]);
+                ir.push(vec![IR::new(
+                    match arithmetic_expr.op {
+                        ArithmeticOp::Mul => Code::ArithmeticMul,
+                        ArithmeticOp::Div => Code::ArithmeticDiv,
+                        ArithmeticOp::Add => Code::ArithmeticAdd,
+                        ArithmeticOp::Sub => Code::ArithmeticSub,
+                        ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
+                        ArithmeticOp::BitOr => Code::ArithmeticBitOr,
+                    },
+                    arithmetic_expr.pos.clone(),
+                )]);
             }
             Expr::Comparison(comparison_expr) => {
                 ir.push(self.compile_expr(&comparison_expr.left)?);
                 ir.push(self.compile_expr(&comparison_expr.right)?);
-                ir.push(vec![match comparison_expr.op {
-                    ComparisonOp::Lt => IR::ComparisonLt,
-                    ComparisonOp::Lte => IR::ComparisonLte,
-                    ComparisonOp::Gt => IR::ComparisonGt,
-                    ComparisonOp::Gte => IR::ComparisonGte,
-                    ComparisonOp::Eq => IR::ComparisonEq,
-                    ComparisonOp::Neq => IR::ComparisonNeq,
-                }]);
+                ir.push(vec![IR::new(
+                    match comparison_expr.op {
+                        ComparisonOp::Lt => Code::ComparisonLt,
+                        ComparisonOp::Lte => Code::ComparisonLte,
+                        ComparisonOp::Gt => Code::ComparisonGt,
+                        ComparisonOp::Gte => Code::ComparisonGte,
+                        ComparisonOp::Eq => Code::ComparisonEq,
+                        ComparisonOp::Neq => Code::ComparisonNeq,
+                    },
+                    comparison_expr.pos.clone(),
+                )]);
             }
             Expr::Logical(logical_expr) => {
                 ir.push(self.compile_expr(&logical_expr.left)?);
                 ir.push(self.compile_expr(&logical_expr.right)?);
-                ir.push(vec![match logical_expr.op {
-                    LogicalOp::And => IR::LogicalAnd,
-                    LogicalOp::Or => IR::LogicalOr,
-                }]);
+                ir.push(vec![IR::new(
+                    match logical_expr.op {
+                        LogicalOp::And => Code::LogicalAnd,
+                        LogicalOp::Or => Code::LogicalOr,
+                    },
+                    logical_expr.pos.clone(),
+                )]);
             }
         };
 
@@ -137,11 +167,14 @@ impl Compiler {
 
             return Ok(vec![
                 self.compile_expr(value)?,
-                vec![if local.mutable {
-                    IR::StoreMut(name.to_string())
-                } else {
-                    IR::Store(name.to_string())
-                }],
+                vec![IR::new(
+                    if local.mutable {
+                        Code::StoreMut(name.to_string())
+                    } else {
+                        Code::Store(name.to_string())
+                    },
+                    self.pos.clone(),
+                )],
             ].concat());
         }
 
@@ -164,11 +197,14 @@ impl Compiler {
         }
 
         if let Some(expr) = value {
-            return Ok(vec![self.compile_expr(expr)?, vec![if mutable {
-                IR::StoreMut(name.to_string())
-            } else {
-                IR::Store(name.to_string())
-            }]].concat());
+            return Ok(vec![self.compile_expr(expr)?, vec![IR::new(
+                if mutable {
+                    Code::StoreMut(name.to_string())
+                } else {
+                    Code::Store(name.to_string())
+                },
+                self.pos.clone(),
+            )]].concat());
         }
 
         Ok(vec![])

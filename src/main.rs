@@ -4,10 +4,13 @@ use std::path::PathBuf;
 use clap::Clap;
 
 use crate::compiler::Compiler;
+use crate::vm::VM;
 
 mod ast;
 mod parser;
 mod compiler;
+mod runtime;
+mod vm;
 
 #[derive(Clap)]
 struct Opts {
@@ -45,6 +48,12 @@ fn main() {
 
             println!("\nIR");
             println!("{:#?}", module.funcs);
+
+            println!("\nVM");
+
+            let mut vm = VM::new();
+
+            vm.register(module);
         }
     }
 }

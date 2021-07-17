@@ -1,5 +1,7 @@
-#[derive(Debug, Clone)]
-pub enum IR {
+use crate::ast::Pos;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Code {
     ConstInt(i64),
     ConstBool(bool),
     ConstFloat(f64),
@@ -26,4 +28,19 @@ pub enum IR {
     Store(String),
     StoreMut(String),
     Load(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct IR {
+    pub code: Code,
+    pub pos: Pos,
+}
+
+impl IR {
+    pub fn new(code: Code, pos: Pos) -> Self {
+        Self {
+            code,
+            pos,
+        }
+    }
 }
