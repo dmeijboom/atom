@@ -183,3 +183,15 @@ pub enum Stmt {
     FnDecl(FnDeclStmt),
     Assign(AssignStmt),
 }
+
+impl Stmt {
+    pub fn pos(&self) -> Pos {
+        match self {
+            Stmt::Expr(expr_stmt) => expr_stmt.pos.clone(),
+            Stmt::Let(let_stmt) => let_stmt.pos.clone(),
+            Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),
+            Stmt::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
+            Stmt::Assign(assign_stmt) => assign_stmt.pos.clone(),
+        }
+    }
+}

@@ -1,5 +1,7 @@
 fn main() {
-    let name = "Hello world";
+    let mut name = "Hello world";
+
+    name = "hi";
 
     println(name, 1 > 2, "hi");
 }

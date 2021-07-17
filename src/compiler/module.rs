@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::ir::IR;
+use crate::compiler::IR;
 
 #[derive(Debug)]
 pub struct FuncArg {

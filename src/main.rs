@@ -8,8 +8,6 @@ use crate::compiler::Compiler;
 mod ast;
 mod parser;
 mod compiler;
-mod ir;
-mod module;
 
 #[derive(Clap)]
 struct Opts {
@@ -39,14 +37,14 @@ fn main() {
                 .expect("syntax error");
 
             println!("AST");
-            println!("{:?}", tree);
+            println!("{:#?}", tree);
 
             let compiler = Compiler::new(tree);
             let module = compiler.compile()
                 .expect("compile error");
 
             println!("\nIR");
-            println!("{:?}", module.funcs);
+            println!("{:#?}", module.funcs);
         }
     }
 }
