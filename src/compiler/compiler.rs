@@ -55,6 +55,7 @@ impl Compiler {
         match &expr {
             Expr::Literal(literal_expr) => match &literal_expr.literal {
                 Literal::Int(val) => ir.push(vec![IR::ConstInt(*val)]),
+                Literal::Float(val) => ir.push(vec![IR::ConstFloat(*val)]),
                 Literal::Bool(val) => ir.push(vec![IR::ConstBool(*val)]),
                 Literal::String(val) => ir.push(vec![IR::ConstString(val.clone())]),
                 Literal::Char(val) => ir.push(vec![IR::ConstChar(*val)]),

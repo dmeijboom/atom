@@ -2,7 +2,7 @@
 pub enum IR {
     ConstInt(i64),
     ConstBool(bool),
-    //ConstFloat(f64),
+    ConstFloat(f64),
     ConstChar(char),
     ConstString(String),
     MakeArray(usize),

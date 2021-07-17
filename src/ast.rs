@@ -93,6 +93,7 @@ pub struct MapExpr {
 #[derive(Debug, PartialEq)]
 pub enum Literal {
     Int(i64),
+    Float(f64),
     Bool(bool),
     Char(char),
     String(String),

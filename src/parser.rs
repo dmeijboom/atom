@@ -22,13 +22,17 @@ peg::parser! {
         rule ident_expr() -> Expr
             = start:pos() name:ident() end:pos() { Expr::Ident(IdentExpr { name, pos: (start..end) }) }
 
-        rule number_part() -> &'input str
+        rule int_part() -> &'input str
             = "_" value:$(['0'..='9']['0'..='9']['0'..='9']) { value }
                 / $(['0'..='9'])
 
-        rule number_lit() -> Literal
-            = sign:$("-"?) first:$(['1'..='9']) content:number_part()* { Literal::Int(format!("{}{}{}", sign, first, content.join("")).parse().unwrap()) }
+        rule int_lit() -> Literal
+            = sign:$("-"?) first:$(['1'..='9']) content:int_part()* { Literal::Int(format!("{}{}{}", sign, first, content.join("")).parse().unwrap()) }
                 / "0" { Literal::Int(0) }
+
+        rule float_lit() -> Literal
+            = sign:$("-"?) first:$(['1'..='9']) pre:int_part()* "." post:int_part()* { Literal::Float(format!("{}{}{}.{}", sign, first, pre.join(""), post.join("")).parse().unwrap()) }
+                / "." content:int_part()* { Literal::Float(format!(".{}", content.join("")).parse().unwrap()) }
 
         rule bool_lit() -> Literal
             = value:$("true" / "false") { Literal::Bool(value.parse().unwrap()) }
@@ -57,7 +61,7 @@ peg::parser! {
                 / !("\"" / "\\" / ("\r"? "\n")) value:char() { value }
 
         rule literal() -> Literal
-            = bool_lit() / number_lit() / char_lit() / string_lit()
+            = bool_lit() / float_lit() / int_lit() / char_lit() / string_lit()
 
         rule literal_expr() -> Expr
             = start:pos() literal:literal() end:pos() { Expr::Literal(LiteralExpr { literal, pos: (start..end) }) }
@@ -184,6 +188,21 @@ mod tests {
         assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
             expr: Expr::Literal(LiteralExpr {
                 literal: Literal::Int(value),
+                pos: pos.clone(),
+            }),
+            pos: (pos.start..pos.end + 1),
+        })));
+    }
+
+    #[test_case(".0;", 0.0, 0..2; "unsigned float zero value")]
+    #[test_case("10.2;", 10.2, 0..4; "unsigned float")]
+    #[test_case("-10.29;", -10.29, 0..6; "signed float")]
+    #[test_case("10_000.43;", 10000.43, 0..9; "unsigned float with underscore for readability")]
+    #[test_case("-1_000.1;", -1000.1, 0..8; "signed float with underscore for readability")]
+    fn test_float_literals(source: &str, value: f64, pos: Pos) {
+        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
+            expr: Expr::Literal(LiteralExpr {
+                literal: Literal::Float(value),
                 pos: pos.clone(),
             }),
             pos: (pos.start..pos.end + 1),
