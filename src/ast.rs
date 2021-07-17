@@ -169,10 +169,17 @@ pub struct FnDeclStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct AssignStmt {
+    pub name: String,
+    pub value: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     Expr(ExprStmt),
     Let(LetStmt),
     LetDecl(LetDeclStmt),
     FnDecl(FnDeclStmt),
+    Assign(AssignStmt),
 }
-

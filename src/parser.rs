@@ -124,8 +124,11 @@ peg::parser! {
         rule fn_decl_stmt() -> Stmt
             = start:pos() "fn" _ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::FnDecl(FnDeclStmt { name, args, body, pos: (start..end) }) }
 
+        rule assign_stmt() -> Stmt
+            = start:pos() name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { name, value, pos: (start..end) }) }
+
         rule stmt() -> Stmt
-            = expr_stmt() / let_stmt() / let_decl_stmt()
+            = expr_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
 
         rule top_level_stmt() -> Stmt
             = fn_decl_stmt()
@@ -394,6 +397,20 @@ mod tests {
             }),
             mutable,
             pos: pos.1,
+        })));
+    }
+
+    #[test]
+    fn test_assign_stmt_decl() {
+        let source = "current_year = 100;";
+
+        assert_eq!(parse_single(source), Ok(Stmt::Assign(AssignStmt {
+            name: "current_year".to_string(),
+            value: Expr::Literal(LiteralExpr {
+                literal: Literal::Int(100),
+                pos: (15..18),
+            }),
+            pos: (0..19),
         })));
     }
 
