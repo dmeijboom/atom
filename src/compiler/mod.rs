@@ -1,5 +1,5 @@
 pub use compiler::{CompileError, Compiler};
-pub use ir::IR;
+pub use ir::{Code, IR};
 pub use module::{Func, FuncArg, Module};
 
 mod compiler;

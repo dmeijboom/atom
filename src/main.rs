@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
-use crate::compiler::Compiler;
+use crate::compiler::{Code, Compiler, IR};
 use crate::vm::VM;
 
 mod ast;
@@ -54,6 +54,12 @@ fn main() {
             let mut vm = VM::new();
 
             vm.register(module);
+            vm
+                .eval(vec![
+                    IR::new(Code::Load("main".to_string()), 0..0),
+                    IR::new(Code::Call(0), 0..0),
+                ])
+                .expect("RuntimeError");
         }
     }
 }
