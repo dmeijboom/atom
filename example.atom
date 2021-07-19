@@ -3,5 +3,5 @@ fn main() {
 
     name = "hi";
 
-    println(name, 1 > 2, "hi");
+    println(name, [name, name]);
 }

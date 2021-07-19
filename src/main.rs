@@ -4,6 +4,7 @@ use std::path::PathBuf;
 use clap::Clap;
 
 use crate::compiler::{Code, Compiler, IR};
+use crate::runtime::Value;
 use crate::vm::VM;
 
 mod ast;
@@ -54,6 +55,17 @@ fn main() {
             let mut vm = VM::new();
 
             vm.register(module);
+            vm.register_external_fn("std.core", "println", Box::new(|values: Vec<Value>| {
+                println!(
+                    "{}",
+                    values.into_iter()
+                        .map(|value| format!("{}", value))
+                        .collect::<Vec<_>>()
+                        .join(", "),
+                );
+
+                Ok(None)
+            }));
             vm
                 .eval(vec![
                     IR::new(Code::Load("main".to_string()), 0..0),

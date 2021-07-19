@@ -7,21 +7,6 @@ use crate::ast::Pos;
 use crate::compiler::{Code, Func, IR, Module};
 use crate::runtime::{FuncId, Value};
 
-struct FuncDesc {
-    pub func: Func,
-    pub module_name: String,
-}
-
-struct CallContext {
-    pub locals: HashMap<String, Value>,
-}
-
-pub struct VM {
-    stack: Vec<Value>,
-    call_stack: Vec<CallContext>,
-    func_map: HashMap<String, FuncDesc>,
-}
-
 #[derive(Debug)]
 pub struct RuntimeError {
     pub pos: Pos,
@@ -53,6 +38,27 @@ impl fmt::Display for RuntimeError {
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
+enum Runnable {
+    Func(Func),
+    External(Box<dyn Fn(Vec<Value>) -> Result<Option<Value>>>),
+}
+
+struct FuncDesc {
+    pub run: Runnable,
+    pub module_name: String,
+}
+
+struct CallContext {
+    pub locals: HashMap<String, Value>,
+}
+
+pub struct VM {
+    stack: Vec<Value>,
+    call_stack: Vec<CallContext>,
+    func_map: HashMap<String, FuncDesc>,
+}
+
+
 impl VM {
     pub fn new() -> Self {
         Self {
@@ -62,10 +68,17 @@ impl VM {
         }
     }
 
+    pub fn register_external_fn<F: Fn(Vec<Value>) -> Result<Option<Value>> + 'static>(&mut self, module_name: &str, name: &str, func: F) {
+        self.func_map.insert(name.to_string(), FuncDesc {
+            module_name: module_name.to_string(),
+            run: Runnable::External(Box::new(func)),
+        });
+    }
+
     pub fn register(&mut self, module: Module) {
         for (name, func) in module.funcs {
             self.func_map.insert(name, FuncDesc {
-                func,
+                run: Runnable::Func(func),
                 module_name: module.name.clone(),
             });
         }
@@ -104,6 +117,7 @@ impl VM {
     }
 
     fn eval_call(&mut self, pos: Pos, len: usize) -> Result<()> {
+        let values = self.pop_values_from_stack(pos.clone(), len)?;
         let value = self.stack
             .pop()
             .ok_or_else(|| RuntimeError::new(
@@ -115,16 +129,37 @@ impl VM {
         if let Value::Function(id) = value {
             if let Some(desc) = self.func_map.get(&id.name) {
                 if desc.module_name == id.module {
-                    if len > 0 {
-                        unreachable!();
-                    }
-
-                    let body = desc.func.body.clone();
-
                     self.call_stack.push(CallContext {
                         locals: HashMap::new(),
                     });
-                    self.eval(body)?;
+
+                    match &desc.run {
+                        Runnable::Func(func) => {
+                            if len != func.args.len() {
+                                return Err(RuntimeError::new(
+                                    format!(
+                                        "invalid argument count for function: {}.{}(...) (expected {}, not {})",
+                                        id.module,
+                                        id.name,
+                                        func.args.len(),
+                                        len,
+                                    ),
+                                    pos,
+                                    None,
+                                ));
+                            }
+
+                            let body = func.body.clone();
+
+                            self.eval(body)?;
+                        }
+                        Runnable::External(func) => {
+                            if let Some(return_value) = func(values)? {
+                                self.stack.push(return_value);
+                            }
+                        }
+                    };
+
                     self.call_stack.pop();
 
                     return Ok(());
@@ -153,25 +188,22 @@ impl VM {
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
             Code::MakeArray(len) => {
-                let values = self.pop_values_from_stack(ir.pos.clone(), *len)?
-                    .into_iter()
-                    .map(|value| Rc::new(value))
-                    .collect::<Vec<_>>();
+                let values = self.pop_values_from_stack(ir.pos.clone(), *len)?;
 
-                self.stack.push(Value::Array(values));
+                self.stack.push(Value::Array(Rc::new(values)));
             }
             Code::MakeMap(len) => {
                 let mut map = HashMap::new();
                 let mut key_values = self.pop_values_from_stack(ir.pos.clone(), len * 2)?;
 
                 for _ in 0..*len {
-                    let key = Rc::new(key_values.remove(0));
-                    let value = Rc::new(key_values.remove(0));
+                    let key = key_values.remove(0);
+                    let value = key_values.remove(0);
 
                     map.insert(key, value);
                 }
 
-                self.stack.push(Value::Map(map));
+                self.stack.push(Value::Map(Rc::new(map)));
             }
             Code::LogicalOr => unreachable!(),
             Code::LogicalAnd => unreachable!(),

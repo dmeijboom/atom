@@ -1,4 +1,4 @@
-pub use value::{FuncId, Value, ValueRef, ValueType};
+pub use value::{FuncId, Value, ValueType};
 
 mod value;
 

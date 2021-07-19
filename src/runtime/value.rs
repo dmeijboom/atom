@@ -1,4 +1,6 @@
+use std::borrow::Borrow;
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -66,8 +68,6 @@ pub struct FuncId {
     pub module: String,
 }
 
-pub type ValueRef = Rc<Value>;
-
 #[derive(Debug, PartialEq)]
 pub enum Value {
     Int(i64),
@@ -75,9 +75,24 @@ pub enum Value {
     Char(char),
     Bool(bool),
     String(String),
-    Array(Vec<ValueRef>),
-    Map(HashMap<ValueRef, ValueRef>),
+    Array(Rc<Vec<Value>>),
+    Map(Rc<HashMap<Value, Value>>),
     Function(FuncId),
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::Int(val) => write!(f, "{}", val),
+            Value::Float(val) => write!(f, "{}", val),
+            Value::Char(val) => write!(f, "{}", val),
+            Value::Bool(val) => write!(f, "{}", val),
+            Value::String(val) => write!(f, "{}", val),
+            Value::Array(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
+            Value::Map(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
+            Value::Function(val) => write!(f, "{}({}.{})", self.get_type().name(), val.module, val.name),
+        }
+    }
 }
 
 impl Hash for Value {
@@ -90,6 +105,8 @@ impl Hash for Value {
             Value::String(val) => val.hash(state),
             Value::Array(val) => val.hash(state),
             Value::Map(map) => {
+                let map: &HashMap<Value, Value> = map.borrow();
+
                 for (key, value) in map {
                     key.hash(state);
                     value.hash(state);
@@ -114,21 +131,8 @@ impl Clone for Value {
             Value::Char(val) => Value::Char(*val),
             Value::Bool(val) => Value::Bool(*val),
             Value::String(val) => Value::String(val.clone()),
-            Value::Array(array) => Value::Array(
-                array
-                    .iter()
-                    .map(|value| Rc::clone(value))
-                    .collect::<Vec<_>>()
-            ),
-            Value::Map(map) => {
-                let mut new_map = HashMap::new();
-
-                for (key, value) in map.iter() {
-                    new_map.insert(Rc::clone(key), Rc::clone(value));
-                }
-
-                Value::Map(new_map)
-            },
+            Value::Array(array) => Value::Array(Rc::clone(array)),
+            Value::Map(map) => Value::Map(Rc::clone(map)),
             Value::Function(id) => Value::Function(id.clone()),
         }
     }
