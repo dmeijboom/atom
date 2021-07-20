@@ -1,42 +1,11 @@
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
 use std::rc::Rc;
 
-use crate::ast::Pos;
 use crate::compiler::{Code, Func, IR, Module};
 use crate::runtime::{FuncId, Value};
 
-#[derive(Debug)]
-pub struct RuntimeError {
-    pub pos: Pos,
-    pub message: String,
-    pub module_name: Option<String>,
-}
-
-impl RuntimeError {
-    pub fn new(message: String, pos: Pos, module_name: Option<String>) -> Self {
-        Self {
-            message,
-            pos,
-            module_name,
-        }
-    }
-}
-
-impl Error for RuntimeError {}
-
-impl fmt::Display for RuntimeError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        if let Some(module_name) = &self.module_name {
-            return write!(f, "{} at {}..{} in {}", self.message, self.pos.start, self.pos.end, module_name);
-        }
-
-        write!(f, "{} at {}..{}", self.message, self.pos.start, self.pos.end)
-    }
-}
-
-pub type Result<T> = std::result::Result<T, RuntimeError>;
+use super::result::{Result, RuntimeError};
+use super::stack::Stack;
 
 enum Runnable {
     Func(Func),
@@ -53,16 +22,15 @@ struct CallContext {
 }
 
 pub struct VM {
-    stack: Vec<Value>,
+    stack: Stack,
     call_stack: Vec<CallContext>,
     func_map: HashMap<String, FuncDesc>,
 }
 
-
 impl VM {
     pub fn new() -> Self {
         Self {
-            stack: vec![],
+            stack: Stack::new(),
             call_stack: vec![],
             func_map: HashMap::new(),
         }
@@ -84,47 +52,16 @@ impl VM {
         }
     }
 
-    fn call_context(&mut self, pos: Pos) -> Result<&mut CallContext> {
+    fn call_context(&mut self) -> Result<&mut CallContext> {
         self.call_stack
             .last_mut()
-            .ok_or_else(|| RuntimeError::new(
-                "expected call context".to_string(),
-                pos,
-                None,
-            ))
+            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
     }
 
-    fn pop_value_from_stack(&mut self, pos: Pos) -> Result<Value> {
-        self.stack.pop().ok_or_else(||
-            RuntimeError::new("no item on stack".to_string(), pos, None))
-    }
-
-    fn pop_values_from_stack(&mut self, pos: Pos, mut len: usize) -> Result<Vec<Value>> {
-        let mut values = vec![];
-
-        while len > 0 {
-            if let Some(value) = self.stack.pop() {
-                values.insert(0, value);
-                len -= 1;
-
-                continue;
-            }
-
-            return Err(RuntimeError::new("no item on stack".to_string(), pos, None));
-        }
-
-        Ok(values)
-    }
-
-    fn eval_call(&mut self, pos: Pos, len: usize) -> Result<()> {
-        let values = self.pop_values_from_stack(pos.clone(), len)?;
+    fn eval_call(&mut self, len: usize) -> Result<()> {
         let value = self.stack
             .pop()
-            .ok_or_else(|| RuntimeError::new(
-                "expected function on stack".to_string(),
-                pos.clone(),
-                None,
-            ))?;
+            .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
         if let Value::Function(id) = value {
             if let Some(desc) = self.func_map.get(&id.name) {
@@ -136,24 +73,39 @@ impl VM {
                     match &desc.run {
                         Runnable::Func(func) => {
                             if len != func.args.len() {
-                                return Err(RuntimeError::new(
-                                    format!(
-                                        "invalid argument count for function: {}.{}(...) (expected {}, not {})",
-                                        id.module,
-                                        id.name,
-                                        func.args.len(),
-                                        len,
+                                return Err(
+                                    RuntimeError::new(
+                                        format!(
+                                            "invalid argument count for function: {}.{}(...) (expected {}, not {})",
+                                            id.module,
+                                            id.name,
+                                            func.args.len(),
+                                            len,
+                                        ),
                                     ),
-                                    pos,
-                                    None,
-                                ));
+                                );
                             }
 
                             let body = func.body.clone();
+                            let arg_names = func.args
+                                .iter()
+                                .map(|arg| arg.name.clone())
+                                .collect::<Vec<_>>();
+                            let mut values = self.stack.pop_many(len)?;
+                            let call_context = self.call_context()?;
+
+                            for name in arg_names {
+                                call_context.locals.insert(
+                                    name,
+                                    values.remove(0),
+                                );
+                            }
 
                             self.eval(body)?;
                         }
                         Runnable::External(func) => {
+                            let values = self.stack.pop_many(len)?;
+
                             if let Some(return_value) = func(values)? {
                                 self.stack.push(return_value);
                             }
@@ -166,18 +118,10 @@ impl VM {
                 }
             }
 
-            return Err(RuntimeError::new(
-                format!("no such function: {}.{}(...)", id.module, id.name),
-                pos,
-                None,
-            ));
+            return Err(RuntimeError::new(format!("no such function: {}.{}(...)", id.module, id.name)));
         }
 
-        Err(RuntimeError::new(
-            format!("expected function on stack, not: {}", value.get_type().name()),
-            pos,
-            None,
-        ))
+        Err(RuntimeError::new(format!("expected function on stack, not: {}", value.get_type().name())))
     }
 
     fn eval_single(&mut self, ir: IR) -> Result<()> {
@@ -188,13 +132,13 @@ impl VM {
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
             Code::MakeArray(len) => {
-                let values = self.pop_values_from_stack(ir.pos.clone(), *len)?;
+                let values = self.stack.pop_many(*len)?;
 
                 self.stack.push(Value::Array(Rc::new(values)));
             }
             Code::MakeMap(len) => {
                 let mut map = HashMap::new();
-                let mut key_values = self.pop_values_from_stack(ir.pos.clone(), len * 2)?;
+                let mut key_values = self.stack.pop_many(len * 2)?;
 
                 for _ in 0..*len {
                     let key = key_values.remove(0);
@@ -220,26 +164,26 @@ impl VM {
             Code::ComparisonLt => unreachable!(),
             Code::ComparisonLte => unreachable!(),
             Code::Not => unreachable!(),
-            Code::Call(len) => return self.eval_call(ir.pos.clone(), *len),
+            Code::Call(len) => return self.eval_call(*len),
             Code::Store(name) => {
-                let value = self.pop_value_from_stack(ir.pos.clone())?;
+                let value = self.stack.pop()?;
 
-                self.call_context(ir.pos.clone())?.locals.insert(
+                self.call_context()?.locals.insert(
                     name.to_string(),
                     value,
                 );
             }
             Code::StoreMut(name) => {
-                let value = self.pop_value_from_stack(ir.pos.clone())?;
+                let value = self.stack.pop()?;
 
-                self.call_context(ir.pos.clone())?.locals.insert(
+                self.call_context()?.locals.insert(
                     name.to_string(),
                     value,
                 );
             }
             Code::Load(name) => {
                 if self.call_stack.len() > 0 {
-                    let context = self.call_context(ir.pos.clone())?;
+                    let context = self.call_context()?;
 
                     if let Some(value) = context.locals
                         .get(name)
@@ -259,18 +203,17 @@ impl VM {
                     return Ok(());
                 }
 
-                return Err(RuntimeError::new(
-                    format!("no such name: {}", name),
-                    ir.pos.clone(),
-                    None,
-                ));
+                return Err(RuntimeError::new(format!("no such name: {}", name)));
             }
         })
     }
 
     pub fn eval(&mut self, ir: Vec<IR>) -> Result<()> {
         for ir in ir {
-            self.eval_single(ir)?;
+            let pos = ir.pos.clone();
+
+            self.eval_single(ir)
+                .map_err(|e| e.with_pos(pos))?;
         }
 
         Ok(())

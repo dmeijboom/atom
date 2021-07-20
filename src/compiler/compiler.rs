@@ -71,12 +71,11 @@ impl Compiler {
                 ident.pos.clone(),
             )]),
             Expr::Call(call_expr) => {
-                ir.push(self.compile_expr(&call_expr.callee)?);
-
                 for arg in call_expr.args.iter() {
                     ir.push(self.compile_expr(arg)?);
                 }
 
+                ir.push(self.compile_expr(&call_expr.callee)?);
                 ir.push(vec![IR::new(
                     Code::Call(call_expr.args.len()),
                     call_expr.pos.clone(),
