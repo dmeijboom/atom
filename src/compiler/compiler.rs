@@ -222,10 +222,17 @@ impl Compiler {
             self.pos = stmt.pos();
 
             match stmt {
-                Stmt::Expr(expr_stmt) => ir.push(self.compile_expr(&expr_stmt.expr)?),
+                Stmt::Expr(expr_stmt) => {
+                    ir.push(self.compile_expr(&expr_stmt.expr)?);
+                    ir.push(vec![IR::new(Code::Discard, self.pos.clone())]);
+                }
                 Stmt::Let(let_stmt) => ir.push(self.compile_let(let_stmt.mutable, &let_stmt.name, Some(&let_stmt.value))?),
                 Stmt::LetDecl(let_decl_stmt) => ir.push(self.compile_let(false, &let_decl_stmt.name, None)?),
                 Stmt::Assign(assign_stmt) => ir.push(self.compile_assign(&assign_stmt.name, &assign_stmt.value)?),
+                Stmt::Return(return_stmt) => {
+                    ir.push(self.compile_expr(&return_stmt.expr)?);
+                    ir.push(vec![IR::new(Code::Return, self.pos.clone())]);
+                }
                 _ => unreachable!(),
             }
         }
@@ -259,6 +266,7 @@ impl Compiler {
 
         Ok(Func {
             name: fn_decl.name.clone(),
+            is_void: !body.iter().any(|ir| ir.code == Code::Return),
             body,
             args: fn_decl.args.iter()
                 .map(|arg| FuncArg {

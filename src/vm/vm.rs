@@ -18,6 +18,7 @@ struct FuncDesc {
 }
 
 struct CallContext {
+    pub return_value: Option<Value>,
     pub locals: HashMap<String, Value>,
 }
 
@@ -68,6 +69,7 @@ impl VM {
                 if desc.module_name == id.module {
                     self.call_stack.push(CallContext {
                         locals: HashMap::new(),
+                        return_value: None,
                     });
 
                     match &desc.run {
@@ -107,12 +109,18 @@ impl VM {
                             let values = self.stack.pop_many(len)?;
 
                             if let Some(return_value) = func(values)? {
-                                self.stack.push(return_value);
+                                self.call_context()?.return_value = Some(return_value);
                             }
                         }
                     };
 
-                    self.call_stack.pop();
+                    let context = self.call_stack.pop().unwrap();
+
+                    if let Some(value) = context.return_value {
+                        self.stack.push(value);
+                    } else {
+                        self.stack.push(Value::Invalid);
+                    }
 
                     return Ok(());
                 }
@@ -148,6 +156,12 @@ impl VM {
                 }
 
                 self.stack.push(Value::Map(Rc::new(map)));
+            }
+            Code::Discard => self.stack.delete()?,
+            Code::Return => {
+                let return_value = self.stack.pop()?;
+
+                self.call_context()?.return_value = Some(return_value);
             }
             Code::LogicalOr => unreachable!(),
             Code::LogicalAnd => unreachable!(),
@@ -214,6 +228,13 @@ impl VM {
 
             self.eval_single(ir)
                 .map_err(|e| e.with_pos(pos))?;
+
+            // break on early return
+            if let Some(context) = self.call_stack.last() {
+                if context.return_value.is_some() {
+                    break;
+                }
+            }
         }
 
         Ok(())

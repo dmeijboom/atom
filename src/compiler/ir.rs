@@ -24,6 +24,8 @@ pub enum Code {
     ComparisonLt,
     ComparisonLte,
     Not,
+    Discard,
+    Return,
     Call(usize),
     Store(String),
     StoreMut(String),

@@ -17,8 +17,19 @@ impl Stack {
         self.data.push(value);
     }
 
+    pub(crate) fn delete(&mut self) -> Result<()> {
+        self.data.pop()
+            .ok_or_else(|| RuntimeError::new("expected element on stack (in discard)".to_string()))?;
+
+        Ok(())
+    }
+
     pub(crate) fn pop(&mut self) -> Result<Value> {
         if let Some(value) = self.data.pop() {
+            if value == Value::Invalid {
+                return Err(RuntimeError::new("unable to use void Fn as a value".to_string()));
+            }
+
             return Ok(value);
         }
 

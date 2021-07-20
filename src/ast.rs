@@ -177,12 +177,19 @@ pub struct AssignStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct ReturnStmt {
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     Expr(ExprStmt),
     Let(LetStmt),
     LetDecl(LetDeclStmt),
     FnDecl(FnDeclStmt),
     Assign(AssignStmt),
+    Return(ReturnStmt),
 }
 
 impl Stmt {
@@ -193,6 +200,7 @@ impl Stmt {
             Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),
             Stmt::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
             Stmt::Assign(assign_stmt) => assign_stmt.pos.clone(),
+            Stmt::Return(return_stmt) => return_stmt.pos.clone(),
         }
     }
 }

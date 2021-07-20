@@ -11,8 +11,9 @@ pub struct FuncArg {
 #[derive(Debug)]
 pub struct Func {
     pub name: String,
-    pub args: Vec<FuncArg>,
     pub body: Vec<IR>,
+    pub is_void: bool,
+    pub args: Vec<FuncArg>,
 }
 
 #[derive(Debug)]

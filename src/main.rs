@@ -27,6 +27,10 @@ enum Cmd {
 #[derive(Clap)]
 struct RunOpts {
     filename: PathBuf,
+    #[clap(long)]
+    show_ast: bool,
+    #[clap(long)]
+    show_ir: bool,
 }
 
 fn main() {
@@ -40,17 +44,17 @@ fn main() {
             let tree = parser::parse(&contents)
                 .expect("syntax error");
 
-            println!("AST");
-            println!("{:#?}", tree);
+            if run_opts.show_ast {
+                println!("{:#?}", tree);
+            }
 
             let compiler = Compiler::new(tree);
             let module = compiler.compile()
                 .expect("compile error");
 
-            println!("\nIR");
-            println!("{:#?}", module.funcs);
-
-            println!("\nVM");
+            if run_opts.show_ir {
+                println!("{:#?}", module.funcs);
+            }
 
             let mut vm = VM::new();
 
@@ -66,6 +70,7 @@ fn main() {
 
                 Ok(None)
             }));
+
             vm
                 .eval(vec![
                     IR::new(Code::Load("main".to_string()), 0..0),

@@ -131,8 +131,11 @@ peg::parser! {
         rule assign_stmt() -> Stmt
             = start:pos() name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { name, value, pos: (start..end) }) }
 
+        rule return_stmt() -> Stmt
+            = start:pos() "return" _ expr:expr() _ ";" end:pos() { Stmt::Return(ReturnStmt { expr, pos: (start..end) }) }
+
         rule stmt() -> Stmt
-            = expr_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
+            = expr_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
 
         rule top_level_stmt() -> Stmt
             = fn_decl_stmt()
@@ -196,9 +199,9 @@ mod tests {
 
     #[test_case(".0;", 0.0, 0..2; "unsigned float zero value")]
     #[test_case("10.2;", 10.2, 0..4; "unsigned float")]
-    #[test_case("-10.29;", -10.29, 0..6; "signed float")]
+    #[test_case("-10.29;", - 10.29, 0..6; "signed float")]
     #[test_case("10_000.43;", 10000.43, 0..9; "unsigned float with underscore for readability")]
-    #[test_case("-1_000.1;", -1000.1, 0..8; "signed float with underscore for readability")]
+    #[test_case("-1_000.1;", - 1000.1, 0..8; "signed float with underscore for readability")]
     fn test_float_literals(source: &str, value: f64, pos: Pos) {
         assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
             expr: Expr::Literal(LiteralExpr {
@@ -488,7 +491,7 @@ mod tests {
                             literal: Literal::String("word".to_string()),
                             pos: (14..20),
                         }),
-                        value: Expr::Literal(LiteralExpr{
+                        value: Expr::Literal(LiteralExpr {
                             literal: Literal::String("hello".to_string()),
                             pos: (22..29),
                         }),
@@ -498,6 +501,19 @@ mod tests {
                 pos: (0..30),
             }),
             pos: (0..31),
+        })));
+    }
+
+    #[test]
+    fn return_stmt() {
+        let source = "return 10;";
+
+        assert_eq!(parse_single(source), Ok(Stmt::Return(ReturnStmt {
+            expr: Expr::Literal(LiteralExpr {
+                literal: Literal::Int(10),
+                pos: 7..9,
+            }),
+            pos: 0..10,
         })));
     }
 }
