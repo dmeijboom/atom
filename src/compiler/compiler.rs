@@ -37,15 +37,37 @@ pub type Result<T> = std::result::Result<T, CompileError>;
 pub struct Compiler {
     pos: Pos,
     tree: Vec<Stmt>,
+    labels: Vec<String>,
     scope: Rc<RefCell<Scope>>,
 }
 
 impl Compiler {
     pub fn new(tree: Vec<Stmt>) -> Self {
         Self {
-            pos: 0..0,
             tree,
+            pos: 0..0,
+            labels: vec![],
             scope: Rc::new(RefCell::new(Scope::new())),
+        }
+    }
+
+    fn make_label(&mut self, prefix: &str) -> String {
+        if !self.labels.contains(&prefix.to_string()) {
+            self.labels.push(prefix.to_string());
+
+            return prefix.to_string();
+        }
+
+        let mut i: i64 = 2;
+
+        loop {
+            let label = format!("{}{}", prefix, i);
+
+            if !self.labels.contains(&label) {
+                return label;
+            }
+
+            i += 1;
         }
     }
 
@@ -136,15 +158,28 @@ impl Compiler {
                 )]);
             }
             Expr::Logical(logical_expr) => {
-                ir.push(self.compile_expr(&logical_expr.left)?);
-                ir.push(self.compile_expr(&logical_expr.right)?);
-                ir.push(vec![IR::new(
-                    match logical_expr.op {
-                        LogicalOp::And => Code::LogicalAnd,
-                        LogicalOp::Or => Code::LogicalOr,
-                    },
-                    logical_expr.pos.clone(),
-                )]);
+                match logical_expr.op {
+                    LogicalOp::And => {
+                        ir.push(self.compile_expr(&logical_expr.left)?);
+                        ir.push(self.compile_expr(&logical_expr.right)?);
+                        ir.push(vec![IR::new(Code::LogicalAnd, logical_expr.pos.clone())]);
+                    }
+                    LogicalOp::Or => {
+                        ir.push(self.compile_expr(&logical_expr.left)?);
+
+                        let label = self.make_label("or");
+
+                        ir.push(vec![IR::new(
+                            Code::JumpIfTrue(label.clone()),
+                            logical_expr.pos.clone(),
+                        )]);
+                        ir.push(self.compile_expr(&logical_expr.right)?);
+                        ir.push(vec![IR::new(
+                            Code::SetLabel(label),
+                            logical_expr.pos.clone(),
+                        )]);
+                    }
+                };
             }
         };
 

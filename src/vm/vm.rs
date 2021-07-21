@@ -182,8 +182,8 @@ impl VM {
         })
     }
 
-    fn eval_single(&mut self, ir: IR) -> Result<()> {
-        Ok(match &ir.code {
+    fn eval_single(&mut self, ir: IR) -> Result<Option<String>> {
+        match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
             Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
@@ -213,8 +213,14 @@ impl VM {
 
                 self.call_context()?.return_value = Some(return_value);
             }
-            Code::LogicalOr => unreachable!(),
-            Code::LogicalAnd => unreachable!(),
+            Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
+                Value::Bool(val) => Ok(Value::Bool(*val && convert::to_bool(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
             Code::ArithmeticBitOr => self.eval_op("bitwise or", |left, right| match &left {
                 Value::Int(val) => Ok(Value::Int(*val | convert::to_int(&right)?)),
                 _ => Err(RuntimeError::new(format!(
@@ -292,7 +298,7 @@ impl VM {
 
                 self.stack.push(Value::Bool(!convert::to_bool(&value)?));
             }
-            Code::Call(len) => return self.eval_call(*len),
+            Code::Call(len) => self.eval_call(*len)?,
             Code::Store(name) => {
                 let value = self.stack.pop()?;
 
@@ -314,7 +320,7 @@ impl VM {
                     {
                         self.stack.push(value);
 
-                        return Ok(());
+                        return Ok(None);
                     }
                 }
 
@@ -327,19 +333,45 @@ impl VM {
                         .into(),
                     );
 
-                    return Ok(());
+                    return Ok(None);
                 }
 
                 return Err(RuntimeError::new(format!("no such name: {}", name)));
             }
-        })
+            Code::SetLabel(_) => unreachable!(),
+            Code::JumpIfTrue(label) => {
+                let value = self.stack.pop()?;
+                let bool_val = convert::to_bool(&value)?;
+
+                self.stack.push(value);
+
+                if bool_val {
+                    return Ok(Some(label.clone()));
+                }
+            }
+        };
+
+        Ok(None)
     }
 
-    pub fn eval(&mut self, ir: Vec<IR>) -> Result<()> {
-        for ir in ir {
+    pub fn eval(&mut self, ir_list: Vec<IR>) -> Result<()> {
+        let mut active_label: Option<String> = None;
+
+        for ir in ir_list {
+            // skip instructions if we're jumping to a label
+            if active_label.is_some() {
+                if let Code::SetLabel(label) = &ir.code {
+                    if Some(label) == active_label.as_ref() {
+                        active_label = None;
+                    }
+                }
+
+                continue;
+            }
+
             let pos = ir.pos.clone();
 
-            self.eval_single(ir).map_err(|e| e.with_pos(pos))?;
+            active_label = self.eval_single(ir).map_err(|e| e.with_pos(pos))?;
 
             // break on early return
             if let Some(context) = self.call_stack.last() {
