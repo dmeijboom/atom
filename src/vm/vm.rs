@@ -1,10 +1,10 @@
+use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::compiler::{Code, Func, IR, Module};
-use crate::runtime::{FuncId, Value};
+use crate::runtime::{convert, FuncId, Result, RuntimeError, Value};
 
-use super::result::{Result, RuntimeError};
 use super::stack::Stack;
 
 enum Runnable {
@@ -132,6 +132,39 @@ impl VM {
         Err(RuntimeError::new(format!("expected function on stack, not: {}", value.get_type().name())))
     }
 
+    fn eval_comparison_op(&mut self, op: impl FnOnce(Ordering) -> bool) -> Result<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        match left {
+            Value::Int(val) => {
+                self.stack.push(Value::Bool(op(val.cmp(
+                    &convert::to_int(&right)
+                        .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?
+                ))));
+
+                return Ok(());
+            }
+            Value::Float(val) => {
+                let ord = val.partial_cmp(
+                    &convert::to_float(&right)
+                        .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?
+                );
+
+                if let Some(ord) = ord {
+                    self.stack.push(Value::Bool(op(ord)));
+
+                    return Ok(());
+                }
+            }
+            _ => {}
+        };
+
+        Err(RuntimeError::new(
+            format!("unable to perform order comparison on {} and {}", left.get_type().name(), right.get_type().name()),
+        ))
+    }
+
     fn eval_single(&mut self, ir: IR) -> Result<()> {
         Ok(match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
@@ -171,13 +204,27 @@ impl VM {
             Code::ArithmeticSub => unreachable!(),
             Code::ArithmeticMul => unreachable!(),
             Code::ArithmeticDiv => unreachable!(),
-            Code::ComparisonEq => unreachable!(),
-            Code::ComparisonNeq => unreachable!(),
-            Code::ComparisonGt => unreachable!(),
-            Code::ComparisonGte => unreachable!(),
-            Code::ComparisonLt => unreachable!(),
-            Code::ComparisonLte => unreachable!(),
-            Code::Not => unreachable!(),
+            Code::ComparisonEq => {
+                let right = self.stack.pop()?;
+                let left = self.stack.pop()?;
+
+                self.stack.push(Value::Bool(left == right));
+            }
+            Code::ComparisonNeq => {
+                let right = self.stack.pop()?;
+                let left = self.stack.pop()?;
+
+                self.stack.push(Value::Bool(left != right));
+            }
+            Code::ComparisonGt => self.eval_comparison_op(|ord| ord == Ordering::Greater)?,
+            Code::ComparisonGte => self.eval_comparison_op(|ord| ord == Ordering::Greater || ord == Ordering::Equal)?,
+            Code::ComparisonLt => self.eval_comparison_op(|ord| ord == Ordering::Less)?,
+            Code::ComparisonLte => self.eval_comparison_op(|ord| ord == Ordering::Less || ord == Ordering::Equal)?,
+            Code::Not => {
+                let value = self.stack.pop()?;
+
+                self.stack.push(Value::Bool(!convert::to_bool(&value)?));
+            }
             Code::Call(len) => return self.eval_call(*len),
             Code::Store(name) => {
                 let value = self.stack.pop()?;

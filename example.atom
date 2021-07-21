@@ -1,7 +1,3 @@
-fn test() {
-    return 100;
-}
-
 fn main() {
-    test();
+    println(2.01 > 2);
 }

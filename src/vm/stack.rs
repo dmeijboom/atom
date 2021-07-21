@@ -1,6 +1,5 @@
+use crate::runtime::{Result, RuntimeError};
 use crate::runtime::Value;
-
-use super::result::{Result, RuntimeError};
 
 pub(crate) struct Stack {
     data: Vec<Value>,
