@@ -162,7 +162,9 @@ mod tests {
     use super::*;
 
     fn parse_single<L: Display>(source: &str) -> Result<Stmt, ParseError<L>>
-        where ParseError<L>: From<ParseError<LineCol>> {
+    where
+        ParseError<L>: From<ParseError<LineCol>>,
+    {
         Ok(parser::parse(source)?.pop().unwrap())
     }
 
@@ -173,13 +175,16 @@ mod tests {
     fn test_ident_expr(name: &str, pos: Pos) {
         let source = format!("{};", name);
 
-        assert_eq!(parse_single(&source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Ident(IdentExpr {
-                name: name.to_string(),
-                pos: pos.clone(),
-            }),
-            pos: (pos.start..pos.end + 1),
-        })));
+        assert_eq!(
+            parse_single(&source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Ident(IdentExpr {
+                    name: name.to_string(),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
     }
 
     #[test_case("0;", 0, 0..1; "unsigned int zero value")]
@@ -188,13 +193,16 @@ mod tests {
     #[test_case("10_000;", 10000, 0..6; "unsigned int with underscore for readability")]
     #[test_case("-1_000;", -1000, 0..6; "signed int with underscore for readability")]
     fn test_int_literals(source: &str, value: i64, pos: Pos) {
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Literal(LiteralExpr {
-                literal: Literal::Int(value),
-                pos: pos.clone(),
-            }),
-            pos: (pos.start..pos.end + 1),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Int(value),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
     }
 
     #[test_case(".0;", 0.0, 0..2; "unsigned float zero value")]
@@ -203,25 +211,31 @@ mod tests {
     #[test_case("10_000.43;", 10000.43, 0..9; "unsigned float with underscore for readability")]
     #[test_case("-1_000.1;", - 1000.1, 0..8; "signed float with underscore for readability")]
     fn test_float_literals(source: &str, value: f64, pos: Pos) {
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Literal(LiteralExpr {
-                literal: Literal::Float(value),
-                pos: pos.clone(),
-            }),
-            pos: (pos.start..pos.end + 1),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Float(value),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
     }
 
     #[test_case("true;", true, 0..4; "value true")]
     #[test_case("false;", false, 0..5; "value false")]
     fn test_bool_literal(source: &str, value: bool, pos: Pos) {
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Literal(LiteralExpr {
-                literal: Literal::Bool(value),
-                pos: pos.clone(),
-            }),
-            pos: (pos.start..pos.end + 1),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Bool(value),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
     }
 
     #[test_case("\"hello world\";", "hello world", 0..13; "simple string")]
@@ -229,13 +243,16 @@ mod tests {
     #[test_case("\"hi \\u{0060}\";", "hi `", 0..13; "string with unicode char")]
     #[test_case("\"hi \\\n\";", "hi \n", 0..7; "string with escaped newline")]
     fn test_string_literal(source: &str, value: &str, pos: Pos) {
-        assert_eq!(parse_single(&source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Literal(LiteralExpr {
-                literal: Literal::String(value.to_string()),
-                pos: pos.clone(),
-            }),
-            pos: (pos.start..pos.end + 1),
-        })));
+        assert_eq!(
+            parse_single(&source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::String(value.to_string()),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
     }
 
     #[test_case("'x';", 'x', 0..3; "simple char")]
@@ -243,13 +260,16 @@ mod tests {
     #[test_case("'😃';", '😃', 0..6; "emoji char")]
     #[test_case("'\\u{0060}';", '`', 0..10; "unicode char")]
     fn test_char_literal(source: &str, value: char, pos: Pos) {
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Literal(LiteralExpr {
-                literal: Literal::Char(value),
-                pos: pos.clone(),
-            }),
-            pos: (pos.start..pos.end + 1),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Char(value),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
     }
 
     #[test_case("020;"; "int starting with a zero")]
@@ -267,69 +287,87 @@ mod tests {
     fn test_call_expr_no_args() {
         let source = "test();";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Call(CallExpr {
-                callee: Expr::Ident(IdentExpr {
-                    name: "test".to_string(),
-                    pos: (0..4),
-                }),
-                args: vec![],
-                pos: (0..6),
-            }.into()),
-            pos: (0..7),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Call(
+                    CallExpr {
+                        callee: Expr::Ident(IdentExpr {
+                            name: "test".to_string(),
+                            pos: (0..4),
+                        }),
+                        args: vec![],
+                        pos: (0..6),
+                    }
+                    .into()
+                ),
+                pos: (0..7),
+            }))
+        );
     }
 
     #[test]
     fn test_call_expr_with_args() {
         let source = "test(10, hi);";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Call(CallExpr {
-                callee: Expr::Ident(IdentExpr {
-                    name: "test".to_string(),
-                    pos: (0..4),
-                }),
-                args: vec![
-                    Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(10),
-                        pos: (5..7),
-                    }),
-                    Expr::Ident(IdentExpr {
-                        name: "hi".to_string(),
-                        pos: (9..11),
-                    }),
-                ],
-                pos: (0..12),
-            }.into()),
-            pos: (0..13),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Call(
+                    CallExpr {
+                        callee: Expr::Ident(IdentExpr {
+                            name: "test".to_string(),
+                            pos: (0..4),
+                        }),
+                        args: vec![
+                            Expr::Literal(LiteralExpr {
+                                literal: Literal::Int(10),
+                                pos: (5..7),
+                            }),
+                            Expr::Ident(IdentExpr {
+                                name: "hi".to_string(),
+                                pos: (9..11),
+                            }),
+                        ],
+                        pos: (0..12),
+                    }
+                    .into()
+                ),
+                pos: (0..13),
+            }))
+        );
     }
 
     #[test]
     fn test_call_expr_callee_int_with_args() {
         let source = "200(10, hi);";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Call(CallExpr {
-                callee: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(200),
-                    pos: (0..3),
-                }),
-                args: vec![
-                    Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(10),
-                        pos: (4..6),
-                    }),
-                    Expr::Ident(IdentExpr {
-                        name: "hi".to_string(),
-                        pos: (8..10),
-                    }),
-                ],
-                pos: (0..11),
-            }.into()),
-            pos: (0..12),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Call(
+                    CallExpr {
+                        callee: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(200),
+                            pos: (0..3),
+                        }),
+                        args: vec![
+                            Expr::Literal(LiteralExpr {
+                                literal: Literal::Int(10),
+                                pos: (4..6),
+                            }),
+                            Expr::Ident(IdentExpr {
+                                name: "hi".to_string(),
+                                pos: (8..10),
+                            }),
+                        ],
+                        pos: (0..11),
+                    }
+                    .into()
+                ),
+                pos: (0..12),
+            }))
+        );
     }
 
     #[test_case("||", LogicalOp::Or; "or")]
@@ -337,21 +375,33 @@ mod tests {
     fn test_logical_expr(op_name: &str, op: LogicalOp) {
         let source = format!("1 {} 2;", op_name);
 
-        assert_eq!(parse_single(&source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Logical(LogicalExpr {
-                left: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(1),
-                    pos: (0..1),
-                }.into()),
-                right: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(2),
-                    pos: (5..6),
-                }.into()),
-                op,
-                pos: (0..6),
-            }.into()),
-            pos: (0..7),
-        })));
+        assert_eq!(
+            parse_single(&source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Logical(
+                    LogicalExpr {
+                        left: Expr::Literal(
+                            LiteralExpr {
+                                literal: Literal::Int(1),
+                                pos: (0..1),
+                            }
+                            .into()
+                        ),
+                        right: Expr::Literal(
+                            LiteralExpr {
+                                literal: Literal::Int(2),
+                                pos: (5..6),
+                            }
+                            .into()
+                        ),
+                        op,
+                        pos: (0..6),
+                    }
+                    .into()
+                ),
+                pos: (0..7),
+            }))
+        );
     }
 
     #[test_case("==", ComparisonOp::Eq; "equal")]
@@ -364,21 +414,33 @@ mod tests {
         let width = op_name.len();
         let source = format!("1 {} 2;", op_name);
 
-        assert_eq!(parse_single(&source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Comparison(ComparisonExpr {
-                left: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(1),
-                    pos: (0..1),
-                }.into()),
-                right: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(2),
-                    pos: (3 + width..4 + width),
-                }.into()),
-                op,
-                pos: (0..4 + width),
-            }.into()),
-            pos: (0..5 + width),
-        })));
+        assert_eq!(
+            parse_single(&source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Comparison(
+                    ComparisonExpr {
+                        left: Expr::Literal(
+                            LiteralExpr {
+                                literal: Literal::Int(1),
+                                pos: (0..1),
+                            }
+                            .into()
+                        ),
+                        right: Expr::Literal(
+                            LiteralExpr {
+                                literal: Literal::Int(2),
+                                pos: (3 + width..4 + width),
+                            }
+                            .into()
+                        ),
+                        op,
+                        pos: (0..4 + width),
+                    }
+                    .into()
+                ),
+                pos: (0..5 + width),
+            }))
+        );
     }
 
     #[test_case("|", ArithmeticOp::BitOr; "bit or")]
@@ -391,129 +453,159 @@ mod tests {
         let width = op_name.len();
         let source = format!("1 {} 2;", op_name);
 
-        assert_eq!(parse_single(&source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Arithmetic(ArithmeticExpr {
-                left: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(1),
-                    pos: (0..1),
-                }.into()),
-                right: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(2),
-                    pos: (3 + width..4 + width),
-                }.into()),
-                op,
-                pos: (0..4 + width),
-            }.into()),
-            pos: (0..5 + width),
-        })));
+        assert_eq!(
+            parse_single(&source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Arithmetic(
+                    ArithmeticExpr {
+                        left: Expr::Literal(
+                            LiteralExpr {
+                                literal: Literal::Int(1),
+                                pos: (0..1),
+                            }
+                            .into()
+                        ),
+                        right: Expr::Literal(
+                            LiteralExpr {
+                                literal: Literal::Int(2),
+                                pos: (3 + width..4 + width),
+                            }
+                            .into()
+                        ),
+                        op,
+                        pos: (0..4 + width),
+                    }
+                    .into()
+                ),
+                pos: (0..5 + width),
+            }))
+        );
     }
 
     #[test_case("let current_year = 2021;", false, ((19..23), (0..24)); "immutable let stmt")]
     #[test_case("let mut current_year = 2021;", true, ((23..27), (0..28)); "mutable let stmt")]
     fn test_let_stmt(source: &str, mutable: bool, pos: (Pos, Pos)) {
-        assert_eq!(parse_single(source), Ok(Stmt::Let(LetStmt {
-            name: "current_year".to_string(),
-            value: Expr::Literal(LiteralExpr {
-                literal: Literal::Int(2021),
-                pos: pos.0,
-            }),
-            mutable,
-            pos: pos.1,
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Let(LetStmt {
+                name: "current_year".to_string(),
+                value: Expr::Literal(LiteralExpr {
+                    literal: Literal::Int(2021),
+                    pos: pos.0,
+                }),
+                mutable,
+                pos: pos.1,
+            }))
+        );
     }
 
     #[test]
     fn test_assign_stmt_decl() {
         let source = "current_year = 100;";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Assign(AssignStmt {
-            name: "current_year".to_string(),
-            value: Expr::Literal(LiteralExpr {
-                literal: Literal::Int(100),
-                pos: (15..18),
-            }),
-            pos: (0..19),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Assign(AssignStmt {
+                name: "current_year".to_string(),
+                value: Expr::Literal(LiteralExpr {
+                    literal: Literal::Int(100),
+                    pos: (15..18),
+                }),
+                pos: (0..19),
+            }))
+        );
     }
 
     #[test]
     fn test_let_stmt_decl() {
         let source = "let current_year;";
 
-        assert_eq!(parse_single(source), Ok(Stmt::LetDecl(LetDeclStmt {
-            name: "current_year".to_string(),
-            pos: (0..17),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::LetDecl(LetDeclStmt {
+                name: "current_year".to_string(),
+                pos: (0..17),
+            }))
+        );
     }
 
     #[test]
     fn test_array() {
         let source = "[2021, \"hello\"];";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Array(ArrayExpr {
-                items: vec![
-                    Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(2021),
-                        pos: (1..5),
-                    }),
-                    Expr::Literal(LiteralExpr {
-                        literal: Literal::String("hello".to_string()),
-                        pos: (7..14),
-                    }),
-                ],
-                pos: (0..15),
-            }),
-            pos: (0..16),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Array(ArrayExpr {
+                    items: vec![
+                        Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(2021),
+                            pos: (1..5),
+                        }),
+                        Expr::Literal(LiteralExpr {
+                            literal: Literal::String("hello".to_string()),
+                            pos: (7..14),
+                        }),
+                    ],
+                    pos: (0..15),
+                }),
+                pos: (0..16),
+            }))
+        );
     }
 
     #[test]
     fn test_map() {
         let source = "{\"num\": 2021, \"word\": \"hello\"};";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Expr(ExprStmt {
-            expr: Expr::Map(MapExpr {
-                key_values: vec![
-                    KeyValue {
-                        key: Expr::Literal(LiteralExpr {
-                            literal: Literal::String("num".to_string()),
-                            pos: (1..6),
-                        }),
-                        value: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(2021),
-                            pos: (8..12),
-                        }),
-                        pos: (1..12),
-                    },
-                    KeyValue {
-                        key: Expr::Literal(LiteralExpr {
-                            literal: Literal::String("word".to_string()),
-                            pos: (14..20),
-                        }),
-                        value: Expr::Literal(LiteralExpr {
-                            literal: Literal::String("hello".to_string()),
-                            pos: (22..29),
-                        }),
-                        pos: (14..29),
-                    },
-                ],
-                pos: (0..30),
-            }),
-            pos: (0..31),
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Map(MapExpr {
+                    key_values: vec![
+                        KeyValue {
+                            key: Expr::Literal(LiteralExpr {
+                                literal: Literal::String("num".to_string()),
+                                pos: (1..6),
+                            }),
+                            value: Expr::Literal(LiteralExpr {
+                                literal: Literal::Int(2021),
+                                pos: (8..12),
+                            }),
+                            pos: (1..12),
+                        },
+                        KeyValue {
+                            key: Expr::Literal(LiteralExpr {
+                                literal: Literal::String("word".to_string()),
+                                pos: (14..20),
+                            }),
+                            value: Expr::Literal(LiteralExpr {
+                                literal: Literal::String("hello".to_string()),
+                                pos: (22..29),
+                            }),
+                            pos: (14..29),
+                        },
+                    ],
+                    pos: (0..30),
+                }),
+                pos: (0..31),
+            }))
+        );
     }
 
     #[test]
     fn return_stmt() {
         let source = "return 10;";
 
-        assert_eq!(parse_single(source), Ok(Stmt::Return(ReturnStmt {
-            expr: Expr::Literal(LiteralExpr {
-                literal: Literal::Int(10),
-                pos: 7..9,
-            }),
-            pos: 0..10,
-        })));
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Return(ReturnStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Int(10),
+                    pos: 7..9,
+                }),
+                pos: 0..10,
+            }))
+        );
     }
 }

@@ -6,4 +6,3 @@ mod compiler;
 mod ir;
 mod module;
 mod scope;
-

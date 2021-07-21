@@ -4,9 +4,9 @@ use std::fmt;
 use std::rc::Rc;
 
 use crate::ast::{ArithmeticOp, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt};
-use crate::compiler::{Func, FuncArg, IR, Module};
 use crate::compiler::ir::Code;
 use crate::compiler::scope::{Local, Scope};
+use crate::compiler::{Func, FuncArg, Module, IR};
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -16,10 +16,7 @@ pub struct CompileError {
 
 impl CompileError {
     pub fn new(message: String, pos: Pos) -> Self {
-        Self {
-            message,
-            pos,
-        }
+        Self { message, pos }
     }
 }
 
@@ -27,7 +24,11 @@ impl Error for CompileError {}
 
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{} at {}..{}", self.message, self.pos.start, self.pos.end)
+        write!(
+            f,
+            "{} at {}..{}",
+            self.message, self.pos.start, self.pos.end
+        )
     }
 }
 
@@ -54,18 +55,16 @@ impl Compiler {
         self.pos = expr.pos();
 
         match &expr {
-            Expr::Literal(literal_expr) => ir.push(vec![
-                IR::new(
-                    match &literal_expr.literal {
-                        Literal::Int(val) => Code::ConstInt(*val),
-                        Literal::Float(val) => Code::ConstFloat(*val),
-                        Literal::Bool(val) => Code::ConstBool(*val),
-                        Literal::String(val) => Code::ConstString(val.clone()),
-                        Literal::Char(val) => Code::ConstChar(*val),
-                    },
-                    literal_expr.pos.clone(),
-                ),
-            ]),
+            Expr::Literal(literal_expr) => ir.push(vec![IR::new(
+                match &literal_expr.literal {
+                    Literal::Int(val) => Code::ConstInt(*val),
+                    Literal::Float(val) => Code::ConstFloat(*val),
+                    Literal::Bool(val) => Code::ConstBool(*val),
+                    Literal::String(val) => Code::ConstString(val.clone()),
+                    Literal::Char(val) => Code::ConstChar(*val),
+                },
+                literal_expr.pos.clone(),
+            )]),
             Expr::Ident(ident) => ir.push(vec![IR::new(
                 Code::Load(ident.name.clone()),
                 ident.pos.clone(),
@@ -83,10 +82,7 @@ impl Compiler {
             }
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
-                ir.push(vec![IR::new(
-                    Code::Not,
-                    not_expr.pos.clone(),
-                )]);
+                ir.push(vec![IR::new(Code::Not, not_expr.pos.clone())]);
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
@@ -174,7 +170,8 @@ impl Compiler {
                     },
                     self.pos.clone(),
                 )],
-            ].concat());
+            ]
+            .concat());
         }
 
         Err(CompileError::new(
@@ -192,18 +189,26 @@ impl Compiler {
         } else {
             let mut scope = self.scope.borrow_mut();
 
-            scope.set_local(Local { name: name.to_string(), mutable, is_function: false });
+            scope.set_local(Local {
+                name: name.to_string(),
+                mutable,
+                is_function: false,
+            });
         }
 
         if let Some(expr) = value {
-            return Ok(vec![self.compile_expr(expr)?, vec![IR::new(
-                if mutable {
-                    Code::StoreMut(name.to_string())
-                } else {
-                    Code::Store(name.to_string())
-                },
-                self.pos.clone(),
-            )]].concat());
+            return Ok(vec![
+                self.compile_expr(expr)?,
+                vec![IR::new(
+                    if mutable {
+                        Code::StoreMut(name.to_string())
+                    } else {
+                        Code::Store(name.to_string())
+                    },
+                    self.pos.clone(),
+                )],
+            ]
+            .concat());
         }
 
         Ok(vec![])
@@ -226,9 +231,17 @@ impl Compiler {
                     ir.push(self.compile_expr(&expr_stmt.expr)?);
                     ir.push(vec![IR::new(Code::Discard, self.pos.clone())]);
                 }
-                Stmt::Let(let_stmt) => ir.push(self.compile_let(let_stmt.mutable, &let_stmt.name, Some(&let_stmt.value))?),
-                Stmt::LetDecl(let_decl_stmt) => ir.push(self.compile_let(false, &let_decl_stmt.name, None)?),
-                Stmt::Assign(assign_stmt) => ir.push(self.compile_assign(&assign_stmt.name, &assign_stmt.value)?),
+                Stmt::Let(let_stmt) => ir.push(self.compile_let(
+                    let_stmt.mutable,
+                    &let_stmt.name,
+                    Some(&let_stmt.value),
+                )?),
+                Stmt::LetDecl(let_decl_stmt) => {
+                    ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
+                }
+                Stmt::Assign(assign_stmt) => {
+                    ir.push(self.compile_assign(&assign_stmt.name, &assign_stmt.value)?)
+                }
                 Stmt::Return(return_stmt) => {
                     ir.push(self.compile_expr(&return_stmt.expr)?);
                     ir.push(vec![IR::new(Code::Return, self.pos.clone())]);
@@ -268,7 +281,9 @@ impl Compiler {
             name: fn_decl.name.clone(),
             is_void: !body.iter().any(|ir| ir.code == Code::Return),
             body,
-            args: fn_decl.args.iter()
+            args: fn_decl
+                .args
+                .iter()
                 .map(|arg| FuncArg {
                     mutable: arg.mutable,
                     name: arg.name.clone(),
@@ -285,7 +300,9 @@ impl Compiler {
 
             match stmt {
                 Stmt::FnDecl(fn_decl) => {
-                    module.funcs.insert(fn_decl.name.clone(), self.compile_fn(&fn_decl)?);
+                    module
+                        .funcs
+                        .insert(fn_decl.name.clone(), self.compile_fn(&fn_decl)?);
                 }
                 _ => unreachable!(),
             }

@@ -40,9 +40,6 @@ pub struct IR {
 
 impl IR {
     pub fn new(code: Code, pos: Pos) -> Self {
-        Self {
-            code,
-            pos,
-        }
+        Self { code, pos }
     }
 }

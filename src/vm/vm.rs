@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::compiler::{Code, Func, IR, Module};
+use crate::compiler::{Code, Func, Module, IR};
 use crate::runtime::{convert, FuncId, Result, RuntimeError, Value};
 
 use super::stack::Stack;
@@ -37,19 +37,30 @@ impl VM {
         }
     }
 
-    pub fn register_external_fn<F: Fn(Vec<Value>) -> Result<Option<Value>> + 'static>(&mut self, module_name: &str, name: &str, func: F) {
-        self.func_map.insert(name.to_string(), FuncDesc {
-            module_name: module_name.to_string(),
-            run: Runnable::External(Box::new(func)),
-        });
+    pub fn register_external_fn<F: Fn(Vec<Value>) -> Result<Option<Value>> + 'static>(
+        &mut self,
+        module_name: &str,
+        name: &str,
+        func: F,
+    ) {
+        self.func_map.insert(
+            name.to_string(),
+            FuncDesc {
+                module_name: module_name.to_string(),
+                run: Runnable::External(Box::new(func)),
+            },
+        );
     }
 
     pub fn register(&mut self, module: Module) {
         for (name, func) in module.funcs {
-            self.func_map.insert(name, FuncDesc {
-                run: Runnable::Func(func),
-                module_name: module.name.clone(),
-            });
+            self.func_map.insert(
+                name,
+                FuncDesc {
+                    run: Runnable::Func(func),
+                    module_name: module.name.clone(),
+                },
+            );
         }
     }
 
@@ -60,7 +71,8 @@ impl VM {
     }
 
     fn eval_call(&mut self, len: usize) -> Result<()> {
-        let value = self.stack
+        let value = self
+            .stack
             .pop()
             .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
@@ -89,7 +101,8 @@ impl VM {
                             }
 
                             let body = func.body.clone();
-                            let arg_names = func.args
+                            let arg_names = func
+                                .args
                                 .iter()
                                 .map(|arg| arg.name.clone())
                                 .collect::<Vec<_>>();
@@ -97,10 +110,7 @@ impl VM {
                             let call_context = self.call_context()?;
 
                             for name in arg_names {
-                                call_context.locals.insert(
-                                    name,
-                                    values.remove(0),
-                                );
+                                call_context.locals.insert(name, values.remove(0));
                             }
 
                             self.eval(body)?;
@@ -126,10 +136,16 @@ impl VM {
                 }
             }
 
-            return Err(RuntimeError::new(format!("no such function: {}.{}(...)", id.module, id.name)));
+            return Err(RuntimeError::new(format!(
+                "no such function: {}.{}(...)",
+                id.module, id.name
+            )));
         }
 
-        Err(RuntimeError::new(format!("expected function on stack, not: {}", value.get_type().name())))
+        Err(RuntimeError::new(format!(
+            "expected function on stack, not: {}",
+            value.get_type().name()
+        )))
     }
 
     fn eval_comparison_op(&mut self, op: impl FnOnce(Ordering) -> bool) -> Result<()> {
@@ -138,17 +154,17 @@ impl VM {
 
         match left {
             Value::Int(val) => {
-                self.stack.push(Value::Bool(op(val.cmp(
-                    &convert::to_int(&right)
-                        .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?
-                ))));
+                self.stack
+                    .push(Value::Bool(op(val.cmp(&convert::to_int(&right).map_err(
+                        |e| RuntimeError::new(format!("{} in comparison", e)),
+                    )?))));
 
                 return Ok(());
             }
             Value::Float(val) => {
                 let ord = val.partial_cmp(
                     &convert::to_float(&right)
-                        .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?
+                        .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?,
                 );
 
                 if let Some(ord) = ord {
@@ -160,9 +176,11 @@ impl VM {
             _ => {}
         };
 
-        Err(RuntimeError::new(
-            format!("unable to perform order comparison on {} and {}", left.get_type().name(), right.get_type().name()),
-        ))
+        Err(RuntimeError::new(format!(
+            "unable to perform order comparison on {} and {}",
+            left.get_type().name(),
+            right.get_type().name()
+        )))
     }
 
     fn eval_single(&mut self, ir: IR) -> Result<()> {
@@ -217,9 +235,13 @@ impl VM {
                 self.stack.push(Value::Bool(left != right));
             }
             Code::ComparisonGt => self.eval_comparison_op(|ord| ord == Ordering::Greater)?,
-            Code::ComparisonGte => self.eval_comparison_op(|ord| ord == Ordering::Greater || ord == Ordering::Equal)?,
+            Code::ComparisonGte => {
+                self.eval_comparison_op(|ord| ord == Ordering::Greater || ord == Ordering::Equal)?
+            }
             Code::ComparisonLt => self.eval_comparison_op(|ord| ord == Ordering::Less)?,
-            Code::ComparisonLte => self.eval_comparison_op(|ord| ord == Ordering::Less || ord == Ordering::Equal)?,
+            Code::ComparisonLte => {
+                self.eval_comparison_op(|ord| ord == Ordering::Less || ord == Ordering::Equal)?
+            }
             Code::Not => {
                 let value = self.stack.pop()?;
 
@@ -229,26 +251,22 @@ impl VM {
             Code::Store(name) => {
                 let value = self.stack.pop()?;
 
-                self.call_context()?.locals.insert(
-                    name.to_string(),
-                    value,
-                );
+                self.call_context()?.locals.insert(name.to_string(), value);
             }
             Code::StoreMut(name) => {
                 let value = self.stack.pop()?;
 
-                self.call_context()?.locals.insert(
-                    name.to_string(),
-                    value,
-                );
+                self.call_context()?.locals.insert(name.to_string(), value);
             }
             Code::Load(name) => {
                 if self.call_stack.len() > 0 {
                     let context = self.call_context()?;
 
-                    if let Some(value) = context.locals
+                    if let Some(value) = context
+                        .locals
                         .get(name)
-                        .and_then(|value| Some(value.clone())) {
+                        .and_then(|value| Some(value.clone()))
+                    {
                         self.stack.push(value);
 
                         return Ok(());
@@ -256,10 +274,13 @@ impl VM {
                 }
 
                 if let Some(func) = self.func_map.get(name) {
-                    self.stack.push(Value::Function(FuncId {
-                        name: name.clone(),
-                        module: func.module_name.clone(),
-                    }).into());
+                    self.stack.push(
+                        Value::Function(FuncId {
+                            name: name.clone(),
+                            module: func.module_name.clone(),
+                        })
+                        .into(),
+                    );
 
                     return Ok(());
                 }
@@ -273,8 +294,7 @@ impl VM {
         for ir in ir {
             let pos = ir.pos.clone();
 
-            self.eval_single(ir)
-                .map_err(|e| e.with_pos(pos))?;
+            self.eval_single(ir).map_err(|e| e.with_pos(pos))?;
 
             // break on early return
             if let Some(context) = self.call_stack.last() {

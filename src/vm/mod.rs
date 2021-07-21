@@ -1,4 +1,4 @@
-mod vm;
 mod stack;
+mod vm;
 
-pub use vm::{VM};
+pub use vm::VM;

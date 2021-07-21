@@ -1,5 +1,5 @@
-use crate::runtime::{Result, RuntimeError};
 use crate::runtime::Value;
+use crate::runtime::{Result, RuntimeError};
 
 pub(crate) struct Stack {
     data: Vec<Value>,
@@ -7,9 +7,7 @@ pub(crate) struct Stack {
 
 impl Stack {
     pub(crate) fn new() -> Self {
-        Self {
-            data: vec![],
-        }
+        Self { data: vec![] }
     }
 
     pub(crate) fn push(&mut self, value: Value) {
@@ -17,8 +15,9 @@ impl Stack {
     }
 
     pub(crate) fn delete(&mut self) -> Result<()> {
-        self.data.pop()
-            .ok_or_else(|| RuntimeError::new("expected element on stack (in discard)".to_string()))?;
+        self.data.pop().ok_or_else(|| {
+            RuntimeError::new("expected element on stack (in discard)".to_string())
+        })?;
 
         Ok(())
     }
@@ -26,7 +25,9 @@ impl Stack {
     pub(crate) fn pop(&mut self) -> Result<Value> {
         if let Some(value) = self.data.pop() {
             if value == Value::Invalid {
-                return Err(RuntimeError::new("unable to use void Fn as a value".to_string()));
+                return Err(RuntimeError::new(
+                    "unable to use void Fn as a value".to_string(),
+                ));
             }
 
             return Ok(value);
@@ -46,4 +47,3 @@ impl Stack {
         Ok(values)
     }
 }
-

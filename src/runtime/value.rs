@@ -17,7 +17,10 @@ impl Hash for Func {
         self.name.hash(state)
     }
 
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H) where Self: Sized {
+    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
+    where
+        Self: Sized,
+    {
         for item in data {
             item.hash(state);
         }
@@ -92,7 +95,9 @@ impl Display for Value {
             Value::String(val) => write!(f, "{}", val),
             Value::Array(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
             Value::Map(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
-            Value::Function(val) => write!(f, "{}({}.{})", self.get_type().name(), val.module, val.name),
+            Value::Function(val) => {
+                write!(f, "{}({}.{})", self.get_type().name(), val.module, val.name)
+            }
         }
     }
 }
@@ -119,7 +124,10 @@ impl Hash for Value {
         }
     }
 
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H) where Self: Sized {
+    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
+    where
+        Self: Sized,
+    {
         for item in data {
             item.hash(state);
         }
