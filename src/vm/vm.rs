@@ -148,39 +148,38 @@ impl VM {
         )))
     }
 
-    fn eval_comparison_op(&mut self, op: impl FnOnce(Ordering) -> bool) -> Result<()> {
+    fn eval_op(
+        &mut self,
+        name: &str,
+        op: impl FnOnce(Value, Value) -> Result<Value>,
+    ) -> Result<()> {
         let right = self.stack.pop()?;
         let left = self.stack.pop()?;
 
-        match left {
-            Value::Int(val) => {
-                self.stack
-                    .push(Value::Bool(op(val.cmp(&convert::to_int(&right).map_err(
-                        |e| RuntimeError::new(format!("{} in comparison", e)),
-                    )?))));
+        self.stack
+            .push(op(left, right).map_err(|e| RuntimeError::new(format!("{} in {}", e, name)))?);
 
-                return Ok(());
-            }
+        Ok(())
+    }
+
+    fn eval_comparison_op(&mut self, op: impl FnOnce(Ordering) -> bool) -> Result<()> {
+        self.eval_op("ordering comparison", |left, right| match left {
+            Value::Int(val) => Ok(Value::Bool(op(val.cmp(&convert::to_int(&right)?)))),
             Value::Float(val) => {
-                let ord = val.partial_cmp(
-                    &convert::to_float(&right)
-                        .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?,
-                );
-
-                if let Some(ord) = ord {
-                    self.stack.push(Value::Bool(op(ord)));
-
-                    return Ok(());
+                if let Some(ord) = val.partial_cmp(&convert::to_float(&right)?) {
+                    return Ok(Value::Bool(op(ord)));
                 }
-            }
-            _ => {}
-        };
 
-        Err(RuntimeError::new(format!(
-            "unable to perform order comparison on {} and {}",
-            left.get_type().name(),
-            right.get_type().name()
-        )))
+                Err(RuntimeError::new(
+                    "unable to compare invalid Float".to_string(),
+                ))
+            }
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
     }
 
     fn eval_single(&mut self, ir: IR) -> Result<()> {
@@ -216,12 +215,58 @@ impl VM {
             }
             Code::LogicalOr => unreachable!(),
             Code::LogicalAnd => unreachable!(),
-            Code::ArithmeticBitOr => unreachable!(),
-            Code::ArithmeticBitAnd => unreachable!(),
-            Code::ArithmeticAdd => unreachable!(),
-            Code::ArithmeticSub => unreachable!(),
-            Code::ArithmeticMul => unreachable!(),
-            Code::ArithmeticDiv => unreachable!(),
+            Code::ArithmeticBitOr => self.eval_op("bitwise or", |left, right| match &left {
+                Value::Int(val) => Ok(Value::Int(*val | convert::to_int(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
+            Code::ArithmeticBitAnd => self.eval_op("bitwise and", |left, right| match &left {
+                Value::Int(val) => Ok(Value::Int(*val & convert::to_int(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
+            Code::ArithmeticAdd => self.eval_op("addition", |left, right| match &left {
+                Value::Int(val) => Ok(Value::Int(*val + convert::to_int(&right)?)),
+                Value::Float(val) => Ok(Value::Float(*val + convert::to_float(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
+            Code::ArithmeticSub => self.eval_op("subtraction", |left, right| match &left {
+                Value::Int(val) => Ok(Value::Int(*val - convert::to_int(&right)?)),
+                Value::Float(val) => Ok(Value::Float(*val - convert::to_float(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
+            Code::ArithmeticMul => self.eval_op("multiplication", |left, right| match &left {
+                Value::Int(val) => Ok(Value::Int(*val * convert::to_int(&right)?)),
+                Value::Float(val) => Ok(Value::Float(*val * convert::to_float(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
+            Code::ArithmeticDiv => self.eval_op("division", |left, right| match &left {
+                Value::Int(val) => Ok(Value::Int(*val / convert::to_int(&right)?)),
+                Value::Float(val) => Ok(Value::Float(*val / convert::to_float(&right)?)),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
+            })?,
             Code::ComparisonEq => {
                 let right = self.stack.pop()?;
                 let left = self.stack.pop()?;
