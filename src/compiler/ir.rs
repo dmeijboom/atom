@@ -11,6 +11,7 @@ pub enum Code {
     MakeMap(usize),
     SetLabel(String),
     JumpIfTrue(String),
+    JumpIfFalse(String),
     LogicalAnd,
     ArithmeticBitOr,
     ArithmeticBitAnd,

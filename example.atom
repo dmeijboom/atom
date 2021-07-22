@@ -1,3 +1,7 @@
 fn main() {
-    println(true || test());
+    if .8 < 1 {
+        if false || true {
+            println("hi");
+        }
+    }
 }

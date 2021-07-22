@@ -338,14 +338,19 @@ impl VM {
 
                 return Err(RuntimeError::new(format!("no such name: {}", name)));
             }
-            Code::SetLabel(_) => unreachable!(),
-            Code::JumpIfTrue(label) => {
+            Code::SetLabel(_) => {}
+            Code::JumpIfTrue(label) | Code::JumpIfFalse(label) => {
                 let value = self.stack.pop()?;
                 let bool_val = convert::to_bool(&value)?;
+                let expected_val = if let Code::JumpIfTrue(_) = ir.code {
+                    true
+                } else {
+                    false
+                };
 
                 self.stack.push(value);
 
-                if bool_val {
+                if bool_val == expected_val {
                     return Ok(Some(label.clone()));
                 }
             }

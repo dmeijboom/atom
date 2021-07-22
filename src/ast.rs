@@ -183,7 +183,15 @@ pub struct ReturnStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct IfStmt {
+    pub cond: Expr,
+    pub pos: Pos,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
+    If(IfStmt),
     Expr(ExprStmt),
     Let(LetStmt),
     LetDecl(LetDeclStmt),
@@ -195,6 +203,7 @@ pub enum Stmt {
 impl Stmt {
     pub fn pos(&self) -> Pos {
         match self {
+            Stmt::If(if_stmt) => if_stmt.pos.clone(),
             Stmt::Expr(expr_stmt) => expr_stmt.pos.clone(),
             Stmt::Let(let_stmt) => let_stmt.pos.clone(),
             Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),

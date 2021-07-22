@@ -262,6 +262,18 @@ impl Compiler {
             self.pos = stmt.pos();
 
             match stmt {
+                Stmt::If(if_stmt) => {
+                    let if_label = self.make_label("if_body");
+                    let alt_label = self.make_label("if_cont");
+
+                    ir.push(self.compile_expr(&if_stmt.cond)?);
+                    ir.push(vec![
+                        IR::new(Code::JumpIfFalse(alt_label.clone()), self.pos.clone()),
+                        IR::new(Code::SetLabel(if_label), self.pos.clone()),
+                    ]);
+                    ir.push(self.compile_stmt_list(&if_stmt.body)?);
+                    ir.push(vec![IR::new(Code::SetLabel(alt_label), self.pos.clone())]);
+                }
                 Stmt::Expr(expr_stmt) => {
                     ir.push(self.compile_expr(&expr_stmt.expr)?);
                     ir.push(vec![IR::new(Code::Discard, self.pos.clone())]);

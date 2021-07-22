@@ -134,8 +134,11 @@ peg::parser! {
         rule return_stmt() -> Stmt
             = start:pos() "return" _ expr:expr() _ ";" end:pos() { Stmt::Return(ReturnStmt { expr, pos: (start..end) }) }
 
+        rule if_stmt() -> Stmt
+            = start:pos() "if" _ cond:expr() _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::If(IfStmt { cond, body, pos: (start..end) }) }
+
         rule stmt() -> Stmt
-            = expr_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
+            = expr_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
 
         rule top_level_stmt() -> Stmt
             = fn_decl_stmt()
@@ -189,9 +192,9 @@ mod tests {
 
     #[test_case("0;", 0, 0..1; "unsigned int zero value")]
     #[test_case("102;", 102, 0..3; "unsigned int")]
-    #[test_case("-1029;", -1029, 0..5; "signed int")]
+    #[test_case("-1029;", - 1029, 0..5; "signed int")]
     #[test_case("10_000;", 10000, 0..6; "unsigned int with underscore for readability")]
-    #[test_case("-1_000;", -1000, 0..6; "signed int with underscore for readability")]
+    #[test_case("-1_000;", - 1000, 0..6; "signed int with underscore for readability")]
     fn test_int_literals(source: &str, value: i64, pos: Pos) {
         assert_eq!(
             parse_single(source),
@@ -605,6 +608,29 @@ mod tests {
                     pos: 7..9,
                 }),
                 pos: 0..10,
+            }))
+        );
+    }
+
+    #[test]
+    fn if_stmt() {
+        let source = "if true { 10; }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::If(IfStmt {
+                cond: Expr::Literal(LiteralExpr {
+                    literal: Literal::Bool(true),
+                    pos: (3..7),
+                }),
+                pos: (0..15),
+                body: vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(10),
+                        pos: (10..12),
+                    }),
+                    pos: (10..13),
+                }),],
             }))
         );
     }
