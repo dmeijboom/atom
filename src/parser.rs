@@ -50,14 +50,14 @@ peg::parser! {
             = "\\u{" value:$(['0'..='9' | 'a'..='f' | 'A'..='F']+) "}" { char::from_u32(u32::from_str_radix(value, 16).unwrap()).unwrap() }
 
         rule escaped_char() -> char
-            = "\\\n" { '\n' }
-                / "\\\r" { '\r' }
-                / "\\\t" { '\t' }
+            = "\\n" { '\n' }
+                / "\\r" { '\r' }
+                / "\\t" { '\t' }
 
         rule string_char() -> char
             = unicode_char()
-                / "\\" value:$(['"']) { value.parse().unwrap() }
                 / escaped_char()
+                / "\\" value:$(['"']) { value.parse().unwrap() }
                 / !("\"" / "\\" / ("\r"? "\n")) value:char() { value }
 
         rule literal() -> Literal
@@ -244,7 +244,7 @@ mod tests {
     #[test_case("\"hello world\";", "hello world", 0..13; "simple string")]
     #[test_case("\"hello \\\"world\";", "hello \"world", 0..15; "string with escaped char")]
     #[test_case("\"hi \\u{0060}\";", "hi `", 0..13; "string with unicode char")]
-    #[test_case("\"hi \\\n\";", "hi \n", 0..7; "string with escaped newline")]
+    #[test_case("\"hi \\n\";", "hi \n", 0..7; "string with escaped newline")]
     fn test_string_literal(source: &str, value: &str, pos: Pos) {
         assert_eq!(
             parse_single(&source),
