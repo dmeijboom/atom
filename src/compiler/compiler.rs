@@ -1,10 +1,14 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
-use crate::ast::{ArithmeticOp, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt};
+use crate::ast::{
+    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt,
+};
 use crate::compiler::ir::Code;
+use crate::compiler::module::{Class, Field};
 use crate::compiler::scope::{Local, Scope};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
 
@@ -240,7 +244,6 @@ impl Compiler {
 
             scope.set_local(Local {
                 mutable,
-                is_function: false,
                 name: name.to_string(),
             });
         }
@@ -270,9 +273,7 @@ impl Compiler {
 
         {
             self.scope_id += 1;
-
             let new_scope = Scope::new_with_parent(Rc::clone(&self.scope), self.scope_id);
-
             self.scope = Rc::new(RefCell::new(new_scope));
         }
 
@@ -342,7 +343,6 @@ impl Compiler {
         }
 
         let parent_scope = Rc::clone(self.scope.borrow().parent.as_ref().unwrap());
-
         self.scope = parent_scope;
 
         Ok(ir.concat())
@@ -362,7 +362,6 @@ impl Compiler {
             scope.set_local(Local {
                 name: fn_decl.name.clone(),
                 mutable: false,
-                is_function: true,
             });
         }
 
@@ -383,6 +382,73 @@ impl Compiler {
         })
     }
 
+    fn compile_class(&mut self, class_decl: &ClassDeclStmt) -> Result<Class> {
+        if Scope::get_local(&self.scope, &class_decl.name, true).is_some() {
+            return Err(CompileError::new(
+                format!("unable to redefine class: {}", class_decl.name),
+                self.pos.clone(),
+            ));
+        }
+
+        {
+            let mut scope = self.scope.borrow_mut();
+
+            scope.set_local(Local {
+                name: class_decl.name.clone(),
+                mutable: false,
+            });
+        }
+
+        {
+            self.scope_id += 1;
+            let new_scope = Scope::new_with_parent(Rc::clone(&self.scope), self.scope_id);
+            self.scope = Rc::new(RefCell::new(new_scope));
+        }
+
+        let mut fields = HashMap::new();
+
+        for field in class_decl.fields.iter() {
+            if fields.contains_key(&field.name) {
+                return Err(CompileError::new(
+                    format!(
+                        "unable to redefine field: {}.{}",
+                        class_decl.name, field.name
+                    ),
+                    self.pos.clone(),
+                ));
+            }
+
+            fields.insert(
+                field.name.clone(),
+                Field {
+                    mutable: field.mutable,
+                },
+            );
+
+            let mut scope = self.scope.borrow_mut();
+
+            scope.set_local(Local {
+                mutable: field.mutable,
+                name: field.name.to_string(),
+            });
+        }
+
+        let mut funcs = HashMap::new();
+
+        for fn_decl in class_decl.methods.iter() {
+            funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl)?);
+        }
+
+        let parent_scope = Rc::clone(self.scope.borrow().parent.as_ref().unwrap());
+        self.scope = parent_scope;
+
+        Ok(Class {
+            name: class_decl.name.clone(),
+            fields,
+            funcs,
+        })
+    }
+
     pub fn compile(mut self) -> Result<Module> {
         let mut module = Module::new("main");
 
@@ -394,6 +460,11 @@ impl Compiler {
                     module
                         .funcs
                         .insert(fn_decl.name.clone(), self.compile_fn(&fn_decl)?);
+                }
+                Stmt::ClassDecl(class_decl) => {
+                    module
+                        .classes
+                        .insert(class_decl.name.clone(), self.compile_class(&class_decl)?);
                 }
                 _ => unreachable!(),
             }

@@ -17,9 +17,22 @@ pub struct Func {
 }
 
 #[derive(Debug)]
+pub struct Field {
+    pub mutable: bool,
+}
+
+#[derive(Debug)]
+pub struct Class {
+    pub name: String,
+    pub fields: HashMap<String, Field>,
+    pub funcs: HashMap<String, Func>,
+}
+
+#[derive(Debug)]
 pub struct Module {
     pub name: String,
     pub funcs: HashMap<String, Func>,
+    pub classes: HashMap<String, Class>,
 }
 
 impl Module {
@@ -27,6 +40,7 @@ impl Module {
         Self {
             name: name.to_string(),
             funcs: HashMap::new(),
+            classes: HashMap::new(),
         }
     }
 }

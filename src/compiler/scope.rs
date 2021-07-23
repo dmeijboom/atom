@@ -6,7 +6,6 @@ use std::rc::Rc;
 pub struct Local {
     pub name: String,
     pub mutable: bool,
-    pub is_function: bool,
 }
 
 pub struct Scope {

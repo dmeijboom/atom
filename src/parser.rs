@@ -125,9 +125,6 @@ peg::parser! {
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
-        rule fn_decl_stmt() -> Stmt
-            = start:pos() "fn" _ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::FnDecl(FnDeclStmt { name, args, body, pos: (start..end) }) }
-
         rule assign_stmt() -> Stmt
             = start:pos() name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { name, value, pos: (start..end) }) }
 
@@ -143,8 +140,21 @@ peg::parser! {
         rule stmt() -> Stmt
             = expr_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
 
+        rule fn_decl() -> FnDeclStmt
+            = start:pos() "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, pos: (start..end) } }
+
+        rule fn_decl_stmt() -> Stmt
+            = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
+
+        rule field() -> Field
+            = start:pos() "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), name, value: Some(value), pos: (start..end) } }
+                / start:pos() "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), name, value: None, pos: (start..end) } }
+
+        rule class_decl_stmt() -> Stmt
+            = start:pos() "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, fields, methods, pos: (start..end) }) }
+
         rule top_level_stmt() -> Stmt
-            = fn_decl_stmt()
+            = fn_decl_stmt() / class_decl_stmt()
 
         rule stmt_list() -> Vec<Stmt>
             = stmt() ** _
@@ -627,6 +637,7 @@ mod tests {
                     pos: (3..7),
                 }),
                 pos: (0..15),
+                alt: vec![],
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
                         literal: Literal::Int(10),
@@ -635,6 +646,67 @@ mod tests {
                     pos: (10..13),
                 }),],
             }))
+        );
+    }
+
+    #[test]
+    fn if_else_stmt() {
+        let source = "if true { 20; } else { 30; }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::If(IfStmt {
+                cond: Expr::Literal(LiteralExpr {
+                    literal: Literal::Bool(true),
+                    pos: (3..7),
+                }),
+                pos: (0..28),
+                body: vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(20),
+                        pos: (10..12),
+                    }),
+                    pos: (10..13),
+                })],
+                alt: vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(30),
+                        pos: (23..25),
+                    }),
+                    pos: (23..26),
+                })],
+            }))
+        );
+    }
+
+    #[test]
+    fn class_decl_stmt() {
+        let source = "class Test { let name; let mut age = 1; }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::ClassDecl(ClassDeclStmt {
+                name: "Test".to_string(),
+                fields: vec![
+                    Field {
+                        name: "name".to_string(),
+                        mutable: false,
+                        value: None,
+                        pos: (13..22),
+                    },
+                    Field {
+                        name: "age".to_string(),
+                        mutable: true,
+                        value: Some(Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(1),
+                            pos: (37..38),
+                        })),
+                        pos: (23..39),
+                    },
+                ],
+                methods: vec![],
+                pos: (0..41),
+            })),
         );
     }
 }

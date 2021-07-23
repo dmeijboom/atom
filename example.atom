@@ -1,13 +1,7 @@
+class User {
+    let name;
+    let mut age = 1;
+}
+
 fn main() {
-    let name = "Gerard";
-
-    if .8 < 1 {
-        let mut name = "bami";
-
-        name = 10;
-
-        println(name);
-    } else {
-        println(name);
-    }
 }

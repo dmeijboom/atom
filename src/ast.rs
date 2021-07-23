@@ -191,6 +191,22 @@ pub struct IfStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Field {
+    pub name: String,
+    pub mutable: bool,
+    pub value: Option<Expr>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct ClassDeclStmt {
+    pub name: String,
+    pub fields: Vec<Field>,
+    pub methods: Vec<FnDeclStmt>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     If(IfStmt),
     Expr(ExprStmt),
@@ -199,6 +215,7 @@ pub enum Stmt {
     FnDecl(FnDeclStmt),
     Assign(AssignStmt),
     Return(ReturnStmt),
+    ClassDecl(ClassDeclStmt),
 }
 
 impl Stmt {
@@ -211,6 +228,7 @@ impl Stmt {
             Stmt::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
             Stmt::Assign(assign_stmt) => assign_stmt.pos.clone(),
             Stmt::Return(return_stmt) => return_stmt.pos.clone(),
+            Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
         }
     }
 }
