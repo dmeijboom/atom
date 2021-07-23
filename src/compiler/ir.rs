@@ -1,5 +1,27 @@
 use crate::ast::Pos;
 
+#[derive(Debug, PartialEq, Eq, Clone, Hash)]
+pub struct LocalId {
+    pub name: String,
+    pub scope_hint: Option<usize>,
+}
+
+impl LocalId {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            scope_hint: None,
+        }
+    }
+
+    pub fn new_in_scope(name: String, scope_hint: usize) -> Self {
+        Self {
+            name,
+            scope_hint: Some(scope_hint),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum Code {
     ConstInt(i64),
@@ -29,9 +51,9 @@ pub enum Code {
     Discard,
     Return,
     Call(usize),
-    Store(String),
-    StoreMut(String),
-    Load(String),
+    Store(LocalId),
+    StoreMut(LocalId),
+    Load(LocalId),
 }
 
 #[derive(Debug, Clone, PartialEq)]

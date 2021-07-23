@@ -6,7 +6,7 @@ use std::rc::Rc;
 use crate::ast::{ArithmeticOp, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt};
 use crate::compiler::ir::Code;
 use crate::compiler::scope::{Local, Scope};
-use crate::compiler::{Func, FuncArg, Module, IR};
+use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -36,6 +36,7 @@ pub type Result<T> = std::result::Result<T, CompileError>;
 
 pub struct Compiler {
     pos: Pos,
+    scope_id: usize,
     tree: Vec<Stmt>,
     labels: Vec<String>,
     scope: Rc<RefCell<Scope>>,
@@ -46,6 +47,7 @@ impl Compiler {
         Self {
             tree,
             pos: 0..0,
+            scope_id: 0,
             labels: vec![],
             scope: Rc::new(RefCell::new(Scope::new())),
         }
@@ -87,10 +89,20 @@ impl Compiler {
                 },
                 literal_expr.pos.clone(),
             )]),
-            Expr::Ident(ident) => ir.push(vec![IR::new(
-                Code::Load(ident.name.clone()),
-                ident.pos.clone(),
-            )]),
+            Expr::Ident(ident) => {
+                ir.push(vec![IR::new(
+                    Code::Load(
+                        if let Some((_, scope_id)) =
+                            Scope::get_local(&self.scope, &ident.name, true)
+                        {
+                            LocalId::new_in_scope(ident.name.clone(), scope_id)
+                        } else {
+                            LocalId::new(ident.name.clone())
+                        },
+                    ),
+                    ident.pos.clone(),
+                )]);
+            }
             Expr::Call(call_expr) => {
                 for arg in call_expr.args.iter() {
                     ir.push(self.compile_expr(arg)?);
@@ -187,7 +199,7 @@ impl Compiler {
     }
 
     fn compile_assign(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
-        if let Some(local) = Scope::get_local(&self.scope, name) {
+        if let Some((local, scope_id)) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(
                     format!("name is not mutable: {}", name),
@@ -195,13 +207,15 @@ impl Compiler {
                 ));
             }
 
+            let local_id = LocalId::new_in_scope(name.to_string(), scope_id);
+
             return Ok(vec![
                 self.compile_expr(value)?,
                 vec![IR::new(
                     if local.mutable {
-                        Code::StoreMut(name.to_string())
+                        Code::StoreMut(local_id)
                     } else {
-                        Code::Store(name.to_string())
+                        Code::Store(local_id)
                     },
                     self.pos.clone(),
                 )],
@@ -216,7 +230,7 @@ impl Compiler {
     }
 
     fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
-        if Scope::get_local(&self.scope, name).is_some() {
+        if Scope::get_local(&self.scope, name, false).is_some() {
             return Err(CompileError::new(
                 format!("name already defined: {}", name),
                 self.pos.clone(),
@@ -225,20 +239,22 @@ impl Compiler {
             let mut scope = self.scope.borrow_mut();
 
             scope.set_local(Local {
-                name: name.to_string(),
                 mutable,
                 is_function: false,
+                name: name.to_string(),
             });
         }
 
         if let Some(expr) = value {
+            let local_id = LocalId::new_in_scope(name.to_string(), self.scope.borrow().id);
+
             return Ok(vec![
                 self.compile_expr(expr)?,
                 vec![IR::new(
                     if mutable {
-                        Code::StoreMut(name.to_string())
+                        Code::StoreMut(local_id)
                     } else {
-                        Code::Store(name.to_string())
+                        Code::Store(local_id)
                     },
                     self.pos.clone(),
                 )],
@@ -253,7 +269,9 @@ impl Compiler {
         let mut ir = vec![];
 
         {
-            let new_scope = Scope::push(Rc::clone(&self.scope));
+            self.scope_id += 1;
+
+            let new_scope = Scope::new_with_parent(Rc::clone(&self.scope), self.scope_id);
 
             self.scope = Rc::new(RefCell::new(new_scope));
         }
@@ -305,7 +323,7 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt) -> Result<Func> {
-        if Scope::get_local(&self.scope, &fn_decl.name).is_some() {
+        if Scope::get_local(&self.scope, &fn_decl.name, true).is_some() {
             return Err(CompileError::new(
                 format!("unable to redefine function: {}", fn_decl.name),
                 self.pos.clone(),

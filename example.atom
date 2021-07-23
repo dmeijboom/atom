@@ -1,7 +1,13 @@
 fn main() {
+    let name = "Gerard";
+
     if .8 < 1 {
-        if false || true {
-            println("hi");
-        }
+        let mut name = "bami";
+
+        name = "hi \n";
+
+        println(name);
     }
+
+    println(name);
 }

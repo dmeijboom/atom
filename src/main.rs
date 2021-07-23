@@ -3,7 +3,7 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
-use crate::compiler::{Code, Compiler, IR};
+use crate::compiler::{Code, Compiler, LocalId, IR};
 use crate::runtime::Value;
 use crate::vm::VM;
 
@@ -74,7 +74,7 @@ fn main() {
             );
 
             vm.eval(vec![
-                IR::new(Code::Load("main".to_string()), 0..0),
+                IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
                 IR::new(Code::Call(0), 0..0),
             ])
             .expect("RuntimeError");

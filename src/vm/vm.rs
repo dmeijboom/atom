@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::compiler::{Code, Func, Module, IR};
+use crate::compiler::{Code, Func, LocalId, Module, IR};
 use crate::runtime::{convert, FuncId, Result, RuntimeError, Value};
 
 use super::stack::Stack;
@@ -19,7 +19,8 @@ struct FuncDesc {
 
 struct CallContext {
     pub return_value: Option<Value>,
-    pub locals: HashMap<String, Value>,
+    pub args: HashMap<String, Value>,
+    pub locals: HashMap<LocalId, Value>,
 }
 
 pub struct VM {
@@ -80,6 +81,7 @@ impl VM {
             if let Some(desc) = self.func_map.get(&id.name) {
                 if desc.module_name == id.module {
                     self.call_stack.push(CallContext {
+                        args: HashMap::new(),
                         locals: HashMap::new(),
                         return_value: None,
                     });
@@ -110,7 +112,7 @@ impl VM {
                             let call_context = self.call_context()?;
 
                             for name in arg_names {
-                                call_context.locals.insert(name, values.remove(0));
+                                call_context.args.insert(name, values.remove(0));
                             }
 
                             self.eval(body)?;
@@ -299,23 +301,31 @@ impl VM {
                 self.stack.push(Value::Bool(!convert::to_bool(&value)?));
             }
             Code::Call(len) => self.eval_call(*len)?,
-            Code::Store(name) => {
+            Code::Store(id) => {
                 let value = self.stack.pop()?;
 
-                self.call_context()?.locals.insert(name.to_string(), value);
+                self.call_context()?.locals.insert(id.clone(), value);
             }
-            Code::StoreMut(name) => {
+            Code::StoreMut(id) => {
                 let value = self.stack.pop()?;
 
-                self.call_context()?.locals.insert(name.to_string(), value);
+                self.call_context()?.locals.insert(id.clone(), value);
             }
-            Code::Load(name) => {
+            Code::Load(id) => {
                 if self.call_stack.len() > 0 {
                     let context = self.call_context()?;
 
+                    if let Some(value) =
+                        context.locals.get(id).and_then(|value| Some(value.clone()))
+                    {
+                        self.stack.push(value);
+
+                        return Ok(None);
+                    }
+
                     if let Some(value) = context
-                        .locals
-                        .get(name)
+                        .args
+                        .get(&id.name)
                         .and_then(|value| Some(value.clone()))
                     {
                         self.stack.push(value);
@@ -324,10 +334,10 @@ impl VM {
                     }
                 }
 
-                if let Some(func) = self.func_map.get(name) {
+                if let Some(func) = self.func_map.get(&id.name) {
                     self.stack.push(
                         Value::Function(FuncId {
-                            name: name.clone(),
+                            name: id.name.clone(),
                             module: func.module_name.clone(),
                         })
                         .into(),
@@ -336,7 +346,7 @@ impl VM {
                     return Ok(None);
                 }
 
-                return Err(RuntimeError::new(format!("no such name: {}", name)));
+                return Err(RuntimeError::new(format!("no such name: {}", id.name)));
             }
             Code::SetLabel(_) => {}
             Code::JumpIfTrue(label) | Code::JumpIfFalse(label) => {
