@@ -132,10 +132,13 @@ peg::parser! {
             = start:pos() name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { name, value, pos: (start..end) }) }
 
         rule return_stmt() -> Stmt
-            = start:pos() "return" _ expr:expr() _ ";" end:pos() { Stmt::Return(ReturnStmt { expr, pos: (start..end) }) }
+            = start:pos() "return" __ expr:expr() _ ";" end:pos() { Stmt::Return(ReturnStmt { expr, pos: (start..end) }) }
+
+        rule else_stmt() -> Vec<Stmt>
+            = start:pos() "else" __ "{" _ body:stmt_list() _ "}" end:pos() { body }
 
         rule if_stmt() -> Stmt
-            = start:pos() "if" _ cond:expr() _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::If(IfStmt { cond, body, pos: (start..end) }) }
+            = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:else_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.unwrap_or_default(), pos: (start..end) }) }
 
         rule stmt() -> Stmt
             = expr_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()

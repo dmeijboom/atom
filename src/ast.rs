@@ -186,6 +186,7 @@ pub struct ReturnStmt {
 pub struct IfStmt {
     pub cond: Expr,
     pub pos: Pos,
+    pub alt: Vec<Stmt>,
     pub body: Vec<Stmt>,
 }
 

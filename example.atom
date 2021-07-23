@@ -4,10 +4,10 @@ fn main() {
     if .8 < 1 {
         let mut name = "bami";
 
-        name = "hi \n";
+        name = 10;
 
         println(name);
+    } else {
+        println(name);
     }
-
-    println(name);
 }

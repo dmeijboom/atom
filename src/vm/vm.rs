@@ -349,18 +349,20 @@ impl VM {
                 return Err(RuntimeError::new(format!("no such name: {}", id.name)));
             }
             Code::SetLabel(_) => {}
-            Code::JumpIfTrue(label) | Code::JumpIfFalse(label) => {
+            Code::Branch((true_label, false_label)) => {
                 let value = self.stack.pop()?;
-                let bool_val = convert::to_bool(&value)?;
-                let expected_val = if let Code::JumpIfTrue(_) = ir.code {
-                    true
+
+                return if convert::to_bool(&value)? {
+                    Ok(Some(true_label.clone()))
                 } else {
-                    false
+                    Ok(Some(false_label.clone()))
                 };
+            }
+            Code::Jump(label) => return Ok(Some(label.to_string())),
+            Code::JumpIfTrue(label) => {
+                let value = self.stack.pop()?;
 
-                self.stack.push(value);
-
-                if bool_val == expected_val {
+                if convert::to_bool(&value)? {
                     return Ok(Some(label.clone()));
                 }
             }

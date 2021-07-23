@@ -281,16 +281,42 @@ impl Compiler {
 
             match stmt {
                 Stmt::If(if_stmt) => {
-                    let if_label = self.make_label("if_body");
-                    let alt_label = self.make_label("if_cont");
+                    let if_label = self.make_label("if");
+                    let else_label = self.make_label("else");
+                    let cont_label = self.make_label("if_else_cont");
 
                     ir.push(self.compile_expr(&if_stmt.cond)?);
                     ir.push(vec![
-                        IR::new(Code::JumpIfFalse(alt_label.clone()), self.pos.clone()),
+                        IR::new(
+                            Code::Branch((
+                                if_label.clone(),
+                                if if_stmt.alt.is_empty() {
+                                    cont_label.clone()
+                                } else {
+                                    else_label.clone()
+                                },
+                            )),
+                            self.pos.clone(),
+                        ),
                         IR::new(Code::SetLabel(if_label), self.pos.clone()),
                     ]);
                     ir.push(self.compile_stmt_list(&if_stmt.body)?);
-                    ir.push(vec![IR::new(Code::SetLabel(alt_label), self.pos.clone())]);
+
+                    if if_stmt.alt.is_empty() {
+                        ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
+                    } else {
+                        ir.push(vec![IR::new(
+                            Code::Jump(cont_label.clone()),
+                            self.pos.clone(),
+                        )]);
+                        ir.push(vec![IR::new(Code::SetLabel(else_label), self.pos.clone())]);
+                        ir.push(self.compile_stmt_list(&if_stmt.alt)?);
+                        ir.push(vec![IR::new(
+                            Code::Jump(cont_label.clone()),
+                            self.pos.clone(),
+                        )]);
+                        ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
+                    }
                 }
                 Stmt::Expr(expr_stmt) => {
                     ir.push(self.compile_expr(&expr_stmt.expr)?);
