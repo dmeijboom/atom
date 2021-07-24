@@ -78,6 +78,9 @@ peg::parser! {
         rule prefix() -> Expr
             = literal_expr() / ident_expr() / array_expr() / map_expr()
 
+        rule keyword_arg() -> KeywordArg
+            = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }
+
         rule _expr(start: usize) -> Expr = precedence!{
             left:(@) _ "||" _ right:@ { Expr::Logical(LogicalExpr { pos: (start..right.pos().end), left, op: LogicalOp::Or, right }.into()) }
             --
@@ -105,7 +108,9 @@ peg::parser! {
             --
             "(" _ expr:expr() _ ")" { expr }
             --
-            callee:@ "(" args:expr() ** (_ "," _) ")" end:pos() { Expr::Call(CallExpr{ args, pos: (callee.pos().start..end), callee }.into()) }
+            callee:@ "(" _ keyword_args:keyword_arg() ** (_ "," _) _ "," _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args, args, pos: (callee.pos().start..end), callee }.into()) }
+            callee:@ "(" _ keyword_args:keyword_arg() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args, args: vec![], pos: (callee.pos().start..end), callee }.into()) }
+            callee:@ "(" _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args: vec![], args, pos: (callee.pos().start..end), callee }.into()) }
             --
             prefix:prefix() { prefix }
         }
@@ -122,9 +127,6 @@ peg::parser! {
         rule let_stmt() -> Stmt
             = start:pos() "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Let(LetStmt { mutable: mutable.is_some(), name, value, pos: (start..end) }) }
 
-        rule fn_arg() -> FnArg
-            = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
-
         rule assign_stmt() -> Stmt
             = start:pos() name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { name, value, pos: (start..end) }) }
 
@@ -139,6 +141,9 @@ peg::parser! {
 
         rule stmt() -> Stmt
             = expr_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
+
+        rule fn_arg() -> FnArg
+            = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
         rule fn_decl() -> FnDeclStmt
             = start:pos() "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, pos: (start..end) } }
@@ -313,6 +318,7 @@ mod tests {
                             pos: (0..4),
                         }),
                         args: vec![],
+                        keyword_args: vec![],
                         pos: (0..6),
                     }
                     .into()
@@ -345,6 +351,7 @@ mod tests {
                                 pos: (9..11),
                             }),
                         ],
+                        keyword_args: vec![],
                         pos: (0..12),
                     }
                     .into()
@@ -377,6 +384,7 @@ mod tests {
                                 pos: (8..10),
                             }),
                         ],
+                        keyword_args: vec![],
                         pos: (0..11),
                     }
                     .into()

@@ -51,7 +51,7 @@ pub enum Code {
     Not,
     Discard,
     Return,
-    Call(usize),
+    Call((Vec<String>, usize)),
     Store(LocalId),
     StoreMut(LocalId),
     Load(LocalId),

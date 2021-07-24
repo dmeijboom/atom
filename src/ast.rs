@@ -40,6 +40,7 @@ pub struct ComparisonExpr {
 pub struct CallExpr {
     pub callee: Expr,
     pub args: Vec<Expr>,
+    pub keyword_args: Vec<KeywordArg>,
     pub pos: Pos,
 }
 
@@ -74,6 +75,13 @@ pub struct NotExpr {
 #[derive(Debug, PartialEq)]
 pub struct ArrayExpr {
     pub items: Vec<Expr>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct KeywordArg {
+    pub name: String,
+    pub value: Expr,
     pub pos: Pos,
 }
 

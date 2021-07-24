@@ -71,7 +71,7 @@ impl VM {
             .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
     }
 
-    fn eval_call(&mut self, len: usize) -> Result<()> {
+    fn eval_call(&mut self, keywords: &Vec<String>, len: usize) -> Result<()> {
         let value = self
             .stack
             .pop()
@@ -103,6 +103,7 @@ impl VM {
                             }
 
                             let body = func.body.clone();
+                            let mut keywords_todo = keywords.len();
                             let arg_names = func
                                 .args
                                 .iter()
@@ -112,12 +113,25 @@ impl VM {
                             let call_context = self.call_context()?;
 
                             for name in arg_names {
-                                call_context.args.insert(name, values.remove(0));
+                                if let Ok(index) = keywords.binary_search(&name) {
+                                    keywords_todo -= 1;
+                                    call_context.args.insert(name, values.remove(index));
+                                    continue;
+                                }
+
+                                call_context.args.insert(name, values.remove(keywords_todo));
                             }
 
                             self.eval(body)?;
                         }
                         Runnable::External(func) => {
+                            if !keywords.is_empty() {
+                                return Err(RuntimeError::new(format!(
+                                    "unable to use keyword arguments in external Fn: {}.{}",
+                                    id.module, id.name
+                                )));
+                            }
+
                             let values = self.stack.pop_many(len)?;
 
                             if let Some(return_value) = func(values)? {
@@ -300,7 +314,7 @@ impl VM {
 
                 self.stack.push(Value::Bool(!convert::to_bool(&value)?));
             }
-            Code::Call(len) => self.eval_call(*len)?,
+            Code::Call((keywords, len)) => self.eval_call(keywords, *len)?,
             Code::Store(id) => {
                 let value = self.stack.pop()?;
 

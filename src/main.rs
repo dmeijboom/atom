@@ -75,7 +75,7 @@ fn main() {
 
             vm.eval(vec![
                 IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
-                IR::new(Code::Call(0), 0..0),
+                IR::new(Code::Call((vec![], 0)), 0..0),
             ])
             .expect("RuntimeError");
         }

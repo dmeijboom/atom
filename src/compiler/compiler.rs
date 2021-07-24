@@ -108,13 +108,20 @@ impl Compiler {
                 )]);
             }
             Expr::Call(call_expr) => {
+                let mut names = vec![];
+
+                for arg in call_expr.keyword_args.iter() {
+                    names.push(arg.name.clone());
+                    ir.push(self.compile_expr(&arg.value)?);
+                }
+
                 for arg in call_expr.args.iter() {
                     ir.push(self.compile_expr(arg)?);
                 }
 
                 ir.push(self.compile_expr(&call_expr.callee)?);
                 ir.push(vec![IR::new(
-                    Code::Call(call_expr.args.len()),
+                    Code::Call((names, call_expr.keyword_args.len() + call_expr.args.len())),
                     call_expr.pos.clone(),
                 )]);
             }

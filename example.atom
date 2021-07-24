@@ -4,4 +4,8 @@ class User {
 }
 
 fn main() {
+    let user = User(
+        name: "Dillen",
+        age: 1
+    );
 }
