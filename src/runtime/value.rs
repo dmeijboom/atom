@@ -45,9 +45,11 @@ pub enum ValueType {
     Char,
     Bool,
     String,
+    Class,
+    Function,
+    Object,
     Array,
     Map,
-    Function,
 }
 
 impl ValueType {
@@ -58,17 +60,31 @@ impl ValueType {
             ValueType::Char => "Char",
             ValueType::Bool => "Bool",
             ValueType::String => "String",
-            ValueType::Array => "Array",
-            ValueType::Map => "Map",
+            ValueType::Class => "Class",
             ValueType::Function => "Fn",
+            ValueType::Object => "Object",
+            ValueType::Map => "Map",
+            ValueType::Array => "Array",
         }
     }
+}
+
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct ClassId {
+    pub name: String,
+    pub module: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct FuncId {
     pub name: String,
     pub module: String,
+}
+
+#[derive(Debug, PartialEq, Hash, Eq)]
+pub struct Object {
+    pub class: ClassId,
+    pub fields: Vec<Value>,
 }
 
 #[derive(Debug, PartialEq)]
@@ -79,9 +95,11 @@ pub enum Value {
     Char(char),
     Bool(bool),
     String(String),
+    Class(ClassId),
+    Function(FuncId),
+    Object(Rc<Object>),
     Array(Rc<Vec<Value>>),
     Map(Rc<HashMap<Value, Value>>),
-    Function(FuncId),
 }
 
 impl Display for Value {
@@ -93,11 +111,20 @@ impl Display for Value {
             Value::Char(val) => write!(f, "{}", val),
             Value::Bool(val) => write!(f, "{}", val),
             Value::String(val) => write!(f, "{}", val),
+            Value::Class(id) => {
+                write!(f, "{}.{}", id.module, id.name)
+            }
+            Value::Function(id) => {
+                write!(f, "{}({}.{})", self.get_type().name(), id.module, id.name)
+            }
+            Value::Object(object) => {
+                let obj: &Object = object.borrow();
+                let id = &obj.class;
+
+                write!(f, "Object(id: {}.{})", id.module, id.name)
+            }
             Value::Array(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
             Value::Map(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
-            Value::Function(val) => {
-                write!(f, "{}({}.{})", self.get_type().name(), val.module, val.name)
-            }
         }
     }
 }
@@ -111,6 +138,9 @@ impl Hash for Value {
             Value::Char(val) => val.hash(state),
             Value::Bool(val) => val.hash(state),
             Value::String(val) => val.hash(state),
+            Value::Class(class) => class.hash(state),
+            Value::Function(func) => func.hash(state),
+            Value::Object(object) => object.hash(state),
             Value::Array(val) => val.hash(state),
             Value::Map(map) => {
                 let map: &HashMap<Value, Value> = map.borrow();
@@ -120,7 +150,6 @@ impl Hash for Value {
                     value.hash(state);
                 }
             }
-            Value::Function(func) => func.hash(state),
         }
     }
 
@@ -143,9 +172,11 @@ impl Clone for Value {
             Value::Char(val) => Value::Char(*val),
             Value::Bool(val) => Value::Bool(*val),
             Value::String(val) => Value::String(val.clone()),
+            Value::Class(id) => Value::Class(id.clone()),
+            Value::Function(id) => Value::Function(id.clone()),
+            Value::Object(object) => Value::Object(Rc::clone(object)),
             Value::Array(array) => Value::Array(Rc::clone(array)),
             Value::Map(map) => Value::Map(Rc::clone(map)),
-            Value::Function(id) => Value::Function(id.clone()),
         }
     }
 
@@ -165,20 +196,13 @@ impl Value {
             Value::Char(_) => ValueType::Char,
             Value::Bool(_) => ValueType::Bool,
             Value::String(_) => ValueType::String,
+            Value::Class(_) => ValueType::Class,
+            Value::Function(_) => ValueType::Function,
+            Value::Object(_) => ValueType::Object,
             Value::Array(_) => ValueType::Array,
             Value::Map(_) => ValueType::Map,
-            Value::Function(_) => ValueType::Function,
         }
     }
 }
 
 impl Eq for Value {}
-
-//pub enum Rule {
-//    HasFunction(String),
-//    IsNumeric,
-//}
-//
-//pub struct Contract {
-//    pub rules: Rule,
-//}

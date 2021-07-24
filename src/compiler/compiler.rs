@@ -8,7 +8,7 @@ use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt,
 };
 use crate::compiler::ir::Code;
-use crate::compiler::module::{Class, Field};
+use crate::compiler::module::Class;
 use crate::compiler::scope::{Local, Scope};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
 
@@ -412,10 +412,10 @@ impl Compiler {
             self.scope = Rc::new(RefCell::new(new_scope));
         }
 
-        let mut fields = HashMap::new();
+        let mut fields = vec![];
 
         for field in class_decl.fields.iter() {
-            if fields.contains_key(&field.name) {
+            if fields.contains(&field.name) {
                 return Err(CompileError::new(
                     format!(
                         "unable to redefine field: {}.{}",
@@ -425,12 +425,7 @@ impl Compiler {
                 ));
             }
 
-            fields.insert(
-                field.name.clone(),
-                Field {
-                    mutable: field.mutable,
-                },
-            );
+            fields.push(field.name.clone());
 
             let mut scope = self.scope.borrow_mut();
 

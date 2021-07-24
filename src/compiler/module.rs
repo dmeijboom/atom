@@ -17,14 +17,9 @@ pub struct Func {
 }
 
 #[derive(Debug)]
-pub struct Field {
-    pub mutable: bool,
-}
-
-#[derive(Debug)]
 pub struct Class {
     pub name: String,
-    pub fields: HashMap<String, Field>,
+    pub fields: Vec<String>,
     pub funcs: HashMap<String, Func>,
 }
 
