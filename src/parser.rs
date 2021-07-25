@@ -106,6 +106,8 @@ peg::parser! {
             --
             "!" _ expr:@ { Expr::Not(NotExpr {pos: (start..expr.pos().end), expr: expr.into() }) }
             --
+            object:(@) _ "." _ member:ident() end:pos() { Expr::Member(MemberExpr { pos: (start..end), object, member }.into()) }
+            --
             "(" _ expr:expr() _ ")" { expr }
             --
             callee:@ "(" _ keyword_args:keyword_arg() ** (_ "," _) _ "," _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args, args, pos: (callee.pos().start..end), callee }.into()) }
@@ -183,8 +185,8 @@ mod tests {
     use super::*;
 
     fn parse_single<L: Display>(source: &str) -> Result<Stmt, ParseError<L>>
-    where
-        ParseError<L>: From<ParseError<LineCol>>,
+        where
+            ParseError<L>: From<ParseError<LineCol>>,
     {
         Ok(parser::parse(source)?.pop().unwrap())
     }
@@ -321,7 +323,7 @@ mod tests {
                         keyword_args: vec![],
                         pos: (0..6),
                     }
-                    .into()
+                        .into()
                 ),
                 pos: (0..7),
             }))
@@ -354,7 +356,7 @@ mod tests {
                         keyword_args: vec![],
                         pos: (0..12),
                     }
-                    .into()
+                        .into()
                 ),
                 pos: (0..13),
             }))
@@ -387,7 +389,7 @@ mod tests {
                         keyword_args: vec![],
                         pos: (0..11),
                     }
-                    .into()
+                        .into()
                 ),
                 pos: (0..12),
             }))
@@ -409,19 +411,19 @@ mod tests {
                                 literal: Literal::Int(1),
                                 pos: (0..1),
                             }
-                            .into()
+                                .into()
                         ),
                         right: Expr::Literal(
                             LiteralExpr {
                                 literal: Literal::Int(2),
                                 pos: (5..6),
                             }
-                            .into()
+                                .into()
                         ),
                         op,
                         pos: (0..6),
                     }
-                    .into()
+                        .into()
                 ),
                 pos: (0..7),
             }))
@@ -448,19 +450,19 @@ mod tests {
                                 literal: Literal::Int(1),
                                 pos: (0..1),
                             }
-                            .into()
+                                .into()
                         ),
                         right: Expr::Literal(
                             LiteralExpr {
                                 literal: Literal::Int(2),
                                 pos: (3 + width..4 + width),
                             }
-                            .into()
+                                .into()
                         ),
                         op,
                         pos: (0..4 + width),
                     }
-                    .into()
+                        .into()
                 ),
                 pos: (0..5 + width),
             }))
@@ -487,19 +489,19 @@ mod tests {
                                 literal: Literal::Int(1),
                                 pos: (0..1),
                             }
-                            .into()
+                                .into()
                         ),
                         right: Expr::Literal(
                             LiteralExpr {
                                 literal: Literal::Int(2),
                                 pos: (3 + width..4 + width),
                             }
-                            .into()
+                                .into()
                         ),
                         op,
                         pos: (0..4 + width),
                     }
-                    .into()
+                        .into()
                 ),
                 pos: (0..5 + width),
             }))
@@ -652,7 +654,7 @@ mod tests {
                         pos: (10..12),
                     }),
                     pos: (10..13),
-                }),],
+                }), ],
             }))
         );
     }
@@ -714,6 +716,26 @@ mod tests {
                 ],
                 methods: vec![],
                 pos: (0..41),
+            })),
+        );
+    }
+
+    #[test]
+    fn member_expr() {
+        let source = "object.member;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Member(MemberExpr {
+                    object: Expr::Ident(IdentExpr {
+                        name: "object".to_string(),
+                        pos: (0..6),
+                    }),
+                    member: "member".to_string(),
+                    pos: (0..13),
+                }.into()),
+                pos: (0..14),
             })),
         );
     }

@@ -82,8 +82,14 @@ pub struct FuncId {
 }
 
 #[derive(Debug, PartialEq, Hash, Eq)]
+pub struct ClassDesc {
+    pub id: ClassId,
+    pub fields: Vec<String>,
+}
+
+#[derive(Debug, PartialEq, Hash, Eq)]
 pub struct Object {
-    pub class: ClassId,
+    pub class: ClassDesc,
     pub fields: Vec<Value>,
 }
 
@@ -119,7 +125,7 @@ impl Display for Value {
             }
             Value::Object(object) => {
                 let obj: &Object = object.borrow();
-                let id = &obj.class;
+                let id = &obj.class.id;
 
                 write!(f, "Object(id: {}.{})", id.module, id.name)
             }

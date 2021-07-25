@@ -1,9 +1,12 @@
+use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use crate::compiler::{Class, Code, Func, LocalId, Module, IR};
-use crate::runtime::{convert, ClassId, FuncId, Object, Result, RuntimeError, Value};
+use crate::runtime::{
+    convert, ClassDesc as RuntimeClassDesc, ClassId, FuncId, Object, Result, RuntimeError, Value,
+};
 
 use super::stack::Stack;
 
@@ -147,7 +150,10 @@ impl VM {
                 }
 
                 let mut object = Object {
-                    class: id.clone(),
+                    class: RuntimeClassDesc {
+                        id: id.clone(),
+                        fields: desc.class.fields.clone(),
+                    },
                     fields: vec![],
                 };
 
@@ -452,6 +458,24 @@ impl VM {
                 let value = self.stack.pop()?;
 
                 self.call_context()?.locals.insert(id.clone(), value);
+            }
+            Code::LoadMember(member) => {
+                let value = self.stack.pop()?;
+
+                if let Value::Object(object) = value {
+                    let object: &Object = object.borrow();
+
+                    if let Some(index) = find_index(&object.class.fields, member) {
+                        self.stack.push(object.fields[index].clone());
+
+                        return Ok(None);
+                    }
+
+                    return Err(RuntimeError::new(format!(
+                        "no such field {} for class: {}.{}",
+                        member, object.class.id.module, object.class.id.name
+                    )));
+                }
             }
             Code::Load(id) => {
                 if self.call_stack.len() > 0 {

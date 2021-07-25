@@ -114,6 +114,13 @@ pub struct LiteralExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct MemberExpr {
+    pub object: Expr,
+    pub member: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -121,6 +128,7 @@ pub enum Expr {
     Not(NotExpr),
     Array(ArrayExpr),
     Map(MapExpr),
+    Member(Box<MemberExpr>),
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
@@ -135,6 +143,7 @@ impl Expr {
             Self::Not(not) => not.pos.clone(),
             Self::Array(array) => array.pos.clone(),
             Self::Map(map) => map.pos.clone(),
+            Self::Member(member) => member.pos.clone(),
             Self::Arithmetic(arithmetic) => arithmetic.pos.clone(),
             Self::Comparison(comparison) => comparison.pos.clone(),
             Self::Logical(logical) => logical.pos.clone(),

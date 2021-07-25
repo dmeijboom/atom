@@ -150,6 +150,13 @@ impl Compiler {
                     map_expr.pos.clone(),
                 )]);
             }
+            Expr::Member(member_expr) => {
+                ir.push(self.compile_expr(&member_expr.object)?);
+                ir.push(vec![IR::new(
+                    Code::LoadMember(member_expr.member.to_string()),
+                    member_expr.pos.clone(),
+                )]);
+            }
             Expr::Arithmetic(arithmetic_expr) => {
                 ir.push(self.compile_expr(&arithmetic_expr.left)?);
                 ir.push(self.compile_expr(&arithmetic_expr.right)?);

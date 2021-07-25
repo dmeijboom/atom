@@ -55,6 +55,7 @@ pub enum Code {
     Store(LocalId),
     StoreMut(LocalId),
     Load(LocalId),
+    LoadMember(String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
