@@ -204,17 +204,25 @@ impl VM {
                     .collect::<Vec<_>>();
 
                 if values.len() != fields.len() {
-                    let missing_fields = fields
+                    let mut field_names = fields
                         .keys()
-                        .skip(values.len())
                         .cloned()
-                        .collect::<Vec<_>>();
+                        .map(|key| (key.clone(), key))
+                        .collect::<HashMap<_, _>>();
+
+                    for (_, name, _) in values {
+                        field_names.remove(name);
+                    }
 
                     return Err(RuntimeError::new(format!(
                         "unable to initialize {}.{} with missing fields: {}",
                         id.module,
                         id.name,
-                        missing_fields.join(", "),
+                        field_names
+                            .into_iter()
+                            .map(|(key, _)| key)
+                            .collect::<Vec<_>>()
+                            .join(", "),
                     )));
                 }
 
