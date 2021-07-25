@@ -2,6 +2,7 @@ use std::collections::HashMap;
 
 use crate::ast::Pos;
 use crate::compiler::IR;
+use crate::runtime::IndexedBTreeMap;
 
 #[derive(Debug)]
 pub struct FuncArg {
@@ -26,7 +27,7 @@ pub struct Field {
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
-    pub fields: HashMap<String, Field>,
+    pub fields: IndexedBTreeMap<String, Field>,
     pub funcs: HashMap<String, Func>,
 }
 

@@ -1,18 +1,17 @@
-class User {
-    let mut name;
-    let age = 1;
-}
+class File {
+    let name;
+    let mode;
 
-fn newUser() {
-   return User(
-       name: "Dillen"
-   );
+    fn test() {
+        return name;
+    }
 }
 
 fn main() {
-    let user = newUser();
+    let file = File(
+        name: "test.txt",
+        mode: 777
+    );
 
-    user.name = "Gerard";
-
-    println(user.name);
+    println(file.name);
 }

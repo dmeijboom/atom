@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
@@ -11,6 +11,7 @@ use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field};
 use crate::compiler::scope::{Local, Scope};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
+use crate::runtime::IndexedBTreeMap;
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -450,7 +451,7 @@ impl Compiler {
             self.scope = Rc::new(RefCell::new(new_scope));
         }
 
-        let mut fields = HashMap::new();
+        let mut fields = BTreeMap::new();
 
         for field in class_decl.fields.iter() {
             if fields.contains_key(&field.name) {
@@ -489,7 +490,7 @@ impl Compiler {
 
         Ok(Class {
             name: class_decl.name.clone(),
-            fields,
+            fields: IndexedBTreeMap::new(fields),
             funcs,
         })
     }

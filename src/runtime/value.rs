@@ -5,7 +5,6 @@ use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use crate::compiler::IR;
-use crate::runtime::collections::IndexedBTreeMap;
 
 #[derive(Debug)]
 pub struct Func {
@@ -89,30 +88,9 @@ pub struct FieldDesc {
     pub mutable: bool,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct ClassDesc {
-    pub id: ClassId,
-    pub fields: IndexedBTreeMap<String, FieldDesc>,
-}
-
-impl Hash for ClassDesc {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state)
-    }
-
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
-    {
-        for item in data {
-            item.hash(state);
-        }
-    }
-}
-
 #[derive(Debug, PartialEq, Hash, Eq)]
 pub struct Object {
-    pub class: ClassDesc,
+    pub class: ClassId,
     pub fields: Vec<Value>,
 }
 
@@ -174,9 +152,8 @@ impl Display for Value {
             }
             Value::Object(object) => {
                 let obj = object.borrow();
-                let id = &obj.class.id;
 
-                write!(f, "Object(id: {}.{})", id.module, id.name)
+                write!(f, "Object(id: {}.{})", obj.class.module, obj.class.name)
             }
             Value::Array(val) => write!(
                 f,
@@ -191,17 +168,8 @@ impl Display for Value {
                 val.borrow().len()
             ),
             Value::Pointer(pointer) => match pointer {
-                PointerType::FieldPtr((object, field_idx)) => {
-                    let object = object.borrow();
-                    let field_name = &object
-                        .class
-                        .fields
-                        .iter()
-                        .nth(*field_idx)
-                        .and_then(|(name, _)| Some(name.clone()))
-                        .unwrap();
-
-                    write!(f, "{}(field: {})", self.get_type().name(), field_name)
+                PointerType::FieldPtr((_, field_idx)) => {
+                    write!(f, "{}({})", self.get_type().name(), field_idx)
                 }
             },
         }

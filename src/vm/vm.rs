@@ -6,8 +6,7 @@ use std::rc::Rc;
 use crate::ast::Pos;
 use crate::compiler::{Class, Code, Func, LocalId, Module, IR};
 use crate::runtime::{
-    convert, ClassDesc as RuntimeClassDesc, ClassId, FieldDesc, FuncId, IndexedBTreeMap, Object,
-    PointerType, Result, RuntimeError, Trace, Value,
+    convert, ClassId, FuncId, Object, PointerType, Result, RuntimeError, Trace, Value,
 };
 
 use super::stack::Stack;
@@ -168,25 +167,8 @@ impl VM {
                     )));
                 }
 
-                let fields = IndexedBTreeMap::new(
-                    desc.class
-                        .fields
-                        .iter()
-                        .map(|(key, field)| {
-                            (
-                                key.clone(),
-                                FieldDesc {
-                                    mutable: field.mutable,
-                                },
-                            )
-                        })
-                        .collect::<BTreeMap<_, _>>(),
-                );
                 let mut object = Object {
-                    class: RuntimeClassDesc {
-                        id: id.clone(),
-                        fields: fields.clone(),
-                    },
+                    class: id.clone(),
                     fields: vec![],
                 };
 
@@ -197,14 +179,16 @@ impl VM {
                     .enumerate()
                     .map(|(keyword_idx, value)| {
                         let name = &keywords[keyword_idx];
-                        let arg_idx = fields.get_index_by_key(name);
+                        let arg_idx = desc.class.fields.get_index_by_key(name);
 
                         (arg_idx, name.as_str(), value)
                     })
                     .collect::<Vec<_>>();
 
-                if values.len() != fields.len() {
-                    let mut field_names = fields
+                if values.len() != desc.class.fields.len() {
+                    let mut field_names = desc
+                        .class
+                        .fields
                         .keys()
                         .cloned()
                         .map(|key| (key.clone(), key))
@@ -522,16 +506,14 @@ impl VM {
                     match pointer {
                         PointerType::FieldPtr((object, field_idx)) => {
                             let mut object = object.borrow_mut();
-                            let (name, field_desc) = object
-                                .class
-                                .fields
-                                .get_key_value_by_index(field_idx)
-                                .unwrap();
+                            let desc = self.class_map.get(&object.class.name).unwrap();
+                            let (name, field_desc) =
+                                desc.class.fields.get_key_value_by_index(field_idx).unwrap();
 
                             if !field_desc.mutable {
                                 return Err(RuntimeError::new(format!(
                                     "field '{}' is not mutable in class: {}.{}",
-                                    name, object.class.id.module, object.class.id.name
+                                    name, object.class.module, object.class.name
                                 )));
                             }
 
@@ -556,8 +538,9 @@ impl VM {
 
                 if let Value::Object(object) = value {
                     let obj = object.borrow();
+                    let desc = self.class_map.get(&obj.class.name).unwrap();
 
-                    if let Some(index) = obj.class.fields.get_index_by_key(member) {
+                    if let Some(index) = desc.class.fields.get_index_by_key(member) {
                         if let Code::LoadMember(_) = ir.code {
                             self.stack.push(obj.fields[index].clone());
                         } else {
@@ -572,7 +555,7 @@ impl VM {
 
                     return Err(RuntimeError::new(format!(
                         "no such field '{}' for class: {}.{}",
-                        member, obj.class.id.module, obj.class.id.name
+                        member, obj.class.module, obj.class.name
                     )));
                 }
             }
