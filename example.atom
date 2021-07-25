@@ -3,11 +3,14 @@ class User {
     let age = 1;
 }
 
+fn newUser() {
+   return User(
+       name: "Dillen"
+   );
+}
+
 fn main() {
-    let user = User(
-        name: "Dillen",
-        age: 1
-    );
+    let user = newUser();
 
     user.name = "Gerard";
 

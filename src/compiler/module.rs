@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::ast::Pos;
 use crate::compiler::IR;
 
 #[derive(Debug)]
@@ -10,6 +11,7 @@ pub struct FuncArg {
 
 #[derive(Debug)]
 pub struct Func {
+    pub pos: Pos,
     pub name: String,
     pub body: Vec<IR>,
     pub is_void: bool,

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
+use crate::ast::Pos;
 use crate::compiler::{Code, Compiler, LocalId, IR};
 use crate::runtime::Value;
 use crate::vm::VM;
@@ -31,6 +32,24 @@ struct RunOpts {
     show_ast: bool,
     #[clap(long)]
     show_ir: bool,
+}
+
+fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {
+    let mut line = 1;
+    let mut column = 1;
+    let mut chars = source.chars();
+
+    for _ in 0..pos.start {
+        match chars.next() {
+            Some('\n') => {
+                line += 1;
+                column = 1;
+            }
+            _ => column += 1,
+        }
+    }
+
+    (line, column)
 }
 
 fn main() {
@@ -73,11 +92,36 @@ fn main() {
                 }),
             );
 
-            vm.eval(vec![
+            if let Err(e) = vm.eval(vec![
                 IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
                 IR::new(Code::Call((vec![], 0)), 0..0),
-            ])
-            .expect("RuntimeError");
+            ]) {
+                let mut message = String::new();
+
+                if !e.stack_trace.is_empty() {
+                    message.push_str("Stack trace:\n");
+                }
+
+                for trace in e.stack_trace {
+                    let (line, column) = parse_line_column(&contents, &trace.pos);
+
+                    message.push_str(&format!(
+                        "  > in {}.{}(..) on line {} at {}\n",
+                        trace.func.module, trace.func.name, line, column,
+                    ));
+                }
+
+                message.push_str("RuntimeError: ");
+                message.push_str(&e.message);
+
+                if let Some(pos) = e.pos {
+                    let (line, column) = parse_line_column(&contents, &pos);
+
+                    message.push_str(&format!(" on line {} at {}", line, column));
+                }
+
+                eprintln!("{}", message);
+            }
         }
     }
 }

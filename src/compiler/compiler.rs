@@ -58,16 +58,14 @@ impl Compiler {
     }
 
     fn make_label(&mut self, prefix: &str) -> String {
-        if !self.labels.contains(&prefix.to_string()) {
-            self.labels.push(prefix.to_string());
-
-            return prefix.to_string();
-        }
-
-        let mut i: i64 = 2;
+        let mut i: i64 = 0;
 
         loop {
-            let label = format!("{}{}", prefix, i);
+            let label = if i == 0 {
+                prefix.to_string()
+            } else {
+                format!("{}{}", prefix, i)
+            };
 
             if !self.labels.contains(&label) {
                 return label;
@@ -414,6 +412,7 @@ impl Compiler {
         let body = self.compile_stmt_list(&fn_decl.body)?;
 
         Ok(Func {
+            pos: fn_decl.pos.clone(),
             name: fn_decl.name.clone(),
             is_void: !body.iter().any(|ir| ir.code == Code::Return),
             body,

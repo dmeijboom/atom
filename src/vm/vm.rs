@@ -3,10 +3,11 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
+use crate::ast::Pos;
 use crate::compiler::{Class, Code, Func, LocalId, Module, IR};
 use crate::runtime::{
     convert, ClassDesc as RuntimeClassDesc, ClassId, FieldDesc, FuncId, IndexedBTreeMap, Object,
-    PointerType, Result, RuntimeError, Value,
+    PointerType, Result, RuntimeError, Trace, Value,
 };
 
 use super::stack::Stack;
@@ -37,6 +38,8 @@ struct ClassDesc {
 }
 
 struct CallContext {
+    pub pos: Pos,
+    pub id: FuncId,
     pub return_value: Option<Value>,
     pub args: HashMap<String, Value>,
     pub locals: HashMap<LocalId, Value>,
@@ -102,7 +105,22 @@ impl VM {
             .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
     }
 
-    fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
+    fn rewind_stack(&mut self) -> Vec<Trace> {
+        let mut stack_trace = vec![];
+
+        while !self.call_stack.is_empty() {
+            let call_context = self.call_stack.remove(0);
+
+            stack_trace.push(Trace {
+                pos: call_context.pos.clone(),
+                func: call_context.id,
+            });
+        }
+
+        stack_trace
+    }
+
+    fn eval_call(&mut self, pos: &Pos, keywords: &[String], arg_count: usize) -> Result<()> {
         let mut unique_keys = vec![];
 
         for key in keywords.iter() {
@@ -122,7 +140,7 @@ impl VM {
             .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
         if let Value::Function(id) = value {
-            return self.eval_function_call(&id, keywords, arg_count);
+            return self.eval_function_call(pos, &id, keywords, arg_count);
         }
 
         if let Value::Class(id) = value {
@@ -179,11 +197,26 @@ impl VM {
                     .enumerate()
                     .map(|(keyword_idx, value)| {
                         let name = &keywords[keyword_idx];
-                        let arg_idx = fields.iter().position(|(key, _)| key == name);
+                        let arg_idx = fields.get_index_by_key(name);
 
                         (arg_idx, name.as_str(), value)
                     })
                     .collect::<Vec<_>>();
+
+                if values.len() != fields.len() {
+                    let missing_fields = fields
+                        .keys()
+                        .skip(values.len())
+                        .cloned()
+                        .collect::<Vec<_>>();
+
+                    return Err(RuntimeError::new(format!(
+                        "unable to initialize {}.{} with missing fields: {}",
+                        id.module,
+                        id.name,
+                        missing_fields.join(", "),
+                    )));
+                }
 
                 values.sort_unstable_by_key(|(index, _, _)| *index);
 
@@ -214,6 +247,7 @@ impl VM {
 
     fn eval_function_call(
         &mut self,
+        pos: &Pos,
         id: &FuncId,
         keywords: &[String],
         arg_count: usize,
@@ -221,6 +255,8 @@ impl VM {
         if let Some(desc) = self.func_map.get(&id.name) {
             if desc.module_name == id.module {
                 self.call_stack.push(CallContext {
+                    id: id.clone(),
+                    pos: pos.clone(),
                     args: HashMap::new(),
                     locals: HashMap::new(),
                     return_value: None,
@@ -278,7 +314,7 @@ impl VM {
                             call_context.args.insert(name.to_string(), value);
                         }
 
-                        self.eval(body)?;
+                        self.eval_internal(body)?;
                     }
                     Runnable::External(func) => {
                         if !keywords.is_empty() {
@@ -464,7 +500,7 @@ impl VM {
 
                 self.stack.push(Value::Bool(!convert::to_bool(&value)?));
             }
-            Code::Call((keywords, arg_count)) => self.eval_call(keywords, *arg_count)?,
+            Code::Call((keywords, arg_count)) => self.eval_call(&ir.pos, keywords, *arg_count)?,
             Code::Store(id) => {
                 let value = self.stack.pop()?;
 
@@ -604,7 +640,7 @@ impl VM {
         Ok(None)
     }
 
-    pub fn eval(&mut self, ir_list: Vec<IR>) -> Result<()> {
+    fn eval_internal(&mut self, ir_list: Vec<IR>) -> Result<()> {
         let mut active_label: Option<String> = None;
 
         for ir in ir_list {
@@ -621,13 +657,7 @@ impl VM {
 
             let pos = ir.pos.clone();
 
-            active_label = self.eval_single(ir).map_err(|e| {
-                if e.pos.is_none() {
-                    return e.with_pos(pos);
-                }
-
-                e
-            })?;
+            active_label = self.eval_single(ir).map_err(|e| e.with_pos(pos))?;
 
             // break on early return
             if let Some(context) = self.call_stack.last() {
@@ -638,5 +668,10 @@ impl VM {
         }
 
         Ok(())
+    }
+
+    pub fn eval(&mut self, ir_list: Vec<IR>) -> Result<()> {
+        self.eval_internal(ir_list)
+            .map_err(|e| e.with_stack_trace(self.rewind_stack()))
     }
 }

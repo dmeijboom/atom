@@ -1,5 +1,5 @@
 use std::borrow::Borrow;
-use std::collections::btree_map::Iter;
+use std::collections::btree_map::{Iter, Keys};
 use std::collections::{BTreeMap, HashMap};
 use std::hash::Hash;
 
@@ -48,6 +48,14 @@ impl<K: Ord + Clone + Hash, V> IndexedBTreeMap<K, V> {
         }
 
         None
+    }
+
+    pub fn keys(&self) -> Keys<'_, K, V> {
+        self.map.keys()
+    }
+
+    pub fn len(&self) -> usize {
+        self.map.len()
     }
 
     pub fn iter(&self) -> Iter<'_, K, V> {

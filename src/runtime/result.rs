@@ -2,12 +2,20 @@ use std::error::Error;
 use std::fmt;
 
 use crate::ast::Pos;
+use crate::runtime::FuncId;
+
+#[derive(Debug)]
+pub struct Trace {
+    pub pos: Pos,
+    pub func: FuncId,
+}
 
 #[derive(Debug)]
 pub struct RuntimeError {
     pub message: String,
     pub pos: Option<Pos>,
     pub module_name: Option<String>,
+    pub stack_trace: Vec<Trace>,
 }
 
 impl RuntimeError {
@@ -16,11 +24,18 @@ impl RuntimeError {
             message,
             pos: None,
             module_name: None,
+            stack_trace: vec![],
         }
     }
 
     pub fn with_pos(mut self, pos: Pos) -> Self {
         self.pos = Some(pos);
+
+        self
+    }
+
+    pub fn with_stack_trace(mut self, stack_trace: Vec<Trace>) -> Self {
+        self.stack_trace = stack_trace;
 
         self
     }
