@@ -5,8 +5,8 @@ use std::rc::Rc;
 
 use crate::compiler::{Class, Code, Func, LocalId, Module, IR};
 use crate::runtime::{
-    convert, ClassDesc as RuntimeClassDesc, ClassId, FieldDesc, FuncId, Object, PointerType,
-    Result, RuntimeError, Value,
+    convert, ClassDesc as RuntimeClassDesc, ClassId, FieldDesc, FuncId, IndexedBTreeMap, Object,
+    PointerType, Result, RuntimeError, Value,
 };
 
 use super::stack::Stack;
@@ -15,26 +15,6 @@ fn find_index(input: &[String], search: &String) -> Option<usize> {
     for (index, item) in input.iter().enumerate() {
         if item == search {
             return Some(index);
-        }
-    }
-
-    None
-}
-
-fn find_btree_index<K: PartialEq, V>(map: &BTreeMap<K, V>, search: &K) -> Option<usize> {
-    for (index, (key, _)) in map.iter().enumerate() {
-        if key == search {
-            return Some(index);
-        }
-    }
-
-    None
-}
-
-fn find_btree_key_value_by_index<K, V>(map: &BTreeMap<K, V>, search: usize) -> Option<(&K, &V)> {
-    for (index, (key, value)) in map.iter().enumerate() {
-        if index == search {
-            return Some((key, value));
         }
     }
 
@@ -170,19 +150,20 @@ impl VM {
                     )));
                 }
 
-                let fields = desc
-                    .class
-                    .fields
-                    .iter()
-                    .map(|(key, field)| {
-                        (
-                            key.clone(),
-                            FieldDesc {
-                                mutable: field.mutable,
-                            },
-                        )
-                    })
-                    .collect::<BTreeMap<_, _>>();
+                let fields = IndexedBTreeMap::new(
+                    desc.class
+                        .fields
+                        .iter()
+                        .map(|(key, field)| {
+                            (
+                                key.clone(),
+                                FieldDesc {
+                                    mutable: field.mutable,
+                                },
+                            )
+                        })
+                        .collect::<BTreeMap<_, _>>(),
+                );
                 let mut object = Object {
                     class: RuntimeClassDesc {
                         id: id.clone(),
@@ -497,9 +478,11 @@ impl VM {
                     match pointer {
                         PointerType::FieldPtr((object, field_idx)) => {
                             let mut object = object.borrow_mut();
-                            let (name, field_desc) =
-                                find_btree_key_value_by_index(&object.class.fields, field_idx)
-                                    .unwrap();
+                            let (name, field_desc) = object
+                                .class
+                                .fields
+                                .get_key_value_by_index(field_idx)
+                                .unwrap();
 
                             if !field_desc.mutable {
                                 return Err(RuntimeError::new(format!(
@@ -530,7 +513,7 @@ impl VM {
                 if let Value::Object(object) = value {
                     let obj = object.borrow();
 
-                    if let Some(index) = find_btree_index(&obj.class.fields, member) {
+                    if let Some(index) = obj.class.fields.get_index_by_key(member) {
                         if let Code::LoadMember(_) = ir.code {
                             self.stack.push(obj.fields[index].clone());
                         } else {
