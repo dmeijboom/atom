@@ -1,14 +1,15 @@
-use std::borrow::Borrow;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use crate::compiler::{Class, Code, Func, LocalId, Module, IR};
 use crate::runtime::{
-    convert, ClassDesc as RuntimeClassDesc, ClassId, FuncId, Object, Result, RuntimeError, Value,
+    convert, ClassDesc as RuntimeClassDesc, ClassId, FuncId, Object, PointerType, Result,
+    RuntimeError, Value,
 };
 
 use super::stack::Stack;
+use std::cell::RefCell;
 
 fn find_index(input: &[String], search: &String) -> Option<usize> {
     for (index, item) in input.iter().enumerate() {
@@ -184,7 +185,7 @@ impl VM {
                     )));
                 }
 
-                self.stack.push(Value::Object(Rc::new(object)));
+                self.stack.push(Value::Object(Rc::new(RefCell::new(object))));
 
                 return Ok(());
             }
@@ -342,7 +343,7 @@ impl VM {
             Code::MakeArray(len) => {
                 let values = self.stack.pop_many(*len)?;
 
-                self.stack.push(Value::Array(Rc::new(values)));
+                self.stack.push(Value::Array(Rc::new(RefCell::new(values))));
             }
             Code::MakeMap(len) => {
                 let mut map = HashMap::new();
@@ -355,7 +356,7 @@ impl VM {
                     map.insert(key, value);
                 }
 
-                self.stack.push(Value::Map(Rc::new(map)));
+                self.stack.push(Value::Map(Rc::new(RefCell::new(map))));
             }
             Code::Discard => self.stack.delete()?,
             Code::Return => {
@@ -454,26 +455,53 @@ impl VM {
 
                 self.call_context()?.locals.insert(id.clone(), value);
             }
+            Code::StorePtr => {
+                let value = self.stack.pop()?;
+                let pointer = self.stack.pop()?;
+
+                if let Value::Pointer(pointer) = pointer {
+                    match pointer {
+                        PointerType::FieldPtr((object, field_idx)) => {
+                            let mut object = object.borrow_mut();
+
+                            object.fields[field_idx] = value;
+                        }
+                    };
+
+                    return Ok(None);
+                }
+
+                return Err(RuntimeError::new(
+                    "invalid type for StorePtr instruction".to_string(),
+                ));
+            }
             Code::StoreMut(id) => {
                 let value = self.stack.pop()?;
 
                 self.call_context()?.locals.insert(id.clone(), value);
             }
-            Code::LoadMember(member) => {
+            Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
                 let value = self.stack.pop()?;
 
                 if let Value::Object(object) = value {
-                    let object: &Object = object.borrow();
+                    let obj = object.borrow();
 
-                    if let Some(index) = find_index(&object.class.fields, member) {
-                        self.stack.push(object.fields[index].clone());
+                    if let Some(index) = find_index(&obj.class.fields, member) {
+                        if let Code::LoadMember(_) = ir.code {
+                            self.stack.push(obj.fields[index].clone());
+                        } else {
+                            self.stack.push(Value::Pointer(PointerType::FieldPtr((
+                                Rc::clone(&object),
+                                index,
+                            ))))
+                        }
 
                         return Ok(None);
                     }
 
                     return Err(RuntimeError::new(format!(
                         "no such field {} for class: {}.{}",
-                        member, object.class.id.module, object.class.id.name
+                        member, obj.class.id.module, obj.class.id.name
                     )));
                 }
             }

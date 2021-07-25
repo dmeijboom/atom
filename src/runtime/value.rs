@@ -1,4 +1,4 @@
-use std::borrow::Borrow;
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
@@ -18,8 +18,8 @@ impl Hash for Func {
     }
 
     fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
+        where
+            Self: Sized,
     {
         for item in data {
             item.hash(state);
@@ -47,6 +47,7 @@ pub enum ValueType {
     String,
     Class,
     Function,
+    Pointer,
     Object,
     Array,
     Map,
@@ -65,6 +66,7 @@ impl ValueType {
             ValueType::Object => "Object",
             ValueType::Map => "Map",
             ValueType::Array => "Array",
+            ValueType::Pointer => "Ptr",
         }
     }
 }
@@ -93,6 +95,28 @@ pub struct Object {
     pub fields: Vec<Value>,
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub enum PointerType {
+    FieldPtr((Rc<RefCell<Object>>, usize)),
+}
+
+impl Hash for PointerType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            PointerType::FieldPtr((object, field_idx)) => {
+                object.borrow().hash(state);
+                field_idx.hash(state);
+            }
+        }
+    }
+
+    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H) where Self: Sized {
+        for item in data {
+            item.hash(state);
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub enum Value {
     Invalid,
@@ -103,9 +127,10 @@ pub enum Value {
     String(String),
     Class(ClassId),
     Function(FuncId),
-    Object(Rc<Object>),
-    Array(Rc<Vec<Value>>),
-    Map(Rc<HashMap<Value, Value>>),
+    Object(Rc<RefCell<Object>>),
+    Pointer(PointerType),
+    Array(Rc<RefCell<Vec<Value>>>),
+    Map(Rc<RefCell<HashMap<Value, Value>>>),
 }
 
 impl Display for Value {
@@ -124,13 +149,21 @@ impl Display for Value {
                 write!(f, "{}({}.{})", self.get_type().name(), id.module, id.name)
             }
             Value::Object(object) => {
-                let obj: &Object = object.borrow();
+                let obj = object.borrow();
                 let id = &obj.class.id;
 
                 write!(f, "Object(id: {}.{})", id.module, id.name)
             }
-            Value::Array(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
-            Value::Map(val) => write!(f, "{}(size: {})", self.get_type().name(), val.len()),
+            Value::Array(val) => write!(f, "{}(size: {})", self.get_type().name(), val.borrow().len()),
+            Value::Map(val) => write!(f, "{}(size: {})", self.get_type().name(), val.borrow().len()),
+            Value::Pointer(pointer) => match pointer {
+                PointerType::FieldPtr((object, field_idx)) => {
+                    let object = object.borrow();
+                    let field = &object.class.fields[*field_idx];
+
+                    write!(f, "{}(field: {})", self.get_type().name(), field)
+                }
+            },
         }
     }
 }
@@ -146,22 +179,23 @@ impl Hash for Value {
             Value::String(val) => val.hash(state),
             Value::Class(class) => class.hash(state),
             Value::Function(func) => func.hash(state),
-            Value::Object(object) => object.hash(state),
-            Value::Array(val) => val.hash(state),
+            Value::Object(object) => object.borrow().hash(state),
+            Value::Array(val) => val.borrow().hash(state),
             Value::Map(map) => {
-                let map: &HashMap<Value, Value> = map.borrow();
+                let map = map.borrow();
 
-                for (key, value) in map {
+                for (key, value) in map.iter() {
                     key.hash(state);
                     value.hash(state);
                 }
             }
+            Value::Pointer(pointer) => pointer.hash(state),
         }
     }
 
     fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
+        where
+            Self: Sized,
     {
         for item in data {
             item.hash(state);
@@ -183,6 +217,11 @@ impl Clone for Value {
             Value::Object(object) => Value::Object(Rc::clone(object)),
             Value::Array(array) => Value::Array(Rc::clone(array)),
             Value::Map(map) => Value::Map(Rc::clone(map)),
+            Value::Pointer(pointer) => match pointer {
+                PointerType::FieldPtr((object, field_idx)) => {
+                    Value::Pointer(PointerType::FieldPtr((Rc::clone(object), *field_idx)))
+                }
+            },
         }
     }
 
@@ -207,6 +246,7 @@ impl Value {
             Value::Object(_) => ValueType::Object,
             Value::Array(_) => ValueType::Array,
             Value::Map(_) => ValueType::Map,
+            Value::Pointer(_) => ValueType::Pointer,
         }
     }
 }

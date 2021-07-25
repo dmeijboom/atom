@@ -1,5 +1,5 @@
 class User {
-    let name;
+    let mut name;
     let mut age = 1;
 }
 
@@ -8,6 +8,8 @@ fn main() {
         name: "Dillen",
         age: 1
     );
+
+    user.name = "Gerard";
 
     println(user.name);
 }

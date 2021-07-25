@@ -216,7 +216,7 @@ impl Compiler {
         Ok(ir.concat())
     }
 
-    fn compile_assign(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
+    fn compile_assign_local(&mut self, name: &String, value: &Expr) -> Result<Vec<IR>> {
         if let Some((local, scope_id)) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(
@@ -245,6 +245,38 @@ impl Compiler {
             format!("unable to assign value to unknown name: {}", name),
             self.pos.clone(),
         ))
+    }
+
+    fn compile_assign_member(
+        &mut self,
+        object: &Expr,
+        member: &String,
+        value: &Expr,
+    ) -> Result<Vec<IR>> {
+        let mut ir = vec![];
+
+        ir.push(self.compile_expr(&object)?);
+        ir.push(vec![IR::new(
+            Code::LoadMemberPtr(member.to_string()),
+            self.pos.clone(),
+        )]);
+        ir.push(self.compile_expr(value)?);
+        ir.push(vec![IR::new(Code::StorePtr, self.pos.clone())]);
+
+        Ok(ir.concat())
+    }
+
+    fn compile_assign(&mut self, left: &Expr, right: &Expr) -> Result<Vec<IR>> {
+        match left {
+            Expr::Ident(ident_expr) => self.compile_assign_local(&ident_expr.name, right),
+            Expr::Member(member_expr) => {
+                self.compile_assign_member(&member_expr.object, &member_expr.member, right)
+            }
+            _ => Err(CompileError::new(
+                "invalid left-hand side in assignment".to_string(),
+                self.pos.clone(),
+            )),
+        }
     }
 
     fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
@@ -346,7 +378,7 @@ impl Compiler {
                     ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
                 }
                 Stmt::Assign(assign_stmt) => {
-                    ir.push(self.compile_assign(&assign_stmt.name, &assign_stmt.value)?)
+                    ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
                 }
                 Stmt::Return(return_stmt) => {
                     ir.push(self.compile_expr(&return_stmt.expr)?);

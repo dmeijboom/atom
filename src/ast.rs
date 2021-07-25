@@ -188,8 +188,8 @@ pub struct FnDeclStmt {
 
 #[derive(Debug, PartialEq)]
 pub struct AssignStmt {
-    pub name: String,
-    pub value: Expr,
+    pub left: Expr,
+    pub right: Expr,
     pub pos: Pos,
 }
 
