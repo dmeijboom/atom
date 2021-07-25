@@ -1,6 +1,6 @@
 class User {
     let mut name;
-    let mut age = 1;
+    let age = 1;
 }
 
 fn main() {

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
@@ -18,8 +18,8 @@ impl Hash for Func {
     }
 
     fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         for item in data {
             item.hash(state);
@@ -83,10 +83,15 @@ pub struct FuncId {
     pub module: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Hash, Eq)]
+pub struct FieldDesc {
+    pub mutable: bool,
+}
+
 #[derive(Debug, PartialEq, Hash, Eq)]
 pub struct ClassDesc {
     pub id: ClassId,
-    pub fields: Vec<String>,
+    pub fields: BTreeMap<String, FieldDesc>,
 }
 
 #[derive(Debug, PartialEq, Hash, Eq)]
@@ -110,7 +115,10 @@ impl Hash for PointerType {
         }
     }
 
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H) where Self: Sized {
+    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
+    where
+        Self: Sized,
+    {
         for item in data {
             item.hash(state);
         }
@@ -154,14 +162,30 @@ impl Display for Value {
 
                 write!(f, "Object(id: {}.{})", id.module, id.name)
             }
-            Value::Array(val) => write!(f, "{}(size: {})", self.get_type().name(), val.borrow().len()),
-            Value::Map(val) => write!(f, "{}(size: {})", self.get_type().name(), val.borrow().len()),
+            Value::Array(val) => write!(
+                f,
+                "{}(size: {})",
+                self.get_type().name(),
+                val.borrow().len()
+            ),
+            Value::Map(val) => write!(
+                f,
+                "{}(size: {})",
+                self.get_type().name(),
+                val.borrow().len()
+            ),
             Value::Pointer(pointer) => match pointer {
                 PointerType::FieldPtr((object, field_idx)) => {
                     let object = object.borrow();
-                    let field = &object.class.fields[*field_idx];
+                    let field_name = &object
+                        .class
+                        .fields
+                        .iter()
+                        .nth(*field_idx)
+                        .and_then(|(name, _)| Some(name.clone()))
+                        .unwrap();
 
-                    write!(f, "{}(field: {})", self.get_type().name(), field)
+                    write!(f, "{}(field: {})", self.get_type().name(), field_name)
                 }
             },
         }
@@ -194,8 +218,8 @@ impl Hash for Value {
     }
 
     fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-        where
-            Self: Sized,
+    where
+        Self: Sized,
     {
         for item in data {
             item.hash(state);

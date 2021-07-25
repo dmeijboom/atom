@@ -16,10 +16,15 @@ pub struct Func {
     pub args: Vec<FuncArg>,
 }
 
+#[derive(Debug, Clone)]
+pub struct Field {
+    pub mutable: bool,
+}
+
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
-    pub fields: Vec<String>,
+    pub fields: HashMap<String, Field>,
     pub funcs: HashMap<String, Func>,
 }
 
