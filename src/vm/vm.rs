@@ -104,7 +104,7 @@ impl VM {
         }
 
         Err(RuntimeError::new(format!(
-            "expected callable on stack, not: {}",
+            "type '{}' is not callable",
             value.get_type().name()
         )))
     }
@@ -535,42 +535,41 @@ impl VM {
                 self.call_context()?.locals.insert(id.clone(), value);
             }
             Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
-                if let Value::Object(object) = self.stack.pop()? {
-                    let obj = object.borrow();
-                    let desc = self
-                        .module_cache
-                        .lookup_class(&obj.class.module, &obj.class.name)?;
+                let object = convert::to_object(self.stack.pop()?)?;
+                let obj = object.borrow();
+                let desc = self
+                    .module_cache
+                    .lookup_class(&obj.class.module, &obj.class.name)?;
 
-                    if let Some(index) = desc.fields.get_index_by_key(member) {
-                        if let Code::LoadMember(_) = ir.code {
-                            self.stack.push(obj.fields[index].clone());
-                        } else {
-                            self.stack.push(Value::Pointer(PointerType::FieldPtr((
-                                Rc::clone(&object),
-                                index,
-                            ))))
-                        }
-
-                        return Ok(None);
+                if let Some(index) = desc.fields.get_index_by_key(member) {
+                    if let Code::LoadMember(_) = ir.code {
+                        self.stack.push(obj.fields[index].clone());
+                    } else {
+                        self.stack.push(Value::Pointer(PointerType::FieldPtr((
+                            Rc::clone(&object),
+                            index,
+                        ))))
                     }
 
-                    if let Ok(_) =
-                        self.module_cache
-                            .lookup_method(&obj.class.module, &obj.class.name, member)
-                    {
-                        self.stack.push(Value::Method(Method {
-                            name: member.clone(),
-                            object: Rc::clone(&object),
-                        }));
-
-                        return Ok(None);
-                    }
-
-                    return Err(RuntimeError::new(format!(
-                        "no such field or method '{}' for class: {}.{}",
-                        member, obj.class.module, obj.class.name
-                    )));
+                    return Ok(None);
                 }
+
+                if let Ok(_) =
+                    self.module_cache
+                        .lookup_method(&obj.class.module, &obj.class.name, member)
+                {
+                    self.stack.push(Value::Method(Method {
+                        name: member.clone(),
+                        object: Rc::clone(&object),
+                    }));
+
+                    return Ok(None);
+                }
+
+                return Err(RuntimeError::new(format!(
+                    "no such field or method '{}' for class: {}.{}",
+                    member, obj.class.module, obj.class.name
+                )));
             }
             Code::Load(id) => {
                 if self.call_stack.len() > 0 {

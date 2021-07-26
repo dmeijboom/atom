@@ -496,6 +496,7 @@ impl Compiler {
     }
 
     pub fn compile(mut self) -> Result<Module> {
+        let mut module_is_set = false;
         let mut module = Module::new("main");
 
         while !self.tree.is_empty() {
@@ -511,6 +512,17 @@ impl Compiler {
                     module
                         .classes
                         .insert(class_decl.name.clone(), self.compile_class(&class_decl)?);
+                }
+                Stmt::Module(module_stmt) => {
+                    if module_is_set {
+                        return Err(CompileError::new(
+                            "unable to set module more than once".to_string(),
+                            module_stmt.pos,
+                        ));
+                    }
+
+                    module.name = module_stmt.name.clone();
+                    module_is_set = true;
                 }
                 _ => unreachable!(),
             }

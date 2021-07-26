@@ -1,0 +1,16 @@
+module std.core;
+
+class String {
+}
+
+class Int {
+}
+
+class Float {
+}
+
+class Array {
+}
+
+class Map {
+}

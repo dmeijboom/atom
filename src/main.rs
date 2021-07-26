@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use clap::Clap;
 
 use crate::ast::Pos;
-use crate::compiler::{Code, Compiler, LocalId, IR};
+use crate::compiler::{Code, Compiler, IR, LocalId};
 use crate::runtime::Value;
 use crate::vm::{Module, VM};
 
@@ -52,6 +52,15 @@ fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {
     (line, column)
 }
 
+fn setup_std_core() -> Module {
+    let contents = include_str!("std/core.atom");
+    let tree = parser::parse(contents).expect("syntax error");
+    let compiler = Compiler::new(tree);
+    let module = compiler.compile().expect("compile error");
+
+    Module::new(module, Some("std/core.atom".into()))
+}
+
 fn main() {
     let opts = Opts::parse();
 
@@ -68,6 +77,10 @@ fn main() {
             let module = compiler.compile().expect("compile error");
 
             if run_opts.show_ir {
+                println!("Classes:");
+                println!("{:#?}", module.classes);
+
+                println!("\nFunctions:");
                 println!("{:#?}", module.funcs);
             }
 
@@ -91,6 +104,7 @@ fn main() {
 
             let mut vm = VM::new();
 
+            vm.register_module(setup_std_core());
             vm.register_module(main_module);
 
             if let Err(e) = vm.eval(

@@ -160,8 +160,11 @@ peg::parser! {
         rule class_decl_stmt() -> Stmt
             = start:pos() "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, fields, methods, pos: (start..end) }) }
 
+        rule module_stmt() -> Stmt
+            = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
+
         rule top_level_stmt() -> Stmt
-            = fn_decl_stmt() / class_decl_stmt()
+            = fn_decl_stmt() / class_decl_stmt() / module_stmt()
 
         rule stmt_list() -> Vec<Stmt>
             = stmt() ** _
@@ -744,5 +747,18 @@ mod tests {
                 pos: (0..14),
             })),
         );
+    }
+
+    #[test]
+    fn module_stmt() {
+        let source = "module test.this.that;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Module(ModuleStmt {
+                name: "test.this.that".to_string(),
+                pos: (0..22),
+            })),
+        )
     }
 }
