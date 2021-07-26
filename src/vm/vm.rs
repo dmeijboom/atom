@@ -23,8 +23,8 @@ struct CallContext {
 impl CallContext {
     fn new(pos: Pos, id: FuncId) -> Self {
         Self {
-            pos,
             id,
+            pos,
             return_value: None,
             args: HashMap::new(),
             locals: HashMap::new(),
@@ -72,7 +72,7 @@ impl VM {
         stack_trace
     }
 
-    fn eval_call(&mut self, pos: &Pos, keywords: &[String], arg_count: usize) -> Result<()> {
+    fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
         let mut unique_keys = vec![];
 
         for key in keywords.iter() {
@@ -92,11 +92,11 @@ impl VM {
             .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
         if let Value::Function(id) = value {
-            return self.eval_function_call(pos, &id, keywords, arg_count);
+            return self.eval_function_call(&id, keywords, arg_count);
         }
 
         if let Value::Method(id) = value {
-            return self.eval_method_call(pos, &id, keywords, arg_count);
+            return self.eval_method_call(&id, keywords, arg_count);
         }
 
         if let Value::Class(id) = value {
@@ -188,7 +188,6 @@ impl VM {
 
     fn eval_method_call(
         &mut self,
-        pos: &Pos,
         method: &Method,
         keywords: &[String],
         arg_count: usize,
@@ -201,10 +200,10 @@ impl VM {
         )?;
 
         let mut context = CallContext::new(
-            pos.clone(),
+            desc.func.pos.clone(),
             FuncId {
                 module: object.class.module.clone(),
-                name: object.class.name.clone(),
+                name: format!("{}.{}", object.class.name, method.name),
             },
         );
 
@@ -296,23 +295,24 @@ impl VM {
 
     fn eval_function_call(
         &mut self,
-        pos: &Pos,
         id: &FuncId,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
         let desc = self.module_cache.lookup_function(&id.module, &id.name)?;
 
-        self.call_stack
-            .push(CallContext::new(pos.clone(), id.clone()));
-
         match &desc.run {
             Runnable::Func(func) => {
                 let func = func.clone();
 
+                self.call_stack
+                    .push(CallContext::new(func.pos.clone(), id.clone()));
+
                 self.eval_native_function_call(&id.module, &id.name, func, keywords, arg_count)?;
             }
             Runnable::External(func) => {
+                self.call_stack.push(CallContext::new(0..0, id.clone()));
+
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "unable to use keyword arguments in external Fn: {}.{}",
@@ -489,7 +489,9 @@ impl VM {
 
                 self.stack.push(Value::Bool(!convert::to_bool(&value)?));
             }
-            Code::Call((keywords, arg_count)) => self.eval_call(&ir.pos, keywords, *arg_count)?,
+            Code::Call((keywords, arg_count)) => {
+                self.eval_call(keywords, *arg_count)?;
+            }
             Code::Store(id) => {
                 let value = self.stack.pop()?;
 
@@ -667,7 +669,13 @@ impl VM {
 
             let pos = ir.pos.clone();
 
-            active_label = self.eval_single(ir).map_err(|e| e.with_pos(pos))?;
+            active_label = self.eval_single(ir).map_err(|e| {
+                if e.pos.is_none() {
+                    return e.with_pos(pos);
+                }
+
+                e
+            })?;
 
             // break on early return
             if let Some(context) = self.call_stack.last() {
