@@ -4,13 +4,13 @@ use crate::ast::Pos;
 use crate::compiler::IR;
 use crate::runtime::IndexedBTreeMap;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FuncArg {
     pub mutable: bool,
     pub name: String,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Func {
     pub pos: Pos,
     pub name: String,

@@ -47,6 +47,7 @@ pub enum ValueType {
     String,
     Class,
     Function,
+    Method,
     Pointer,
     Object,
     Array,
@@ -62,6 +63,7 @@ impl ValueType {
             ValueType::Bool => "Bool",
             ValueType::String => "String",
             ValueType::Class => "Class",
+            ValueType::Method => "Method",
             ValueType::Function => "Fn",
             ValueType::Object => "Object",
             ValueType::Map => "Map",
@@ -81,6 +83,27 @@ pub struct ClassId {
 pub struct FuncId {
     pub name: String,
     pub module: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Method {
+    pub name: String,
+    pub object: Rc<RefCell<Object>>,
+}
+
+impl Hash for Method {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state)
+    }
+
+    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
+    where
+        Self: Sized,
+    {
+        for item in data {
+            item.hash(state);
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
@@ -129,6 +152,7 @@ pub enum Value {
     String(String),
     Class(ClassId),
     Function(FuncId),
+    Method(Method),
     Object(Rc<RefCell<Object>>),
     Pointer(PointerType),
     Array(Rc<RefCell<Vec<Value>>>),
@@ -149,6 +173,18 @@ impl Display for Value {
             }
             Value::Function(id) => {
                 write!(f, "{}({}.{})", self.get_type().name(), id.module, id.name)
+            }
+            Value::Method(method) => {
+                let obj = method.object.borrow();
+
+                write!(
+                    f,
+                    "{}({}.{}.{})",
+                    self.get_type().name(),
+                    obj.class.module,
+                    obj.class.name,
+                    method.name
+                )
             }
             Value::Object(object) => {
                 let obj = object.borrow();
@@ -187,6 +223,7 @@ impl Hash for Value {
             Value::String(val) => val.hash(state),
             Value::Class(class) => class.hash(state),
             Value::Function(func) => func.hash(state),
+            Value::Method(method) => method.hash(state),
             Value::Object(object) => object.borrow().hash(state),
             Value::Array(val) => val.borrow().hash(state),
             Value::Map(map) => {
@@ -222,6 +259,7 @@ impl Clone for Value {
             Value::String(val) => Value::String(val.clone()),
             Value::Class(id) => Value::Class(id.clone()),
             Value::Function(id) => Value::Function(id.clone()),
+            Value::Method(id) => Value::Method(id.clone()),
             Value::Object(object) => Value::Object(Rc::clone(object)),
             Value::Array(array) => Value::Array(Rc::clone(array)),
             Value::Map(map) => Value::Map(Rc::clone(map)),
@@ -251,6 +289,7 @@ impl Value {
             Value::String(_) => ValueType::String,
             Value::Class(_) => ValueType::Class,
             Value::Function(_) => ValueType::Function,
+            Value::Method(_) => ValueType::Method,
             Value::Object(_) => ValueType::Object,
             Value::Array(_) => ValueType::Array,
             Value::Map(_) => ValueType::Map,

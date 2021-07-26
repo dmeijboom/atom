@@ -3,7 +3,7 @@ class File {
     let mode;
 
     fn test() {
-        return name;
+        return this.name;
     }
 }
 

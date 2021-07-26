@@ -4,23 +4,13 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use crate::ast::Pos;
-use crate::compiler::{Code, LocalId, IR};
+use crate::compiler::{Code, Func, LocalId, IR};
 use crate::runtime::{
-    convert, ClassId, FuncId, Object, PointerType, Result, RuntimeError, Trace, Value,
+    convert, ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Trace, Value,
 };
 use crate::vm::module_cache::{Module, ModuleCache, Runnable};
 
 use super::stack::Stack;
-
-fn find_index(input: &[String], search: &String) -> Option<usize> {
-    for (index, item) in input.iter().enumerate() {
-        if item == search {
-            return Some(index);
-        }
-    }
-
-    None
-}
 
 struct CallContext {
     pub pos: Pos,
@@ -28,6 +18,18 @@ struct CallContext {
     pub return_value: Option<Value>,
     pub args: HashMap<String, Value>,
     pub locals: HashMap<LocalId, Value>,
+}
+
+impl CallContext {
+    fn new(pos: Pos, id: FuncId) -> Self {
+        Self {
+            pos,
+            id,
+            return_value: None,
+            args: HashMap::new(),
+            locals: HashMap::new(),
+        }
+    }
 }
 
 pub struct VM {
@@ -91,6 +93,10 @@ impl VM {
 
         if let Value::Function(id) = value {
             return self.eval_function_call(pos, &id, keywords, arg_count);
+        }
+
+        if let Value::Method(id) = value {
+            return self.eval_method_call(pos, &id, keywords, arg_count);
         }
 
         if let Value::Class(id) = value {
@@ -180,6 +186,114 @@ impl VM {
         Ok(())
     }
 
+    fn eval_method_call(
+        &mut self,
+        pos: &Pos,
+        method: &Method,
+        keywords: &[String],
+        arg_count: usize,
+    ) -> Result<()> {
+        let object = method.object.borrow();
+        let desc = self.module_cache.lookup_method(
+            &object.class.module,
+            &object.class.name,
+            &method.name,
+        )?;
+
+        let mut context = CallContext::new(
+            pos.clone(),
+            FuncId {
+                module: object.class.module.clone(),
+                name: object.class.name.clone(),
+            },
+        );
+
+        context.locals.insert(
+            LocalId::new("this".to_string()),
+            Value::Object(Rc::clone(&method.object)),
+        );
+
+        self.call_stack.push(context);
+
+        let func = desc.func.clone();
+
+        self.eval_native_function_call(
+            &object.class.module,
+            &method.name,
+            func,
+            keywords,
+            arg_count,
+        )?;
+
+        let context = self.call_stack.pop().unwrap();
+
+        if let Some(value) = context.return_value {
+            self.stack.push(value);
+        } else {
+            self.stack.push(Value::Invalid);
+        }
+
+        Ok(())
+    }
+
+    fn eval_native_function_call(
+        &mut self,
+        module_name: &str,
+        function_name: &str,
+        func: Func,
+        keywords: &[String],
+        arg_count: usize,
+    ) -> Result<()> {
+        if arg_count != func.args.len() {
+            return Err(RuntimeError::new(format!(
+                "invalid argument count for function: {}.{}(...) (expected {}, not {})",
+                module_name,
+                function_name,
+                func.args.len(),
+                arg_count,
+            )));
+        }
+
+        let arg_names = func
+            .args
+            .iter()
+            .map(|arg| arg.name.clone())
+            .collect::<Vec<_>>();
+        let mut values = self.stack.pop_many(arg_count)?;
+        let mut ordered_values = BTreeMap::new();
+        let call_context = self.call_context()?;
+
+        for name in keywords.iter() {
+            if let Ok(arg_idx) = arg_names.binary_search(name) {
+                ordered_values.insert(arg_idx, values.remove(0));
+                continue;
+            }
+
+            return Err(RuntimeError::new(format!(
+                "no such field '{}' for Fn: {}.{}",
+                name, module_name, function_name,
+            )));
+        }
+
+        for i in 0..arg_names.len() {
+            if ordered_values.contains_key(&i) {
+                continue;
+            }
+
+            ordered_values.insert(i, values.remove(0));
+        }
+
+        for (key, value) in ordered_values {
+            let name = &arg_names[key];
+
+            call_context.args.insert(name.to_string(), value);
+        }
+
+        self.eval_internal(func.body)?;
+
+        Ok(())
+    }
+
     fn eval_function_call(
         &mut self,
         pos: &Pos,
@@ -189,63 +303,14 @@ impl VM {
     ) -> Result<()> {
         let desc = self.module_cache.lookup_function(&id.module, &id.name)?;
 
-        self.call_stack.push(CallContext {
-            id: id.clone(),
-            pos: pos.clone(),
-            args: HashMap::new(),
-            locals: HashMap::new(),
-            return_value: None,
-        });
+        self.call_stack
+            .push(CallContext::new(pos.clone(), id.clone()));
 
         match &desc.run {
             Runnable::Func(func) => {
-                if arg_count != func.args.len() {
-                    return Err(RuntimeError::new(format!(
-                        "invalid argument count for function: {}.{}(...) (expected {}, not {})",
-                        id.module,
-                        id.name,
-                        func.args.len(),
-                        arg_count,
-                    )));
-                }
+                let func = func.clone();
 
-                let body = func.body.clone();
-                let arg_names = func
-                    .args
-                    .iter()
-                    .map(|arg| arg.name.clone())
-                    .collect::<Vec<_>>();
-                let mut values = self.stack.pop_many(arg_count)?;
-                let mut ordered_values = BTreeMap::new();
-                let call_context = self.call_context()?;
-
-                for name in keywords.iter() {
-                    if let Some(arg_idx) = find_index(&arg_names, name) {
-                        ordered_values.insert(arg_idx, values.remove(0));
-                        continue;
-                    }
-
-                    return Err(RuntimeError::new(format!(
-                        "no such field '{}' for Fn: {}.{}",
-                        name, id.module, id.name,
-                    )));
-                }
-
-                for i in 0..arg_names.len() {
-                    if ordered_values.contains_key(&i) {
-                        continue;
-                    }
-
-                    ordered_values.insert(i, values.remove(0));
-                }
-
-                for (key, value) in ordered_values {
-                    let name = &arg_names[key];
-
-                    call_context.args.insert(name.to_string(), value);
-                }
-
-                self.eval_internal(body)?;
+                self.eval_native_function_call(&id.module, &id.name, func, keywords, arg_count)?;
             }
             Runnable::External(func) => {
                 if !keywords.is_empty() {
@@ -468,9 +533,7 @@ impl VM {
                 self.call_context()?.locals.insert(id.clone(), value);
             }
             Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
-                let value = self.stack.pop()?;
-
-                if let Value::Object(object) = value {
+                if let Value::Object(object) = self.stack.pop()? {
                     let obj = object.borrow();
                     let desc = self
                         .module_cache
@@ -489,8 +552,20 @@ impl VM {
                         return Ok(None);
                     }
 
+                    if let Ok(_) =
+                        self.module_cache
+                            .lookup_method(&obj.class.module, &obj.class.name, member)
+                    {
+                        self.stack.push(Value::Method(Method {
+                            name: member.clone(),
+                            object: Rc::clone(&object),
+                        }));
+
+                        return Ok(None);
+                    }
+
                     return Err(RuntimeError::new(format!(
-                        "no such field '{}' for class: {}.{}",
+                        "no such field or method '{}' for class: {}.{}",
                         member, obj.class.module, obj.class.name
                     )));
                 }
@@ -499,8 +574,11 @@ impl VM {
                 if self.call_stack.len() > 0 {
                     let context = self.call_context()?;
 
-                    if let Some(value) =
-                        context.locals.get(id).and_then(|value| Some(value.clone()))
+                    if let Some(value) = context
+                        .locals
+                        .get(id)
+                        //.or_else(|| context.locals.get(&LocalId::new(id.name.clone())))
+                        .and_then(|value| Some(value.clone()))
                     {
                         self.stack.push(value);
 
