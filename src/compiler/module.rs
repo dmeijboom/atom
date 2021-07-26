@@ -27,8 +27,8 @@ pub struct Field {
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
-    pub fields: IndexedBTreeMap<String, Field>,
     pub funcs: HashMap<String, Func>,
+    pub fields: IndexedBTreeMap<String, Field>,
 }
 
 #[derive(Debug)]

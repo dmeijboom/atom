@@ -13,5 +13,5 @@ fn main() {
         mode: 777
     );
 
-    println(file.name);
+    println(file.test());
 }

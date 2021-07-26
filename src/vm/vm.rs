@@ -4,10 +4,12 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use crate::ast::Pos;
-use crate::compiler::{Class, Code, Func, LocalId, Module, IR};
+use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::{
     convert, ClassId, FuncId, Object, PointerType, Result, RuntimeError, Trace, Value,
 };
+use crate::vm::module::{ClassDesc, FuncDesc};
+use crate::vm::{module::Runnable, Module};
 
 use super::stack::Stack;
 
@@ -21,21 +23,6 @@ fn find_index(input: &[String], search: &String) -> Option<usize> {
     None
 }
 
-enum Runnable {
-    Func(Func),
-    External(Box<dyn Fn(Vec<Value>) -> Result<Option<Value>>>),
-}
-
-struct FuncDesc {
-    pub run: Runnable,
-    pub module_name: String,
-}
-
-struct ClassDesc {
-    pub class: Class,
-    pub module_name: String,
-}
-
 struct CallContext {
     pub pos: Pos,
     pub id: FuncId,
@@ -44,11 +31,80 @@ struct CallContext {
     pub locals: HashMap<LocalId, Value>,
 }
 
+struct ModuleCache {
+    modules: HashMap<String, Module>,
+    current_module: Option<String>,
+}
+
+impl ModuleCache {
+    pub fn new() -> Self {
+        Self {
+            modules: HashMap::new(),
+            current_module: None,
+        }
+    }
+
+    pub fn add(&mut self, module: Module) {
+        self.modules.insert(module.name.clone(), module);
+    }
+
+    fn set_current(&mut self, name: &str) {
+        if !self.modules.contains_key(name) {
+            panic!("unable to set unknown current module: {}", name);
+        }
+
+        self.current_module = Some(name.to_string());
+    }
+
+    fn current(&mut self) -> Result<&mut Module> {
+        self.current_module
+            .clone()
+            .as_ref()
+            .and_then(move |name| self.modules.get_mut(name))
+            .ok_or_else(|| RuntimeError::new("no active module found".to_string()))
+    }
+
+    fn lookup_class(&self, module_name: &str, class_name: &str) -> Result<&ClassDesc> {
+        if let Some(module) = self.modules.get(module_name) {
+            if let Some(class_desc) = module.class_map.get(class_name) {
+                return Ok(class_desc);
+            }
+
+            return Err(RuntimeError::new(format!(
+                "no such class: {}.{}",
+                module_name, class_name
+            )));
+        }
+
+        Err(RuntimeError::new(format!(
+            "no such module: {}",
+            module_name
+        )))
+    }
+
+    fn lookup_function(&self, module_name: &str, function_name: &str) -> Result<&FuncDesc> {
+        if let Some(module) = self.modules.get(module_name) {
+            if let Some(function_desc) = module.func_map.get(function_name) {
+                return Ok(function_desc);
+            }
+
+            return Err(RuntimeError::new(format!(
+                "no such function: {}.{}(..)",
+                module_name, function_name
+            )));
+        }
+
+        Err(RuntimeError::new(format!(
+            "no such module: {}",
+            module_name
+        )))
+    }
+}
+
 pub struct VM {
     stack: Stack,
+    module_cache: ModuleCache,
     call_stack: Vec<CallContext>,
-    func_map: HashMap<String, FuncDesc>,
-    class_map: HashMap<String, ClassDesc>,
 }
 
 impl VM {
@@ -56,46 +112,12 @@ impl VM {
         Self {
             stack: Stack::new(),
             call_stack: vec![],
-            func_map: HashMap::new(),
-            class_map: HashMap::new(),
+            module_cache: ModuleCache::new(),
         }
     }
 
-    pub fn register_external_fn<F: Fn(Vec<Value>) -> Result<Option<Value>> + 'static>(
-        &mut self,
-        module_name: &str,
-        name: &str,
-        func: F,
-    ) {
-        self.func_map.insert(
-            name.to_string(),
-            FuncDesc {
-                module_name: module_name.to_string(),
-                run: Runnable::External(Box::new(func)),
-            },
-        );
-    }
-
-    pub fn register(&mut self, module: Module) {
-        for (name, func) in module.funcs {
-            self.func_map.insert(
-                name,
-                FuncDesc {
-                    run: Runnable::Func(func),
-                    module_name: module.name.clone(),
-                },
-            );
-        }
-
-        for (name, class) in module.classes {
-            self.class_map.insert(
-                name,
-                ClassDesc {
-                    class,
-                    module_name: module.name.clone(),
-                },
-            );
-        }
+    pub fn register_module(&mut self, module: Module) {
+        self.module_cache.add(module);
     }
 
     fn call_context(&mut self) -> Result<&mut CallContext> {
@@ -158,83 +180,76 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        if let Some(desc) = self.class_map.get(&id.name) {
-            if desc.module_name == id.module {
-                if keywords.len() != arg_count {
-                    return Err(RuntimeError::new(format!(
-                        "unable to initialize {}.{} with non-keyword arguments",
-                        id.module, id.name
-                    )));
-                }
+        let desc = self.module_cache.lookup_class(&id.module, &id.name)?;
 
-                let mut object = Object {
-                    class: id.clone(),
-                    fields: vec![],
-                };
-
-                let mut values = self
-                    .stack
-                    .pop_many(arg_count)?
-                    .into_iter()
-                    .enumerate()
-                    .map(|(keyword_idx, value)| {
-                        let name = &keywords[keyword_idx];
-                        let arg_idx = desc.class.fields.get_index_by_key(name);
-
-                        (arg_idx, name.as_str(), value)
-                    })
-                    .collect::<Vec<_>>();
-
-                if values.len() != desc.class.fields.len() {
-                    let mut field_names = desc
-                        .class
-                        .fields
-                        .keys()
-                        .cloned()
-                        .map(|key| (key.clone(), key))
-                        .collect::<HashMap<_, _>>();
-
-                    for (_, name, _) in values {
-                        field_names.remove(name);
-                    }
-
-                    return Err(RuntimeError::new(format!(
-                        "unable to initialize {}.{} with missing fields: {}",
-                        id.module,
-                        id.name,
-                        field_names
-                            .into_iter()
-                            .map(|(key, _)| key)
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    )));
-                }
-
-                values.sort_unstable_by_key(|(index, _, _)| *index);
-
-                for (index, name, value) in values {
-                    if index.is_some() {
-                        object.fields.push(value);
-                        continue;
-                    }
-
-                    return Err(RuntimeError::new(format!(
-                        "unable to initialize {}.{} without field: {}",
-                        id.module, id.name, name,
-                    )));
-                }
-
-                self.stack
-                    .push(Value::Object(Rc::new(RefCell::new(object))));
-
-                return Ok(());
-            }
+        if keywords.len() != arg_count {
+            return Err(RuntimeError::new(format!(
+                "unable to initialize {}.{} with non-keyword arguments",
+                id.module, id.name
+            )));
         }
 
-        Err(RuntimeError::new(format!(
-            "no such class: {}.{}(...)",
-            id.module, id.name
-        )))
+        let mut object = Object {
+            class: id.clone(),
+            fields: vec![],
+        };
+
+        let mut values = self
+            .stack
+            .pop_many(arg_count)?
+            .into_iter()
+            .enumerate()
+            .map(|(keyword_idx, value)| {
+                let name = &keywords[keyword_idx];
+                let arg_idx = desc.class.fields.get_index_by_key(name);
+
+                (arg_idx, name.as_str(), value)
+            })
+            .collect::<Vec<_>>();
+
+        if values.len() != desc.class.fields.len() {
+            let mut field_names = desc
+                .class
+                .fields
+                .keys()
+                .cloned()
+                .map(|key| (key.clone(), key))
+                .collect::<HashMap<_, _>>();
+
+            for (_, name, _) in values {
+                field_names.remove(name);
+            }
+
+            return Err(RuntimeError::new(format!(
+                "unable to initialize {}.{} with missing fields: {}",
+                id.module,
+                id.name,
+                field_names
+                    .into_iter()
+                    .map(|(key, _)| key)
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            )));
+        }
+
+        values.sort_unstable_by_key(|(index, _, _)| *index);
+
+        for (index, name, value) in values {
+            if index.is_some() {
+                object.fields.push(value);
+                continue;
+            }
+
+            return Err(RuntimeError::new(format!(
+                "unable to initialize {}.{} without field: {}",
+                id.module, id.name, name,
+            )));
+        }
+
+        self.stack
+            .push(Value::Object(Rc::new(RefCell::new(object))));
+
+        Ok(())
     }
 
     fn eval_function_call(
@@ -244,96 +259,91 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        if let Some(desc) = self.func_map.get(&id.name) {
-            if desc.module_name == id.module {
-                self.call_stack.push(CallContext {
-                    id: id.clone(),
-                    pos: pos.clone(),
-                    args: HashMap::new(),
-                    locals: HashMap::new(),
-                    return_value: None,
-                });
+        let desc = self.module_cache.lookup_function(&id.module, &id.name)?;
+        if desc.module_name == id.module {
+            self.call_stack.push(CallContext {
+                id: id.clone(),
+                pos: pos.clone(),
+                args: HashMap::new(),
+                locals: HashMap::new(),
+                return_value: None,
+            });
 
-                match &desc.run {
-                    Runnable::Func(func) => {
-                        if arg_count != func.args.len() {
-                            return Err(
-                                RuntimeError::new(
-                                    format!(
-                                        "invalid argument count for function: {}.{}(...) (expected {}, not {})",
-                                        id.module,
-                                        id.name,
-                                        func.args.len(),
-                                        arg_count,
-                                    ),
-                                ),
-                            );
-                        }
-
-                        let body = func.body.clone();
-                        let arg_names = func
-                            .args
-                            .iter()
-                            .map(|arg| arg.name.clone())
-                            .collect::<Vec<_>>();
-                        let mut values = self.stack.pop_many(arg_count)?;
-                        let mut ordered_values = BTreeMap::new();
-                        let call_context = self.call_context()?;
-
-                        for name in keywords.iter() {
-                            if let Some(arg_idx) = find_index(&arg_names, name) {
-                                ordered_values.insert(arg_idx, values.remove(0));
-                                continue;
-                            }
-
-                            return Err(RuntimeError::new(format!(
-                                "no such field '{}' for Fn: {}.{}",
-                                name, id.module, id.name,
-                            )));
-                        }
-
-                        for i in 0..arg_names.len() {
-                            if ordered_values.contains_key(&i) {
-                                continue;
-                            }
-
-                            ordered_values.insert(i, values.remove(0));
-                        }
-
-                        for (key, value) in ordered_values {
-                            let name = &arg_names[key];
-
-                            call_context.args.insert(name.to_string(), value);
-                        }
-
-                        self.eval_internal(body)?;
+            match &desc.run {
+                Runnable::Func(func) => {
+                    if arg_count != func.args.len() {
+                        return Err(RuntimeError::new(format!(
+                            "invalid argument count for function: {}.{}(...) (expected {}, not {})",
+                            id.module,
+                            id.name,
+                            func.args.len(),
+                            arg_count,
+                        )));
                     }
-                    Runnable::External(func) => {
-                        if !keywords.is_empty() {
-                            return Err(RuntimeError::new(format!(
-                                "unable to use keyword arguments in external Fn: {}.{}",
-                                id.module, id.name
-                            )));
+
+                    let body = func.body.clone();
+                    let arg_names = func
+                        .args
+                        .iter()
+                        .map(|arg| arg.name.clone())
+                        .collect::<Vec<_>>();
+                    let mut values = self.stack.pop_many(arg_count)?;
+                    let mut ordered_values = BTreeMap::new();
+                    let call_context = self.call_context()?;
+
+                    for name in keywords.iter() {
+                        if let Some(arg_idx) = find_index(&arg_names, name) {
+                            ordered_values.insert(arg_idx, values.remove(0));
+                            continue;
                         }
 
-                        let values = self.stack.pop_many(arg_count)?;
-
-                        if let Some(return_value) = func(values)? {
-                            self.call_context()?.return_value = Some(return_value);
-                        }
+                        return Err(RuntimeError::new(format!(
+                            "no such field '{}' for Fn: {}.{}",
+                            name, id.module, id.name,
+                        )));
                     }
-                };
 
-                let context = self.call_stack.pop().unwrap();
+                    for i in 0..arg_names.len() {
+                        if ordered_values.contains_key(&i) {
+                            continue;
+                        }
 
-                if let Some(value) = context.return_value {
-                    self.stack.push(value);
-                } else {
-                    self.stack.push(Value::Invalid);
+                        ordered_values.insert(i, values.remove(0));
+                    }
+
+                    for (key, value) in ordered_values {
+                        let name = &arg_names[key];
+
+                        call_context.args.insert(name.to_string(), value);
+                    }
+
+                    self.eval_internal(body)?;
                 }
+                Runnable::External(func) => {
+                    if !keywords.is_empty() {
+                        return Err(RuntimeError::new(format!(
+                            "unable to use keyword arguments in external Fn: {}.{}",
+                            id.module, id.name
+                        )));
+                    }
 
-                return Ok(());
+                    let values = self.stack.pop_many(arg_count)?;
+
+                    if let Some(return_value) = func(values)? {
+                        self.call_context()?.return_value = Some(return_value);
+                    }
+                }
+            };
+
+            let context = self.call_stack.pop().unwrap();
+
+            if let Some(value) = context.return_value {
+                self.stack.push(value);
+            } else {
+                self.stack.push(Value::Invalid);
             }
+
+            return Ok(());
         }
 
         Err(RuntimeError::new(format!(
@@ -506,7 +516,9 @@ impl VM {
                     match pointer {
                         PointerType::FieldPtr((object, field_idx)) => {
                             let mut object = object.borrow_mut();
-                            let desc = self.class_map.get(&object.class.name).unwrap();
+                            let desc = self
+                                .module_cache
+                                .lookup_class(&object.class.module, &object.class.name)?;
                             let (name, field_desc) =
                                 desc.class.fields.get_key_value_by_index(field_idx).unwrap();
 
@@ -538,7 +550,9 @@ impl VM {
 
                 if let Value::Object(object) = value {
                     let obj = object.borrow();
-                    let desc = self.class_map.get(&obj.class.name).unwrap();
+                    let desc = self
+                        .module_cache
+                        .lookup_class(&obj.class.module, &obj.class.name)?;
 
                     if let Some(index) = desc.class.fields.get_index_by_key(member) {
                         if let Code::LoadMember(_) = ir.code {
@@ -582,7 +596,7 @@ impl VM {
                     }
                 }
 
-                if let Some(desc) = self.class_map.get(&id.name) {
+                if let Some(desc) = self.module_cache.current()?.class_map.get(&id.name) {
                     self.stack.push(
                         Value::Class(ClassId {
                             name: id.name.clone(),
@@ -594,7 +608,7 @@ impl VM {
                     return Ok(None);
                 }
 
-                if let Some(desc) = self.func_map.get(&id.name) {
+                if let Some(desc) = self.module_cache.current()?.func_map.get(&id.name) {
                     self.stack.push(
                         Value::Function(FuncId {
                             name: id.name.clone(),
@@ -661,8 +675,19 @@ impl VM {
         Ok(())
     }
 
-    pub fn eval(&mut self, ir_list: Vec<IR>) -> Result<()> {
-        self.eval_internal(ir_list)
-            .map_err(|e| e.with_stack_trace(self.rewind_stack()))
+    pub fn eval(&mut self, module: &str, ir_list: Vec<IR>) -> Result<()> {
+        self.module_cache.set_current(module);
+
+        self.eval_internal(ir_list).map_err(|e| {
+            let e = e.with_stack_trace(self.rewind_stack());
+
+            if let Ok(module) = self.module_cache.current() {
+                return e.with_module(module);
+            }
+
+            e
+        })?;
+
+        Ok(())
     }
 }

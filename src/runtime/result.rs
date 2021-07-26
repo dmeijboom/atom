@@ -3,6 +3,7 @@ use std::fmt;
 
 use crate::ast::Pos;
 use crate::runtime::FuncId;
+use crate::vm::Module;
 
 #[derive(Debug)]
 pub struct Trace {
@@ -15,6 +16,7 @@ pub struct RuntimeError {
     pub message: String,
     pub pos: Option<Pos>,
     pub module_name: Option<String>,
+    pub filename: Option<String>,
     pub stack_trace: Vec<Trace>,
 }
 
@@ -24,6 +26,7 @@ impl RuntimeError {
             message,
             pos: None,
             module_name: None,
+            filename: None,
             stack_trace: vec![],
         }
     }
@@ -36,6 +39,16 @@ impl RuntimeError {
 
     pub fn with_stack_trace(mut self, stack_trace: Vec<Trace>) -> Self {
         self.stack_trace = stack_trace;
+
+        self
+    }
+
+    pub fn with_module(mut self, module: &Module) -> Self {
+        self.module_name = Some(module.name.clone());
+        self.filename = module
+            .filename
+            .clone()
+            .and_then(|filename| filename.to_str().and_then(|s| Some(s.to_string())));
 
         self
     }
