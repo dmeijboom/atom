@@ -6,7 +6,7 @@ use clap::Clap;
 use crate::ast::Pos;
 use crate::compiler::{Code, Compiler, LocalId, IR};
 use crate::runtime::Value;
-use crate::vm::{VM, Module};
+use crate::vm::{Module, VM};
 
 mod ast;
 mod compiler;
@@ -74,7 +74,6 @@ fn main() {
             let mut main_module = Module::new(module, Some(run_opts.filename));
 
             main_module.register_external_fn(
-                "std.core",
                 "println",
                 Box::new(|values: Vec<Value>| {
                     println!(
@@ -94,10 +93,13 @@ fn main() {
 
             vm.register_module(main_module);
 
-            if let Err(e) = vm.eval("main", vec![
-                IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
-                IR::new(Code::Call((vec![], 0)), 0..0),
-            ]) {
+            if let Err(e) = vm.eval(
+                "main",
+                vec![
+                    IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+                    IR::new(Code::Call((vec![], 0)), 0..0),
+                ],
+            ) {
                 let mut message = String::new();
 
                 if !e.stack_trace.is_empty() {
