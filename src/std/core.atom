@@ -1,5 +1,36 @@
 module std.core;
 
+class Option {
+    let _value;
+    let _isNil;
+
+    fn value() {
+        return this._value;
+    }
+
+    fn isSome() {
+        return !this._isNil;
+    }
+
+    fn isNone() {
+        return this._isNil;
+    }
+}
+
+fn some(value) {
+    return Option(
+        _value: value,
+        _isNil: false
+    );
+}
+
+fn none() {
+    return Option(
+        _value: 0,
+        _isNil: true
+    );
+}
+
 class String {
     let value;
 }
@@ -16,12 +47,20 @@ class Array {
     let value;
     let length;
 
+    fn nth(index) {
+        if this.length <= index {
+            return none();
+        }
+
+        return some(this.value[index]);
+    }
+
     fn first() {
-        return this.value[0];
+        return this.nth(0);
     }
 
     fn last() {
-        return this.value[this.length-1];
+        return this.nth(this.length-1);
     }
 }
 

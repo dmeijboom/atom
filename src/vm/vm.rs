@@ -288,9 +288,14 @@ impl VM {
             call_context.args.insert(name.to_string(), value);
         }
 
-        self.eval_internal(func.body)?;
+        // evaluate the function in the scope of it's module
+        let current_module = self.module_cache.current_name()?.to_string();
 
-        Ok(())
+        self.module_cache.set_current(module_name);
+        let result = self.eval_internal(func.body);
+        self.module_cache.set_current(&current_module);
+
+        result
     }
 
     fn eval_function_call(

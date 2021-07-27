@@ -3,7 +3,15 @@ class File {
     let mode;
 
     fn test() {
-        return [1, 2, 3].last();
+        let value = [1, 2, 3].last();
+
+        this.other(val: value);
+    }
+
+    fn other(val) {
+        if val.isSome() {
+            println(val.value());
+        }
     }
 }
 
@@ -13,5 +21,5 @@ fn main() {
         mode: 777
     );
 
-    println(file.test());
+    file.test();
 }
