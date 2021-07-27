@@ -1,8 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::path::PathBuf;
 
+use indexmap::map::IndexMap;
+
 use crate::compiler::{self, Func};
-use crate::runtime::{IndexedBTreeMap, Result, RuntimeError, Value};
+use crate::runtime::{Result, RuntimeError, Value};
 
 pub enum Runnable {
     Func(Func),
@@ -23,7 +25,7 @@ pub struct MethodDesc {
 
 pub struct ClassDesc {
     pub methods: HashMap<String, MethodDesc>,
-    pub fields: IndexedBTreeMap<String, FieldDesc>,
+    pub fields: IndexMap<String, FieldDesc>,
 }
 
 pub struct Module {
@@ -52,7 +54,7 @@ impl Module {
         }
 
         for (name, class) in module.classes {
-            let mut fields = BTreeMap::new();
+            let mut fields = IndexMap::new();
             let mut methods = HashMap::new();
 
             for (name, field) in class.fields.into_iter() {
@@ -68,13 +70,9 @@ impl Module {
                 methods.insert(name, MethodDesc { func });
             }
 
-            vm_module.class_map.insert(
-                name,
-                ClassDesc {
-                    fields: IndexedBTreeMap::new(fields),
-                    methods,
-                },
-            );
+            vm_module
+                .class_map
+                .insert(name, ClassDesc { fields, methods });
         }
 
         vm_module

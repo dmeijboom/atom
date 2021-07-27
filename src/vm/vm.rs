@@ -136,7 +136,7 @@ impl VM {
             .enumerate()
             .map(|(keyword_idx, value)| {
                 let name = &keywords[keyword_idx];
-                let arg_idx = desc.fields.get_index_by_key(name);
+                let arg_idx = desc.fields.get_index_of(name);
 
                 (arg_idx, name.as_str(), value)
             })
@@ -508,8 +508,7 @@ impl VM {
                             let desc = self
                                 .module_cache
                                 .lookup_class(&object.class.module, &object.class.name)?;
-                            let (name, field_desc) =
-                                desc.fields.get_key_value_by_index(field_idx).unwrap();
+                            let (name, field_desc) = desc.fields.get_index(field_idx).unwrap();
 
                             if !field_desc.mutable {
                                 return Err(RuntimeError::new(format!(
@@ -534,6 +533,30 @@ impl VM {
 
                 self.call_context()?.locals.insert(id.clone(), value);
             }
+            Code::LoadIndex => {
+                let index = self.stack.pop()?;
+                let value = self.stack.pop()?;
+
+                if let Value::Array(array) = value {
+                    let items = array.borrow();
+                    let index = convert::to_int(&index)?;
+
+                    if let Some(item) = items.get(index as usize) {
+                        self.stack.push(item.clone());
+
+                        return Ok(None);
+                    }
+
+                    return Err(RuntimeError::new(
+                        format!("index out of bounds: {}", index,),
+                    ));
+                }
+
+                return Err(RuntimeError::new(format!(
+                    "unable to index type: {}",
+                    value.get_type().name()
+                )));
+            }
             Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
                 let object = convert::to_object(self.stack.pop()?)?;
                 let obj = object.borrow();
@@ -541,7 +564,7 @@ impl VM {
                     .module_cache
                     .lookup_class(&obj.class.module, &obj.class.name)?;
 
-                if let Some(index) = desc.fields.get_index_by_key(member) {
+                if let Some(index) = desc.fields.get_index_of(member) {
                     if let Code::LoadMember(_) = ir.code {
                         self.stack.push(obj.fields[index].clone());
                     } else {

@@ -1,15 +1,28 @@
 module std.core;
 
 class String {
+    let value;
 }
 
 class Int {
+    let value;
 }
 
 class Float {
+    let value;
 }
 
 class Array {
+    let value;
+    let length;
+
+    fn first() {
+        return this.value[0];
+    }
+
+    fn last() {
+        return this.value[this.length-1];
+    }
 }
 
 class Map {

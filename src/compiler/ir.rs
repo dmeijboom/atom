@@ -55,6 +55,7 @@ pub enum Code {
     Store(LocalId),
     StoreMut(LocalId),
     Load(LocalId),
+    LoadIndex,
     LoadMember(String),
     LoadMemberPtr(String),
     StorePtr,

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use clap::Clap;
 
 use crate::ast::Pos;
-use crate::compiler::{Code, Compiler, IR, LocalId};
+use crate::compiler::{Code, Compiler, LocalId, IR};
 use crate::runtime::Value;
 use crate::vm::{Module, VM};
 

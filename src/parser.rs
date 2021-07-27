@@ -108,6 +108,8 @@ peg::parser! {
             --
             object:(@) _ "." _ member:ident() end:pos() { Expr::Member(MemberExpr { pos: (start..end), object, member }.into()) }
             --
+            object:(@) "[" _ index:expr() _ "]" end:pos() { Expr::Index(IndexExpr { pos: (start..end), object, index }.into()) }
+            --
             "(" _ expr:expr() _ ")" { expr }
             --
             callee:@ "(" _ keyword_args:keyword_arg() ** (_ "," _) _ "," _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args, args, pos: (callee.pos().start..end), callee }.into()) }

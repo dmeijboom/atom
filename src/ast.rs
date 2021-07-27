@@ -121,6 +121,13 @@ pub struct MemberExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct IndexExpr {
+    pub object: Expr,
+    pub index: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -132,6 +139,7 @@ pub enum Expr {
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
+    Index(Box<IndexExpr>),
 }
 
 impl Expr {
@@ -147,6 +155,7 @@ impl Expr {
             Self::Arithmetic(arithmetic) => arithmetic.pos.clone(),
             Self::Comparison(comparison) => comparison.pos.clone(),
             Self::Logical(logical) => logical.pos.clone(),
+            Expr::Index(index) => index.pos.clone(),
         }
     }
 }

@@ -1,5 +1,5 @@
 use std::cell::RefCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
@@ -11,7 +11,7 @@ use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field};
 use crate::compiler::scope::{Local, Scope};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
-use crate::runtime::IndexedBTreeMap;
+use indexmap::map::IndexMap;
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -127,6 +127,11 @@ impl Compiler {
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
                 ir.push(vec![IR::new(Code::Not, not_expr.pos.clone())]);
+            }
+            Expr::Index(index_expr) => {
+                ir.push(self.compile_expr(&index_expr.object)?);
+                ir.push(self.compile_expr(&index_expr.index)?);
+                ir.push(vec![IR::new(Code::LoadIndex, index_expr.pos.clone())]);
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
@@ -451,7 +456,7 @@ impl Compiler {
             self.scope = Rc::new(RefCell::new(new_scope));
         }
 
-        let mut fields = BTreeMap::new();
+        let mut fields = IndexMap::new();
 
         for field in class_decl.fields.iter() {
             if fields.contains_key(&field.name) {
@@ -490,7 +495,7 @@ impl Compiler {
 
         Ok(Class {
             name: class_decl.name.clone(),
-            fields: IndexedBTreeMap::new(fields),
+            fields,
             funcs,
         })
     }

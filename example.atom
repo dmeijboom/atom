@@ -3,7 +3,7 @@ class File {
     let mode;
 
     fn test() {
-        return [1, 2, 3].first();
+        return [1, 2, 3].last();
     }
 }
 
