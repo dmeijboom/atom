@@ -1,5 +1,5 @@
 fn main() {
     for [0..3] {
-        println([1, 2].nth(1).value());
+        println(. + 2);
     }
 }

@@ -78,8 +78,11 @@ peg::parser! {
         rule array_expr() -> Expr
             = start:pos() "[" _ items:expr() ** (_ "," _) _ "]" end:pos() { Expr::Array(ArrayExpr { items, pos: (start..end) }) }
 
+        rule dot_expr() -> Expr
+            = start:pos() "." !['0'..='9'] end:pos() { Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }) }
+
         rule prefix() -> Expr
-            = literal_expr() / ident_expr() / range_expr() / array_expr() / map_expr()
+            = dot_expr() / literal_expr() / ident_expr() / range_expr() / array_expr() / map_expr()
 
         rule keyword_arg() -> KeywordArg
             = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }

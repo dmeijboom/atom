@@ -59,6 +59,12 @@ impl Compiler {
         }
     }
 
+    fn set_local(&mut self, name: String, mutable: bool) {
+        let mut scope = self.scope.borrow_mut();
+
+        scope.set_local(Local { mutable, name });
+    }
+
     fn make_label(&mut self, prefix: &str) -> String {
         let mut i: i64 = 0;
 
@@ -296,12 +302,7 @@ impl Compiler {
                 self.pos.clone(),
             ));
         } else {
-            let mut scope = self.scope.borrow_mut();
-
-            scope.set_local(Local {
-                mutable,
-                name: name.to_string(),
-            });
+            self.set_local(name.to_string(), mutable);
         }
 
         if let Some(expr) = value {
@@ -394,7 +395,11 @@ impl Compiler {
                     let for_label = self.make_label("for");
                     let body_label = self.make_label("for_body");
                     let cont_label = self.make_label("for_cont");
-                    let iter_id = LocalId::new_in_scope("__iter__".to_string(), self.scope_id);
+                    let iter_id = LocalId::new_in_scope("#iter".to_string(), self.scope_id);
+                    let iter_current_id =
+                        LocalId::new_in_scope("#iter.current".to_string(), self.scope_id);
+
+                    self.set_local(".".to_string(), false);
 
                     ir.push(self.compile_expr(&for_stmt.expr)?);
                     ir.push(
@@ -408,12 +413,19 @@ impl Compiler {
                             Code::Load(iter_id),
                             Code::LoadMember("next".to_string()),
                             Code::Call((vec![], 0)),
-                            // step 3. Check if it has a value and either continue or stop
+                            // step 3. Store the current value
+                            Code::Store(iter_current_id.clone()),
+                            Code::Load(iter_current_id.clone()),
+                            // step 4. Check if it has a value and either continue or stop
                             Code::LoadMember("isSome".to_string()),
                             Code::Call((vec![], 0)),
                             Code::Branch((body_label.clone(), cont_label.clone())),
-                            // step 4. Evaluate the body and so on..
+                            // step 5. Evaluate the body and so on..
                             Code::SetLabel(body_label.clone()),
+                            Code::Load(iter_current_id),
+                            Code::LoadMember("value".to_string()),
+                            Code::Call((vec![], 0)),
+                            Code::Store(LocalId::new_in_scope(".".to_string(), self.scope_id)),
                         ]
                         .into_iter()
                         .map(|code| IR::new(code, self.pos.clone()))
@@ -447,14 +459,7 @@ impl Compiler {
             ));
         }
 
-        {
-            let mut scope = self.scope.borrow_mut();
-
-            scope.set_local(Local {
-                name: fn_decl.name.clone(),
-                mutable: false,
-            });
-        }
+        self.set_local(fn_decl.name.clone(), false);
 
         let body = self.compile_stmt_list(&fn_decl.body)?;
 
@@ -482,14 +487,7 @@ impl Compiler {
             ));
         }
 
-        {
-            let mut scope = self.scope.borrow_mut();
-
-            scope.set_local(Local {
-                name: class_decl.name.clone(),
-                mutable: false,
-            });
-        }
+        self.set_local(class_decl.name.clone(), false);
 
         {
             self.scope_id += 1;
@@ -517,12 +515,7 @@ impl Compiler {
                 },
             );
 
-            let mut scope = self.scope.borrow_mut();
-
-            scope.set_local(Local {
-                mutable: field.mutable,
-                name: field.name.to_string(),
-            });
+            self.set_local(field.name.to_string(), field.mutable);
         }
 
         let mut funcs = HashMap::new();
