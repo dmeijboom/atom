@@ -3,73 +3,33 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
-use crate::ast::Pos;
-use crate::compiler::{Code, Func, LocalId, IR};
+use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::{
-    convert, ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Trace, Value,
+    convert, ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Value,
 };
-use crate::vm::module_cache::{Module, ModuleCache, Runnable};
+use crate::vm::call_stack::CallContext;
+use crate::vm::module_cache::{FuncSource, Module, ModuleCache};
 
+use super::call_stack::CallStack;
 use super::stack::Stack;
-
-struct CallContext {
-    pub pos: Pos,
-    pub id: FuncId,
-    pub return_value: Option<Value>,
-    pub args: HashMap<String, Value>,
-    pub locals: HashMap<LocalId, Value>,
-}
-
-impl CallContext {
-    fn new(pos: Pos, id: FuncId) -> Self {
-        Self {
-            id,
-            pos,
-            return_value: None,
-            args: HashMap::new(),
-            locals: HashMap::new(),
-        }
-    }
-}
 
 pub struct VM {
     stack: Stack,
     module_cache: ModuleCache,
-    call_stack: Vec<CallContext>,
+    call_stack: CallStack,
 }
 
 impl VM {
     pub fn new() -> Self {
         Self {
             stack: Stack::new(),
-            call_stack: vec![],
+            call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
         }
     }
 
     pub fn register_module(&mut self, module: Module) {
         self.module_cache.add(module);
-    }
-
-    fn call_context(&mut self) -> Result<&mut CallContext> {
-        self.call_stack
-            .last_mut()
-            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
-    }
-
-    fn rewind_stack(&mut self) -> Vec<Trace> {
-        let mut stack_trace = vec![];
-
-        while !self.call_stack.is_empty() {
-            let call_context = self.call_stack.remove(0);
-
-            stack_trace.push(Trace {
-                pos: call_context.pos.clone(),
-                func: call_context.id,
-            });
-        }
-
-        stack_trace
     }
 
     fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
@@ -215,9 +175,36 @@ impl VM {
 
         self.call_stack.push(context);
 
-        let func = desc.func.clone();
+        if arg_count != desc.func.args.len() {
+            return Err(RuntimeError::new(format!(
+                "invalid argument count for Method: {}.{}.{}(...) (expected {}, not {})",
+                module,
+                class,
+                method.name,
+                desc.func.args.len(),
+                arg_count,
+            )));
+        }
 
-        self.eval_native_function_call(&module, &method.name, &func, keywords, arg_count)?;
+        let arg_names = desc.func.args.keys().cloned().collect();
+        let values = self.stack.pop_many(arg_count)?;
+        let ordered_values = self
+            .prepare_args(values, keywords, &arg_names)
+            .map_err(|e| {
+                let message = e.message.clone();
+                e.with_message(format!(
+                    "{} in Method {}.{}.{}",
+                    message, module, class, method.name
+                ))
+            })?;
+        let call_context = self.call_stack.current_mut()?;
+
+        for (i, value) in ordered_values {
+            call_context.args.insert(arg_names[i].to_string(), value);
+        }
+
+        let source = Rc::clone(&desc.func.source.native().unwrap());
+        self.eval_internal(&module, source)?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -230,46 +217,24 @@ impl VM {
         Ok(())
     }
 
-    fn eval_native_function_call(
-        &mut self,
-        module_name: &str,
-        function_name: &str,
-        func: &Func,
+    fn prepare_args(
+        &self,
+        mut values: Vec<Value>,
         keywords: &[String],
-        arg_count: usize,
-    ) -> Result<()> {
-        if arg_count != func.args.len() {
-            return Err(RuntimeError::new(format!(
-                "invalid argument count for function: {}.{}(...) (expected {}, not {})",
-                module_name,
-                function_name,
-                func.args.len(),
-                arg_count,
-            )));
-        }
-
-        let arg_names = func
-            .args
-            .iter()
-            .map(|arg| arg.name.clone())
-            .collect::<Vec<_>>();
-        let mut values = self.stack.pop_many(arg_count)?;
+        args: &Vec<String>,
+    ) -> Result<BTreeMap<usize, Value>> {
         let mut ordered_values = BTreeMap::new();
-        let call_context = self.call_context()?;
 
         for name in keywords.iter() {
-            if let Ok(arg_idx) = arg_names.binary_search(name) {
+            if let Ok(arg_idx) = args.binary_search(name) {
                 ordered_values.insert(arg_idx, values.remove(0));
                 continue;
             }
 
-            return Err(RuntimeError::new(format!(
-                "no such field '{}' for Fn: {}.{}",
-                name, module_name, function_name,
-            )));
+            return Err(RuntimeError::new(format!("no such argument '{}'", name)));
         }
 
-        for i in 0..arg_names.len() {
+        for i in 0..args.len() {
             if ordered_values.contains_key(&i) {
                 continue;
             }
@@ -277,20 +242,7 @@ impl VM {
             ordered_values.insert(i, values.remove(0));
         }
 
-        for (key, value) in ordered_values {
-            let name = &arg_names[key];
-
-            call_context.args.insert(name.to_string(), value);
-        }
-
-        // evaluate the function in the scope of it's module
-        let current_module = self.module_cache.current_name()?.to_string();
-
-        self.module_cache.set_current(module_name);
-        let result = self.eval_internal(&func.body);
-        self.module_cache.set_current(&current_module);
-
-        result
+        Ok(ordered_values)
     }
 
     fn eval_function_call(
@@ -299,21 +251,41 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let desc = self.module_cache.lookup_function(&id.module, &id.name)?;
+        let func = self.module_cache.lookup_function(&id.module, &id.name)?;
 
-        match &desc.run {
-            Runnable::Func(func) => {
-                // @TODO: make sure a function doesn't have to be cloned
-                let func = func.clone();
+        self.call_stack
+            .push(CallContext::new(func.pos.clone(), id.clone()));
 
-                self.call_stack
-                    .push(CallContext::new(func.pos.clone(), id.clone()));
+        match &func.source {
+            FuncSource::Native(source) => {
+                if arg_count != func.args.len() {
+                    return Err(RuntimeError::new(format!(
+                        "invalid argument count for Fn: {}.{}(...) (expected {}, not {})",
+                        id.module,
+                        id.name,
+                        func.args.len(),
+                        arg_count,
+                    )));
+                }
 
-                self.eval_native_function_call(&id.module, &id.name, &func, keywords, arg_count)?;
+                let arg_names = func.args.keys().cloned().collect();
+                let values = self.stack.pop_many(arg_count)?;
+                let ordered_values =
+                    self.prepare_args(values, keywords, &arg_names)
+                        .map_err(|e| {
+                            let message = e.message.clone();
+                            e.with_message(format!("{} in Fn {}.{}", message, id.module, id.name,))
+                        })?;
+                let call_context = self.call_stack.current_mut()?;
+
+                for (i, value) in ordered_values {
+                    call_context.args.insert(arg_names[i].to_string(), value);
+                }
+
+                let source = Rc::clone(source);
+                self.eval_internal(&id.module, source)?;
             }
-            Runnable::External(func) => {
-                self.call_stack.push(CallContext::new(0..0, id.clone()));
-
+            FuncSource::External(closure) => {
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "unable to use keyword arguments in external Fn: {}.{}",
@@ -323,11 +295,11 @@ impl VM {
 
                 let values = self.stack.pop_many(arg_count)?;
 
-                if let Some(return_value) = func(values)? {
-                    self.call_context()?.return_value = Some(return_value);
+                if let Some(return_value) = closure(values)? {
+                    self.call_stack.current_mut()?.return_value = Some(return_value);
                 }
             }
-        };
+        }
 
         let context = self.call_stack.pop().unwrap();
 
@@ -408,8 +380,7 @@ impl VM {
             Code::Discard => self.stack.delete()?,
             Code::Return => {
                 let return_value = self.stack.pop()?;
-
-                self.call_context()?.return_value = Some(return_value);
+                self.call_stack.current_mut()?.return_value = Some(return_value);
             }
             Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
                 Value::Bool(val) => Ok(Value::Bool(*val && convert::to_bool(&right)?)),
@@ -501,8 +472,10 @@ impl VM {
             }
             Code::Store(id) => {
                 let value = self.stack.pop()?;
-
-                self.call_context()?.locals.insert(id.clone(), value);
+                self.call_stack
+                    .current_mut()?
+                    .locals
+                    .insert(id.clone(), value);
             }
             Code::StorePtr => {
                 let value = self.stack.pop()?;
@@ -540,8 +513,10 @@ impl VM {
             }
             Code::StoreMut(id) => {
                 let value = self.stack.pop()?;
-
-                self.call_context()?.locals.insert(id.clone(), value);
+                self.call_stack
+                    .current_mut()?
+                    .locals
+                    .insert(id.clone(), value);
             }
             Code::LoadIndex => {
                 let index = self.stack.pop()?;
@@ -608,8 +583,8 @@ impl VM {
                 )));
             }
             Code::Load(id) => {
-                if self.call_stack.len() > 0 {
-                    let context = self.call_context()?;
+                if !self.call_stack.is_empty() {
+                    let context = self.call_stack.current_mut()?;
 
                     if let Some(value) = context
                         .locals
@@ -687,7 +662,7 @@ impl VM {
         Ok(None)
     }
 
-    fn find_label(&self, instructions: &Vec<IR>, search: &str) -> Result<usize> {
+    fn find_label(&self, instructions: Rc<Vec<IR>>, search: &str) -> Result<usize> {
         for (i, ir) in instructions.iter().enumerate() {
             if let Code::SetLabel(label) = &ir.code {
                 if label == search {
@@ -702,50 +677,67 @@ impl VM {
         )))
     }
 
-    fn eval_internal(&mut self, instructions: &Vec<IR>) -> Result<()> {
-        let mut i = 0;
+    fn eval_internal(&mut self, module: &str, instructions: Rc<Vec<IR>>) -> Result<()> {
+        let current_module = self
+            .module_cache
+            .current_name()
+            .ok()
+            .and_then(|name| Some(name.to_string()));
 
-        while i < instructions.len() {
-            let ir = &instructions[i];
-            let pos = ir.pos.clone();
+        self.module_cache.set_current(module);
 
-            // evaluates the instruction and optionally returns a label to jump to
-            if let Some(label) = self.eval_single(ir).map_err(|e| {
-                if e.pos.is_none() {
-                    return e.with_pos(pos);
-                } else {
-                    e
+        let mut eval = || {
+            let mut i = 0;
+
+            while i < instructions.len() {
+                let ir = &instructions[i];
+                let pos = ir.pos.clone();
+
+                // evaluates the instruction and optionally returns a label to jump to
+                if let Some(label) = self.eval_single(ir).map_err(|e| {
+                    if e.pos.is_none() {
+                        return e.with_pos(pos);
+                    } else {
+                        e
+                    }
+                })? {
+                    i = self.find_label(Rc::clone(&instructions), &label)?;
+                    continue;
                 }
-            })? {
-                i = self.find_label(instructions, &label)?;
-                continue;
+
+                // break on early return
+                if let Some(context) = self.call_stack.last() {
+                    if context.return_value.is_some() {
+                        break;
+                    }
+                }
+
+                i += 1;
             }
 
-            // break on early return
-            if let Some(context) = self.call_stack.last() {
-                if context.return_value.is_some() {
-                    break;
-                }
-            }
+            Ok(())
+        };
 
-            i += 1;
+        let result = eval();
+
+        if let Some(module) = current_module {
+            self.module_cache.set_current(&module);
         }
 
-        Ok(())
+        result
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
-        self.module_cache.set_current(module);
+        self.eval_internal(module, Rc::new(instructions))
+            .map_err(|e| {
+                let e = e.with_stack_trace(self.call_stack.rewind());
 
-        self.eval_internal(&instructions).map_err(|e| {
-            let e = e.with_stack_trace(self.rewind_stack());
+                if let Ok(module) = self.module_cache.current() {
+                    return e.with_module(module);
+                }
 
-            if let Ok(module) = self.module_cache.current() {
-                return e.with_module(module);
-            }
-
-            e
-        })?;
+                e
+            })?;
 
         Ok(())
     }

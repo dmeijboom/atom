@@ -394,8 +394,7 @@ impl Compiler {
                     let for_label = self.make_label("for");
                     let body_label = self.make_label("for_body");
                     let cont_label = self.make_label("for_cont");
-                    let iter_id =
-                        LocalId::new_in_scope(format!("__iter__{}", self.scope_id), self.scope_id);
+                    let iter_id = LocalId::new_in_scope("__iter__".to_string(), self.scope_id);
 
                     ir.push(self.compile_expr(&for_stmt.expr)?);
                     ir.push(

@@ -1,18 +1,58 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use indexmap::map::IndexMap;
 
-use crate::compiler::{self, Func};
+use crate::ast::Pos;
+use crate::compiler;
+use crate::compiler::{Func, IR};
 use crate::runtime::{Result, RuntimeError, Value};
 
-pub enum Runnable {
-    Func(Func),
+pub enum FuncSource {
+    Native(Rc<Vec<IR>>),
     External(Box<dyn Fn(Vec<Value>) -> Result<Option<Value>>>),
 }
 
+impl FuncSource {
+    pub fn native(&self) -> Option<Rc<Vec<IR>>> {
+        if let Self::Native(instructions) = self {
+            return Some(Rc::clone(instructions));
+        }
+
+        None
+    }
+}
+
+pub struct ArgumentDesc {
+    pub mutable: bool,
+}
+
 pub struct FuncDesc {
-    pub run: Runnable,
+    pub pos: Pos,
+    pub args: IndexMap<String, ArgumentDesc>,
+    pub source: FuncSource,
+}
+
+impl From<Func> for FuncDesc {
+    fn from(func: Func) -> Self {
+        FuncDesc {
+            pos: func.pos.clone(),
+            args: func
+                .args
+                .iter()
+                .map(|arg| {
+                    (
+                        arg.name.clone(),
+                        ArgumentDesc {
+                            mutable: arg.mutable,
+                        },
+                    )
+                })
+                .collect(),
+            source: FuncSource::Native(Rc::new(func.body)),
+        }
+    }
 }
 
 pub struct FieldDesc {
@@ -20,7 +60,7 @@ pub struct FieldDesc {
 }
 
 pub struct MethodDesc {
-    pub func: Func,
+    pub func: FuncDesc,
 }
 
 pub struct ClassDesc {
@@ -45,12 +85,7 @@ impl Module {
         };
 
         for (name, func) in module.funcs {
-            vm_module.func_map.insert(
-                name,
-                FuncDesc {
-                    run: Runnable::Func(func),
-                },
-            );
+            vm_module.func_map.insert(name, func.into());
         }
 
         for (name, class) in module.classes {
@@ -67,7 +102,7 @@ impl Module {
             }
 
             for (name, func) in class.funcs {
-                methods.insert(name, MethodDesc { func });
+                methods.insert(name, MethodDesc { func: func.into() });
             }
 
             vm_module
@@ -86,7 +121,9 @@ impl Module {
         self.func_map.insert(
             name.to_string(),
             FuncDesc {
-                run: Runnable::External(Box::new(func)),
+                pos: (0..0),
+                args: IndexMap::new(),
+                source: FuncSource::External(Box::new(func)),
             },
         );
     }
