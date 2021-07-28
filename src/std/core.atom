@@ -80,11 +80,7 @@ class Array {
     let length;
 
     fn nth(index) {
-        if index < 0 {
-            return none();
-        }
-
-        if this.length <= index {
+        if index < 0 || this.length <= index {
             return none();
         }
 

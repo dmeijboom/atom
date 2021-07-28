@@ -651,9 +651,10 @@ impl VM {
             }
             Code::Jump(label) => return Ok(Some(label.to_string())),
             Code::JumpIfTrue(label) => {
-                let value = self.stack.pop()?;
+                let value = convert::to_bool(&self.stack.pop()?)?;
 
-                if convert::to_bool(&value)? {
+                if value {
+                    self.stack.push(Value::Bool(value));
                     return Ok(Some(label.clone()));
                 }
             }
