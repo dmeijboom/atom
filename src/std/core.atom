@@ -43,11 +43,47 @@ class Float {
     let value;
 }
 
+class RangeIter {
+    let from;
+    let to;
+    let mut index;
+
+    fn next() {
+        if this.index > this.to {
+            return none();
+        }
+
+        let value = some(this.from + this.index);
+
+        this.index = this.index + 1;
+
+        return value;
+    }
+}
+
+class Range {
+    let from;
+    let to;
+
+    fn iter() {
+        return RangeIter(from: this.from, to: this.to, index: 0);
+    }
+
+    fn collect() {
+        let mut output = [];
+        return output;
+    }
+}
+
 class Array {
     let value;
     let length;
 
     fn nth(index) {
+        if index < 0 {
+            return none();
+        }
+
         if this.length <= index {
             return none();
         }

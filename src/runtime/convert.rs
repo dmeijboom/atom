@@ -12,7 +12,7 @@ pub fn to_bool(value: &Value) -> Result<bool> {
     }
 
     Err(RuntimeError::new(format!(
-        "invalid type: {} expected Bool",
+        "invalid type '{}' expected: Bool",
         value.get_type().name()
     )))
 }
@@ -32,7 +32,7 @@ pub fn to_int(value: &Value) -> Result<i64> {
             )));
         }
         _ => Err(RuntimeError::new(format!(
-            "invalid type: {} expected Int",
+            "invalid type '{}' expected: Int",
             value.get_type().name()
         ))),
     }
@@ -43,7 +43,7 @@ pub fn to_float(value: &Value) -> Result<f64> {
         Value::Int(val) => Ok(*val as f64),
         Value::Float(val) => Ok(*val),
         _ => Err(RuntimeError::new(format!(
-            "invalid type: {} expected Float",
+            "invalid type '{}' expected: Float",
             value.get_type().name()
         ))),
     }
@@ -64,6 +64,11 @@ pub fn to_object(value: Value) -> Result<Rc<RefCell<Object>>> {
         Value::Int(val) => Ok(make_object("std.core", "Int", vec![Value::Int(val)])),
         Value::Float(val) => Ok(make_object("std.core", "Float", vec![Value::Float(val)])),
         Value::Bool(val) => Ok(make_object("std.core", "Bool", vec![Value::Bool(val)])),
+        Value::Range(val) => Ok(make_object(
+            "std.core",
+            "Range",
+            vec![Value::Int(*val.start()), Value::Int(*val.end())],
+        )),
         Value::String(val) => {
             let length = val.len() as i64;
 
@@ -85,7 +90,7 @@ pub fn to_object(value: Value) -> Result<Rc<RefCell<Object>>> {
         Value::Map(val) => Ok(make_object("std.core", "Map", vec![Value::Map(val)])),
         Value::Object(object) => Ok(object),
         _ => Err(RuntimeError::new(format!(
-            "invalid type: {} expected Object",
+            "invalid type '{}' expected: Object",
             value.get_type().name()
         ))),
     }

@@ -1,25 +1,5 @@
-class File {
-    let name;
-    let mode;
-
-    fn test() {
-        let value = [1, 2, 3].last();
-
-        this.other(val: value);
-    }
-
-    fn other(val) {
-        if val.isSome() {
-            println(val.value());
-        }
-    }
-}
-
 fn main() {
-    let file = File(
-        name: "test.txt",
-        mode: 777
-    );
-
-    file.test();
+    for [0..3] {
+        println("hi");
+    }
 }

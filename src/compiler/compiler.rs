@@ -4,6 +4,8 @@ use std::error::Error;
 use std::fmt;
 use std::rc::Rc;
 
+use indexmap::map::IndexMap;
+
 use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt,
 };
@@ -11,7 +13,6 @@ use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field};
 use crate::compiler::scope::{Local, Scope};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
-use indexmap::map::IndexMap;
 
 #[derive(Debug)]
 pub struct CompileError {
@@ -92,6 +93,11 @@ impl Compiler {
                 },
                 literal_expr.pos.clone(),
             )]),
+            Expr::Range(range_expr) => {
+                ir.push(self.compile_expr(&range_expr.from)?);
+                ir.push(self.compile_expr(&range_expr.to)?);
+                ir.push(vec![IR::new(Code::MakeRange, self.pos.clone())]);
+            }
             Expr::Ident(ident) => {
                 ir.push(vec![IR::new(
                     Code::Load(
@@ -383,6 +389,42 @@ impl Compiler {
                 }
                 Stmt::Assign(assign_stmt) => {
                     ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
+                }
+                Stmt::For(for_stmt) => {
+                    let for_label = self.make_label("for");
+                    let body_label = self.make_label("for_body");
+                    let cont_label = self.make_label("for_cont");
+                    let iter_id =
+                        LocalId::new_in_scope(format!("__iter__{}", self.scope_id), self.scope_id);
+
+                    ir.push(self.compile_expr(&for_stmt.expr)?);
+                    ir.push(
+                        vec![
+                            // step 1. Get the iterator from the object
+                            Code::LoadMember("iter".to_string()),
+                            Code::Call((vec![], 0)),
+                            Code::Store(iter_id.clone()),
+                            // step 2. Now in the loop, get the next value from the iterator
+                            Code::SetLabel(for_label.clone()),
+                            Code::Load(iter_id),
+                            Code::LoadMember("next".to_string()),
+                            Code::Call((vec![], 0)),
+                            // step 3. Check if it has a value and either continue or stop
+                            Code::LoadMember("isSome".to_string()),
+                            Code::Call((vec![], 0)),
+                            Code::Branch((body_label.clone(), cont_label.clone())),
+                            // step 4. Evaluate the body and so on..
+                            Code::SetLabel(body_label.clone()),
+                        ]
+                        .into_iter()
+                        .map(|code| IR::new(code, self.pos.clone()))
+                        .collect::<Vec<_>>(),
+                    );
+                    ir.push(self.compile_stmt_list(&for_stmt.body)?);
+                    ir.push(vec![
+                        IR::new(Code::Jump(for_label), self.pos.clone()),
+                        IR::new(Code::SetLabel(cont_label), self.pos.clone()),
+                    ]);
                 }
                 Stmt::Return(return_stmt) => {
                     ir.push(self.compile_expr(&return_stmt.expr)?);

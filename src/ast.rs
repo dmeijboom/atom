@@ -128,6 +128,13 @@ pub struct IndexExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct RangeExpr {
+    pub from: Expr,
+    pub to: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -140,6 +147,7 @@ pub enum Expr {
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
     Index(Box<IndexExpr>),
+    Range(Box<RangeExpr>),
 }
 
 impl Expr {
@@ -155,7 +163,8 @@ impl Expr {
             Self::Arithmetic(arithmetic) => arithmetic.pos.clone(),
             Self::Comparison(comparison) => comparison.pos.clone(),
             Self::Logical(logical) => logical.pos.clone(),
-            Expr::Index(index) => index.pos.clone(),
+            Self::Index(index) => index.pos.clone(),
+            Self::Range(range) => range.pos.clone(),
         }
     }
 }
@@ -239,8 +248,16 @@ pub struct ModuleStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct ForStmt {
+    pub expr: Expr,
+    pub body: Vec<Stmt>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     If(IfStmt),
+    For(ForStmt),
     Expr(ExprStmt),
     Let(LetStmt),
     LetDecl(LetDeclStmt),
@@ -255,6 +272,7 @@ impl Stmt {
     pub fn pos(&self) -> Pos {
         match self {
             Stmt::If(if_stmt) => if_stmt.pos.clone(),
+            Stmt::For(for_stmt) => for_stmt.pos.clone(),
             Stmt::Expr(expr_stmt) => expr_stmt.pos.clone(),
             Stmt::Let(let_stmt) => let_stmt.pos.clone(),
             Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),

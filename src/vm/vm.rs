@@ -192,18 +192,19 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let object = method.object.borrow();
-        let desc = self.module_cache.lookup_method(
-            &object.class.module,
-            &object.class.name,
-            &method.name,
-        )?;
+        let (module, class) = {
+            let object = method.object.borrow();
+            (object.class.module.clone(), object.class.name.clone())
+        };
+        let desc = self
+            .module_cache
+            .lookup_method(&module, &class, &method.name)?;
 
         let mut context = CallContext::new(
             desc.func.pos.clone(),
             FuncId {
-                module: object.class.module.clone(),
-                name: format!("{}.{}", object.class.name, method.name),
+                module: module.clone(),
+                name: format!("{}.{}", class, method.name),
             },
         );
 
@@ -216,13 +217,7 @@ impl VM {
 
         let func = desc.func.clone();
 
-        self.eval_native_function_call(
-            &object.class.module,
-            &method.name,
-            func,
-            keywords,
-            arg_count,
-        )?;
+        self.eval_native_function_call(&module, &method.name, &func, keywords, arg_count)?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -239,7 +234,7 @@ impl VM {
         &mut self,
         module_name: &str,
         function_name: &str,
-        func: Func,
+        func: &Func,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
@@ -292,7 +287,7 @@ impl VM {
         let current_module = self.module_cache.current_name()?.to_string();
 
         self.module_cache.set_current(module_name);
-        let result = self.eval_internal(func.body);
+        let result = self.eval_internal(&func.body);
         self.module_cache.set_current(&current_module);
 
         result
@@ -308,12 +303,13 @@ impl VM {
 
         match &desc.run {
             Runnable::Func(func) => {
+                // @TODO: make sure a function doesn't have to be cloned
                 let func = func.clone();
 
                 self.call_stack
                     .push(CallContext::new(func.pos.clone(), id.clone()));
 
-                self.eval_native_function_call(&id.module, &id.name, func, keywords, arg_count)?;
+                self.eval_native_function_call(&id.module, &id.name, &func, keywords, arg_count)?;
             }
             Runnable::External(func) => {
                 self.call_stack.push(CallContext::new(0..0, id.clone()));
@@ -378,13 +374,19 @@ impl VM {
         })
     }
 
-    fn eval_single(&mut self, ir: IR) -> Result<Option<String>> {
+    fn eval_single(&mut self, ir: &IR) -> Result<Option<String>> {
         match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
             Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
+            Code::MakeRange => {
+                let to = convert::to_int(&self.stack.pop()?)?;
+                let from = convert::to_int(&self.stack.pop()?)?;
+
+                self.stack.push(Value::Range(from..=to));
+            }
             Code::MakeArray(len) => {
                 let values = self.stack.pop_many(*len)?;
 
@@ -509,18 +511,21 @@ impl VM {
                 if let Value::Pointer(pointer) = pointer {
                     match pointer {
                         PointerType::FieldPtr((object, field_idx)) => {
-                            let mut object = object.borrow_mut();
-                            let desc = self
-                                .module_cache
-                                .lookup_class(&object.class.module, &object.class.name)?;
+                            let (module, class) = {
+                                let object = object.borrow();
+                                (object.class.module.clone(), object.class.name.clone())
+                            };
+                            let desc = self.module_cache.lookup_class(&module, &class)?;
                             let (name, field_desc) = desc.fields.get_index(field_idx).unwrap();
 
                             if !field_desc.mutable {
                                 return Err(RuntimeError::new(format!(
                                     "field '{}' is not mutable in class: {}.{}",
-                                    name, object.class.module, object.class.name
+                                    name, module, class,
                                 )));
                             }
+
+                            let mut object = object.borrow_mut();
 
                             object.fields[field_idx] = value;
                         }
@@ -564,14 +569,20 @@ impl VM {
             }
             Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
                 let object = convert::to_object(self.stack.pop()?)?;
-                let obj = object.borrow();
-                let desc = self
-                    .module_cache
-                    .lookup_class(&obj.class.module, &obj.class.name)?;
+                let (module, class) = {
+                    let object = object.borrow();
+                    (object.class.module.clone(), object.class.name.clone())
+                };
+
+                let desc = self.module_cache.lookup_class(&module, &class)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
                     if let Code::LoadMember(_) = ir.code {
-                        self.stack.push(obj.fields[index].clone());
+                        self.stack.push({
+                            let object = object.borrow();
+
+                            object.fields[index].clone()
+                        });
                     } else {
                         self.stack.push(Value::Pointer(PointerType::FieldPtr((
                             Rc::clone(&object),
@@ -582,10 +593,7 @@ impl VM {
                     return Ok(None);
                 }
 
-                if let Ok(_) =
-                    self.module_cache
-                        .lookup_method(&obj.class.module, &obj.class.name, member)
-                {
+                if let Ok(_) = self.module_cache.lookup_method(&module, &class, member) {
                     self.stack.push(Value::Method(Method {
                         name: member.clone(),
                         object: Rc::clone(&object),
@@ -596,7 +604,7 @@ impl VM {
 
                 return Err(RuntimeError::new(format!(
                     "no such field or method '{}' for class: {}.{}",
-                    member, obj.class.module, obj.class.name
+                    member, module, class,
                 )));
             }
             Code::Load(id) => {
@@ -679,30 +687,39 @@ impl VM {
         Ok(None)
     }
 
-    fn eval_internal(&mut self, ir_list: Vec<IR>) -> Result<()> {
-        let mut active_label: Option<String> = None;
-
-        for ir in ir_list {
-            // skip instructions if we're jumping to a label
-            if active_label.is_some() {
-                if let Code::SetLabel(label) = &ir.code {
-                    if Some(label) == active_label.as_ref() {
-                        active_label = None;
-                    }
+    fn find_label(&self, instructions: &Vec<IR>, search: &str) -> Result<usize> {
+        for (i, ir) in instructions.iter().enumerate() {
+            if let Code::SetLabel(label) = &ir.code {
+                if label == search {
+                    return Ok(i);
                 }
-
-                continue;
             }
+        }
 
+        Err(RuntimeError::new(format!(
+            "unable to find label: {}",
+            search,
+        )))
+    }
+
+    fn eval_internal(&mut self, instructions: &Vec<IR>) -> Result<()> {
+        let mut i = 0;
+
+        while i < instructions.len() {
+            let ir = &instructions[i];
             let pos = ir.pos.clone();
 
-            active_label = self.eval_single(ir).map_err(|e| {
+            // evaluates the instruction and optionally returns a label to jump to
+            if let Some(label) = self.eval_single(ir).map_err(|e| {
                 if e.pos.is_none() {
                     return e.with_pos(pos);
+                } else {
+                    e
                 }
-
-                e
-            })?;
+            })? {
+                i = self.find_label(instructions, &label)?;
+                continue;
+            }
 
             // break on early return
             if let Some(context) = self.call_stack.last() {
@@ -710,15 +727,17 @@ impl VM {
                     break;
                 }
             }
+
+            i += 1;
         }
 
         Ok(())
     }
 
-    pub fn eval(&mut self, module: &str, ir_list: Vec<IR>) -> Result<()> {
+    pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
         self.module_cache.set_current(module);
 
-        self.eval_internal(ir_list).map_err(|e| {
+        self.eval_internal(&instructions).map_err(|e| {
             let e = e.with_stack_trace(self.rewind_stack());
 
             if let Ok(module) = self.module_cache.current() {

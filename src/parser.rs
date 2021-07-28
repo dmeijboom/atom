@@ -69,6 +69,9 @@ peg::parser! {
         rule keyval() -> KeyValue
             = start:pos() key:expr() _ ":" _ value:expr() end:pos() { KeyValue { key, value, pos: (start..end) } }
 
+        rule range_expr() -> Expr
+            = start:pos() "[" _ from:expr() _ ".." _ to:expr() _ "]" end:pos() { Expr::Range(RangeExpr { from, to, pos: (start..end) }.into()) }
+
         rule map_expr() -> Expr
             = start:pos() "{" _ key_values:keyval() ** (_ "," _ ) _ "}" end:pos() { Expr::Map(MapExpr { key_values, pos: (start..end) }) }
 
@@ -76,7 +79,7 @@ peg::parser! {
             = start:pos() "[" _ items:expr() ** (_ "," _) _ "]" end:pos() { Expr::Array(ArrayExpr { items, pos: (start..end) }) }
 
         rule prefix() -> Expr
-            = literal_expr() / ident_expr() / array_expr() / map_expr()
+            = literal_expr() / ident_expr() / range_expr() / array_expr() / map_expr()
 
         rule keyword_arg() -> KeywordArg
             = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }
@@ -143,8 +146,11 @@ peg::parser! {
         rule if_stmt() -> Stmt
             = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:else_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.unwrap_or_default(), pos: (start..end) }) }
 
+        rule for_stmt() -> Stmt
+            = start:pos() "for" __ expr:expr() _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, body, pos: (start..end) }) }
+
         rule stmt() -> Stmt
-            = expr_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
+            = expr_stmt() / for_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
 
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
@@ -762,5 +768,57 @@ mod tests {
                 pos: (0..22),
             })),
         )
+    }
+
+    #[test]
+    fn range_expr() {
+        let source = "[0..3];";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Range(
+                    RangeExpr {
+                        from: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(0),
+                            pos: (1..2),
+                        }),
+                        to: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(3),
+                            pos: (4..5),
+                        }),
+                        pos: (0..6),
+                    }
+                    .into()
+                ),
+                pos: (0..7),
+            })),
+        );
+    }
+
+    #[test]
+    fn for_stmt() {
+        let source = "for [1] { 40; }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::For(ForStmt {
+                expr: Expr::Array(ArrayExpr {
+                    items: vec![Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(1),
+                        pos: (5..6),
+                    })],
+                    pos: (4..7),
+                }),
+                body: vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(40),
+                        pos: (10..12),
+                    }),
+                    pos: (10..13),
+                })],
+                pos: (0..15),
+            })),
+        );
     }
 }

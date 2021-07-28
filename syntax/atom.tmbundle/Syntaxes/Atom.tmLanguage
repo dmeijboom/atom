@@ -23,7 +23,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(if|else|class|continue|break|return|when|raise)\b</string>
+                <string>\b(if|for|else|class|continue|break|return|when|raise)\b</string>
                 <key>name</key>
                 <string>keyword.control.atom</string>
             </dict>
@@ -330,7 +330,7 @@
             <dict>
                 <key>match</key>
                 <string>
-                    \b(fn|if|else|break|return|mut)\b
+                    \b(fn|for|if|else|break|return|mut)\b
                 </string>
                 <key>name</key>
                 <string>invalid.illegal.name.chapel</string>

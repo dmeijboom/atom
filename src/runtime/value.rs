@@ -2,6 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
+use std::ops::RangeInclusive;
 use std::rc::Rc;
 
 use crate::compiler::IR;
@@ -44,6 +45,7 @@ pub enum ValueType {
     Float,
     Char,
     Bool,
+    Range,
     String,
     Class,
     Function,
@@ -61,6 +63,7 @@ impl ValueType {
             ValueType::Float => "Float",
             ValueType::Char => "Char",
             ValueType::Bool => "Bool",
+            ValueType::Range => "Range",
             ValueType::String => "String",
             ValueType::Class => "Class",
             ValueType::Method => "Method",
@@ -149,6 +152,7 @@ pub enum Value {
     Float(f64),
     Char(char),
     Bool(bool),
+    Range(RangeInclusive<i64>),
     String(String),
     Class(ClassId),
     Function(FuncId),
@@ -167,6 +171,7 @@ impl Display for Value {
             Value::Float(val) => write!(f, "{}", val),
             Value::Char(val) => write!(f, "{}", val),
             Value::Bool(val) => write!(f, "{}", val),
+            Value::Range(val) => write!(f, "{:?}", val),
             Value::String(val) => write!(f, "{}", val),
             Value::Class(id) => {
                 write!(f, "{}.{}", id.module, id.name)
@@ -220,6 +225,7 @@ impl Hash for Value {
             Value::Float(val) => val.to_string().hash(state),
             Value::Char(val) => val.hash(state),
             Value::Bool(val) => val.hash(state),
+            Value::Range(val) => val.hash(state),
             Value::String(val) => val.hash(state),
             Value::Class(class) => class.hash(state),
             Value::Function(func) => func.hash(state),
@@ -256,6 +262,7 @@ impl Clone for Value {
             Value::Float(val) => Value::Float(*val),
             Value::Char(val) => Value::Char(*val),
             Value::Bool(val) => Value::Bool(*val),
+            Value::Range(val) => Value::Range(val.clone()),
             Value::String(val) => Value::String(val.clone()),
             Value::Class(id) => Value::Class(id.clone()),
             Value::Function(id) => Value::Function(id.clone()),
@@ -286,6 +293,7 @@ impl Value {
             Value::Float(_) => ValueType::Float,
             Value::Char(_) => ValueType::Char,
             Value::Bool(_) => ValueType::Bool,
+            Value::Range(_) => ValueType::Range,
             Value::String(_) => ValueType::String,
             Value::Class(_) => ValueType::Class,
             Value::Function(_) => ValueType::Function,

@@ -31,6 +31,7 @@ pub enum Code {
     ConstString(String),
     MakeArray(usize),
     MakeMap(usize),
+    MakeRange,
     SetLabel(String),
     Jump(String),
     JumpIfTrue(String),
