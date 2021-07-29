@@ -131,10 +131,17 @@ impl Compiler {
                 }
 
                 ir.push(self.compile_expr(&call_expr.callee)?);
-                ir.push(vec![IR::new(
-                    Code::Call((names, call_expr.keyword_args.len() + call_expr.args.len())),
-                    call_expr.pos.clone(),
-                )]);
+                ir.push(vec![if names.is_empty() {
+                    IR::new(Code::Call(call_expr.args.len()), call_expr.pos.clone())
+                } else {
+                    IR::new(
+                        Code::CallWithKeywords((
+                            names,
+                            call_expr.keyword_args.len() + call_expr.args.len(),
+                        )),
+                        call_expr.pos.clone(),
+                    )
+                }]);
             }
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
@@ -406,25 +413,25 @@ impl Compiler {
                         vec![
                             // step 1. Get the iterator from the object
                             Code::LoadMember("iter".to_string()),
-                            Code::Call((vec![], 0)),
+                            Code::CallWithKeywords((vec![], 0)),
                             Code::Store(iter_id.clone()),
                             // step 2. Now in the loop, get the next value from the iterator
                             Code::SetLabel(for_label.clone()),
                             Code::Load(iter_id),
                             Code::LoadMember("next".to_string()),
-                            Code::Call((vec![], 0)),
+                            Code::CallWithKeywords((vec![], 0)),
                             // step 3. Store the current value
                             Code::Store(iter_current_id.clone()),
                             Code::Load(iter_current_id.clone()),
                             // step 4. Check if it has a value and either continue or stop
                             Code::LoadMember("isSome".to_string()),
-                            Code::Call((vec![], 0)),
+                            Code::CallWithKeywords((vec![], 0)),
                             Code::Branch((body_label.clone(), cont_label.clone())),
                             // step 5. Evaluate the body and so on..
                             Code::SetLabel(body_label.clone()),
                             Code::Load(iter_current_id),
                             Code::LoadMember("value".to_string()),
-                            Code::Call((vec![], 0)),
+                            Code::CallWithKeywords((vec![], 0)),
                             Code::Store(LocalId::new_in_scope(".".to_string(), self.scope_id)),
                         ]
                         .into_iter()

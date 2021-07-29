@@ -111,7 +111,7 @@ fn main() {
                 "main",
                 vec![
                     IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
-                    IR::new(Code::Call((vec![], 0)), 0..0),
+                    IR::new(Code::CallWithKeywords((vec![], 0)), 0..0),
                 ],
             ) {
                 let mut message = String::new();

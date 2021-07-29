@@ -32,17 +32,20 @@ impl VM {
     }
 
     fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
-        let mut unique_keys = vec![];
+        // make sure each keyword is unique
+        if !keywords.is_empty() {
+            let mut unique_keys = vec![];
 
-        for key in keywords.iter() {
-            if unique_keys.contains(key) {
-                return Err(RuntimeError::new(format!(
-                    "duplicate keyword argument: {}",
-                    key
-                )));
+            for key in keywords.iter() {
+                if unique_keys.contains(key) {
+                    return Err(RuntimeError::new(format!(
+                        "duplicate keyword argument: {}",
+                        key
+                    )));
+                }
+
+                unique_keys.push(key.to_string());
             }
-
-            unique_keys.push(key.to_string());
         }
 
         let value = self
@@ -265,18 +268,30 @@ impl VM {
                     )));
                 }
 
-                let arg_names = func.args.keys().cloned().collect();
                 let values = self.stack.pop_many(arg_count)?;
-                let ordered_values =
-                    self.prepare_args(values, keywords, &arg_names)
-                        .map_err(|e| {
-                            let message = e.message.clone();
-                            e.with_message(format!("{} in Fn {}.{}", message, id.module, id.name,))
-                        })?;
-                let call_context = self.call_stack.current_mut()?;
+                let arg_names: Vec<String> = func.args.keys().cloned().collect();
 
-                for (i, value) in ordered_values {
-                    call_context.args.insert(arg_names[i].to_string(), value);
+                if keywords.is_empty() {
+                    let call_context = self.call_stack.current_mut()?;
+
+                    for (i, value) in values.into_iter().enumerate() {
+                        call_context.args.insert(arg_names[i].to_string(), value);
+                    }
+                } else {
+                    let ordered_values =
+                        self.prepare_args(values, keywords, &arg_names)
+                            .map_err(|e| {
+                                let message = e.message.clone();
+                                e.with_message(format!(
+                                    "{} in Fn {}.{}",
+                                    message, id.module, id.name,
+                                ))
+                            })?;
+                    let call_context = self.call_stack.current_mut()?;
+
+                    for (i, value) in ordered_values {
+                        call_context.args.insert(arg_names[i].to_string(), value);
+                    }
                 }
 
                 let source = Rc::clone(source);
@@ -463,7 +478,10 @@ impl VM {
 
                 self.stack.push(Value::Bool(!value));
             }
-            Code::Call((keywords, arg_count)) => self.eval_call(keywords, *arg_count)?.into(),
+            Code::Call(arg_count) => self.eval_call(&vec![], *arg_count)?.into(),
+            Code::CallWithKeywords((keywords, arg_count)) => {
+                self.eval_call(keywords, *arg_count)?.into()
+            }
             Code::Store(id) => {
                 let value = self.stack.pop()?;
 
