@@ -402,9 +402,6 @@ impl Compiler {
                     let for_label = self.make_label("for");
                     let body_label = self.make_label("for_body");
                     let cont_label = self.make_label("for_cont");
-                    let iter_id = LocalId::new_in_scope("#iter".to_string(), self.scope_id);
-                    let iter_current_id =
-                        LocalId::new_in_scope("#iter.current".to_string(), self.scope_id);
 
                     self.set_local(".".to_string(), false);
 
@@ -413,25 +410,19 @@ impl Compiler {
                         vec![
                             // step 1. Get the iterator from the object
                             Code::LoadMember("iter".to_string()),
-                            Code::CallWithKeywords((vec![], 0)),
-                            Code::Store(iter_id.clone()),
+                            Code::Call(0),
                             // step 2. Now in the loop, get the next value from the iterator
                             Code::SetLabel(for_label.clone()),
-                            Code::Load(iter_id),
-                            Code::LoadMember("next".to_string()),
-                            Code::CallWithKeywords((vec![], 0)),
-                            // step 3. Store the current value
-                            Code::Store(iter_current_id.clone()),
-                            Code::Load(iter_current_id.clone()),
-                            // step 4. Check if it has a value and either continue or stop
-                            Code::LoadMember("isSome".to_string()),
-                            Code::CallWithKeywords((vec![], 0)),
+                            Code::TeeMember("next".to_string()),
+                            Code::Call(0),
+                            // step 3. Check if it has a value and either continue or stop
+                            Code::TeeMember("isSome".to_string()),
+                            Code::Call(0),
                             Code::Branch((body_label.clone(), cont_label.clone())),
-                            // step 5. Evaluate the body and so on..
+                            // step 4. Evaluate the body and so on..
                             Code::SetLabel(body_label.clone()),
-                            Code::Load(iter_current_id),
                             Code::LoadMember("value".to_string()),
-                            Code::CallWithKeywords((vec![], 0)),
+                            Code::Call(0),
                             Code::Store(LocalId::new_in_scope(".".to_string(), self.scope_id)),
                         ]
                         .into_iter()
@@ -442,6 +433,7 @@ impl Compiler {
                     ir.push(vec![
                         IR::new(Code::Jump(for_label), self.pos.clone()),
                         IR::new(Code::SetLabel(cont_label), self.pos.clone()),
+                        IR::new(Code::Discard, self.pos.clone()),
                     ]);
                 }
                 Stmt::Return(return_stmt) => {

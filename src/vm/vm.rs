@@ -555,7 +555,7 @@ impl VM {
                     value.get_type().name()
                 )));
             }
-            Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
+            Code::LoadMember(member) | Code::TeeMember(member) | Code::LoadMemberPtr(member) => {
                 let object = self.stack.pop().and_then(to_object)?;
                 let (module, class) = {
                     let object = object.borrow();
@@ -578,6 +578,10 @@ impl VM {
                 }
 
                 if let Ok(_) = self.module_cache.lookup_method(&module, &class, member) {
+                    if let Code::TeeMember(_) = ir.code {
+                        self.stack.push(Value::Object(Rc::clone(&object)));
+                    }
+
                     self.stack.push(Value::Method(Method {
                         name: member.clone(),
                         object: Rc::clone(&object),
