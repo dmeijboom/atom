@@ -6,9 +6,9 @@ use crate::runtime::{ClassId, Object};
 use super::result::{Result, RuntimeError};
 use super::value::Value;
 
-pub fn to_bool(value: &Value) -> Result<bool> {
+pub fn to_bool(value: Value) -> Result<bool> {
     if let Value::Bool(val) = value {
-        return Ok(*val);
+        return Ok(val);
     }
 
     Err(RuntimeError::new(format!(
@@ -17,13 +17,13 @@ pub fn to_bool(value: &Value) -> Result<bool> {
     )))
 }
 
-pub fn to_int(value: &Value) -> Result<i64> {
+pub fn to_int(value: Value) -> Result<i64> {
     match value {
-        Value::Int(val) => Ok(*val),
+        Value::Int(val) => Ok(val),
         Value::Float(val) => {
-            let int_val = *val as i64;
+            let int_val = val as i64;
 
-            if *val == int_val as f64 {
+            if val == int_val as f64 {
                 return Ok(int_val);
             }
 
@@ -38,10 +38,10 @@ pub fn to_int(value: &Value) -> Result<i64> {
     }
 }
 
-pub fn to_float(value: &Value) -> Result<f64> {
+pub fn to_float(value: Value) -> Result<f64> {
     match value {
-        Value::Int(val) => Ok(*val as f64),
-        Value::Float(val) => Ok(*val),
+        Value::Int(val) => Ok(val as f64),
+        Value::Float(val) => Ok(val),
         _ => Err(RuntimeError::new(format!(
             "invalid type '{}' expected: Float",
             value.get_type().name()

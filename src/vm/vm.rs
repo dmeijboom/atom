@@ -4,9 +4,8 @@ use std::collections::{BTreeMap, HashMap};
 use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
-use crate::runtime::{
-    convert, ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Value,
-};
+use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
+use crate::runtime::{ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Value};
 use crate::vm::call_stack::CallContext;
 use crate::vm::module_cache::{FuncSource, Module, ModuleCache};
 
@@ -204,15 +203,13 @@ impl VM {
         }
 
         let source = Rc::clone(&desc.func.source.native().unwrap());
-        self.eval_internal(&module, source)?;
+
+        self._eval(&module, source)?;
 
         let context = self.call_stack.pop().unwrap();
 
-        if let Some(value) = context.return_value {
-            self.stack.push(value);
-        } else {
-            self.stack.push(Value::Invalid);
-        }
+        self.stack
+            .push(context.return_value.unwrap_or_else(|| Value::Invalid));
 
         Ok(())
     }
@@ -283,7 +280,8 @@ impl VM {
                 }
 
                 let source = Rc::clone(source);
-                self.eval_internal(&id.module, source)?;
+
+                self._eval(&id.module, source)?;
             }
             FuncSource::External(closure) => {
                 if !keywords.is_empty() {
@@ -303,11 +301,8 @@ impl VM {
 
         let context = self.call_stack.pop().unwrap();
 
-        if let Some(value) = context.return_value {
-            self.stack.push(value);
-        } else {
-            self.stack.push(Value::Invalid);
-        }
+        self.stack
+            .push(context.return_value.unwrap_or_else(|| Value::Invalid));
 
         Ok(())
     }
@@ -328,9 +323,9 @@ impl VM {
 
     fn eval_comparison_op(&mut self, op: impl FnOnce(Ordering) -> bool) -> Result<()> {
         self.eval_op("ordering comparison", |left, right| match left {
-            Value::Int(val) => Ok(Value::Bool(op(val.cmp(&convert::to_int(&right)?)))),
+            Value::Int(val) => Ok(Value::Bool(op(val.cmp(&to_int(right)?)))),
             Value::Float(val) => {
-                if let Some(ord) = val.partial_cmp(&convert::to_float(&right)?) {
+                if let Some(ord) = val.partial_cmp(&to_float(right)?) {
                     return Ok(Value::Bool(op(ord)));
                 }
 
@@ -353,9 +348,9 @@ impl VM {
             Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
-            Code::MakeRange => {
-                let to = convert::to_int(&self.stack.pop()?)?;
-                let from = convert::to_int(&self.stack.pop()?)?;
+            &Code::MakeRange => {
+                let to = self.stack.pop().and_then(to_int)?;
+                let from = self.stack.pop().and_then(to_int)?;
 
                 self.stack.push(Value::Range(from..=to));
             }
@@ -377,13 +372,14 @@ impl VM {
 
                 self.stack.push(Value::Map(Rc::new(RefCell::new(map))));
             }
-            Code::Discard => self.stack.delete()?,
+            Code::Discard => self.stack.delete()?.into(),
             Code::Return => {
                 let return_value = self.stack.pop()?;
+
                 self.call_stack.current_mut()?.return_value = Some(return_value);
             }
             Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
-                Value::Bool(val) => Ok(Value::Bool(*val && convert::to_bool(&right)?)),
+                Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -391,7 +387,7 @@ impl VM {
                 ))),
             })?,
             Code::ArithmeticBitOr => self.eval_op("bitwise or", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val | convert::to_int(&right)?)),
+                Value::Int(val) => Ok(Value::Int(*val | to_int(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -399,7 +395,7 @@ impl VM {
                 ))),
             })?,
             Code::ArithmeticBitAnd => self.eval_op("bitwise and", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val & convert::to_int(&right)?)),
+                Value::Int(val) => Ok(Value::Int(*val & to_int(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -407,8 +403,8 @@ impl VM {
                 ))),
             })?,
             Code::ArithmeticAdd => self.eval_op("addition", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val + convert::to_int(&right)?)),
-                Value::Float(val) => Ok(Value::Float(*val + convert::to_float(&right)?)),
+                Value::Int(val) => Ok(Value::Int(*val + to_int(right)?)),
+                Value::Float(val) => Ok(Value::Float(*val + to_float(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -416,8 +412,8 @@ impl VM {
                 ))),
             })?,
             Code::ArithmeticSub => self.eval_op("subtraction", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val - convert::to_int(&right)?)),
-                Value::Float(val) => Ok(Value::Float(*val - convert::to_float(&right)?)),
+                Value::Int(val) => Ok(Value::Int(*val - to_int(right)?)),
+                Value::Float(val) => Ok(Value::Float(*val - to_float(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -425,8 +421,8 @@ impl VM {
                 ))),
             })?,
             Code::ArithmeticMul => self.eval_op("multiplication", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val * convert::to_int(&right)?)),
-                Value::Float(val) => Ok(Value::Float(*val * convert::to_float(&right)?)),
+                Value::Int(val) => Ok(Value::Int(*val * to_int(right)?)),
+                Value::Float(val) => Ok(Value::Float(*val * to_float(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -434,8 +430,8 @@ impl VM {
                 ))),
             })?,
             Code::ArithmeticDiv => self.eval_op("division", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val / convert::to_int(&right)?)),
-                Value::Float(val) => Ok(Value::Float(*val / convert::to_float(&right)?)),
+                Value::Int(val) => Ok(Value::Int(*val / to_int(right)?)),
+                Value::Float(val) => Ok(Value::Float(*val / to_float(right)?)),
                 _ => Err(RuntimeError::new(format!(
                     "invalid types: {} and {}",
                     left.get_type().name(),
@@ -458,20 +454,19 @@ impl VM {
             Code::ComparisonGte => {
                 self.eval_comparison_op(|ord| ord == Ordering::Greater || ord == Ordering::Equal)?
             }
-            Code::ComparisonLt => self.eval_comparison_op(|ord| ord == Ordering::Less)?,
+            Code::ComparisonLt => self.eval_comparison_op(|ord| ord == Ordering::Less)?.into(),
             Code::ComparisonLte => {
                 self.eval_comparison_op(|ord| ord == Ordering::Less || ord == Ordering::Equal)?
             }
             Code::Not => {
-                let value = self.stack.pop()?;
+                let value = self.stack.pop().and_then(to_bool)?;
 
-                self.stack.push(Value::Bool(!convert::to_bool(&value)?));
+                self.stack.push(Value::Bool(!value));
             }
-            Code::Call((keywords, arg_count)) => {
-                self.eval_call(keywords, *arg_count)?;
-            }
+            Code::Call((keywords, arg_count)) => self.eval_call(keywords, *arg_count)?.into(),
             Code::Store(id) => {
                 let value = self.stack.pop()?;
+
                 self.call_stack
                     .current_mut()?
                     .locals
@@ -513,18 +508,18 @@ impl VM {
             }
             Code::StoreMut(id) => {
                 let value = self.stack.pop()?;
+
                 self.call_stack
                     .current_mut()?
                     .locals
                     .insert(id.clone(), value);
             }
             Code::LoadIndex => {
-                let index = self.stack.pop()?;
+                let index = self.stack.pop().and_then(to_int)?;
                 let value = self.stack.pop()?;
 
                 if let Value::Array(array) = value {
                     let items = array.borrow();
-                    let index = convert::to_int(&index)?;
 
                     if let Some(item) = items.get(index as usize) {
                         self.stack.push(item.clone());
@@ -543,7 +538,7 @@ impl VM {
                 )));
             }
             Code::LoadMember(member) | Code::LoadMemberPtr(member) => {
-                let object = convert::to_object(self.stack.pop()?)?;
+                let object = self.stack.pop().and_then(to_object)?;
                 let (module, class) = {
                     let object = object.borrow();
                     (object.class.module.clone(), object.class.name.clone())
@@ -552,18 +547,14 @@ impl VM {
                 let desc = self.module_cache.lookup_class(&module, &class)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
-                    if let Code::LoadMember(_) = ir.code {
-                        self.stack.push({
+                    self.stack.push(if let Code::LoadMember(_) = ir.code {
+                        {
                             let object = object.borrow();
-
                             object.fields[index].clone()
-                        });
+                        }
                     } else {
-                        self.stack.push(Value::Pointer(PointerType::FieldPtr((
-                            Rc::clone(&object),
-                            index,
-                        ))))
-                    }
+                        Value::Pointer(PointerType::FieldPtr((Rc::clone(&object), index)))
+                    });
 
                     return Ok(None);
                 }
@@ -586,11 +577,8 @@ impl VM {
                 if !self.call_stack.is_empty() {
                     let context = self.call_stack.current_mut()?;
 
-                    if let Some(value) = context
-                        .locals
-                        .get(id)
-                        //.or_else(|| context.locals.get(&LocalId::new(id.name.clone())))
-                        .and_then(|value| Some(value.clone()))
+                    if let Some(value) =
+                        context.locals.get(id).and_then(|value| Some(value.clone()))
                     {
                         self.stack.push(value);
 
@@ -641,20 +629,21 @@ impl VM {
             }
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
-                let value = self.stack.pop()?;
+                let value = self.stack.pop().and_then(to_bool)?;
 
-                return if convert::to_bool(&value)? {
-                    Ok(Some(true_label.clone()))
+                return Ok(Some(if value {
+                    true_label.clone()
                 } else {
-                    Ok(Some(false_label.clone()))
-                };
+                    false_label.clone()
+                }));
             }
             Code::Jump(label) => return Ok(Some(label.to_string())),
             Code::JumpIfTrue(label) => {
-                let value = convert::to_bool(&self.stack.pop()?)?;
+                let value = self.stack.pop().and_then(to_bool)?;
 
                 if value {
                     self.stack.push(Value::Bool(value));
+
                     return Ok(Some(label.clone()));
                 }
             }
@@ -678,7 +667,7 @@ impl VM {
         )))
     }
 
-    fn eval_internal(&mut self, module: &str, instructions: Rc<Vec<IR>>) -> Result<()> {
+    fn _eval(&mut self, module: &str, instructions: Rc<Vec<IR>>) -> Result<()> {
         let current_module = self
             .module_cache
             .current_name()
@@ -729,16 +718,15 @@ impl VM {
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
-        self.eval_internal(module, Rc::new(instructions))
-            .map_err(|e| {
-                let e = e.with_stack_trace(self.call_stack.rewind());
+        self._eval(module, Rc::new(instructions)).map_err(|e| {
+            let e = e.with_stack_trace(self.call_stack.rewind());
 
-                if let Ok(module) = self.module_cache.current() {
-                    return e.with_module(module);
-                }
+            if let Ok(module) = self.module_cache.current() {
+                return e.with_module(module);
+            }
 
-                e
-            })?;
+            e
+        })?;
 
         Ok(())
     }
