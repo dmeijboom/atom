@@ -1,5 +1,9 @@
 fn main() {
     for [0..3] {
+        if . == 2 {
+            break;
+        }
+
         println(. + 1);
     }
 }

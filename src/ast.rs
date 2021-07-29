@@ -255,11 +255,18 @@ pub struct ForStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct BreakStmt {
+    pub label: Option<String>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     If(IfStmt),
     For(ForStmt),
     Expr(ExprStmt),
     Let(LetStmt),
+    Break(BreakStmt),
     LetDecl(LetDeclStmt),
     FnDecl(FnDeclStmt),
     Assign(AssignStmt),
@@ -273,6 +280,7 @@ impl Stmt {
         match self {
             Stmt::If(if_stmt) => if_stmt.pos.clone(),
             Stmt::For(for_stmt) => for_stmt.pos.clone(),
+            Stmt::Break(break_stmt) => break_stmt.pos.clone(),
             Stmt::Expr(expr_stmt) => expr_stmt.pos.clone(),
             Stmt::Let(let_stmt) => let_stmt.pos.clone(),
             Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),

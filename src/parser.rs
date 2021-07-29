@@ -152,8 +152,12 @@ peg::parser! {
         rule for_stmt() -> Stmt
             = start:pos() "for" __ expr:expr() _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, body, pos: (start..end) }) }
 
+        rule break_stmt() -> Stmt
+            = start:pos() "break" __ label:ident() _ ";" end:pos() { Stmt::Break(BreakStmt { label: Some(label), pos: (start..end) }) }
+                / start:pos() "break" _ ";" end:pos() { Stmt::Break(BreakStmt { label: None, pos: (start..end) }) }
+
         rule stmt() -> Stmt
-            = expr_stmt() / for_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt()
+            = for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
 
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
@@ -822,6 +826,32 @@ mod tests {
                 })],
                 pos: (0..15),
             })),
+        );
+    }
+
+    #[test]
+    fn break_stmt_without_label() {
+        let source = "break;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Break(BreakStmt {
+                label: None,
+                pos: (0..6),
+            }))
+        );
+    }
+
+    #[test]
+    fn break_stmt_with_label() {
+        let source = "break upper;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Break(BreakStmt {
+                label: Some("upper".to_string()),
+                pos: (0..12),
+            }))
         );
     }
 }

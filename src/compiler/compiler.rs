@@ -11,7 +11,7 @@ use crate::ast::{
 };
 use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field};
-use crate::compiler::scope::{Local, Scope};
+use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
 
 #[derive(Debug)]
@@ -332,12 +332,12 @@ impl Compiler {
         Ok(vec![])
     }
 
-    fn compile_stmt_list(&mut self, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
+    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
         let mut ir = vec![];
 
         {
             self.scope_id += 1;
-            let new_scope = Scope::new_with_parent(Rc::clone(&self.scope), self.scope_id);
+            let new_scope = Scope::new_with_parent(context, Rc::clone(&self.scope), self.scope_id);
             self.scope = Rc::new(RefCell::new(new_scope));
         }
 
@@ -365,7 +365,7 @@ impl Compiler {
                         ),
                         IR::new(Code::SetLabel(if_label), self.pos.clone()),
                     ]);
-                    ir.push(self.compile_stmt_list(&if_stmt.body)?);
+                    ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
 
                     if if_stmt.alt.is_empty() {
                         ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
@@ -375,7 +375,7 @@ impl Compiler {
                             self.pos.clone(),
                         )]);
                         ir.push(vec![IR::new(Code::SetLabel(else_label), self.pos.clone())]);
-                        ir.push(self.compile_stmt_list(&if_stmt.alt)?);
+                        ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.alt)?);
                         ir.push(vec![IR::new(
                             Code::Jump(cont_label.clone()),
                             self.pos.clone(),
@@ -429,12 +429,34 @@ impl Compiler {
                         .map(|code| IR::new(code, self.pos.clone()))
                         .collect::<Vec<_>>(),
                     );
-                    ir.push(self.compile_stmt_list(&for_stmt.body)?);
+                    ir.push(self.compile_stmt_list(
+                        ScopeContext::ForLoop(ForLoopMeta {
+                            continue_label: cont_label.clone(),
+                        }),
+                        &for_stmt.body,
+                    )?);
                     ir.push(vec![
                         IR::new(Code::Jump(for_label), self.pos.clone()),
                         IR::new(Code::SetLabel(cont_label), self.pos.clone()),
                         IR::new(Code::Discard, self.pos.clone()),
                     ]);
+                }
+                Stmt::Break(break_stmt) => {
+                    if break_stmt.label.is_some() {
+                        unreachable!();
+                    }
+
+                    if let Some(meta) = Scope::get_for_loop(&self.scope) {
+                        ir.push(vec![IR::new(
+                            Code::Jump(meta.continue_label.clone()),
+                            self.pos.clone(),
+                        )]);
+                    } else {
+                        return Err(CompileError::new(
+                            "unable to break outside of a loop".to_string(),
+                            self.pos.clone(),
+                        ));
+                    }
                 }
                 Stmt::Return(return_stmt) => {
                     ir.push(self.compile_expr(&return_stmt.expr)?);
@@ -460,7 +482,7 @@ impl Compiler {
 
         self.set_local(fn_decl.name.clone(), false);
 
-        let body = self.compile_stmt_list(&fn_decl.body)?;
+        let body = self.compile_stmt_list(ScopeContext::Function, &fn_decl.body)?;
 
         Ok(Func {
             pos: fn_decl.pos.clone(),
@@ -490,7 +512,8 @@ impl Compiler {
 
         {
             self.scope_id += 1;
-            let new_scope = Scope::new_with_parent(Rc::clone(&self.scope), self.scope_id);
+            let new_scope =
+                Scope::new_with_parent(ScopeContext::Class, Rc::clone(&self.scope), self.scope_id);
             self.scope = Rc::new(RefCell::new(new_scope));
         }
 
