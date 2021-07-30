@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt::{Debug, Formatter};
 
 use indexmap::map::IndexMap;
 
@@ -11,13 +12,29 @@ pub struct FuncArg {
     pub name: String,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Func {
     pub pos: Pos,
     pub name: String,
     pub body: Vec<IR>,
     pub is_void: bool,
     pub args: Vec<FuncArg>,
+}
+
+impl Debug for Func {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Fn {}() -> {} {{\n{}\n}}",
+            self.name,
+            if self.is_void { "Void" } else { "Any" },
+            self.body
+                .iter()
+                .map(|ir| format!("  {:?}", ir))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    }
 }
 
 #[derive(Debug, Clone)]
