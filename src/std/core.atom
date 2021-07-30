@@ -75,6 +75,23 @@ class Range {
     }
 }
 
+class ArrayIter {
+    let array;
+    let mut index;
+
+    fn next() {
+        if this.index >= this.array.length {
+            return none();
+        }
+
+        let value = this.array.nth(this.index);
+
+        this.index = this.index + 1;
+
+        return value;
+    }
+}
+
 class Array {
     let value;
     let length;
@@ -93,6 +110,10 @@ class Array {
 
     fn last() {
         return this.nth(this.length-1);
+    }
+
+    fn iter() {
+        return ArrayIter(array: this, index: 0);
     }
 }
 

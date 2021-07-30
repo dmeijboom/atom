@@ -1,9 +1,11 @@
-fn main() {
-    for [0..3] {
-        if . == 2 {
-            break;
-        }
+class File {
+    let name;
+}
 
-        println(. + 1);
+fn main() {
+    let files = [File(name: "test.txt"), File(name: "etc"), File(name: "home")];
+
+    for files {
+        println(.name);
     }
 }
