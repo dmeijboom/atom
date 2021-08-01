@@ -10,11 +10,11 @@ use crate::compiler::{Func, IR};
 use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::VM;
 
-type NativeFn = fn(&VM, Vec<Value>) -> Result<Option<Value>>;
+pub type ExternalFn = fn(&VM, Vec<Value>) -> Result<Option<Value>>;
 
 pub enum FuncSource {
     Native(Rc<Vec<IR>>),
-    External(NativeFn),
+    External(ExternalFn),
 }
 
 #[derive(Clone)]
@@ -132,7 +132,7 @@ impl Module {
         &mut self,
         class_name: &str,
         method_name: &str,
-        func: NativeFn,
+        func: ExternalFn,
     ) -> Result<()> {
         if let Some(class) = self.class_map.get_mut(class_name) {
             if class.methods.contains_key(method_name) {
@@ -162,7 +162,7 @@ impl Module {
         )))
     }
 
-    pub fn register_external_fn(&mut self, name: &str, func: NativeFn) {
+    pub fn register_external_fn(&mut self, name: &str, func: ExternalFn) {
         self.func_map.insert(
             name.to_string(),
             FuncDesc {

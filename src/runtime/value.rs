@@ -198,9 +198,12 @@ impl Display for Value {
             }
             Value::Array(val) => write!(
                 f,
-                "{}(size: {})",
-                self.get_type().name(),
-                val.borrow().len()
+                "[{}]",
+                val.borrow()
+                    .iter()
+                    .map(|value| value.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             Value::Map(val) => write!(
                 f,
