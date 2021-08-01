@@ -55,3 +55,16 @@ pub fn register(module: &mut Module) -> Result<()> {
 
     Ok(())
 }
+
+pub const DEFAULT_IMPORTS: &[&str; 10] = &[
+    "std.core.println",
+    "std.core.Option",
+    "std.core.String",
+    "std.core.Int",
+    "std.core.Float",
+    "std.core.RangeIter",
+    "std.core.Range",
+    "std.core.ArrayIter",
+    "std.core.Array",
+    "std.core.Map",
+];

@@ -81,6 +81,7 @@ pub struct ClassDesc {
 
 pub struct Module {
     pub name: String,
+    pub imports: Vec<String>,
     pub filename: Option<PathBuf>,
     pub globals: HashMap<String, Value>,
     pub func_map: HashMap<String, FuncDesc>,
@@ -92,6 +93,7 @@ impl Module {
         let mut vm_module = Self {
             name: module.name.clone(),
             filename,
+            imports: module.imports.clone(),
             globals: HashMap::new(),
             func_map: HashMap::new(),
             class_map: HashMap::new(),

@@ -12,6 +12,7 @@ mod compiler;
 mod parser;
 mod runtime;
 mod std;
+mod utils;
 mod vm;
 
 #[derive(Clap)]
@@ -52,15 +53,6 @@ fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {
     (line, column)
 }
 
-fn setup_stdlib() -> Module {
-    let contents = include_str!("std/core.atom");
-    let tree = parser::parse(contents).expect("syntax error");
-    let compiler = Compiler::new(tree);
-    let module = compiler.compile().expect("compile error");
-
-    Module::new(module, Some("std/core.atom".into()))
-}
-
 fn main() {
     let opts = Opts::parse();
 
@@ -84,40 +76,19 @@ fn main() {
                 println!("{:#?}", module.funcs);
             }
 
-            let mut stdlib = setup_stdlib();
-            std::core::register(&mut stdlib).expect("std lib error");
-
             let main_module = Module::new(module, Some(run_opts.filename));
 
-            let mut vm = VM::new();
+            let mut vm = VM::new().expect("failed to initialize VM");
 
-            vm.register_module(stdlib);
-            vm.register_module(main_module);
+            vm.register_module(main_module)
+                .expect("failed to register main module");
 
             if let Err(e) = vm.eval(
                 "main",
                 vec![
-                    vec![
-                        "println",
-                        "Option",
-                        "String",
-                        "Int",
-                        "Float",
-                        "RangeIter",
-                        "Range",
-                        "ArrayIter",
-                        "Array",
-                        "Map",
-                    ]
-                    .into_iter()
-                    .map(|name| IR::new(Code::Import(format!("std.core.{}", name)), 0..0))
-                    .collect(),
-                    vec![
-                        IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
-                        IR::new(Code::CallWithKeywords((vec![], 0)), 0..0),
-                    ],
-                ]
-                .concat(),
+                    IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+                    IR::new(Code::CallWithKeywords((vec![], 0)), 0..0),
+                ],
             ) {
                 let mut message = String::new();
 

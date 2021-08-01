@@ -242,6 +242,12 @@ pub struct ClassDeclStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct ImportStmt {
+    pub name: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct ModuleStmt {
     pub name: String,
     pub pos: Pos,
@@ -271,6 +277,7 @@ pub enum Stmt {
     FnDecl(FnDeclStmt),
     Assign(AssignStmt),
     Return(ReturnStmt),
+    Import(ImportStmt),
     Module(ModuleStmt),
     ClassDecl(ClassDeclStmt),
 }
@@ -288,6 +295,7 @@ impl Stmt {
             Stmt::Assign(assign_stmt) => assign_stmt.pos.clone(),
             Stmt::Return(return_stmt) => return_stmt.pos.clone(),
             Stmt::Module(module_stmt) => module_stmt.pos.clone(),
+            Stmt::Import(import_stmt) => import_stmt.pos.clone(),
             Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
         }
     }

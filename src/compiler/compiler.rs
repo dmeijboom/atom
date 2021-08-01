@@ -585,6 +585,16 @@ impl Compiler {
                     module.name = module_stmt.name.clone();
                     module_is_set = true;
                 }
+                Stmt::Import(import_stmt) => {
+                    if module.imports.contains(&import_stmt.name) {
+                        return Err(CompileError::new(
+                            format!("unable to import '{}' more than once", import_stmt.name,),
+                            import_stmt.pos,
+                        ));
+                    }
+
+                    module.imports.push(import_stmt.name.clone());
+                }
                 _ => unreachable!(),
             }
         }

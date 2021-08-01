@@ -7,6 +7,9 @@ use std::rc::Rc;
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
 use crate::runtime::{ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Value};
+use crate::std::core::{register, DEFAULT_IMPORTS};
+use crate::utils;
+use crate::utils::Error;
 use crate::vm::call_stack::CallContext;
 use crate::vm::module_cache::{FuncDesc, FuncSource, Module, ModuleCache};
 
@@ -24,16 +27,51 @@ pub struct VM {
 }
 
 impl VM {
-    pub fn new() -> Self {
-        Self {
+    pub fn new() -> Result<Self> {
+        let mut vm = Self {
             stack: Stack::new(),
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
-        }
+        };
+
+        let std_core =
+            utils::compile_module(include_str!("../std/core.atom")).map_err(|e| match e {
+                Error::Runtime(e) => e,
+                Error::Compile(e) => {
+                    RuntimeError::new(format!("failed to compile: {}", e)).with_pos(e.pos)
+                }
+                Error::ParseError(e) => RuntimeError::new(format!("failed to parse: {}", e))
+                    .with_pos(e.location.offset..e.location.offset + 1),
+            })?;
+
+        let mut std_module = Module::new(std_core, Some("std/core.atom".into()));
+
+        register(&mut std_module)?;
+
+        vm.register_module(std_module)?;
+
+        Ok(vm)
     }
 
-    pub fn register_module(&mut self, module: Module) {
+    pub fn register_module(&mut self, module: Module) -> Result<()> {
+        let mut module = module;
+
+        // skip default imports for the core module
+        if module.name != "std.core" {
+            for name in DEFAULT_IMPORTS {
+                self.import_in_module(&mut module, name)?;
+            }
+        }
+
+        while !module.imports.is_empty() {
+            let path = module.imports.remove(0);
+
+            self.import_in_module(&mut module, &path)?;
+        }
+
         self.module_cache.add(module);
+
+        Ok(())
     }
 
     pub fn get_local(&self, name: &str) -> Option<Value> {
@@ -47,6 +85,52 @@ impl VM {
         }
 
         None
+    }
+
+    fn import_in_module(&mut self, module: &mut Module, path: &str) -> Result<()> {
+        let mut components = path.split(".").collect::<Vec<_>>();
+
+        if components.len() < 2 {
+            return Err(RuntimeError::new(format!("invalid import path: {}", path)));
+        }
+
+        let name = components.pop().unwrap();
+        let module_name = components.join(".");
+
+        if module.globals.contains_key(name) {
+            return Err(RuntimeError::new(format!(
+                "unable to redefine global: {}",
+                name
+            )));
+        }
+
+        // first, let's try a function
+        if let Ok(_) = self.module_cache.lookup_function(&module_name, name) {
+            module.globals.insert(
+                name.to_string(),
+                Value::Function(FuncId {
+                    name: name.to_string(),
+                    module: module_name.clone(),
+                }),
+            );
+
+            return Ok(());
+        }
+
+        // no? well, maybe it's a class
+        if let Ok(_) = self.module_cache.lookup_class(&module_name, name) {
+            module.globals.insert(
+                name.to_string(),
+                Value::Class(ClassId {
+                    name: name.to_string(),
+                    module: module_name.clone(),
+                }),
+            );
+
+            return Ok(());
+        }
+
+        Err(RuntimeError::new(format!("unable to import: {}", path)))
     }
 
     fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
@@ -403,55 +487,6 @@ impl VM {
                 let return_value = self.stack.pop()?;
 
                 self.call_stack.current_mut()?.return_value = Some(return_value);
-            }
-            Code::Import(path) => {
-                let mut components = path.split(".").collect::<Vec<_>>();
-
-                if components.len() < 2 {
-                    return Err(RuntimeError::new(format!("invalid import path: {}", path)));
-                }
-
-                let name = components.pop().unwrap();
-                let module_name = components.join(".");
-
-                {
-                    let current_module = self.module_cache.current()?;
-
-                    if current_module.globals.contains_key(name) {
-                        return Err(RuntimeError::new(format!(
-                            "unable to redefine global: {}",
-                            name
-                        )));
-                    }
-                }
-
-                // first, let's try a function
-                if let Ok(_) = self.module_cache.lookup_function(&module_name, name) {
-                    self.module_cache.current()?.globals.insert(
-                        name.to_string(),
-                        Value::Function(FuncId {
-                            name: name.to_string(),
-                            module: module_name.clone(),
-                        }),
-                    );
-
-                    return Ok(None);
-                }
-
-                // no? well, maybe it's a class
-                if let Ok(_) = self.module_cache.lookup_class(&module_name, name) {
-                    self.module_cache.current()?.globals.insert(
-                        name.to_string(),
-                        Value::Class(ClassId {
-                            name: name.to_string(),
-                            module: module_name.clone(),
-                        }),
-                    );
-
-                    return Ok(None);
-                }
-
-                return Err(RuntimeError::new(format!("unable to import: {}", path)));
             }
             Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
                 Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),

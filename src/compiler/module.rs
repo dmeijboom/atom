@@ -52,6 +52,7 @@ pub struct Class {
 #[derive(Debug)]
 pub struct Module {
     pub name: String,
+    pub imports: Vec<String>,
     pub funcs: HashMap<String, Func>,
     pub classes: HashMap<String, Class>,
 }
@@ -59,6 +60,7 @@ pub struct Module {
 impl Module {
     pub fn new(name: &str) -> Self {
         Self {
+            imports: vec![],
             name: name.to_string(),
             funcs: HashMap::new(),
             classes: HashMap::new(),
