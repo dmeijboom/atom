@@ -1,4 +1,4 @@
-pub use module_cache::Module;
+pub use module_cache::{Module, ModuleCache};
 pub use vm::VM;
 
 mod call_stack;

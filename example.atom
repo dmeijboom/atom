@@ -6,6 +6,6 @@ fn main() {
     let files = [File(name: "test.txt"), File(name: "etc"), File(name: "home")];
 
     for files {
-        println(.name);
+        println(.name.upper().repeat(2));
     }
 }

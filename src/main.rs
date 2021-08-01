@@ -1,17 +1,17 @@
-use std::fs;
-use std::path::PathBuf;
+use ::std::fs;
+use ::std::path::PathBuf;
 
 use clap::Clap;
 
 use crate::ast::Pos;
 use crate::compiler::{Code, Compiler, LocalId, IR};
-use crate::runtime::Value;
 use crate::vm::{Module, VM};
 
 mod ast;
 mod compiler;
 mod parser;
 mod runtime;
+mod std;
 mod vm;
 
 #[derive(Clap)]
@@ -52,7 +52,7 @@ fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {
     (line, column)
 }
 
-fn setup_std_core() -> Module {
+fn setup_stdlib() -> Module {
     let contents = include_str!("std/core.atom");
     let tree = parser::parse(contents).expect("syntax error");
     let compiler = Compiler::new(tree);
@@ -84,35 +84,40 @@ fn main() {
                 println!("{:#?}", module.funcs);
             }
 
-            let mut main_module = Module::new(module, Some(run_opts.filename));
+            let mut stdlib = setup_stdlib();
+            std::core::register(&mut stdlib).expect("std lib error");
 
-            main_module.register_external_fn(
-                "println",
-                Box::new(|values: Vec<Value>| {
-                    println!(
-                        "{}",
-                        values
-                            .into_iter()
-                            .map(|value| format!("{}", value))
-                            .collect::<Vec<_>>()
-                            .join(", "),
-                    );
-
-                    Ok(None)
-                }),
-            );
+            let main_module = Module::new(module, Some(run_opts.filename));
 
             let mut vm = VM::new();
 
-            vm.register_module(setup_std_core());
+            vm.register_module(stdlib);
             vm.register_module(main_module);
 
             if let Err(e) = vm.eval(
                 "main",
                 vec![
-                    IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
-                    IR::new(Code::CallWithKeywords((vec![], 0)), 0..0),
-                ],
+                    vec![
+                        "println",
+                        "Option",
+                        "String",
+                        "Int",
+                        "Float",
+                        "RangeIter",
+                        "Range",
+                        "ArrayIter",
+                        "Array",
+                        "Map",
+                    ]
+                    .into_iter()
+                    .map(|name| IR::new(Code::Import(format!("std.core.{}", name)), 0..0))
+                    .collect(),
+                    vec![
+                        IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+                        IR::new(Code::CallWithKeywords((vec![], 0)), 0..0),
+                    ],
+                ]
+                .concat(),
             ) {
                 let mut message = String::new();
 

@@ -279,9 +279,7 @@ impl Clone for Value {
     }
 
     fn clone_from(&mut self, source: &Self) {
-        let clone = source.clone();
-
-        *self = clone;
+        *self = source.clone();
     }
 }
 

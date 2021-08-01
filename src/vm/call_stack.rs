@@ -41,6 +41,12 @@ impl CallStack {
         self.data.pop()
     }
 
+    pub(crate) fn current(&self) -> Result<&CallContext> {
+        self.data
+            .last()
+            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
+    }
+
     pub(crate) fn current_mut(&mut self) -> Result<&mut CallContext> {
         self.data
             .last_mut()

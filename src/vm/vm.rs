@@ -1,16 +1,21 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
+use std::hash::Hash;
 use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
 use crate::runtime::{ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Value};
 use crate::vm::call_stack::CallContext;
-use crate::vm::module_cache::{FuncSource, Module, ModuleCache};
+use crate::vm::module_cache::{FuncDesc, FuncSource, Module, ModuleCache};
 
 use super::call_stack::CallStack;
 use super::stack::Stack;
+
+fn get_cloned<K: Eq + Hash, V: Clone>(map: &HashMap<K, V>, key: &K) -> Option<V> {
+    map.get(key).and_then(|value| Some(value.clone()))
+}
 
 pub struct VM {
     stack: Stack,
@@ -29,6 +34,19 @@ impl VM {
 
     pub fn register_module(&mut self, module: Module) {
         self.module_cache.add(module);
+    }
+
+    pub fn get_local(&self, name: &str) -> Option<Value> {
+        if let Ok(context) = self.call_stack.current() {
+            return context
+                .locals
+                .iter()
+                .filter(|(id, _)| id.scope_hint.is_none() && id.name == name)
+                .next()
+                .and_then(|(_, value)| Some(value.clone()));
+        }
+
+        None
     }
 
     fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
@@ -177,37 +195,15 @@ impl VM {
 
         self.call_stack.push(context);
 
-        if arg_count != desc.func.args.len() {
-            return Err(RuntimeError::new(format!(
-                "invalid argument count for Method: {}.{}.{}(...) (expected {}, not {})",
-                module,
-                class,
-                method.name,
-                desc.func.args.len(),
-                arg_count,
-            )));
-        }
+        let func = desc.func.clone();
 
-        let arg_names = desc.func.args.keys().cloned().collect();
-        let values = self.stack.pop_many(arg_count)?;
-        let ordered_values = self
-            .prepare_args(values, keywords, &arg_names)
-            .map_err(|e| {
-                let message = e.message.clone();
-                e.with_message(format!(
-                    "{} in Method {}.{}.{}",
-                    message, module, class, method.name
-                ))
-            })?;
-        let call_context = self.call_stack.current_mut()?;
-
-        for (i, value) in ordered_values {
-            call_context.args.insert(arg_names[i].to_string(), value);
-        }
-
-        let source = Rc::clone(&desc.func.source.native().unwrap());
-
-        self._eval(&module, source)?;
+        self.eval_func(
+            &module,
+            &format!("{}.{}", class, method.name),
+            keywords,
+            arg_count,
+            func,
+        )?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -245,24 +241,21 @@ impl VM {
         Ok(ordered_values)
     }
 
-    fn eval_function_call(
+    fn eval_func(
         &mut self,
-        id: &FuncId,
+        module_name: &str,
+        name: &str,
         keywords: &[String],
         arg_count: usize,
+        func: FuncDesc,
     ) -> Result<()> {
-        let func = self.module_cache.lookup_function(&id.module, &id.name)?;
-
-        self.call_stack
-            .push(CallContext::new(func.pos.clone(), id.clone()));
-
-        match &func.source {
+        match func.source {
             FuncSource::Native(source) => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(format!(
                         "invalid argument count for Fn: {}.{}(...) (expected {}, not {})",
-                        id.module,
-                        id.name,
+                        module_name,
+                        name,
                         func.args.len(),
                         arg_count,
                     )));
@@ -284,7 +277,7 @@ impl VM {
                                 let message = e.message.clone();
                                 e.with_message(format!(
                                     "{} in Fn {}.{}",
-                                    message, id.module, id.name,
+                                    message, module_name, name,
                                 ))
                             })?;
                     let call_context = self.call_stack.current_mut()?;
@@ -294,25 +287,43 @@ impl VM {
                     }
                 }
 
-                let source = Rc::clone(source);
-
-                self._eval(&id.module, source)?;
+                let source = Rc::clone(&source);
+                self._eval(&module_name, source)?;
             }
             FuncSource::External(closure) => {
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "unable to use keyword arguments in external Fn: {}.{}",
-                        id.module, id.name
+                        module_name, name,
                     )));
                 }
 
                 let values = self.stack.pop_many(arg_count)?;
 
-                if let Some(return_value) = closure(values)? {
+                if let Some(return_value) = closure(self, values)? {
                     self.call_stack.current_mut()?.return_value = Some(return_value);
                 }
             }
-        }
+        };
+
+        Ok(())
+    }
+
+    fn eval_function_call(
+        &mut self,
+        id: &FuncId,
+        keywords: &[String],
+        arg_count: usize,
+    ) -> Result<()> {
+        let func = self
+            .module_cache
+            .lookup_function(&id.module, &id.name)?
+            .clone();
+
+        self.call_stack
+            .push(CallContext::new(func.pos.clone(), id.clone()));
+
+        self.eval_func(&id.module, &id.name, keywords, arg_count, func)?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -392,6 +403,55 @@ impl VM {
                 let return_value = self.stack.pop()?;
 
                 self.call_stack.current_mut()?.return_value = Some(return_value);
+            }
+            Code::Import(path) => {
+                let mut components = path.split(".").collect::<Vec<_>>();
+
+                if components.len() < 2 {
+                    return Err(RuntimeError::new(format!("invalid import path: {}", path)));
+                }
+
+                let name = components.pop().unwrap();
+                let module_name = components.join(".");
+
+                {
+                    let current_module = self.module_cache.current()?;
+
+                    if current_module.globals.contains_key(name) {
+                        return Err(RuntimeError::new(format!(
+                            "unable to redefine global: {}",
+                            name
+                        )));
+                    }
+                }
+
+                // first, let's try a function
+                if let Ok(_) = self.module_cache.lookup_function(&module_name, name) {
+                    self.module_cache.current()?.globals.insert(
+                        name.to_string(),
+                        Value::Function(FuncId {
+                            name: name.to_string(),
+                            module: module_name.clone(),
+                        }),
+                    );
+
+                    return Ok(None);
+                }
+
+                // no? well, maybe it's a class
+                if let Ok(_) = self.module_cache.lookup_class(&module_name, name) {
+                    self.module_cache.current()?.globals.insert(
+                        name.to_string(),
+                        Value::Class(ClassId {
+                            name: name.to_string(),
+                            module: module_name.clone(),
+                        }),
+                    );
+
+                    return Ok(None);
+                }
+
+                return Err(RuntimeError::new(format!("unable to import: {}", path)));
             }
             Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
                 Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),
@@ -599,18 +659,8 @@ impl VM {
                 if !self.call_stack.is_empty() {
                     let context = self.call_stack.current_mut()?;
 
-                    if let Some(value) =
-                        context.locals.get(id).and_then(|value| Some(value.clone()))
-                    {
-                        self.stack.push(value);
-
-                        return Ok(None);
-                    }
-
-                    if let Some(value) = context
-                        .args
-                        .get(&id.name)
-                        .and_then(|value| Some(value.clone()))
+                    if let Some(value) = get_cloned(&context.locals, &id)
+                        .or_else(|| get_cloned(&context.args, &id.name))
                     {
                         self.stack.push(value);
 
@@ -618,12 +668,15 @@ impl VM {
                     }
                 }
 
-                if self
-                    .module_cache
-                    .current()?
-                    .class_map
-                    .contains_key(&id.name)
-                {
+                let current_module = self.module_cache.current()?;
+
+                if let Some(value) = get_cloned(&current_module.globals, &id.name) {
+                    self.stack.push(value);
+
+                    return Ok(None);
+                }
+
+                if current_module.class_map.contains_key(&id.name) {
                     self.stack.push(
                         Value::Class(ClassId {
                             name: id.name.clone(),
@@ -635,11 +688,11 @@ impl VM {
                     return Ok(None);
                 }
 
-                if self.module_cache.current()?.func_map.contains_key(&id.name) {
+                if current_module.func_map.contains_key(&id.name) {
                     self.stack.push(
                         Value::Function(FuncId {
                             name: id.name.clone(),
-                            module: self.module_cache.current_name()?.to_string(),
+                            module: current_module.name.clone(),
                         })
                         .into(),
                     );

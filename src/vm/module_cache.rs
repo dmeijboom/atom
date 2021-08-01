@@ -8,30 +8,41 @@ use crate::ast::Pos;
 use crate::compiler;
 use crate::compiler::{Func, IR};
 use crate::runtime::{Result, RuntimeError, Value};
+use crate::vm::VM;
+
+type NativeFn = fn(&VM, Vec<Value>) -> Result<Option<Value>>;
 
 pub enum FuncSource {
     Native(Rc<Vec<IR>>),
-    External(Box<dyn Fn(Vec<Value>) -> Result<Option<Value>>>),
+    External(NativeFn),
 }
 
-impl FuncSource {
-    pub fn native(&self) -> Option<Rc<Vec<IR>>> {
-        if let Self::Native(instructions) = self {
-            return Some(Rc::clone(instructions));
-        }
-
-        None
-    }
-}
-
+#[derive(Clone)]
 pub struct ArgumentDesc {
     pub mutable: bool,
 }
 
 pub struct FuncDesc {
     pub pos: Pos,
-    pub args: IndexMap<String, ArgumentDesc>,
     pub source: FuncSource,
+    pub args: IndexMap<String, ArgumentDesc>,
+}
+
+impl Clone for FuncDesc {
+    fn clone(&self) -> Self {
+        Self {
+            pos: self.pos.clone(),
+            args: self.args.clone(),
+            source: match &self.source {
+                FuncSource::Native(instructions) => FuncSource::Native(Rc::clone(&instructions)),
+                FuncSource::External(closure) => FuncSource::External(*closure),
+            },
+        }
+    }
+
+    fn clone_from(&mut self, source: &Self) {
+        *self = source.clone();
+    }
 }
 
 impl From<Func> for FuncDesc {
@@ -71,6 +82,7 @@ pub struct ClassDesc {
 pub struct Module {
     pub name: String,
     pub filename: Option<PathBuf>,
+    pub globals: HashMap<String, Value>,
     pub func_map: HashMap<String, FuncDesc>,
     pub class_map: HashMap<String, ClassDesc>,
 }
@@ -80,6 +92,7 @@ impl Module {
         let mut vm_module = Self {
             name: module.name.clone(),
             filename,
+            globals: HashMap::new(),
             func_map: HashMap::new(),
             class_map: HashMap::new(),
         };
@@ -113,17 +126,47 @@ impl Module {
         vm_module
     }
 
-    pub fn register_external_fn<F: Fn(Vec<Value>) -> Result<Option<Value>> + 'static>(
+    pub fn register_external_method(
         &mut self,
-        name: &str,
-        func: F,
-    ) {
+        class_name: &str,
+        method_name: &str,
+        func: NativeFn,
+    ) -> Result<()> {
+        if let Some(class) = self.class_map.get_mut(class_name) {
+            if class.methods.contains_key(method_name) {
+                return Err(RuntimeError::new(format!(
+                    "unable to redefine method '{}' on class: {}.{}",
+                    method_name, self.name, class_name
+                )));
+            }
+
+            class.methods.insert(
+                method_name.to_string(),
+                MethodDesc {
+                    func: FuncDesc {
+                        pos: (0..0),
+                        args: IndexMap::new(),
+                        source: FuncSource::External(func),
+                    },
+                },
+            );
+
+            return Ok(());
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to register external method on unregistered class: {}.{}",
+            self.name, class_name
+        )))
+    }
+
+    pub fn register_external_fn(&mut self, name: &str, func: NativeFn) {
         self.func_map.insert(
             name.to_string(),
             FuncDesc {
                 pos: (0..0),
                 args: IndexMap::new(),
-                source: FuncSource::External(Box::new(func)),
+                source: FuncSource::External(func),
             },
         );
     }

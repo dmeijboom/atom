@@ -33,6 +33,7 @@ fn none() {
 
 class String {
     let value;
+    let length;
 }
 
 class Int {
