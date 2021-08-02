@@ -17,7 +17,8 @@ peg::parser! {
             = position!()
 
         rule ident() -> String
-            = name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { name.to_string() }
+            = quiet!{ name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { name.to_string() } }
+                / expected!("identifier")
 
         rule ident_expr() -> Expr
             = start:pos() name:ident() end:pos() { Expr::Ident(IdentExpr { name, pos: (start..end) }) }

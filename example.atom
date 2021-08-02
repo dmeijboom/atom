@@ -5,13 +5,7 @@ class Test {
 }
 
 fn main() {
-    let count = {
-        "bob": 0,
-        "karen": 1
-    };
-
-    count.set("bob", count["bob"] + 1);
-    count.set("karen", count["karen"] + 1);
-
-    println(count);
+    for 0..5 {
+        println(.);
+    }
 }
