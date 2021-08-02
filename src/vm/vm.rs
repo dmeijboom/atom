@@ -613,6 +613,16 @@ impl VM {
 
                             object.fields[field_idx] = value;
                         }
+                        PointerType::ArrayItemPtr((array, field_idx)) => {
+                            let mut array = array.borrow_mut();
+
+                            array[field_idx] = value;
+                        }
+                        PointerType::MapItemPtr((map, key)) => {
+                            let mut map = map.borrow_mut();
+
+                            map.insert(*key, value);
+                        }
                     };
 
                     return Ok(None);
@@ -630,15 +640,45 @@ impl VM {
                     .locals
                     .insert(id.clone(), value);
             }
-            Code::LoadIndex => {
-                let index = self.stack.pop().and_then(to_int)?;
-                let value = self.stack.pop()?;
+            Code::LoadIndex | Code::LoadIndexPtr => {
+                let index = self.stack.pop()?;
+                let data = self.stack.pop()?;
 
-                if let Value::Array(array) = value {
+                if let Value::Array(array) = data {
+                    let index = to_int(index).map_err(|e| {
+                        let message = format!("{} in index lookup", e);
+
+                        e.with_message(message)
+                    })?;
                     let items = array.borrow();
 
                     if let Some(item) = items.get(index as usize) {
-                        self.stack.push(item.clone());
+                        self.stack.push(if ir.code == Code::LoadIndexPtr {
+                            Value::Pointer(PointerType::ArrayItemPtr((
+                                Rc::clone(&array),
+                                index as usize,
+                            )))
+                        } else {
+                            item.clone()
+                        });
+
+                        return Ok(None);
+                    }
+
+                    return Err(RuntimeError::new(
+                        format!("index out of bounds: {}", index,),
+                    ));
+                }
+
+                if let Value::Map(map) = data {
+                    let items = map.borrow();
+
+                    if let Some(item) = items.get(&index) {
+                        self.stack.push(if ir.code == Code::LoadIndexPtr {
+                            Value::Pointer(PointerType::MapItemPtr((Rc::clone(&map), index.into())))
+                        } else {
+                            item.clone()
+                        });
 
                         return Ok(None);
                     }
@@ -650,7 +690,7 @@ impl VM {
 
                 return Err(RuntimeError::new(format!(
                     "unable to index type: {}",
-                    value.get_type().name()
+                    data.get_type().name()
                 )));
             }
             Code::LoadMember(member) | Code::TeeMember(member) | Code::LoadMemberPtr(member) => {

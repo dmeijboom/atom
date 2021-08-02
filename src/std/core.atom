@@ -101,7 +101,7 @@ class ArrayIter {
 }
 
 class Array {
-    let value;
+    let data;
     let length;
 
     fn nth(index) {
@@ -109,7 +109,7 @@ class Array {
             return none();
         }
 
-        return some(this.value[index]);
+        return some(this.data[index]);
     }
 
     fn first() {
@@ -128,12 +128,63 @@ class Array {
         let mut output = [];
 
         for range {
-            output.push(this.value[.]);
+            output.push(this.data[.]);
         }
 
         return output;
     }
+
+    fn contains(value) {
+        for this {
+            if . == value {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+class KeyValue {
+    let key;
+    let value;
+}
+
+class MapIter {
+    let data;
+    let keys;
+    let mut index;
+
+    fn next() {
+        if this.index >= this.keys.length {
+            return none();
+        }
+
+        let key = this.keys[this.index];
+        let key_value = KeyValue(key: key, value: this.data[key]);
+
+        this.index = this.index + 1;
+
+        return some(key_value);
+    }
 }
 
 class Map {
+    let value;
+
+    fn iter() {
+        return MapIter(data: this.value, keys: this.keys(), index: 0);
+    }
+
+    fn get(key) {
+        if !this.keys().contains(key) {
+            return none();
+        }
+
+        return some(this.value[key]);
+    }
+
+    fn set(key, value) {
+        this.value[key] = value;
+    }
 }

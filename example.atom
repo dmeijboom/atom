@@ -1,5 +1,17 @@
 module main;
 
+class Test {
+    let mut value;
+}
+
 fn main() {
-    println(["hi", "bye", "guy"].slice(1..2));
+    let count = {
+        "bob": 0,
+        "karen": 1
+    };
+
+    count.set("bob", count["bob"] + 1);
+    count.set("karen", count["karen"] + 1);
+
+    println(count);
 }

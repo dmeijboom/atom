@@ -123,6 +123,8 @@ pub struct Object {
 #[derive(Debug, PartialEq, Eq)]
 pub enum PointerType {
     FieldPtr((Rc<RefCell<Object>>, usize)),
+    ArrayItemPtr((Rc<RefCell<Vec<Value>>>, usize)),
+    MapItemPtr((Rc<RefCell<HashMap<Value, Value>>>, Box<Value>)),
 }
 
 impl Hash for PointerType {
@@ -131,6 +133,14 @@ impl Hash for PointerType {
             PointerType::FieldPtr((object, field_idx)) => {
                 object.borrow().hash(state);
                 field_idx.hash(state);
+            }
+            PointerType::ArrayItemPtr((array, index)) => {
+                array.borrow().hash(state);
+                index.hash(state);
+            }
+            PointerType::MapItemPtr((map, key)) => {
+                Value::Map(Rc::clone(map)).hash(state);
+                key.hash(state);
             }
         }
     }
@@ -217,13 +227,22 @@ impl Display for Value {
             ),
             Value::Map(val) => write!(
                 f,
-                "{}(size: {})",
-                self.get_type().name(),
-                val.borrow().len()
+                "{{{}}}",
+                val.borrow()
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", key, value))
+                    .collect::<Vec<_>>()
+                    .join(", ")
             ),
             Value::Pointer(pointer) => match pointer {
                 PointerType::FieldPtr((_, field_idx)) => {
                     write!(f, "{}({})", self.get_type().name(), field_idx)
+                }
+                PointerType::ArrayItemPtr((_, field_idx)) => {
+                    write!(f, "{}({})", self.get_type().name(), field_idx)
+                }
+                PointerType::MapItemPtr((_, key)) => {
+                    write!(f, "{}({})", self.get_type().name(), key)
                 }
             },
         }
@@ -286,6 +305,12 @@ impl Clone for Value {
             Value::Pointer(pointer) => match pointer {
                 PointerType::FieldPtr((object, field_idx)) => {
                     Value::Pointer(PointerType::FieldPtr((Rc::clone(object), *field_idx)))
+                }
+                PointerType::ArrayItemPtr((array, field_idx)) => {
+                    Value::Pointer(PointerType::ArrayItemPtr((Rc::clone(array), *field_idx)))
+                }
+                PointerType::MapItemPtr((map, key)) => {
+                    Value::Pointer(PointerType::MapItemPtr((Rc::clone(map), key.clone())))
                 }
             },
         }

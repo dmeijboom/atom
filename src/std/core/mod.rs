@@ -2,10 +2,17 @@ use crate::runtime::{Result, Value};
 use crate::vm::{Module, VM};
 
 mod array;
+mod map;
 mod string;
 
 #[macro_export]
 macro_rules! parse_args {
+    ($values:expr) => {
+        if $values.len() > 0 {
+            return Err(RuntimeError::new(format!("invalid argument count (expected 0, not {})", $values.len())));
+        }
+    };
+
     ($values:expr, Any) => {
         $values.remove(0)
     };
@@ -61,11 +68,12 @@ pub fn register(module: &mut Module) -> Result<()> {
 
     string::register(module)?;
     array::register(module)?;
+    map::register(module)?;
 
     Ok(())
 }
 
-pub const DEFAULT_IMPORTS: &[&str; 10] = &[
+pub const DEFAULT_IMPORTS: &[&str; 11] = &[
     "std.core.println",
     "std.core.Option",
     "std.core.String",
@@ -76,4 +84,5 @@ pub const DEFAULT_IMPORTS: &[&str; 10] = &[
     "std.core.ArrayIter",
     "std.core.Array",
     "std.core.Map",
+    "std.core.KeyValue",
 ];

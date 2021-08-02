@@ -289,8 +289,28 @@ impl Compiler {
         Ok(ir.concat())
     }
 
+    fn compile_assign_index(
+        &mut self,
+        object: &Expr,
+        index: &Expr,
+        value: &Expr,
+    ) -> Result<Vec<IR>> {
+        let mut ir = vec![];
+
+        ir.push(self.compile_expr(&object)?);
+        ir.push(self.compile_expr(&index)?);
+        ir.push(vec![IR::new(Code::LoadIndexPtr, self.pos.clone())]);
+        ir.push(self.compile_expr(&value)?);
+        ir.push(vec![IR::new(Code::StorePtr, self.pos.clone())]);
+
+        Ok(ir.concat())
+    }
+
     fn compile_assign(&mut self, left: &Expr, right: &Expr) -> Result<Vec<IR>> {
         match left {
+            Expr::Index(index_expr) => {
+                self.compile_assign_index(&index_expr.object, &index_expr.index, right)
+            }
             Expr::Ident(ident_expr) => self.compile_assign_local(&ident_expr.name, right),
             Expr::Member(member_expr) => {
                 self.compile_assign_member(&member_expr.object, &member_expr.member, right)

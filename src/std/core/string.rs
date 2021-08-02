@@ -28,8 +28,16 @@ fn use_into_string(vm: &VM, handler: impl Fn(&String) -> String) -> Result<Optio
 
 pub fn register(module: &mut Module) -> Result<()> {
     let methods: Vec<(_, ExternalFn)> = vec![
-        ("upper", |vm, _| use_into_string(vm, |s| s.to_uppercase())),
-        ("lower", |vm, _| use_into_string(vm, |s| s.to_lowercase())),
+        ("upper", |vm, values| {
+            parse_args!(values);
+
+            use_into_string(vm, |s| s.to_uppercase())
+        }),
+        ("lower", |vm, values| {
+            parse_args!(values);
+
+            use_into_string(vm, |s| s.to_lowercase())
+        }),
         ("split", |vm, mut values| {
             let (split, count) = parse_args!(values => String, Int_);
 
@@ -49,17 +57,22 @@ pub fn register(module: &mut Module) -> Result<()> {
         }),
         ("startsWith", |vm, mut values| {
             let search = parse_args!(values => String);
+
             use_string(vm, |s| Value::Bool(s.starts_with(&search)))
         }),
         ("endsWith", |vm, mut values| {
             let search = parse_args!(values => String);
+
             use_string(vm, |s| Value::Bool(s.ends_with(&search)))
         }),
         ("contains", |vm, mut values| {
             let search = parse_args!(values => String);
+
             use_string(vm, |s| Value::Bool(s.contains(&search)))
         }),
-        ("chars", |vm, _| {
+        ("chars", |vm, values| {
+            parse_args!(values);
+
             use_string(vm, |s| {
                 let items = s.chars().map(|c| Value::Char(c)).collect::<Vec<_>>();
                 Value::Array(Rc::new(RefCell::new(items)))
