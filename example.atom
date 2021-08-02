@@ -1,15 +1,5 @@
 module main;
 
-class File {
-    let name;
-}
-
 fn main() {
-    let files = [File(name: "test.txt"), File(name: "etc"), File(name: "home")];
-
-    for files {
-        if .name.upper().contains("TXT") {
-            println(.name.split("."));
-        }
-    }
+    println(["hi", "bye", "guy"].slice(1..2));
 }

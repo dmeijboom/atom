@@ -439,6 +439,7 @@ impl Compiler {
                         IR::new(Code::Jump(for_label), self.pos.clone()),
                         IR::new(Code::SetLabel(cont_label), self.pos.clone()),
                         IR::new(Code::Discard, self.pos.clone()),
+                        IR::new(Code::Discard, self.pos.clone()),
                     ]);
                 }
                 Stmt::Break(break_stmt) => {

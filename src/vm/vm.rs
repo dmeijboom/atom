@@ -38,10 +38,13 @@ impl VM {
             utils::compile_module(include_str!("../std/core.atom")).map_err(|e| match e {
                 Error::Runtime(e) => e,
                 Error::Compile(e) => {
-                    RuntimeError::new(format!("failed to compile: {}", e)).with_pos(e.pos)
+                    RuntimeError::new(format!("failed to compile 'std/core.atom': {}", e))
+                        .with_pos(e.pos)
                 }
-                Error::ParseError(e) => RuntimeError::new(format!("failed to parse: {}", e))
-                    .with_pos(e.location.offset..e.location.offset + 1),
+                Error::ParseError(e) => {
+                    RuntimeError::new(format!("failed to parse 'std/core.atom': {}", e))
+                        .with_pos(e.location.offset..e.location.offset + 1)
+                }
             })?;
 
         let mut std_module = Module::new(std_core, Some("std/core.atom".into()));
@@ -462,7 +465,7 @@ impl VM {
                 let to = self.stack.pop().and_then(to_int)?;
                 let from = self.stack.pop().and_then(to_int)?;
 
-                self.stack.push(Value::Range(from..=to));
+                self.stack.push(Value::Range(from..to));
             }
             Code::MakeArray(len) => {
                 let values = self.stack.pop_many(*len)?;

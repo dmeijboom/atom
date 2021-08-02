@@ -22,17 +22,16 @@ peg::parser! {
         rule ident_expr() -> Expr
             = start:pos() name:ident() end:pos() { Expr::Ident(IdentExpr { name, pos: (start..end) }) }
 
-        rule int_part() -> &'input str
-            = "_" value:$(['0'..='9']['0'..='9']['0'..='9']) { value }
-                / $(['0'..='9'])
+        rule raw_int() -> String
+            = value:$(['1'..='9'] ['0'..='9']* ("_" ['0'..='9']['0'..='9']['0'..='9'])*) { value.replace("_", "") }
+                / "0" { "0".to_string() }
 
         rule int_lit() -> Literal
-            = sign:$("-"?) first:$(['1'..='9']) content:int_part()* { Literal::Int(format!("{}{}{}", sign, first, content.join("")).parse().unwrap()) }
-                / "0" { Literal::Int(0) }
+            = sign:$("-"?) value:raw_int() { Literal::Int(format!("{}{}", sign, value).parse().unwrap()) }
 
         rule float_lit() -> Literal
-            = sign:$("-"?) first:$(['1'..='9']) pre:int_part()* "." post:int_part()* { Literal::Float(format!("{}{}{}.{}", sign, first, pre.join(""), post.join("")).parse().unwrap()) }
-                / "." content:int_part()* { Literal::Float(format!(".{}", content.join("")).parse().unwrap()) }
+            = sign:$("-"?) pre:raw_int() "." post:$(['0'..='9']+) { Literal::Float(format!("{}{}.{}", sign, pre, post).parse().unwrap()) }
+                / "." post:$(['0'..='9']+) { Literal::Float(format!(".{}", post).parse().unwrap()) }
 
         rule bool_lit() -> Literal
             = value:$("true" / "false") { Literal::Bool(value.parse().unwrap()) }
@@ -69,9 +68,6 @@ peg::parser! {
         rule keyval() -> KeyValue
             = start:pos() key:expr() _ ":" _ value:expr() end:pos() { KeyValue { key, value, pos: (start..end) } }
 
-        rule range_expr() -> Expr
-            = start:pos() "[" _ from:expr() _ ".." _ to:expr() _ "]" end:pos() { Expr::Range(RangeExpr { from, to, pos: (start..end) }.into()) }
-
         rule map_expr() -> Expr
             = start:pos() "{" _ key_values:keyval() ** (_ "," _ ) _ "}" end:pos() { Expr::Map(MapExpr { key_values, pos: (start..end) }) }
 
@@ -83,7 +79,7 @@ peg::parser! {
                 / start:pos() "." !['0'..='9'] end:pos() { Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }) }
 
         rule prefix() -> Expr
-            = dot_expr() / literal_expr() / ident_expr() / range_expr() / array_expr() / map_expr()
+            = literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr()
 
         rule keyword_arg() -> KeywordArg
             = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }
@@ -96,6 +92,7 @@ peg::parser! {
             left:(@) _ "|" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitOr, right }.into()) }
             left:(@) _ "&" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitAnd, right }.into()) }
             --
+            from:(@) _ ".." _ to:@ { Expr::Range(RangeExpr { pos: (start..to.pos().end), from, to }.into()) }
             left:(@) _ "==" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Eq, right }.into()) }
             left:(@) _ "!=" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Neq, right }.into()) }
             --
@@ -252,9 +249,9 @@ mod tests {
 
     #[test_case(".0;", 0.0, 0..2; "unsigned float zero value")]
     #[test_case("10.2;", 10.2, 0..4; "unsigned float")]
-    #[test_case("-10.29;", - 10.29, 0..6; "signed float")]
+    #[test_case("-10.29;", -10.29, 0..6; "signed float")]
     #[test_case("10_000.43;", 10000.43, 0..9; "unsigned float with underscore for readability")]
-    #[test_case("-1_000.1;", - 1000.1, 0..8; "signed float with underscore for readability")]
+    #[test_case("-1_000.1;", -1000.1, 0..8; "signed float with underscore for readability")]
     fn test_float_literals(source: &str, value: f64, pos: Pos) {
         assert_eq!(
             parse_single(source),
@@ -796,7 +793,7 @@ mod tests {
 
     #[test]
     fn range_expr() {
-        let source = "[0..3];";
+        let source = "3..10;";
 
         assert_eq!(
             parse_single(source),
@@ -804,18 +801,18 @@ mod tests {
                 expr: Expr::Range(
                     RangeExpr {
                         from: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(0),
-                            pos: (1..2),
+                            literal: Literal::Int(3),
+                            pos: (0..1),
                         }),
                         to: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(3),
-                            pos: (4..5),
+                            literal: Literal::Int(10),
+                            pos: (3..5),
                         }),
-                        pos: (0..6),
+                        pos: (0..5),
                     }
                     .into()
                 ),
-                pos: (0..7),
+                pos: (0..6),
             })),
         );
     }

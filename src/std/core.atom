@@ -50,11 +50,13 @@ class RangeIter {
     let mut index;
 
     fn next() {
-        if this.index > this.to {
+        let index = this.from + this.index;
+
+        if index >= this.to {
             return none();
         }
 
-        let value = some(this.from + this.index);
+        let value = some(index);
 
         this.index = this.index + 1;
 
@@ -72,6 +74,11 @@ class Range {
 
     fn collect() {
         let mut output = [];
+
+        for this {
+            output.push(.);
+        }
+
         return output;
     }
 }
@@ -115,6 +122,16 @@ class Array {
 
     fn iter() {
         return ArrayIter(array: this, index: 0);
+    }
+
+    fn slice(range) {
+        let mut output = [];
+
+        for range {
+            output.push(this.value[.]);
+        }
+
+        return output;
     }
 }
 

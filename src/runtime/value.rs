@@ -2,7 +2,7 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::ops::RangeInclusive;
+use std::ops::Range;
 use std::rc::Rc;
 
 use crate::compiler::IR;
@@ -152,7 +152,7 @@ pub enum Value {
     Float(f64),
     Char(char),
     Bool(bool),
-    Range(RangeInclusive<i64>),
+    Range(Range<i64>),
     String(String),
     Class(ClassId),
     Function(FuncId),
@@ -194,7 +194,17 @@ impl Display for Value {
             Value::Object(object) => {
                 let obj = object.borrow();
 
-                write!(f, "Object(id: {}.{})", obj.class.module, obj.class.name)
+                write!(
+                    f,
+                    "{}.{}({})",
+                    obj.class.module,
+                    obj.class.name,
+                    obj.fields
+                        .iter()
+                        .map(|field| field.to_string())
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )
             }
             Value::Array(val) => write!(
                 f,

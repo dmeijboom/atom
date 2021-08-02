@@ -59,6 +59,22 @@ fn make_object(module: &str, name: &str, fields: Vec<Value>) -> Rc<RefCell<Objec
     }))
 }
 
+pub fn to_option(value: Option<Value>) -> Value {
+    if let Some(value) = value {
+        return Value::Object(make_object(
+            "std.core",
+            "Option",
+            vec![value, Value::Bool(false)],
+        ));
+    }
+
+    Value::Object(make_object(
+        "std.core",
+        "Option",
+        vec![Value::Int(0), Value::Bool(true)],
+    ))
+}
+
 pub fn to_object(value: Value) -> Result<Rc<RefCell<Object>>> {
     match value {
         Value::Int(val) => Ok(make_object("std.core", "Int", vec![Value::Int(val)])),
@@ -67,7 +83,7 @@ pub fn to_object(value: Value) -> Result<Rc<RefCell<Object>>> {
         Value::Range(val) => Ok(make_object(
             "std.core",
             "Range",
-            vec![Value::Int(*val.start()), Value::Int(*val.end())],
+            vec![Value::Int(val.start), Value::Int(val.end)],
         )),
         Value::String(val) => {
             let length = val.len() as i64;
