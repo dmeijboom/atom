@@ -915,4 +915,8 @@ impl VM {
 
         Ok(())
     }
+
+    pub fn result(&mut self) -> Option<Value> {
+        self.stack.pop().ok()
+    }
 }

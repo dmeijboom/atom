@@ -1,7 +1,5 @@
-module main;
-
 fn main() {
-    let data = [1, 2, 3];
-
-    println(data.nth(1));
+    for 0..2 {
+        break;
+    }
 }

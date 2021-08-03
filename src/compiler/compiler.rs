@@ -527,7 +527,6 @@ impl Compiler {
                         &for_stmt.body,
                     )?);
                     ir.push(vec![
-                        IR::new(Code::Discard, self.pos.clone()),
                         IR::new(Code::Jump(for_label), self.pos.clone()),
                         IR::new(Code::SetLabel(cont_label), self.pos.clone()),
                         IR::new(Code::Discard, self.pos.clone()),

@@ -15,6 +15,7 @@ mod compiler;
 mod parser;
 mod runtime;
 mod std;
+mod tests;
 mod utils;
 mod vm;
 
@@ -87,7 +88,7 @@ fn main() {
                 "main",
                 vec![
                     IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
-                    IR::new(Code::CallWithKeywords((vec![], 0)), 0..0),
+                    IR::new(Code::Call(0), 0..0),
                 ],
             ) {
                 handle_runtime_error(&main_module_name, &contents, e);

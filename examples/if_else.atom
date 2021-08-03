@@ -1,0 +1,13 @@
+fn main() {
+    if true {
+        if false {
+        } else {
+            if !true {
+            } else {
+                return 25;
+            }
+        }
+    }
+
+    return 10;
+}

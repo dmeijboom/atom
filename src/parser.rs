@@ -766,7 +766,7 @@ mod tests {
                         member: "member".to_string(),
                         pos: (0..14),
                     }
-                        .into()
+                    .into()
                 ),
                 pos: (0..15),
             })),
