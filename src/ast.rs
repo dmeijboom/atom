@@ -114,6 +114,13 @@ pub struct LiteralExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct MemberCondExpr {
+    pub object: Expr,
+    pub member: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct MemberExpr {
     pub object: Expr,
     pub member: String,
@@ -143,6 +150,7 @@ pub enum Expr {
     Array(ArrayExpr),
     Map(MapExpr),
     Member(Box<MemberExpr>),
+    MemberCond(Box<MemberCondExpr>),
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
@@ -153,18 +161,19 @@ pub enum Expr {
 impl Expr {
     pub fn pos(&self) -> Pos {
         match self {
-            Self::Literal(lit) => lit.pos.clone(),
-            Self::Ident(ident) => ident.pos.clone(),
-            Self::Call(call) => call.pos.clone(),
-            Self::Not(not) => not.pos.clone(),
-            Self::Array(array) => array.pos.clone(),
-            Self::Map(map) => map.pos.clone(),
-            Self::Member(member) => member.pos.clone(),
-            Self::Arithmetic(arithmetic) => arithmetic.pos.clone(),
-            Self::Comparison(comparison) => comparison.pos.clone(),
-            Self::Logical(logical) => logical.pos.clone(),
-            Self::Index(index) => index.pos.clone(),
-            Self::Range(range) => range.pos.clone(),
+            Self::Literal(lit_expr) => lit_expr.pos.clone(),
+            Self::Ident(ident_expr) => ident_expr.pos.clone(),
+            Self::Call(call_expr) => call_expr.pos.clone(),
+            Self::Not(not_expr) => not_expr.pos.clone(),
+            Self::Array(array_expr) => array_expr.pos.clone(),
+            Self::Map(map_expr) => map_expr.pos.clone(),
+            Self::Member(member_expr) => member_expr.pos.clone(),
+            Self::MemberCond(member_cond_expr) => member_cond_expr.pos.clone(),
+            Self::Arithmetic(arithmetic_expr) => arithmetic_expr.pos.clone(),
+            Self::Comparison(comparison_expr) => comparison_expr.pos.clone(),
+            Self::Logical(logical_expr) => logical_expr.pos.clone(),
+            Self::Index(index_expr) => index_expr.pos.clone(),
+            Self::Range(range_expr) => range_expr.pos.clone(),
         }
     }
 }

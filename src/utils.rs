@@ -6,6 +6,7 @@ use crate::compiler::{CompileError, Compiler, Module};
 use crate::parser;
 use crate::runtime::RuntimeError;
 
+#[derive(Debug, PartialEq)]
 pub enum Error {
     Compile(CompileError),
     Runtime(RuntimeError),

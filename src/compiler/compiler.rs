@@ -7,14 +7,15 @@ use std::rc::Rc;
 use indexmap::map::IndexMap;
 
 use crate::ast::{
-    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp, Pos, Stmt,
+    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp,
+    MemberCondExpr, Pos, Stmt,
 };
 use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field};
 use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct CompileError {
     pub pos: Pos,
     pub message: String,
@@ -65,6 +66,50 @@ impl Compiler {
         scope.set_local(Local { mutable, name });
     }
 
+    fn compile_member_cond(
+        &mut self,
+        member_cond_expr: &MemberCondExpr,
+        body: Vec<IR>,
+    ) -> Result<Vec<IR>> {
+        let mut ir = vec![];
+        let label_some = self.make_label("cond_some");
+        let label_none = self.make_label("cond_none");
+
+        ir.push(self.compile_expr(&member_cond_expr.object)?);
+        ir.push(vec![
+            IR::new(
+                Code::TeeMember("isSome".to_string()),
+                member_cond_expr.pos.clone(),
+            ),
+            IR::new(Code::Call(0), member_cond_expr.pos.clone()),
+            IR::new(
+                Code::Branch((label_some.clone(), label_none.clone())),
+                member_cond_expr.pos.clone(),
+            ),
+            IR::new(Code::SetLabel(label_some), member_cond_expr.pos.clone()),
+            IR::new(
+                Code::LoadMember("value".to_string()),
+                member_cond_expr.pos.clone(),
+            ),
+            IR::new(Code::Call(0), member_cond_expr.pos.clone()),
+            IR::new(
+                Code::LoadMember(member_cond_expr.member.to_string()),
+                member_cond_expr.pos.clone(),
+            ),
+        ]);
+        ir.push(body);
+        ir.push(vec![
+            IR::new(
+                Code::Load(LocalId::new("some".to_string())),
+                member_cond_expr.pos.clone(),
+            ),
+            IR::new(Code::Call(1), member_cond_expr.pos.clone()),
+            IR::new(Code::SetLabel(label_none), member_cond_expr.pos.clone()),
+        ]);
+
+        Ok(ir.concat())
+    }
+
     fn make_label(&mut self, prefix: &str) -> String {
         let mut i: i64 = 0;
 
@@ -76,6 +121,8 @@ impl Compiler {
             };
 
             if !self.labels.contains(&label) {
+                self.labels.push(label.clone());
+
                 return label;
             }
 
@@ -130,8 +177,7 @@ impl Compiler {
                     ir.push(self.compile_expr(arg)?);
                 }
 
-                ir.push(self.compile_expr(&call_expr.callee)?);
-                ir.push(vec![if names.is_empty() {
+                let instructions = vec![if names.is_empty() {
                     IR::new(Code::Call(call_expr.args.len()), call_expr.pos.clone())
                 } else {
                     IR::new(
@@ -141,7 +187,14 @@ impl Compiler {
                         )),
                         call_expr.pos.clone(),
                     )
-                }]);
+                }];
+
+                if let Expr::MemberCond(member_cond_expr) = &call_expr.callee {
+                    ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
+                } else {
+                    ir.push(self.compile_expr(&call_expr.callee)?);
+                    ir.push(instructions);
+                }
             }
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
@@ -157,8 +210,15 @@ impl Compiler {
                 }
 
                 ir.push(self.compile_expr(&index_expr.object)?);
-                ir.push(self.compile_expr(&index_expr.index)?);
-                ir.push(vec![IR::new(Code::LoadIndex, index_expr.pos.clone())]);
+
+                let instructions = vec![IR::new(Code::LoadIndex, index_expr.pos.clone())];
+
+                if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
+                    ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
+                } else {
+                    ir.push(self.compile_expr(&index_expr.index)?);
+                    ir.push(instructions);
+                }
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
@@ -180,6 +240,9 @@ impl Compiler {
                     Code::MakeMap(map_expr.key_values.len()),
                     map_expr.pos.clone(),
                 )]);
+            }
+            Expr::MemberCond(member_cond_expr) => {
+                ir.push(self.compile_member_cond(member_cond_expr, vec![])?);
             }
             Expr::Member(member_expr) => {
                 ir.push(self.compile_expr(&member_expr.object)?);
@@ -464,9 +527,9 @@ impl Compiler {
                         &for_stmt.body,
                     )?);
                     ir.push(vec![
+                        IR::new(Code::Discard, self.pos.clone()),
                         IR::new(Code::Jump(for_label), self.pos.clone()),
                         IR::new(Code::SetLabel(cont_label), self.pos.clone()),
-                        IR::new(Code::Discard, self.pos.clone()),
                         IR::new(Code::Discard, self.pos.clone()),
                     ]);
                 }

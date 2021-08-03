@@ -111,6 +111,7 @@ peg::parser! {
             --
             "!" _ expr:@ { Expr::Not(NotExpr {pos: (start..expr.pos().end), expr: expr.into() }) }
             --
+            object:(@) _ "?." _ member:ident() end:pos() { Expr::MemberCond(MemberCondExpr { pos: (start..end), object, member }.into()) }
             object:(@) _ "." _ member:ident() end:pos() { Expr::Member(MemberExpr { pos: (start..end), object, member }.into()) }
             --
             object:(@) "[" _ index:expr() _ "]" end:pos() { Expr::Index(IndexExpr { pos: (start..end), object, index }.into()) }
@@ -745,6 +746,29 @@ mod tests {
                 ],
                 methods: vec![],
                 pos: (0..41),
+            })),
+        );
+    }
+
+    #[test]
+    fn member_cond_expr() {
+        let source = "object?.member;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::MemberCond(
+                    MemberCondExpr {
+                        object: Expr::Ident(IdentExpr {
+                            name: "object".to_string(),
+                            pos: (0..6),
+                        }),
+                        member: "member".to_string(),
+                        pos: (0..14),
+                    }
+                        .into()
+                ),
+                pos: (0..15),
             })),
         );
     }

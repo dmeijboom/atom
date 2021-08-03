@@ -42,7 +42,7 @@ macro_rules! parse_args {
                 .len();
 
             if $values.len() < arg_count {
-                return Err(RuntimeError::new(format!("invalid argument count (expected {}, not {})", arg_count, $values.len())));
+                return Err(crate::runtime::RuntimeError::new(format!("invalid argument count (expected {}, not {})", arg_count, $values.len())));
             } else {
                 ($(parse_args!($values, $types)),+)
             }

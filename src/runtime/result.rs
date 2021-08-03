@@ -5,13 +5,13 @@ use crate::ast::Pos;
 use crate::runtime::FuncId;
 use crate::vm::Module;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Trace {
     pub pos: Pos,
     pub func: FuncId,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct RuntimeError {
     pub message: String,
     pub pos: Option<Pos>,
