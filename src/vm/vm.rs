@@ -108,7 +108,14 @@ impl VM {
         }
 
         // first, let's try a function
-        if let Ok(_) = self.module_cache.lookup_function(&module_name, name) {
+        if let Ok(func) = self.module_cache.lookup_function(&module_name, name) {
+            if !func.public {
+                return Err(RuntimeError::new(format!(
+                    "unable to import private Fn: {}.{}(...)'",
+                    module_name, name,
+                )));
+            }
+
             module.globals.insert(
                 name.to_string(),
                 Value::Function(FuncId {
@@ -121,7 +128,14 @@ impl VM {
         }
 
         // no? well, maybe it's a class
-        if let Ok(_) = self.module_cache.lookup_class(&module_name, name) {
+        if let Ok(class) = self.module_cache.lookup_class(&module_name, name) {
+            if !class.public {
+                return Err(RuntimeError::new(format!(
+                    "unable to import private Class: {}.{}(...)'",
+                    module_name, name,
+                )));
+            }
+
             module.globals.insert(
                 name.to_string(),
                 Value::Class(ClassId {
@@ -703,6 +717,15 @@ impl VM {
                 let desc = self.module_cache.lookup_class(&module, &class)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
+                    let field = &desc.fields[member];
+
+                    if !field.public && self.module_cache.current_name()? != module {
+                        return Err(RuntimeError::new(format!(
+                            "unable to access private field '{}' of class: {}.{}",
+                            member, module, class
+                        )));
+                    }
+
                     self.stack.push(if let Code::LoadMember(_) = ir.code {
                         {
                             let object = object.borrow();
@@ -716,6 +739,15 @@ impl VM {
                 }
 
                 if let Ok(_) = self.module_cache.lookup_method(&module, &class, member) {
+                    let method = &desc.methods[member];
+
+                    if !method.func.public && self.module_cache.current_name()? != module {
+                        return Err(RuntimeError::new(format!(
+                            "unable to access private method '{}(...)' of class: {}.{}",
+                            member, module, class
+                        )));
+                    }
+
                     if let Code::TeeMember(_) = ir.code {
                         self.stack.push(Value::Object(Rc::clone(&object)));
                     }

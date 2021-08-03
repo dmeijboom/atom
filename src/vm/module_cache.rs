@@ -24,6 +24,7 @@ pub struct ArgumentDesc {
 
 pub struct FuncDesc {
     pub pos: Pos,
+    pub public: bool,
     pub source: FuncSource,
     pub args: IndexMap<String, ArgumentDesc>,
 }
@@ -33,6 +34,7 @@ impl Clone for FuncDesc {
         Self {
             pos: self.pos.clone(),
             args: self.args.clone(),
+            public: self.public,
             source: match &self.source {
                 FuncSource::Native(instructions) => FuncSource::Native(Rc::clone(&instructions)),
                 FuncSource::External(closure) => FuncSource::External(*closure),
@@ -49,6 +51,7 @@ impl From<Func> for FuncDesc {
     fn from(func: Func) -> Self {
         FuncDesc {
             pos: func.pos.clone(),
+            public: func.public,
             args: func
                 .args
                 .iter()
@@ -68,6 +71,7 @@ impl From<Func> for FuncDesc {
 
 pub struct FieldDesc {
     pub mutable: bool,
+    pub public: bool,
 }
 
 pub struct MethodDesc {
@@ -75,6 +79,7 @@ pub struct MethodDesc {
 }
 
 pub struct ClassDesc {
+    pub public: bool,
     pub methods: HashMap<String, MethodDesc>,
     pub fields: IndexMap<String, FieldDesc>,
 }
@@ -112,6 +117,7 @@ impl Module {
                     name,
                     FieldDesc {
                         mutable: field.mutable,
+                        public: field.public,
                     },
                 );
             }
@@ -120,9 +126,14 @@ impl Module {
                 methods.insert(name, MethodDesc { func: func.into() });
             }
 
-            vm_module
-                .class_map
-                .insert(name, ClassDesc { fields, methods });
+            vm_module.class_map.insert(
+                name,
+                ClassDesc {
+                    fields,
+                    methods,
+                    public: class.public,
+                },
+            );
         }
 
         vm_module
@@ -147,6 +158,7 @@ impl Module {
                 MethodDesc {
                     func: FuncDesc {
                         pos: (0..0),
+                        public: true,
                         args: IndexMap::new(),
                         source: FuncSource::External(func),
                     },
@@ -167,6 +179,7 @@ impl Module {
             name.to_string(),
             FuncDesc {
                 pos: (0..0),
+                public: true,
                 args: IndexMap::new(),
                 source: FuncSource::External(func),
             },

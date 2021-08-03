@@ -199,6 +199,7 @@ pub struct FnArg {
 #[derive(Debug, PartialEq)]
 pub struct FnDeclStmt {
     pub name: String,
+    pub public: bool,
     pub args: Vec<FnArg>,
     pub body: Vec<Stmt>,
     pub pos: Pos,
@@ -229,6 +230,7 @@ pub struct IfStmt {
 pub struct Field {
     pub name: String,
     pub mutable: bool,
+    pub public: bool,
     pub value: Option<Expr>,
     pub pos: Pos,
 }
@@ -236,6 +238,7 @@ pub struct Field {
 #[derive(Debug, PartialEq)]
 pub struct ClassDeclStmt {
     pub name: String,
+    pub public: bool,
     pub fields: Vec<Field>,
     pub methods: Vec<FnDeclStmt>,
     pub pos: Pos,

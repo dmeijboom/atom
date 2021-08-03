@@ -162,17 +162,17 @@ peg::parser! {
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
         rule fn_decl() -> FnDeclStmt
-            = start:pos() "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, pos: (start..end) } }
+            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), pos: (start..end) } }
 
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
 
         rule field() -> Field
-            = start:pos() "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), name, value: Some(value), pos: (start..end) } }
-                / start:pos() "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), name, value: None, pos: (start..end) } }
+            = start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: Some(value), pos: (start..end) } }
+                / start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: None, pos: (start..end) } }
 
         rule class_decl_stmt() -> Stmt
-            = start:pos() "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, fields, methods, pos: (start..end) }) }
+            = start:pos() public:$("pub")? _ "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), fields, methods, pos: (start..end) }) }
 
         rule module_stmt() -> Stmt
             = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
@@ -720,9 +720,11 @@ mod tests {
             parse_single(source),
             Ok(Stmt::ClassDecl(ClassDeclStmt {
                 name: "Test".to_string(),
+                public: false,
                 fields: vec![
                     Field {
                         name: "name".to_string(),
+                        public: false,
                         mutable: false,
                         value: None,
                         pos: (13..22),
@@ -730,6 +732,7 @@ mod tests {
                     Field {
                         name: "age".to_string(),
                         mutable: true,
+                        public: false,
                         value: Some(Expr::Literal(LiteralExpr {
                             literal: Literal::Int(1),
                             pos: (37..38),

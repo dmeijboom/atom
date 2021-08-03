@@ -15,6 +15,7 @@ pub struct FuncArg {
 #[derive(Clone)]
 pub struct Func {
     pub pos: Pos,
+    pub public: bool,
     pub name: String,
     pub body: Vec<IR>,
     pub is_void: bool,
@@ -40,11 +41,13 @@ impl Debug for Func {
 #[derive(Debug, Clone)]
 pub struct Field {
     pub mutable: bool,
+    pub public: bool,
 }
 
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
+    pub public: bool,
     pub funcs: HashMap<String, Func>,
     pub fields: IndexMap<String, Field>,
 }

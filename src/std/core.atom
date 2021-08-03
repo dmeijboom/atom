@@ -1,55 +1,55 @@
 module std.core;
 
-class Option {
+pub class Option {
     let _value;
-    let _isNil;
+    let isNil;
 
-    fn value() {
+    pub fn value() {
         return this._value;
     }
 
-    fn isSome() {
-        return !this._isNil;
+    pub fn isSome() {
+        return !this.isNil;
     }
 
-    fn isNone() {
-        return this._isNil;
+    pub fn isNone() {
+        return this.isNil;
     }
 }
 
-fn some(value) {
+pub fn some(value) {
     return Option(
         _value: value,
-        _isNil: false
+        isNil: false
     );
 }
 
-fn none() {
+pub fn none() {
     return Option(
         _value: 0,
-        _isNil: true
+        isNil: true
     );
 }
 
-class String {
+pub class String {
     let value;
-    let length;
+    pub let length;
 }
 
-class Int {
-    let value;
-}
-
-class Float {
+pub class Int {
     let value;
 }
 
-class RangeIter {
+pub class Float {
+    let value;
+}
+
+pub class RangeIter {
     let from;
     let to;
     let mut index;
 
-    fn next() {
+    pub fn next() {
         let index = this.from + this.index;
 
         if index >= this.to {
@@ -64,15 +64,15 @@ class RangeIter {
     }
 }
 
-class Range {
+pub class Range {
     let from;
     let to;
 
-    fn iter() {
+    pub fn iter() {
         return RangeIter(from: this.from, to: this.to, index: 0);
     }
 
-    fn collect() {
+    pub fn collect() {
         let mut output = [];
 
         for this {
@@ -83,11 +83,11 @@ class Range {
     }
 }
 
-class ArrayIter {
+pub class ArrayIter {
     let array;
     let mut index;
 
-    fn next() {
+    pub fn next() {
         if this.index >= this.array.length {
             return none();
         }
@@ -100,11 +100,11 @@ class ArrayIter {
     }
 }
 
-class Array {
+pub class Array {
     let data;
-    let length;
+    pub let length;
 
-    fn nth(index) {
+    pub fn nth(index) {
         if index < 0 || this.length <= index {
             return none();
         }
@@ -112,19 +112,19 @@ class Array {
         return some(this.data[index]);
     }
 
-    fn first() {
+    pub fn first() {
         return this.nth(0);
     }
 
-    fn last() {
+    pub fn last() {
         return this.nth(this.length-1);
     }
 
-    fn iter() {
+    pub fn iter() {
         return ArrayIter(array: this, index: 0);
     }
 
-    fn slice(range) {
+    pub fn slice(range) {
         let mut output = [];
 
         for range {
@@ -134,7 +134,7 @@ class Array {
         return output;
     }
 
-    fn contains(value) {
+    pub fn contains(value) {
         for this {
             if . == value {
                 return true;
@@ -145,17 +145,17 @@ class Array {
     }
 }
 
-class KeyValue {
-    let key;
-    let value;
+pub class KeyValue {
+    pub let key;
+    pub let value;
 }
 
-class MapIter {
+pub class MapIter {
     let data;
     let keys;
     let mut index;
 
-    fn next() {
+    pub fn next() {
         if this.index >= this.keys.length {
             return none();
         }
@@ -169,14 +169,14 @@ class MapIter {
     }
 }
 
-class Map {
+pub class Map {
     let value;
 
-    fn iter() {
+    pub fn iter() {
         return MapIter(data: this.value, keys: this.keys(), index: 0);
     }
 
-    fn get(key) {
+    pub fn get(key) {
         if !this.keys().contains(key) {
             return none();
         }
@@ -184,7 +184,7 @@ class Map {
         return some(this.value[key]);
     }
 
-    fn set(key, value) {
+    pub fn set(key, value) {
         this.value[key] = value;
     }
 }

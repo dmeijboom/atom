@@ -508,6 +508,7 @@ impl Compiler {
         Ok(Func {
             pos: fn_decl.pos.clone(),
             name: fn_decl.name.clone(),
+            public: fn_decl.public,
             is_void: !body.iter().any(|ir| ir.code == Code::Return),
             body,
             args: fn_decl
@@ -555,6 +556,7 @@ impl Compiler {
                 field.name.clone(),
                 Field {
                     mutable: field.mutable,
+                    public: field.public,
                 },
             );
 
@@ -572,6 +574,7 @@ impl Compiler {
 
         Ok(Class {
             name: class_decl.name.clone(),
+            public: class_decl.public,
             fields,
             funcs,
         })

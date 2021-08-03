@@ -29,7 +29,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(let|mut)\b</string>
+                <string>\b(let|mut|pub)\b</string>
                 <key>name</key>
                 <string>storage.modifier.atom</string>
             </dict>
@@ -161,7 +161,7 @@
             </dict>
             <dict>
                 <key>begin</key>
-                <string>^\s*(fn)\s+(?=[A-Za-z_][A-Za-z0-9_]*)</string>
+                <string>^\s*((pub )?fn)\s+(?=[A-Za-z_][A-Za-z0-9_]*)</string>
                 <key>beginCaptures</key>
                 <dict>
                     <key>1</key>
