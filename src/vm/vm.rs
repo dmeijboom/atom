@@ -1,7 +1,9 @@
 use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
+use std::fs;
 use std::hash::Hash;
+use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
@@ -22,8 +24,9 @@ fn get_cloned<K: Eq + Hash, V: Clone>(map: &HashMap<K, V>, key: &K) -> Option<V>
 
 pub struct VM {
     stack: Stack,
-    module_cache: ModuleCache,
     call_stack: CallStack,
+    module_cache: ModuleCache,
+    module_paths: Vec<PathBuf>,
 }
 
 impl VM {
@@ -32,10 +35,11 @@ impl VM {
             stack: Stack::new(),
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
+            module_paths: vec![],
         };
 
         let std_core =
-            utils::compile_module(include_str!("../std/core.atom")).map_err(|e| match e {
+            utils::parse_and_compile(include_str!("../std/core.atom")).map_err(|e| match e {
                 Error::Runtime(e) => e,
                 Error::Compile(e) => {
                     RuntimeError::new(format!("failed to compile 'std/core.atom': {}", e))
@@ -54,6 +58,10 @@ impl VM {
         vm.register_module(std_module)?;
 
         Ok(vm)
+    }
+
+    pub fn add_module_path(&mut self, path: impl AsRef<Path>) {
+        self.module_paths.push(path.as_ref().to_path_buf());
     }
 
     pub fn register_module(&mut self, module: Module) -> Result<()> {
@@ -105,6 +113,46 @@ impl VM {
                 "unable to redefine global: {}",
                 name
             )));
+        }
+
+        // try to load the module from the filesystem if it doesn't exist
+        if !self.module_cache.contains_module(&module_name) {
+            let mut filename = None;
+
+            for module_path in self.module_paths.iter() {
+                let mut path = module_path.clone();
+
+                for component in components.iter().take(components.len() - 1) {
+                    path.push(component);
+                }
+
+                if let Some(last_component) = components.last() {
+                    path.push(format!("{}.atom", last_component));
+                }
+
+                if !path.exists() {
+                    continue;
+                }
+
+                filename = Some(path);
+
+                break;
+            }
+
+            if let Some(path) = filename {
+                let source = fs::read_to_string(&path).map_err(|e| {
+                    RuntimeError::new(format!("failed to import module '{}': {}", module_name, e))
+                })?;
+
+                let compiled_module = utils::parse_and_compile(&source).map_err(|e| {
+                    RuntimeError::new(format!(
+                        "failed to import module '{}': {:?}",
+                        module_name, e
+                    ))
+                })?;
+
+                self.register_module(Module::new(compiled_module, Some(path)))?;
+            }
         }
 
         // first, let's try a function

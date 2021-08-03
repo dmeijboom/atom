@@ -195,6 +195,9 @@ peg::parser! {
 
         pub rule parse() -> Vec<Stmt>
             = _ stmts:top_level_stmt_list() _ { stmts }
+
+        pub rule parse_expr() -> Expr
+            = _ expr:expr() _ { expr }
     }
 }
 

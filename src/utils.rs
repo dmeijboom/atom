@@ -25,8 +25,14 @@ impl From<RuntimeError> for Error {
     }
 }
 
-pub fn compile_module(source: &str) -> Result<Module, Error> {
-    let tree = parser::parse(source).map_err(|e| Error::ParseError(e))?;
+impl From<ParseError<LineCol>> for Error {
+    fn from(e: ParseError<LineCol>) -> Self {
+        Self::ParseError(e)
+    }
+}
+
+pub fn parse_and_compile(source: &str) -> Result<Module, Error> {
+    let tree = parser::parse(source)?;
     let compiler = Compiler::new(tree);
     let module = compiler.compile()?;
 

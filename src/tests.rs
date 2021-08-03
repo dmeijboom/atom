@@ -4,11 +4,11 @@ mod tests {
 
     use crate::compiler::{Code, LocalId, IR};
     use crate::runtime::Value;
-    use crate::utils::{compile_module, Error};
+    use crate::utils::{parse_and_compile, Error};
     use crate::vm::{Module, VM};
 
     fn run_code(source: &str) -> Result<Option<Value>, Error> {
-        let compiled_module = compile_module(source)?;
+        let compiled_module = parse_and_compile(source)?;
         let module = Module::new(compiled_module, None);
         let mut vm = VM::new()?;
 

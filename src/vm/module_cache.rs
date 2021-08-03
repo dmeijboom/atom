@@ -69,15 +69,18 @@ impl From<Func> for FuncDesc {
     }
 }
 
+#[derive(Clone)]
 pub struct FieldDesc {
     pub mutable: bool,
     pub public: bool,
 }
 
+#[derive(Clone)]
 pub struct MethodDesc {
     pub func: FuncDesc,
 }
 
+#[derive(Clone)]
 pub struct ClassDesc {
     pub public: bool,
     pub methods: HashMap<String, MethodDesc>,
@@ -225,6 +228,10 @@ impl ModuleCache {
             .as_ref()
             .and_then(|name| Some(name.as_str()))
             .ok_or_else(|| RuntimeError::new("no active module found".to_string()))
+    }
+
+    pub(crate) fn contains_module(&self, module_name: &str) -> bool {
+        self.modules.contains_key(module_name)
     }
 
     pub(crate) fn lookup_class(&self, module_name: &str, class_name: &str) -> Result<&ClassDesc> {
