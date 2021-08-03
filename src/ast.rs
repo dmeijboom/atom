@@ -270,6 +270,12 @@ pub struct BreakStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct UnsafeStmt {
+    pub body: Vec<Stmt>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Stmt {
     If(IfStmt),
     For(ForStmt),
@@ -281,6 +287,7 @@ pub enum Stmt {
     Assign(AssignStmt),
     Return(ReturnStmt),
     Import(ImportStmt),
+    Unsafe(UnsafeStmt),
     Module(ModuleStmt),
     ClassDecl(ClassDeclStmt),
 }
@@ -299,6 +306,7 @@ impl Stmt {
             Stmt::Return(return_stmt) => return_stmt.pos.clone(),
             Stmt::Module(module_stmt) => module_stmt.pos.clone(),
             Stmt::Import(import_stmt) => import_stmt.pos.clone(),
+            Stmt::Unsafe(unsafe_stmt) => unsafe_stmt.pos.clone(),
             Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
         }
     }

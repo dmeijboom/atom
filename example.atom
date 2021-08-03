@@ -1,7 +1,7 @@
 module main;
 
 fn main() {
-    let opt = some("hello");
+    let data = [1, 2, 3];
 
-    println(opt.value());
+    println(data.nth(1));
 }

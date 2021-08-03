@@ -18,6 +18,7 @@ pub enum ScopeContext {
     Class,
     IfElse,
     Function,
+    Unsafe,
     ForLoop(ForLoopMeta),
 }
 
@@ -26,6 +27,22 @@ pub struct Scope {
     pub context: ScopeContext,
     pub locals: HashMap<String, Local>,
     pub parent: Option<Rc<RefCell<Scope>>>,
+}
+
+fn walk<T>(scope: &Rc<RefCell<Scope>>, handler: impl Fn(&Scope) -> Option<T>) -> Option<T> {
+    {
+        let scope = scope.borrow();
+
+        if let Some(value) = handler(&scope) {
+            return Some(value);
+        }
+    }
+
+    if let Some(parent) = &scope.borrow().parent {
+        return walk(&Rc::clone(parent), handler);
+    }
+
+    None
 }
 
 impl Scope {
@@ -51,20 +68,25 @@ impl Scope {
         self.locals.insert(local.name.clone(), local);
     }
 
-    pub fn get_for_loop(scope: &Rc<RefCell<Scope>>) -> Option<ForLoopMeta> {
-        {
-            let scope = scope.borrow();
+    pub fn in_unsafe_block(scope: &Rc<RefCell<Scope>>) -> bool {
+        walk(scope, |scope| {
+            if let ScopeContext::Unsafe = &scope.context {
+                return Some(true);
+            }
 
+            None
+        })
+        .unwrap_or(false)
+    }
+
+    pub fn get_for_loop(scope: &Rc<RefCell<Scope>>) -> Option<ForLoopMeta> {
+        walk(scope, |scope| {
             if let ScopeContext::ForLoop(meta) = &scope.context {
                 return Some(meta.clone());
             }
-        }
 
-        if let Some(parent) = &scope.borrow().parent {
-            return Scope::get_for_loop(&Rc::clone(parent));
-        }
-
-        None
+            None
+        })
     }
 
     pub fn get_local(

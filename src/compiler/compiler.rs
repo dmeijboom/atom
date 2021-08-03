@@ -148,6 +148,14 @@ impl Compiler {
                 ir.push(vec![IR::new(Code::Not, not_expr.pos.clone())]);
             }
             Expr::Index(index_expr) => {
+                if !Scope::in_unsafe_block(&self.scope) {
+                    return Err(CompileError::new(
+                        "unable to perform index operation outside of an 'unsafe' block"
+                            .to_string(),
+                        self.pos.clone(),
+                    ));
+                }
+
                 ir.push(self.compile_expr(&index_expr.object)?);
                 ir.push(self.compile_expr(&index_expr.index)?);
                 ir.push(vec![IR::new(Code::LoadIndex, index_expr.pos.clone())]);
@@ -483,7 +491,11 @@ impl Compiler {
                     ir.push(self.compile_expr(&return_stmt.expr)?);
                     ir.push(vec![IR::new(Code::Return, self.pos.clone())]);
                 }
-                _ => unreachable!(),
+                Stmt::Unsafe(unsafe_stmt) => {
+                    ir.push(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
+                }
+                // ignore top level statements
+                Stmt::FnDecl(_) | Stmt::ClassDecl(_) | Stmt::Module(_) | Stmt::Import(_) => {}
             }
         }
 

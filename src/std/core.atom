@@ -109,7 +109,9 @@ pub class Array {
             return none();
         }
 
-        return some(this.data[index]);
+        unsafe {
+            return some(this.data[index]);
+        }
     }
 
     pub fn first() {
@@ -128,7 +130,9 @@ pub class Array {
         let mut output = [];
 
         for range {
-            output.push(this.data[.]);
+            unsafe {
+                output.push(this.data[.]);
+            }
         }
 
         return output;
@@ -160,12 +164,14 @@ pub class MapIter {
             return none();
         }
 
-        let key = this.keys[this.index];
-        let key_value = KeyValue(key: key, value: this.data[key]);
+        unsafe {
+            let key = this.keys[this.index];
+            let key_value = KeyValue(key: key, value: this.data[key]);
 
-        this.index = this.index + 1;
+            this.index = this.index + 1;
 
-        return some(key_value);
+            return some(key_value);
+        }
     }
 }
 
@@ -181,10 +187,14 @@ pub class Map {
             return none();
         }
 
-        return some(this.value[key]);
+        unsafe {
+            return some(this.value[key]);
+        }
     }
 
     pub fn set(key, value) {
-        this.value[key] = value;
+        unsafe {
+            this.value[key] = value;
+        }
     }
 }
