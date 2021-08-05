@@ -45,6 +45,13 @@ pub struct CallExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct CastExpr {
+    pub type_name: String,
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct ArithmeticExpr {
     pub left: Expr,
     pub right: Expr,
@@ -147,6 +154,7 @@ pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
     Call(Box<CallExpr>),
+    Cast(Box<CastExpr>),
     Not(NotExpr),
     Array(ArrayExpr),
     Map(MapExpr),
@@ -175,6 +183,7 @@ impl Expr {
             Self::Logical(logical_expr) => logical_expr.pos.clone(),
             Self::Index(index_expr) => index_expr.pos.clone(),
             Self::Range(range_expr) => range_expr.pos.clone(),
+            Expr::Cast(cast_expr) => cast_expr.pos.clone(),
         }
     }
 }

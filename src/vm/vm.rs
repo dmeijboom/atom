@@ -640,6 +640,25 @@ impl VM {
 
                 self.stack.push(Value::Bool(!value));
             }
+            Code::Cast(type_name) => {
+                let value = self.stack.pop()?;
+
+                self.stack.push(match value {
+                    Value::Int(val) if type_name == "Float" => Value::Float(val as f64),
+                    Value::Int(val) if type_name == "Byte" => Value::Byte(val as u8),
+                    Value::Float(val) if type_name == "Int" => Value::Int(val as i64),
+                    Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
+                    Value::Byte(val) if type_name == "Int" => Value::Int(val as i64),
+                    Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
+                    Value::Bool(val) if type_name == "Int" => Value::Int(val as i64),
+                    _ => {
+                        return Err(RuntimeError::new(format!(
+                            "unable to cast to invalid type: {}",
+                            type_name
+                        )));
+                    }
+                });
+            }
             Code::Call(arg_count) => self.eval_call(&vec![], *arg_count)?.into(),
             Code::CallWithKeywords((keywords, arg_count)) => {
                 self.eval_call(keywords, *arg_count)?.into()

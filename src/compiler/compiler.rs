@@ -166,6 +166,13 @@ impl Compiler {
                     ident.pos.clone(),
                 )]);
             }
+            Expr::Cast(cast_expr) => {
+                ir.push(self.compile_expr(&cast_expr.expr)?);
+                ir.push(vec![IR::new(
+                    Code::Cast(cast_expr.type_name.clone()),
+                    cast_expr.pos.clone(),
+                )]);
+            }
             Expr::Call(call_expr) => {
                 let mut names = vec![];
 

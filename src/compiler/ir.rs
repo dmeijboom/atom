@@ -56,6 +56,7 @@ pub enum Code {
     Discard,
     Return,
     Call(usize),
+    Cast(String),
     CallWithKeywords((Vec<String>, usize)),
     Store(LocalId),
     StoreMut(LocalId),
@@ -110,6 +111,7 @@ impl Code {
             Code::Not => "  not".to_string(),
             Code::Discard => "  discard".to_string(),
             Code::Return => "  return".to_string(),
+            Code::Cast(type_name) => format!("  cast(type_name: '{}')", type_name),
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
             Code::CallWithKeywords((keywords, arg_count)) => format!(
                 "  callKw(keywords: {}, arg_count: {})",

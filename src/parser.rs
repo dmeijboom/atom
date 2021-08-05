@@ -118,6 +118,7 @@ peg::parser! {
             object:(@) _ "." _ member:ident() end:pos() { Expr::Member(MemberExpr { pos: (start..end), object, member }.into()) }
             --
             object:(@) "[" _ index:expr() _ "]" end:pos() { Expr::Index(IndexExpr { pos: (start..end), object, index }.into()) }
+            "(" _ type_name:ident() _ ")" _ expr:(@) { Expr::Cast(CastExpr { pos: (start..expr.pos().end), type_name, expr }.into()) }
             --
             "(" _ expr:expr() _ ")" { expr }
             --

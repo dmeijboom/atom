@@ -1,5 +1,5 @@
 fn main() {
-    let val = b'\n';
+    let amount = (Int)10.5;
 
-    println(val);
+    println(amount);
 }
