@@ -901,6 +901,11 @@ impl VM {
                     return Ok(Some(label.clone()));
                 }
             }
+            Code::Raise => {
+                let value = self.stack.pop()?;
+
+                return Err(RuntimeError::new(value.to_string()));
+            }
         };
 
         Ok(None)

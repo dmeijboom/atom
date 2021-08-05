@@ -557,6 +557,10 @@ impl Compiler {
                         ));
                     }
                 }
+                Stmt::Raise(raise_stmt) => {
+                    ir.push(self.compile_expr(&raise_stmt.expr)?);
+                    ir.push(vec![IR::new(Code::Raise, raise_stmt.pos.clone())]);
+                }
                 Stmt::Return(return_stmt) => {
                     ir.push(self.compile_expr(&return_stmt.expr)?);
                     ir.push(vec![IR::new(Code::Return, self.pos.clone())]);

@@ -163,8 +163,11 @@ peg::parser! {
         rule unsafe_stmt() -> Stmt
             = start:pos() "unsafe" __ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::Unsafe(UnsafeStmt { body, pos: (start..end) }) }
 
+        rule raise_stmt() -> Stmt
+            = start:pos() "raise" __ expr:expr() _ ";" end:pos() { Stmt::Raise(RaiseStmt { expr, pos: (start..end) }) }
+
         rule stmt() -> Stmt
-            = unsafe_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
+            = unsafe_stmt() / raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
 
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
@@ -872,6 +875,29 @@ mod tests {
     }
 
     #[test]
+    fn cast_expr() {
+        let source = "(Int)10.0;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Cast(
+                    CastExpr {
+                        type_name: "Int".to_string(),
+                        expr: Expr::Literal(LiteralExpr {
+                            literal: Literal::Float(10.0),
+                            pos: 5..9,
+                        }),
+                        pos: 0..9,
+                    }
+                    .into()
+                ),
+                pos: 0..10,
+            })),
+        );
+    }
+
+    #[test]
     fn for_stmt() {
         let source = "for [1] { 40; }";
 
@@ -920,6 +946,22 @@ mod tests {
                 label: Some("upper".to_string()),
                 pos: (0..12),
             }))
+        );
+    }
+
+    #[test]
+    fn raise_stmt() {
+        let source = "raise \"stop\";";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Raise(RaiseStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::String("stop".to_string()),
+                    pos: 6..12,
+                }),
+                pos: 0..13,
+            })),
         );
     }
 }

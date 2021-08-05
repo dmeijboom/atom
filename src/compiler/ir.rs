@@ -67,6 +67,7 @@ pub enum Code {
     TeeMember(String),
     LoadMemberPtr(String),
     StorePtr,
+    Raise,
 }
 
 fn format_local_id(id: &LocalId) -> String {
@@ -131,6 +132,7 @@ impl Code {
             Code::TeeMember(name) => format!("  teeMember(name: '{}')", name),
             Code::LoadMemberPtr(name) => format!("  loadMemberPtr(name: '{}')", name),
             Code::StorePtr => "  storePtr".to_string(),
+            Code::Raise => "  raise".to_string(),
         }
     }
 }

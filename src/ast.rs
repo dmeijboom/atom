@@ -195,6 +195,12 @@ pub struct ExprStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct RaiseStmt {
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct LetStmt {
     pub name: String,
     pub value: Expr,
@@ -301,6 +307,7 @@ pub enum Stmt {
     Expr(ExprStmt),
     Let(LetStmt),
     Break(BreakStmt),
+    Raise(RaiseStmt),
     LetDecl(LetDeclStmt),
     FnDecl(FnDeclStmt),
     Assign(AssignStmt),
@@ -317,6 +324,7 @@ impl Stmt {
             Stmt::If(if_stmt) => if_stmt.pos.clone(),
             Stmt::For(for_stmt) => for_stmt.pos.clone(),
             Stmt::Break(break_stmt) => break_stmt.pos.clone(),
+            Stmt::Raise(raise_stmt) => raise_stmt.pos.clone(),
             Stmt::Expr(expr_stmt) => expr_stmt.pos.clone(),
             Stmt::Let(let_stmt) => let_stmt.pos.clone(),
             Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),

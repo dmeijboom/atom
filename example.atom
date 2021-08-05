@@ -1,5 +1,11 @@
+fn test(amount) {
+    if true {
+        raise "this is invalid";
+    }
+}
+
 fn main() {
     let amount = (Int)10.5;
 
-    println(amount);
+    test(amount);
 }
