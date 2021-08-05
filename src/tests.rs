@@ -8,8 +8,7 @@ mod tests {
     use crate::vm::{Module, VM};
 
     fn run_code(source: &str) -> Result<Option<Value>, Error> {
-        let compiled_module = parse_and_compile(source)?;
-        let module = Module::new(compiled_module, None);
+        let mut module = parse_and_compile(source, None)?;
         let mut vm = VM::new()?;
 
         vm.register_module(module)?;

@@ -1,0 +1,55 @@
+use std::path::PathBuf;
+
+use clap::Clap;
+
+use crate::compiler::{Code, Compiler, LocalId, IR};
+use crate::parser;
+use crate::utils::Error;
+use crate::vm::{Module, VM};
+
+#[derive(Clap)]
+pub struct Opts {
+    pub(crate) filename: PathBuf,
+    #[clap(long)]
+    show_ast: bool,
+    #[clap(long)]
+    show_ir: bool,
+}
+
+pub fn command(module_paths: &Vec<PathBuf>, opts: Opts, contents: &str) -> Result<(), Error> {
+    let tree = parser::parse(contents)?;
+
+    if opts.show_ast {
+        println!("{:#?}", tree);
+    }
+
+    let compiler = Compiler::new(tree);
+    let compiled_module = compiler.compile()?;
+
+    if opts.show_ir {
+        println!("Classes:");
+        println!("{:#?}", compiled_module.classes);
+
+        println!("\nFunctions:");
+        println!("{:#?}", compiled_module.funcs);
+    }
+
+    let module = Module::new(compiled_module, Some(opts.filename));
+    let mut vm = VM::new()?;
+
+    vm.register_module(module)?;
+
+    for module_path in module_paths {
+        vm.add_module_path(module_path);
+    }
+
+    vm.eval(
+        "main",
+        vec![
+            IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+            IR::new(Code::Call(0), 0..0),
+        ],
+    )?;
+
+    Ok(())
+}

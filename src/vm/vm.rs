@@ -38,24 +38,25 @@ impl VM {
             module_paths: vec![],
         };
 
-        let std_core =
-            utils::parse_and_compile(include_str!("../std/core.atom")).map_err(|e| match e {
-                Error::Runtime(e) => e,
-                Error::Compile(e) => {
-                    RuntimeError::new(format!("failed to compile 'std/core.atom': {}", e))
-                        .with_pos(e.pos)
-                }
-                Error::ParseError(e) => {
-                    RuntimeError::new(format!("failed to parse 'std/core.atom': {}", e))
-                        .with_pos(e.location.offset..e.location.offset + 1)
-                }
-            })?;
+        let mut module = utils::parse_and_compile(
+            include_str!("../std/core.atom"),
+            Some("std/core.atom".into()),
+        )
+        .map_err(|e| match e {
+            Error::Runtime(e) => e,
+            Error::Compile(e) => {
+                RuntimeError::new(format!("failed to compile 'std/core.atom': {}", e))
+                    .with_pos(e.pos)
+            }
+            Error::ParseError(e) => {
+                RuntimeError::new(format!("failed to parse 'std/core.atom': {}", e))
+                    .with_pos(e.location.offset..e.location.offset + 1)
+            }
+        })?;
 
-        let mut std_module = Module::new(std_core, Some("std/core.atom".into()));
+        register(&mut module)?;
 
-        register(&mut std_module)?;
-
-        vm.register_module(std_module)?;
+        vm.register_module(module)?;
 
         Ok(vm)
     }
@@ -144,14 +145,14 @@ impl VM {
                     RuntimeError::new(format!("failed to import module '{}': {}", module_name, e))
                 })?;
 
-                let compiled_module = utils::parse_and_compile(&source).map_err(|e| {
+                let module = utils::parse_and_compile(&source, Some(path)).map_err(|e| {
                     RuntimeError::new(format!(
                         "failed to import module '{}': {:?}",
                         module_name, e
                     ))
                 })?;
 
-                self.register_module(Module::new(compiled_module, Some(path)))?;
+                self.register_module(module)?;
             }
         }
 
