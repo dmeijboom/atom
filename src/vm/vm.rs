@@ -523,6 +523,7 @@ impl VM {
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
             Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
+            Code::ConstByte(val) => self.stack.push(Value::Byte(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
             &Code::MakeRange => {
                 let to = self.stack.pop().and_then(to_int)?;

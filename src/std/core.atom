@@ -44,6 +44,14 @@ pub class Float {
     let value;
 }
 
+pub class Char {
+    let value;
+}
+
+pub class Byte {
+    let value;
+}
+
 pub class RangeIter {
     let from;
     let to;

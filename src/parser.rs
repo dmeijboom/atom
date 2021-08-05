@@ -41,7 +41,10 @@ peg::parser! {
             = value:$([_]) { value.parse().unwrap() }
 
         rule char_lit() -> Literal
-            = "'" value:(unicode_char() / char()) "'" { Literal::Char(value) }
+            = "'" value:(escaped_char() / unicode_char() / char()) "'" { Literal::Char(value) }
+
+        rule byte_lit() -> Literal
+            = "b'" value:(escaped_char() / unicode_char() / char()) "'" { Literal::Byte(value as u8) }
 
         rule string_lit() -> Literal
             = "\"" value:string_char()* "\"" { Literal::String(value.into_iter().collect::<String>()) }
@@ -61,7 +64,7 @@ peg::parser! {
                 / !("\"" / "\\" / ("\r"? "\n")) value:char() { value }
 
         rule literal() -> Literal
-            = bool_lit() / float_lit() / int_lit() / char_lit() / string_lit()
+            = bool_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
 
         rule literal_expr() -> Expr
             = start:pos() literal:literal() end:pos() { Expr::Literal(LiteralExpr { literal, pos: (start..end) }) }
@@ -298,6 +301,22 @@ mod tests {
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Literal(LiteralExpr {
                     literal: Literal::String(value.to_string()),
+                    pos: pos.clone(),
+                }),
+                pos: (pos.start..pos.end + 1),
+            }))
+        );
+    }
+
+    #[test_case("b'x';", b'x', 0..4; "simple byte")]
+    #[test_case("b'\n';", b'\n', 0..4; "newline byte")]
+    #[test_case("b'\\u{0060}';", b'`', 0..11; "unicode byte")]
+    fn test_byte_literal(source: &str, value: u8, pos: Pos) {
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Byte(value),
                     pos: pos.clone(),
                 }),
                 pos: (pos.start..pos.end + 1),

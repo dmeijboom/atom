@@ -143,6 +143,7 @@ impl Compiler {
                     Literal::Bool(val) => Code::ConstBool(*val),
                     Literal::String(val) => Code::ConstString(val.clone()),
                     Literal::Char(val) => Code::ConstChar(*val),
+                    Literal::Byte(val) => Code::ConstByte(*val),
                 },
                 literal_expr.pos.clone(),
             )]),

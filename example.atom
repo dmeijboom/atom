@@ -1,5 +1,5 @@
 fn main() {
-    for 0..2 {
-        break;
-    }
+    let val = b'\n';
+
+    println(val);
 }

@@ -104,6 +104,7 @@ pub enum Literal {
     Float(f64),
     Bool(bool),
     Char(char),
+    Byte(u8),
     String(String),
 }
 

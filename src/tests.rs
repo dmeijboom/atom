@@ -5,10 +5,10 @@ mod tests {
     use crate::compiler::{Code, LocalId, IR};
     use crate::runtime::Value;
     use crate::utils::{parse_and_compile, Error};
-    use crate::vm::{Module, VM};
+    use crate::vm::VM;
 
     fn run_code(source: &str) -> Result<Option<Value>, Error> {
-        let mut module = parse_and_compile(source, None)?;
+        let module = parse_and_compile(source, None)?;
         let mut vm = VM::new()?;
 
         vm.register_module(module)?;
