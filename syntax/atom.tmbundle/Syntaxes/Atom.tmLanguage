@@ -14,7 +14,7 @@
         <key>foldingStopMarker</key>
         <string>(?&lt;!\*)\*\*/|^\s*\}</string>
         <key>name</key>
-        <string>Atom</string>
+        <string>atom</string>
         <key>patterns</key>
         <array>
             <dict>
@@ -23,7 +23,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(if|for|module|import|else|class|unsafe|raise|continue|break|return|when|raise)\b</string>
+                <string>\b(if|for|module|import|else|class|unsafe|raise|continue|contract|break|return|when|raise)\b</string>
                 <key>name</key>
                 <string>keyword.control.atom</string>
             </dict>
@@ -35,15 +35,25 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(true|false)\b</string>
+                <string>\b(?:(import))\b</string>
+                <key>name</key>
+                <string>keyword.control.import.$1.atom</string>
+            </dict>
+            <dict>
+                <key>match</key>
+                <string>\b(&amp;&amp;|\|\)\b</string>
+                <key>name</key>
+                <string>keyword.operator.logical.atom</string>
+            </dict>
+            <dict>
+                <key>match</key>
+                <string>\b(true|false|Int|Bool|Float|Array|Map|String|Byte|Char)\b</string>
                 <key>name</key>
                 <string>constant.language.atom</string>
             </dict>
             <dict>
                 <key>match</key>
-                <string>
-                    \b((0(b|B)[0-1]([0-1]|_)*)|(0(o|O)[0-7]([0-7]|_)*)|(0(x|X)((([0-9a-fA-F]([0-9a-fA-F]|_)*\.?([0-9a-fA-F]([0-9a-fA-F]|_)*)?)|(\.[0-9a-fA-F]([0-9a-fA-F]|_)*))((p|P)(\+|-)?[0-9]([0-9]|_)*)?))|(0(x|X)[0-9a-fA-F]([0-9a-fA-F]|_)*)|((([0-9]([0-9]|_)*\.?([0-9]([0-9]|_)*)?)|(\.[0-9]([0-9]|_)*))((e|E)(\+|-)?[0-9]([0-9]|_)*)?))\b
-                </string>
+                <string>\b([1-9]+[0-9]*|0)</string>
                 <key>name</key>
                 <string>constant.numeric.atom</string>
             </dict>
@@ -75,7 +85,7 @@
                     </dict>
                 </dict>
                 <key>name</key>
-                <string>string.quoted.double.chapel</string>
+                <string>string.quoted.double.atom</string>
                 <key>patterns</key>
                 <array>
                     <dict>
@@ -268,11 +278,7 @@
             <key>builtin_functions</key>
             <dict>
                 <key>match</key>
-                <string>(?x)\b(
-                    println
-
-                    )\b
-                </string>
+                <string>(?x)\b(println)\b</string>
                 <key>name</key>
                 <string>support.function.builtin.atom</string>
             </dict>
@@ -333,7 +339,7 @@
                     \b(fn|for|if|else|break|return|mut)\b
                 </string>
                 <key>name</key>
-                <string>invalid.illegal.name.chapel</string>
+                <string>invalid.illegal.name.atom</string>
             </dict>
             <key>string_escaped_char</key>
             <dict>
@@ -375,6 +381,38 @@
                     </dict>
                 </array>
             </dict>
+        </dict>
+        <key>operators</key>
+        <dict>
+            <key>patterns</key>
+            <array>
+                <dict>
+                    <key>comment</key>
+                    <string>Type cast</string>
+                    <key>match</key>
+                    <string>\b(\((Int|Float|Bool|Array|Map|String|Char|Byte)\))\b</string>
+                    <key>name</key>
+                    <string>keyword.operator.type-casting.atom</string>
+                </dict>
+                <dict>
+                    <key>match</key>
+                    <string>&lt;\=|&gt;\=|\=\=|&lt;|&gt;|\!\=</string>
+                    <key>name</key>
+                    <string>keyword.operator.comparison.atom</string>
+                </dict>
+                <dict>
+                    <key>match</key>
+                    <string>\+|\-|\*|\*\*|/|//|%|&lt;&lt;|&gt;&gt;|&amp;|\||\^|~|(?!^)@</string>
+                    <key>name</key>
+                    <string>keyword.operator.arithmetic.atom</string>
+                </dict>
+                <dict>
+                    <key>match</key>
+                    <string>\=</string>
+                    <key>name</key>
+                    <string>keyword.operator.assignment.atom</string>
+                </dict>
+            </array>
         </dict>
         <key>scopeName</key>
         <string>source.atom</string>
