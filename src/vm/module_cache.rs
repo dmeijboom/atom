@@ -5,8 +5,7 @@ use std::rc::Rc;
 use indexmap::map::IndexMap;
 
 use crate::ast::Pos;
-use crate::compiler;
-use crate::compiler::{Func, IR};
+use crate::compiler::{self, Func, IR};
 use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::VM;
 
@@ -81,10 +80,28 @@ pub struct MethodDesc {
 }
 
 #[derive(Clone)]
+pub struct InterfaceDesc {
+    pub public: bool,
+    pub functions: Vec<String>,
+}
+
+#[derive(Clone)]
 pub struct ClassDesc {
     pub public: bool,
     pub methods: HashMap<String, MethodDesc>,
     pub fields: IndexMap<String, FieldDesc>,
+}
+
+pub enum TypeDesc<'t> {
+    Class(&'t ClassDesc),
+    Function(&'t FuncDesc),
+    Interface(&'t InterfaceDesc),
+}
+
+pub enum Type {
+    Class,
+    Function,
+    Interface,
 }
 
 pub struct Module {
@@ -94,6 +111,7 @@ pub struct Module {
     pub globals: HashMap<String, Value>,
     pub func_map: HashMap<String, FuncDesc>,
     pub class_map: HashMap<String, ClassDesc>,
+    pub interface_map: HashMap<String, InterfaceDesc>,
 }
 
 impl Module {
@@ -105,6 +123,7 @@ impl Module {
             globals: HashMap::new(),
             func_map: HashMap::new(),
             class_map: HashMap::new(),
+            interface_map: HashMap::new(),
         };
 
         for (name, func) in module.funcs {
@@ -135,6 +154,16 @@ impl Module {
                     fields,
                     methods,
                     public: class.public,
+                },
+            );
+        }
+
+        for (name, interface) in module.interfaces {
+            vm_module.interface_map.insert(
+                name,
+                InterfaceDesc {
+                    public: interface.public,
+                    functions: interface.functions,
                 },
             );
         }
@@ -188,11 +217,28 @@ impl Module {
             },
         );
     }
+
+    pub fn find_type(&self, name: &str) -> Option<Type> {
+        if self.class_map.contains_key(name) {
+            return Some(Type::Class);
+        }
+
+        if self.interface_map.contains_key(name) {
+            return Some(Type::Interface);
+        }
+
+        if self.func_map.contains_key(name) {
+            return Some(Type::Function);
+        }
+
+        None
+    }
 }
 
 pub struct ModuleCache {
     modules: HashMap<String, Module>,
     current_module: Option<String>,
+    lookup_paths: Vec<PathBuf>,
 }
 
 impl ModuleCache {
@@ -200,6 +246,7 @@ impl ModuleCache {
         Self {
             modules: HashMap::new(),
             current_module: None,
+            lookup_paths: vec![],
         }
     }
 
@@ -234,6 +281,22 @@ impl ModuleCache {
         self.modules.contains_key(module_name)
     }
 
+    pub(crate) fn lookup_type(&self, module_name: &str, name: &str) -> Option<TypeDesc> {
+        if let Ok(class_desc) = self.lookup_class(module_name, name) {
+            return Some(TypeDesc::Class(class_desc));
+        }
+
+        if let Ok(interface_desc) = self.lookup_interface(module_name, name) {
+            return Some(TypeDesc::Interface(interface_desc));
+        }
+
+        if let Ok(fn_desc) = self.lookup_function(module_name, name) {
+            return Some(TypeDesc::Function(fn_desc));
+        }
+
+        None
+    }
+
     pub(crate) fn lookup_class(&self, module_name: &str, class_name: &str) -> Result<&ClassDesc> {
         if let Some(module) = self.modules.get(module_name) {
             if let Some(class_desc) = module.class_map.get(class_name) {
@@ -243,6 +306,28 @@ impl ModuleCache {
             return Err(RuntimeError::new(format!(
                 "no such class: {}.{}",
                 module_name, class_name
+            )));
+        }
+
+        Err(RuntimeError::new(format!(
+            "no such module: {}",
+            module_name
+        )))
+    }
+
+    pub(crate) fn lookup_interface(
+        &self,
+        module_name: &str,
+        interface_name: &str,
+    ) -> Result<&InterfaceDesc> {
+        if let Some(module) = self.modules.get(module_name) {
+            if let Some(interface_desc) = module.interface_map.get(interface_name) {
+                return Ok(interface_desc);
+            }
+
+            return Err(RuntimeError::new(format!(
+                "no such interface: {}.{}",
+                module_name, interface_name
             )));
         }
 
@@ -290,5 +375,33 @@ impl ModuleCache {
             "no such method: {}.{}.{}(..)",
             module_name, class_name, function_name
         )))
+    }
+
+    pub(crate) fn add_lookup_path(&mut self, path: PathBuf) {
+        self.lookup_paths.push(path);
+    }
+
+    pub(crate) fn find_module_path(&self, name: &str) -> Option<PathBuf> {
+        let components = name.split(".").collect::<Vec<_>>();
+
+        for lookup_path in self.lookup_paths.iter() {
+            let mut path = lookup_path.clone();
+
+            for component in components.iter().take(components.len() - 1) {
+                path.push(component);
+            }
+
+            if let Some(last_component) = components.last() {
+                path.push(format!("{}.atom", last_component));
+            }
+
+            if !path.exists() {
+                continue;
+            }
+
+            return Some(path);
+        }
+
+        None
     }
 }

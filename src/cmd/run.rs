@@ -27,7 +27,10 @@ pub fn command(module_paths: &Vec<PathBuf>, opts: Opts, contents: &str) -> Resul
     let compiled_module = compiler.compile()?;
 
     if opts.show_ir {
-        println!("Classes:");
+        println!("Interfaces:");
+        println!("{:#?}", compiled_module.interfaces);
+
+        println!("\nClasses:");
         println!("{:#?}", compiled_module.classes);
 
         println!("\nFunctions:");

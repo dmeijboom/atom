@@ -53,11 +53,19 @@ pub struct Class {
 }
 
 #[derive(Debug)]
+pub struct Interface {
+    pub name: String,
+    pub public: bool,
+    pub functions: Vec<String>,
+}
+
+#[derive(Debug)]
 pub struct Module {
     pub name: String,
     pub imports: Vec<String>,
     pub funcs: HashMap<String, Func>,
     pub classes: HashMap<String, Class>,
+    pub interfaces: HashMap<String, Interface>,
 }
 
 impl Module {
@@ -67,6 +75,7 @@ impl Module {
             name: name.to_string(),
             funcs: HashMap::new(),
             classes: HashMap::new(),
+            interfaces: HashMap::new(),
         }
     }
 }

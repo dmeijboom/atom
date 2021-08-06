@@ -55,6 +55,7 @@ pub enum Code {
     Not,
     Discard,
     Return,
+    Validate,
     Call(usize),
     Cast(String),
     CallWithKeywords((Vec<String>, usize)),
@@ -112,6 +113,7 @@ impl Code {
             Code::Not => "  not".to_string(),
             Code::Discard => "  discard".to_string(),
             Code::Return => "  return".to_string(),
+            Code::Validate => "  validate".to_string(),
             Code::Cast(type_name) => format!("  cast(type_name: '{}')", type_name),
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
             Code::CallWithKeywords((keywords, arg_count)) => format!(

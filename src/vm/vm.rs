@@ -3,17 +3,20 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::hash::Hash;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
-use crate::runtime::{ClassId, FuncId, Method, Object, PointerType, Result, RuntimeError, Value};
+use crate::runtime::{Method, Object, PointerType, Result, RuntimeError, TypeId, Value};
 use crate::std::core::{register, DEFAULT_IMPORTS};
 use crate::utils;
 use crate::utils::Error;
 use crate::vm::call_stack::CallContext;
-use crate::vm::module_cache::{FuncDesc, FuncSource, Module, ModuleCache};
+use crate::vm::module_cache::{
+    FuncDesc, FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc,
+};
+use crate::vm::ClassDesc;
 
 use super::call_stack::CallStack;
 use super::stack::Stack;
@@ -26,7 +29,6 @@ pub struct VM {
     stack: Stack,
     call_stack: CallStack,
     module_cache: ModuleCache,
-    module_paths: Vec<PathBuf>,
 }
 
 impl VM {
@@ -35,7 +37,6 @@ impl VM {
             stack: Stack::new(),
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
-            module_paths: vec![],
         };
 
         let mut module = utils::parse_and_compile(
@@ -62,7 +63,8 @@ impl VM {
     }
 
     pub fn add_module_path(&mut self, path: impl AsRef<Path>) {
-        self.module_paths.push(path.as_ref().to_path_buf());
+        self.module_cache
+            .add_lookup_path(path.as_ref().to_path_buf());
     }
 
     pub fn register_module(&mut self, module: Module) -> Result<()> {
@@ -99,6 +101,16 @@ impl VM {
         None
     }
 
+    fn validate_class(&self, class: &ClassDesc, interface: &InterfaceDesc) -> bool {
+        for name in interface.functions.iter() {
+            if !class.methods.contains_key(name) {
+                return false;
+            }
+        }
+
+        true
+    }
+
     fn import_in_module(&mut self, module: &mut Module, path: &str) -> Result<()> {
         let mut components = path.split(".").collect::<Vec<_>>();
 
@@ -116,31 +128,8 @@ impl VM {
             )));
         }
 
-        // try to load the module from the filesystem if it doesn't exist
         if !self.module_cache.contains_module(&module_name) {
-            let mut filename = None;
-
-            for module_path in self.module_paths.iter() {
-                let mut path = module_path.clone();
-
-                for component in components.iter().take(components.len() - 1) {
-                    path.push(component);
-                }
-
-                if let Some(last_component) = components.last() {
-                    path.push(format!("{}.atom", last_component));
-                }
-
-                if !path.exists() {
-                    continue;
-                }
-
-                filename = Some(path);
-
-                break;
-            }
-
-            if let Some(path) = filename {
+            if let Some(path) = self.module_cache.find_module_path(&module_name) {
                 let source = fs::read_to_string(&path).map_err(|e| {
                     RuntimeError::new(format!("failed to import module '{}': {}", module_name, e))
                 })?;
@@ -156,42 +145,45 @@ impl VM {
             }
         }
 
-        // first, let's try a function
-        if let Ok(func) = self.module_cache.lookup_function(&module_name, name) {
-            if !func.public {
-                return Err(RuntimeError::new(format!(
-                    "unable to import private Fn: {}.{}(...)'",
-                    module_name, name,
-                )));
-            }
+        if let Some(type_desc) = self.module_cache.lookup_type(&module_name, name) {
+            let id = TypeId {
+                name: name.to_string(),
+                module: module_name.clone(),
+            };
+            let value = match type_desc {
+                TypeDesc::Class(class_desc) => {
+                    if !class_desc.public {
+                        return Err(RuntimeError::new(format!(
+                            "unable to import private Class: {}.{}'",
+                            module_name, name,
+                        )));
+                    }
 
-            module.globals.insert(
-                name.to_string(),
-                Value::Function(FuncId {
-                    name: name.to_string(),
-                    module: module_name.clone(),
-                }),
-            );
+                    Value::Class(id)
+                }
+                TypeDesc::Interface(interface_desc) => {
+                    if !interface_desc.public {
+                        return Err(RuntimeError::new(format!(
+                            "unable to import private Interface: {}.{}'",
+                            module_name, name,
+                        )));
+                    }
 
-            return Ok(());
-        }
+                    Value::Interface(id)
+                }
+                TypeDesc::Function(fn_desc) => {
+                    if !fn_desc.public {
+                        return Err(RuntimeError::new(format!(
+                            "unable to import private Fn: {}.{}(...)'",
+                            module_name, name,
+                        )));
+                    }
 
-        // no? well, maybe it's a class
-        if let Ok(class) = self.module_cache.lookup_class(&module_name, name) {
-            if !class.public {
-                return Err(RuntimeError::new(format!(
-                    "unable to import private Class: {}.{}(...)'",
-                    module_name, name,
-                )));
-            }
+                    Value::Function(id)
+                }
+            };
 
-            module.globals.insert(
-                name.to_string(),
-                Value::Class(ClassId {
-                    name: name.to_string(),
-                    module: module_name.clone(),
-                }),
-            );
+            module.globals.insert(name.to_string(), value);
 
             return Ok(());
         }
@@ -241,7 +233,7 @@ impl VM {
 
     fn eval_class_init(
         &mut self,
-        id: &ClassId,
+        id: &TypeId,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
@@ -332,7 +324,7 @@ impl VM {
 
         let mut context = CallContext::new(
             desc.func.pos.clone(),
-            FuncId {
+            TypeId {
                 module: module.clone(),
                 name: format!("{}.{}", class, method.name),
             },
@@ -461,7 +453,7 @@ impl VM {
 
     fn eval_function_call(
         &mut self,
-        id: &FuncId,
+        id: &TypeId,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
@@ -639,6 +631,35 @@ impl VM {
                 let value = self.stack.pop().and_then(to_bool)?;
 
                 self.stack.push(Value::Bool(!value));
+            }
+            Code::Validate => {
+                let value = self.stack.pop()?;
+
+                if let Value::Interface(id) = &value {
+                    let interface = self.module_cache.lookup_interface(&id.module, &id.name)?;
+
+                    let object = self.stack.pop().and_then(to_object)?;
+                    let class_id = { object.borrow().class.clone() };
+                    let class = self
+                        .module_cache
+                        .lookup_class(&class_id.module, &class_id.name)?;
+
+                    if !self.validate_class(class, interface) {
+                        return Err(RuntimeError::new(format!(
+                            "validation failed, class '{}.{}' doesn't implement interface: {}.{}",
+                            class_id.module, class_id.name, id.module, id.name
+                        )));
+                    }
+
+                    self.stack.push(Value::Object(object));
+
+                    return Ok(None);
+                }
+
+                return Err(RuntimeError::new(format!(
+                    "unable to validate non-interface: {}",
+                    value.get_type().name()
+                )));
             }
             Code::Cast(type_name) => {
                 let value = self.stack.pop()?;
@@ -855,24 +876,17 @@ impl VM {
                     return Ok(None);
                 }
 
-                if current_module.class_map.contains_key(&id.name) {
+                if let Some(type_value) = current_module.find_type(&id.name) {
+                    let id = TypeId {
+                        name: id.name.clone(),
+                        module: self.module_cache.current_name()?.to_string(),
+                    };
                     self.stack.push(
-                        Value::Class(ClassId {
-                            name: id.name.clone(),
-                            module: self.module_cache.current_name()?.to_string(),
-                        })
-                        .into(),
-                    );
-
-                    return Ok(None);
-                }
-
-                if current_module.func_map.contains_key(&id.name) {
-                    self.stack.push(
-                        Value::Function(FuncId {
-                            name: id.name.clone(),
-                            module: current_module.name.clone(),
-                        })
+                        match type_value {
+                            Type::Class => Value::Class(id),
+                            Type::Function => Value::Function(id),
+                            Type::Interface => Value::Interface(id),
+                        }
                         .into(),
                     );
 

@@ -49,6 +49,7 @@ pub enum ValueType {
     Range,
     String,
     Class,
+    Interface,
     Function,
     Method,
     Pointer,
@@ -68,6 +69,7 @@ impl ValueType {
             ValueType::Range => "Range",
             ValueType::String => "String",
             ValueType::Class => "Class",
+            ValueType::Interface => "Interface",
             ValueType::Method => "Method",
             ValueType::Function => "Fn",
             ValueType::Object => "Object",
@@ -79,13 +81,7 @@ impl ValueType {
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub struct ClassId {
-    pub name: String,
-    pub module: String,
-}
-
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub struct FuncId {
+pub struct TypeId {
     pub name: String,
     pub module: String,
 }
@@ -118,7 +114,7 @@ pub struct FieldDesc {
 
 #[derive(Debug, PartialEq, Hash, Eq)]
 pub struct Object {
-    pub class: ClassId,
+    pub class: TypeId,
     pub fields: Vec<Value>,
 }
 
@@ -167,8 +163,9 @@ pub enum Value {
     Bool(bool),
     Range(Range<i64>),
     String(String),
-    Class(ClassId),
-    Function(FuncId),
+    Class(TypeId),
+    Function(TypeId),
+    Interface(TypeId),
     Method(Method),
     Object(Rc<RefCell<Object>>),
     Pointer(PointerType),
@@ -188,6 +185,9 @@ impl Display for Value {
             Value::Range(val) => write!(f, "{:?}", val),
             Value::String(val) => write!(f, "{}", val),
             Value::Class(id) => {
+                write!(f, "{}.{}", id.module, id.name)
+            }
+            Value::Interface(id) => {
                 write!(f, "{}.{}", id.module, id.name)
             }
             Value::Function(id) => {
@@ -265,6 +265,7 @@ impl Hash for Value {
             Value::Range(val) => val.hash(state),
             Value::String(val) => val.hash(state),
             Value::Class(class) => class.hash(state),
+            Value::Interface(interface) => interface.hash(state),
             Value::Function(func) => func.hash(state),
             Value::Method(method) => method.hash(state),
             Value::Object(object) => object.borrow().hash(state),
@@ -303,6 +304,7 @@ impl Clone for Value {
             Value::Range(val) => Value::Range(val.clone()),
             Value::String(val) => Value::String(val.clone()),
             Value::Class(id) => Value::Class(id.clone()),
+            Value::Interface(id) => Value::Interface(id.clone()),
             Value::Function(id) => Value::Function(id.clone()),
             Value::Method(id) => Value::Method(id.clone()),
             Value::Object(object) => Value::Object(Rc::clone(object)),
@@ -339,6 +341,7 @@ impl Value {
             Value::Range(_) => ValueType::Range,
             Value::String(_) => ValueType::String,
             Value::Class(_) => ValueType::Class,
+            Value::Interface(_) => ValueType::Interface,
             Value::Function(_) => ValueType::Function,
             Value::Method(_) => ValueType::Method,
             Value::Object(_) => ValueType::Object,

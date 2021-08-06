@@ -270,6 +270,20 @@ pub struct ClassDeclStmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct InterfaceFn {
+    pub name: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct InterfaceDeclStmt {
+    pub name: String,
+    pub public: bool,
+    pub functions: Vec<InterfaceFn>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct ImportStmt {
     pub name: String,
     pub pos: Pos,
@@ -316,6 +330,7 @@ pub enum Stmt {
     Unsafe(UnsafeStmt),
     Module(ModuleStmt),
     ClassDecl(ClassDeclStmt),
+    InterfaceDecl(InterfaceDeclStmt),
 }
 
 impl Stmt {
@@ -335,6 +350,7 @@ impl Stmt {
             Stmt::Import(import_stmt) => import_stmt.pos.clone(),
             Stmt::Unsafe(unsafe_stmt) => unsafe_stmt.pos.clone(),
             Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
+            Stmt::InterfaceDecl(interface_decl_stmt) => interface_decl_stmt.pos.clone(),
         }
     }
 }

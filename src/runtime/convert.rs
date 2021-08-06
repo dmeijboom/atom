@@ -1,7 +1,7 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use crate::runtime::{ClassId, Object};
+use crate::runtime::{Object, TypeId};
 
 use super::result::{Result, RuntimeError};
 use super::value::Value;
@@ -51,7 +51,7 @@ pub fn to_float(value: Value) -> Result<f64> {
 
 fn make_object(module: &str, name: &str, fields: Vec<Value>) -> Rc<RefCell<Object>> {
     Rc::new(RefCell::new(Object {
-        class: ClassId {
+        class: TypeId {
             name: name.to_string(),
             module: module.to_string(),
         },

@@ -23,7 +23,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(if|for|module|import|else|class|unsafe|raise|continue|contract|break|return|when|raise)\b</string>
+                <string>\b(fn|if|for|module|import|else|class|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
                 <key>name</key>
                 <string>keyword.control.atom</string>
             </dict>
@@ -38,12 +38,6 @@
                 <string>\b(?:(import))\b</string>
                 <key>name</key>
                 <string>keyword.control.import.$1.atom</string>
-            </dict>
-            <dict>
-                <key>match</key>
-                <string>\b(&amp;&amp;|\|\)\b</string>
-                <key>name</key>
-                <string>keyword.operator.logical.atom</string>
             </dict>
             <dict>
                 <key>match</key>
@@ -141,12 +135,6 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\+\=|-\=|\*\=|/\=|//\=|%\=|&amp;\=|\|\=|\^\=|&gt;&gt;\=|&lt;&lt;\=|\*\*\=</string>
-                <key>name</key>
-                <string>keyword.operator.assignment.augmented.atom</string>
-            </dict>
-            <dict>
-                <key>match</key>
                 <string>\+|\-|\*|\*\*|/|//|%|&lt;&lt;|&gt;&gt;|&amp;|\||\^|~|&lt;\=&gt;\\.\.\.</string>
                 <key>name</key>
                 <string>keyword.operator.arithmetic.atom</string>
@@ -168,62 +156,6 @@
                 <string>\[|\]</string>
                 <key>name</key>
                 <string>keyword.operator.domain.atom</string>
-            </dict>
-            <dict>
-                <key>begin</key>
-                <string>^\s*((pub )?fn)\s+(?=[A-Za-z_][A-Za-z0-9_]*)</string>
-                <key>beginCaptures</key>
-                <dict>
-                    <key>1</key>
-                    <dict>
-                        <key>name</key>
-                        <string>keyword.control.atom</string>
-                    </dict>
-                </dict>
-                <key>end</key>
-                <string>(\()|\s*($\n?|#.*$\n?)</string>
-                <key>name</key>
-                <string>meta.function.atom</string>
-                <key>patterns</key>
-                <array>
-                    <dict>
-                        <key>begin</key>
-                        <string>(?=[A-Za-z_][A-Za-z0-9_]*)</string>
-                        <key>contentName</key>
-                        <string>entity.name.function.atom</string>
-                        <key>end</key>
-                        <string>(?![A-Za-z0-9_])</string>
-                    </dict>
-                    <dict>
-                        <key>contentName</key>
-                        <string>keyword.control.atom</string>
-                        <key>match</key>
-                        <string>fn</string>
-                    </dict>
-                    <dict>
-                        <key>begin</key>
-                        <string>(\()</string>
-                        <key>contentName</key>
-                        <string>meta.function.parameters.atom</string>
-                        <key>end</key>
-                        <string>(?=\)).*\{</string>
-                        <key>patterns</key>
-                        <array>
-                            <dict>
-                                <key>captures</key>
-                                <dict>
-                                    <key>1</key>
-                                    <dict>
-                                        <key>name</key>
-                                        <string>variable.parameter.function.atom</string>
-                                    </dict>
-                                </dict>
-                                <key>match</key>
-                                <string>\b([a-zA-Z_][a-zA-Z_0-9]*)</string>
-                            </dict>
-                        </array>
-                    </dict>
-                </array>
             </dict>
             <dict>
                 <key>begin</key>
@@ -381,38 +313,6 @@
                     </dict>
                 </array>
             </dict>
-        </dict>
-        <key>operators</key>
-        <dict>
-            <key>patterns</key>
-            <array>
-                <dict>
-                    <key>comment</key>
-                    <string>Type cast</string>
-                    <key>match</key>
-                    <string>\b(\((Int|Float|Bool|Array|Map|String|Char|Byte)\))\b</string>
-                    <key>name</key>
-                    <string>keyword.operator.type-casting.atom</string>
-                </dict>
-                <dict>
-                    <key>match</key>
-                    <string>&lt;\=|&gt;\=|\=\=|&lt;|&gt;|\!\=</string>
-                    <key>name</key>
-                    <string>keyword.operator.comparison.atom</string>
-                </dict>
-                <dict>
-                    <key>match</key>
-                    <string>\+|\-|\*|\*\*|/|//|%|&lt;&lt;|&gt;&gt;|&amp;|\||\^|~|(?!^)@</string>
-                    <key>name</key>
-                    <string>keyword.operator.arithmetic.atom</string>
-                </dict>
-                <dict>
-                    <key>match</key>
-                    <string>\=</string>
-                    <key>name</key>
-                    <string>keyword.operator.assignment.atom</string>
-                </dict>
-            </array>
         </dict>
         <key>scopeName</key>
         <string>source.atom</string>

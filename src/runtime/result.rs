@@ -2,13 +2,13 @@ use std::error::Error;
 use std::fmt;
 
 use crate::ast::Pos;
-use crate::runtime::FuncId;
+use crate::runtime::TypeId;
 use crate::vm::Module;
 
 #[derive(Debug, PartialEq)]
 pub struct Trace {
     pub pos: Pos,
-    pub func: FuncId,
+    pub func: TypeId,
 }
 
 #[derive(Debug, PartialEq)]

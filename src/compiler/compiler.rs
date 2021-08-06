@@ -7,11 +7,11 @@ use std::rc::Rc;
 use indexmap::map::IndexMap;
 
 use crate::ast::{
-    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, Literal, LogicalOp,
-    MemberCondExpr, Pos, Stmt,
+    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, InterfaceDeclStmt, Literal,
+    LogicalOp, MemberCondExpr, Pos, Stmt,
 };
 use crate::compiler::ir::Code;
-use crate::compiler::module::{Class, Field};
+use crate::compiler::module::{Class, Field, Interface};
 use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
 
@@ -508,6 +508,8 @@ impl Compiler {
                     ir.push(
                         vec![
                             // step 1. Get the iterator from the object
+                            Code::Load(LocalId::new("Iterable".to_string())),
+                            Code::Validate,
                             Code::LoadMember("iter".to_string()),
                             Code::Call(0),
                             // step 2. Now in the loop, get the next value from the iterator
@@ -569,7 +571,11 @@ impl Compiler {
                     ir.push(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
                 }
                 // ignore top level statements
-                Stmt::FnDecl(_) | Stmt::ClassDecl(_) | Stmt::Module(_) | Stmt::Import(_) => {}
+                Stmt::FnDecl(_)
+                | Stmt::ClassDecl(_)
+                | Stmt::InterfaceDecl(_)
+                | Stmt::Module(_)
+                | Stmt::Import(_) => {}
             }
         }
 
@@ -611,7 +617,7 @@ impl Compiler {
     fn compile_class(&mut self, class_decl: &ClassDeclStmt) -> Result<Class> {
         if Scope::get_local(&self.scope, &class_decl.name, true).is_some() {
             return Err(CompileError::new(
-                format!("unable to redefine class: {}", class_decl.name),
+                format!("unable to redefine name: {}", class_decl.name),
                 self.pos.clone(),
             ));
         }
@@ -666,6 +672,27 @@ impl Compiler {
         })
     }
 
+    fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
+        if Scope::get_local(&self.scope, &interface_decl.name, true).is_some() {
+            return Err(CompileError::new(
+                format!("unable to redefine name: {}", interface_decl.name),
+                self.pos.clone(),
+            ));
+        }
+
+        self.set_local(interface_decl.name.clone(), false);
+
+        Ok(Interface {
+            name: interface_decl.name.clone(),
+            public: interface_decl.public,
+            functions: interface_decl
+                .functions
+                .iter()
+                .map(|func| func.name.clone())
+                .collect(),
+        })
+    }
+
     pub fn compile(mut self) -> Result<Module> {
         let mut module_is_set = false;
         let mut module = Module::new("main");
@@ -683,6 +710,12 @@ impl Compiler {
                     module
                         .classes
                         .insert(class_decl.name.clone(), self.compile_class(&class_decl)?);
+                }
+                Stmt::InterfaceDecl(interface_decl) => {
+                    module.interfaces.insert(
+                        interface_decl.name.clone(),
+                        self.compile_interface(&interface_decl)?,
+                    );
                 }
                 Stmt::Module(module_stmt) => {
                     if module_is_set {

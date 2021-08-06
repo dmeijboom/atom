@@ -1,5 +1,9 @@
 module std.core;
 
+pub interface Iterable {
+    fn iter();
+}
+
 pub class Option {
     let _value;
     let isNil;
@@ -49,6 +53,10 @@ pub class Char {
 }
 
 pub class Byte {
+    let value;
+}
+
+pub class Bool {
     let value;
 }
 

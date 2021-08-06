@@ -178,6 +178,12 @@ peg::parser! {
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
 
+        rule interface_fn() -> InterfaceFn
+            = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
+
+        rule interface_decl_stmt() -> Stmt
+            = start:pos() public:$("pub")? _ "interface" __ name:ident() _ "{" _ functions:interface_fn() ** (_) _ "}" end:pos() { Stmt::InterfaceDecl(InterfaceDeclStmt { name, public: public.is_some(), functions, pos: (start..end) }) }
+
         rule field() -> Field
             = start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: Some(value), pos: (start..end) } }
                 / start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: None, pos: (start..end) } }
@@ -192,7 +198,7 @@ peg::parser! {
             = start:pos() "import" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Import(ImportStmt { name: path.join("."), pos: (start..end)} ) }
 
         rule top_level_stmt() -> Stmt
-            = fn_decl_stmt() / class_decl_stmt() / module_stmt() / import_stmt()
+            = fn_decl_stmt() / class_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()
 
         rule stmt_list() -> Vec<Stmt>
             = stmt() ** _

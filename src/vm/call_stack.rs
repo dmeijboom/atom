@@ -2,18 +2,18 @@ use std::collections::HashMap;
 
 use crate::ast::Pos;
 use crate::compiler::LocalId;
-use crate::runtime::{FuncId, Result, RuntimeError, Trace, Value};
+use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
 
 pub struct CallContext {
     pub pos: Pos,
-    pub id: FuncId,
+    pub id: TypeId,
     pub return_value: Option<Value>,
     pub args: HashMap<String, Value>,
     pub locals: HashMap<LocalId, Value>,
 }
 
 impl CallContext {
-    pub(crate) fn new(pos: Pos, id: FuncId) -> Self {
+    pub(crate) fn new(pos: Pos, id: TypeId) -> Self {
         Self {
             id,
             pos,
