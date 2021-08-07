@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
+use std::fs;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
@@ -112,10 +113,33 @@ pub struct FieldDesc {
     pub mutable: bool,
 }
 
+#[derive(Debug)]
+pub enum Data {
+    File(fs::File),
+}
+
+impl Hash for Data {
+    fn hash<H: Hasher>(&self, _: &mut H) {}
+    fn hash_slice<H: Hasher>(_: &[Self], _: &mut H)
+    where
+        Self: Sized,
+    {
+    }
+}
+
+impl PartialEq<Self> for Data {
+    fn eq(&self, _: &Self) -> bool {
+        true
+    }
+}
+
+impl Eq for Data {}
+
 #[derive(Debug, PartialEq, Hash, Eq)]
 pub struct Object {
     pub class: TypeId,
     pub fields: Vec<Value>,
+    pub data: Vec<Data>,
 }
 
 #[derive(Debug, PartialEq, Eq)]

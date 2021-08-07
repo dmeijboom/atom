@@ -154,7 +154,7 @@ peg::parser! {
             = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:else_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.unwrap_or_default(), pos: (start..end) }) }
 
         rule for_stmt() -> Stmt
-            = start:pos() "for" __ expr:expr() _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, body, pos: (start..end) }) }
+            = start:pos() "for" __ expr:expr()? _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, body, pos: (start..end) }) }
 
         rule break_stmt() -> Stmt
             = start:pos() "break" __ label:ident() _ ";" end:pos() { Stmt::Break(BreakStmt { label: Some(label), pos: (start..end) }) }
@@ -904,19 +904,19 @@ mod tests {
     }
 
     #[test]
-    fn for_stmt() {
+    fn for_stmt_with_expr() {
         let source = "for [1] { 40; }";
 
         assert_eq!(
             parse_single(source),
             Ok(Stmt::For(ForStmt {
-                expr: Expr::Array(ArrayExpr {
+                expr: Some(Expr::Array(ArrayExpr {
                     items: vec![Expr::Literal(LiteralExpr {
                         literal: Literal::Int(1),
                         pos: (5..6),
                     })],
                     pos: (4..7),
-                }),
+                })),
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
                         literal: Literal::Int(40),
@@ -925,6 +925,26 @@ mod tests {
                     pos: (10..13),
                 })],
                 pos: (0..15),
+            })),
+        );
+    }
+
+    #[test]
+    fn for_stmt_without_expr() {
+        let source = "for { 40; }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::For(ForStmt {
+                expr: None,
+                body: vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(40),
+                        pos: (6..8),
+                    }),
+                    pos: (6..9),
+                })],
+                pos: (0..11),
             })),
         );
     }

@@ -1,0 +1,89 @@
+module std.io;
+
+import std.encoding.utf8.decode;
+
+pub interface Readable {
+    fn read();
+}
+
+pub class LinesIter {
+    let readable;
+
+    pub fn next() {
+        let mut buff = [];
+
+        for {
+            let bytes = this.readable.read(1);
+
+            if buff.length == 0 && bytes.length == 0 {
+                return none();
+            }
+
+            if bytes.first() == some(b'\n') {
+                break;
+            }
+
+            unsafe {
+                buff.push(bytes[0]);
+            }
+        }
+
+        return some(decode(buff));
+    }
+}
+
+pub class LinesReader {
+    let readable;
+
+    pub fn iter() {
+        return LinesIter(readable: this.readable);
+    }
+
+    pub fn collect() {
+        let mut lines = [];
+
+        for this {
+            lines.push(.);
+        }
+
+        return lines;
+    }
+}
+
+pub class File {
+    pub fn reader() {
+        return Reader(readable: this);
+    }
+
+    pub fn lines() {
+        return LinesReader(readable: this);
+    }
+}
+
+pub class Reader {
+    let readable;
+
+    pub fn readAll() {
+        let mut output = [];
+
+        for {
+            let buffSize = 1024;
+            let buff = this.readable.read(buffSize);
+            let len = buff.length;
+
+            if len > 0 {
+                output.append(buff);
+            }
+
+            if len < buffSize {
+                return output;
+            }
+        }
+    }
+
+    pub fn readAllText() {
+        let bytes = this.readAll();
+
+        return decode(bytes);
+    }
+}

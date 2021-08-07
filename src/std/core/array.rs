@@ -4,7 +4,7 @@ use crate::parse_args;
 use crate::runtime::{convert, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
-fn use_array(
+pub fn use_array(
     vm: &VM,
     handler: impl FnOnce(RefMut<Vec<Value>>) -> Option<Value>,
 ) -> Result<Option<Value>> {
@@ -35,7 +35,19 @@ pub fn register(module: &mut Module) -> Result<()> {
                 None
             })
         }),
-        ("pop", |vm, values| {
+        ("pop", |vm, mut values| {
+            if values.len() == 1 {
+                let index = parse_args!(values => Int) as usize;
+
+                return use_array(vm, |mut a| {
+                    Some(convert::to_option(if a.get(index).is_some() {
+                        Some(a.remove(index))
+                    } else {
+                        None
+                    }))
+                });
+            }
+
             parse_args!(values);
 
             use_array(vm, |mut a| Some(convert::to_option(a.pop())))

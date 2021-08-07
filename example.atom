@@ -1,5 +1,9 @@
+import std.io.Reader;
+import std.io.openFile;
+
 fn main() {
-    for [] {
-        println(.);
-    }
+    let file = openFile("/etc/hosts");
+    let lines = file.lines().collect();
+
+    println(lines);
 }

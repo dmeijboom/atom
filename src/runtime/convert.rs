@@ -56,6 +56,7 @@ fn make_object(module: &str, name: &str, fields: Vec<Value>) -> Rc<RefCell<Objec
             module: module.to_string(),
         },
         fields,
+        data: vec![],
     }))
 }
 
@@ -73,6 +74,28 @@ pub fn to_option(value: Option<Value>) -> Value {
         "Option",
         vec![Value::Int(0), Value::Bool(true)],
     ))
+}
+
+pub fn to_byte(value: &Value) -> Result<u8> {
+    if let Value::Byte(byte) = value {
+        return Ok(*byte);
+    }
+
+    Err(RuntimeError::new(format!(
+        "invalid type '{}' expected: Byte",
+        value.get_type().name()
+    )))
+}
+
+pub fn to_array(value: Value) -> Result<Rc<RefCell<Vec<Value>>>> {
+    if let Value::Array(array) = value {
+        return Ok(array);
+    }
+
+    Err(RuntimeError::new(format!(
+        "invalid type '{}' expected: Array",
+        value.get_type().name()
+    )))
 }
 
 pub fn to_object(value: Value) -> Result<Rc<RefCell<Object>>> {

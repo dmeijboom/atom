@@ -1,4 +1,6 @@
-pub use module_cache::{ClassDesc, ExternalFn, FuncDesc, FuncSource, Module, ModuleCache};
+pub use module_cache::{
+    ClassDesc, ExternalFn, FuncDesc, FuncSource, Middleware, Module, ModuleCache,
+};
 pub use vm::VM;
 
 mod call_stack;

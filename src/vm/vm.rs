@@ -9,7 +9,8 @@ use std::rc::Rc;
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
 use crate::runtime::{Method, Object, PointerType, Result, RuntimeError, TypeId, Value};
-use crate::std::core::{register, DEFAULT_IMPORTS};
+use crate::std::core::DEFAULT_IMPORTS;
+use crate::std::get_middleware;
 use crate::utils;
 use crate::utils::Error;
 use crate::vm::call_stack::CallContext;
@@ -23,6 +24,32 @@ use super::stack::Stack;
 
 fn get_cloned<K: Eq + Hash, V: Clone>(map: &HashMap<K, V>, key: &K) -> Option<V> {
     map.get(key).and_then(|value| Some(value.clone()))
+}
+
+fn setup_std(vm: &mut VM) -> Result<()> {
+    for (module_name, middleware) in get_middleware() {
+        vm.module_cache.register_middleware(module_name, middleware);
+    }
+
+    let module = utils::parse_and_compile(
+        include_str!("../std/atom/std/core.atom"),
+        Some("std/atom/std/core.atom".into()),
+    )
+    .map_err(|e| match e {
+        Error::Runtime(e) => e,
+        Error::Compile(e) => {
+            RuntimeError::new(format!("failed to compile 'std/atom/core.atom': {}", e))
+                .with_pos(e.pos)
+        }
+        Error::ParseError(e) => {
+            RuntimeError::new(format!("failed to parse 'std/atom/core.atom': {}", e))
+                .with_pos(e.location.offset..e.location.offset + 1)
+        }
+    })?;
+
+    vm.register_module(module)?;
+
+    Ok(())
 }
 
 pub struct VM {
@@ -39,30 +66,12 @@ impl VM {
             module_cache: ModuleCache::new(),
         };
 
-        let mut module = utils::parse_and_compile(
-            include_str!("../std/core.atom"),
-            Some("std/core.atom".into()),
-        )
-        .map_err(|e| match e {
-            Error::Runtime(e) => e,
-            Error::Compile(e) => {
-                RuntimeError::new(format!("failed to compile 'std/core.atom': {}", e))
-                    .with_pos(e.pos)
-            }
-            Error::ParseError(e) => {
-                RuntimeError::new(format!("failed to parse 'std/core.atom': {}", e))
-                    .with_pos(e.location.offset..e.location.offset + 1)
-            }
-        })?;
-
-        register(&mut module)?;
-
-        vm.register_module(module)?;
+        setup_std(&mut vm)?;
 
         Ok(vm)
     }
 
-    pub fn add_module_path(&mut self, path: impl AsRef<Path>) {
+    pub fn add_module_lookup_path(&mut self, path: impl AsRef<Path>) {
         self.module_cache
             .add_lookup_path(path.as_ref().to_path_buf());
     }
@@ -83,7 +92,7 @@ impl VM {
             self.import_in_module(&mut module, &path)?;
         }
 
-        self.module_cache.add(module);
+        self.module_cache.add(module)?;
 
         Ok(())
     }
@@ -142,6 +151,11 @@ impl VM {
                 })?;
 
                 self.register_module(module)?;
+            } else {
+                return Err(RuntimeError::new(format!(
+                    "unable to import '{}' module '{}' not found",
+                    path, module_name
+                )));
             }
         }
 
@@ -249,6 +263,7 @@ impl VM {
         let mut object = Object {
             class: id.clone(),
             fields: vec![],
+            data: vec![],
         };
 
         let mut values = self

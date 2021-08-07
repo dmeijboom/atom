@@ -297,7 +297,7 @@ pub struct ModuleStmt {
 
 #[derive(Debug, PartialEq)]
 pub struct ForStmt {
-    pub expr: Expr,
+    pub expr: Option<Expr>,
     pub body: Vec<Stmt>,
     pub pos: Pos,
 }

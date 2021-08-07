@@ -504,43 +504,60 @@ impl Compiler {
 
                     self.set_local(".".to_string(), false);
 
-                    ir.push(self.compile_expr(&for_stmt.expr)?);
-                    ir.push(
-                        vec![
-                            // step 1. Get the iterator from the object
-                            Code::Load(LocalId::new("Iterable".to_string())),
-                            Code::Validate,
-                            Code::LoadMember("iter".to_string()),
-                            Code::Call(0),
-                            // step 2. Now in the loop, get the next value from the iterator
-                            Code::SetLabel(for_label.clone()),
-                            Code::TeeMember("next".to_string()),
-                            Code::Call(0),
-                            // step 3. Check if it has a value and either continue or stop
-                            Code::TeeMember("isSome".to_string()),
-                            Code::Call(0),
-                            Code::Branch((body_label.clone(), cont_label.clone())),
-                            // step 4. Evaluate the body and so on..
-                            Code::SetLabel(body_label.clone()),
-                            Code::LoadMember("value".to_string()),
-                            Code::Call(0),
-                            Code::Store(LocalId::new_in_scope(".".to_string(), self.scope_id)),
-                        ]
-                        .into_iter()
-                        .map(|code| IR::new(code, self.pos.clone()))
-                        .collect::<Vec<_>>(),
-                    );
-                    ir.push(self.compile_stmt_list(
-                        ScopeContext::ForLoop(ForLoopMeta {
-                            continue_label: cont_label.clone(),
-                        }),
-                        &for_stmt.body,
-                    )?);
-                    ir.push(vec![
-                        IR::new(Code::Jump(for_label), self.pos.clone()),
-                        IR::new(Code::SetLabel(cont_label), self.pos.clone()),
-                        IR::new(Code::Discard, self.pos.clone()),
-                    ]);
+                    if let Some(expr) = &for_stmt.expr {
+                        ir.push(self.compile_expr(expr)?);
+                        ir.push(
+                            vec![
+                                // step 1. Get the iterator from the object
+                                Code::Load(LocalId::new("Iterable".to_string())),
+                                Code::Validate,
+                                Code::LoadMember("iter".to_string()),
+                                Code::Call(0),
+                                // step 2. Now in the loop, get the next value from the iterator
+                                Code::SetLabel(for_label.clone()),
+                                Code::TeeMember("next".to_string()),
+                                Code::Call(0),
+                                // step 3. Check if it has a value and either continue or stop
+                                Code::TeeMember("isSome".to_string()),
+                                Code::Call(0),
+                                Code::Branch((body_label.clone(), cont_label.clone())),
+                                // step 4. Evaluate the body and so on..
+                                Code::SetLabel(body_label.clone()),
+                                Code::LoadMember("value".to_string()),
+                                Code::Call(0),
+                                Code::Store(LocalId::new_in_scope(".".to_string(), self.scope_id)),
+                            ]
+                            .into_iter()
+                            .map(|code| IR::new(code, self.pos.clone()))
+                            .collect::<Vec<_>>(),
+                        );
+                        ir.push(self.compile_stmt_list(
+                            ScopeContext::ForLoop(ForLoopMeta {
+                                continue_label: cont_label.clone(),
+                            }),
+                            &for_stmt.body,
+                        )?);
+                        ir.push(vec![
+                            IR::new(Code::Jump(for_label), self.pos.clone()),
+                            IR::new(Code::SetLabel(cont_label), self.pos.clone()),
+                            IR::new(Code::Discard, self.pos.clone()),
+                        ]);
+                    } else {
+                        ir.push(vec![
+                            IR::new(Code::SetLabel(for_label.clone()), self.pos.clone()),
+                            IR::new(Code::SetLabel(body_label), self.pos.clone()),
+                        ]);
+                        ir.push(self.compile_stmt_list(
+                            ScopeContext::ForLoop(ForLoopMeta {
+                                continue_label: cont_label.clone(),
+                            }),
+                            &for_stmt.body,
+                        )?);
+                        ir.push(vec![
+                            IR::new(Code::Jump(for_label), self.pos.clone()),
+                            IR::new(Code::SetLabel(cont_label), self.pos.clone()),
+                        ]);
+                    }
                 }
                 Stmt::Break(break_stmt) => {
                     if break_stmt.label.is_some() {

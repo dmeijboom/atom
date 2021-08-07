@@ -142,6 +142,18 @@ pub class Array {
         return ArrayIter(array: this, index: 0);
     }
 
+    pub fn append(other) {
+        for {
+            let item = other.pop(0);
+
+            if !item.isSome() {
+                break;
+            }
+
+            this.data.push(item.value());
+        }
+    }
+
     pub fn slice(range) {
         let mut output = [];
 

@@ -91,7 +91,7 @@ impl AtomEngine {
         let mut vm = VM::new()?;
 
         for module_path in self.module_paths.iter() {
-            vm.add_module_path(module_path);
+            vm.add_module_lookup_path(module_path);
         }
 
         Ok(vm)

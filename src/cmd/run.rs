@@ -40,11 +40,11 @@ pub fn command(module_paths: &Vec<PathBuf>, opts: Opts, contents: &str) -> Resul
     let module = Module::new(compiled_module, Some(opts.filename));
     let mut vm = VM::new()?;
 
-    vm.register_module(module)?;
-
     for module_path in module_paths {
-        vm.add_module_path(module_path);
+        vm.add_module_lookup_path(module_path);
     }
+
+    vm.register_module(module)?;
 
     vm.eval(
         "main",

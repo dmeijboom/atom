@@ -235,9 +235,12 @@ impl Module {
     }
 }
 
+pub type Middleware = fn(&mut Module) -> Result<()>;
+
 pub struct ModuleCache {
     modules: HashMap<String, Module>,
     current_module: Option<String>,
+    middleware: HashMap<String, Middleware>,
     lookup_paths: Vec<PathBuf>,
 }
 
@@ -247,11 +250,24 @@ impl ModuleCache {
             modules: HashMap::new(),
             current_module: None,
             lookup_paths: vec![],
+            middleware: HashMap::new(),
         }
     }
 
-    pub fn add(&mut self, module: Module) {
+    pub(crate) fn add(&mut self, module: Module) -> Result<()> {
+        let mut module = module;
+
+        if let Some(middleware) = self.middleware.get(&module.name) {
+            middleware(&mut module)?;
+        }
+
         self.modules.insert(module.name.clone(), module);
+
+        Ok(())
+    }
+
+    pub(crate) fn register_middleware(&mut self, name: &str, middleware: Middleware) {
+        self.middleware.insert(name.to_string(), middleware);
     }
 
     pub(crate) fn set_current(&mut self, name: &str) {
