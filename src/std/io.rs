@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::fs::File;
 use std::io::Read;
 use std::rc::Rc;
@@ -8,22 +8,21 @@ use crate::runtime::{Data, Object, Result, RuntimeError, TypeId, Value};
 use crate::vm::{Module, VM};
 
 fn use_file(
-    vm: &VM,
-    handler: impl FnOnce(&mut File) -> Result<Option<Value>>,
+    vm: &mut VM,
+    handler: impl FnOnce(RefMut<File>) -> Result<Option<Value>>,
 ) -> Result<Option<Value>> {
-    let value = vm.get_local("this").unwrap();
+    let mut value = vm.get_local_mut("this").unwrap();
+    let type_val = value.get_type();
 
-    if let Value::Object(object) = &value {
-        let mut object = object.borrow_mut();
-
-        if let Some(Data::File(file)) = &mut object.data {
-            return handler(file);
+    if let Value::Object(object) = &mut *value {
+        if let Some(Data::File(file)) = &object.data {
+            return handler(Rc::clone(file).borrow_mut());
         }
     }
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected File",
-        value.get_type().name()
+        type_val.name(),
     )))
 }
 
@@ -32,15 +31,16 @@ pub fn register(module: &mut Module) -> Result<()> {
         let filename = parse_args!(values => String);
         let file =
             File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
-        let object = Object::new(TypeId::new("std.io", "File"), vec![]).with_data(Data::File(file));
+        let object = Object::new(TypeId::new("std.io", "File"), vec![])
+            .with_data(Data::File(Rc::new(RefCell::new(file))));
 
-        Ok(Some(Value::Object(Rc::new(RefCell::new(object)))))
+        Ok(Some(Value::Object(object)))
     });
 
     module.register_external_method("File", "read", |vm, mut values| {
         let max = parse_args!(values => Int);
 
-        use_file(vm, |file| {
+        use_file(vm, |mut file| {
             let mut buff = vec![];
 
             buff.reserve(max as usize);
@@ -59,7 +59,7 @@ pub fn register(module: &mut Module) -> Result<()> {
                 .map(|b| Value::Byte(b))
                 .collect();
 
-            Ok(Some(Value::Array(Rc::new(RefCell::new(values)))))
+            Ok(Some(Value::Array(values)))
         })
     })?;
 

@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{RefCell, RefMut};
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
-use crate::runtime::{Method, Object, PointerType, Result, RuntimeError, TypeId, Value};
+use crate::runtime::{Method, Object, Result, RuntimeError, TypeId, Value};
 use crate::std::core::DEFAULT_IMPORTS;
 use crate::std::get_middleware;
 use crate::utils;
@@ -17,6 +17,7 @@ use crate::vm::call_stack::CallContext;
 use crate::vm::module_cache::{
     FuncDesc, FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc,
 };
+use crate::vm::stack::Stacked;
 use crate::vm::ClassDesc;
 
 use super::call_stack::CallStack;
@@ -97,14 +98,14 @@ impl VM {
         Ok(())
     }
 
-    pub fn get_local(&self, name: &str) -> Option<Value> {
-        if let Ok(context) = self.call_stack.current() {
+    pub fn get_local_mut(&mut self, name: &str) -> Option<RefMut<Value>> {
+        if let Ok(context) = self.call_stack.current_mut() {
             return context
                 .locals
-                .iter()
+                .iter_mut()
                 .filter(|(id, _)| id.scope_hint.is_none() && id.name == name)
                 .next()
-                .and_then(|(_, value)| Some(value.clone()));
+                .and_then(|(_, value)| Some(value.borrow_mut()));
         }
 
         None
@@ -228,8 +229,8 @@ impl VM {
             return self.eval_function_call(&id, keywords, arg_count);
         }
 
-        if let Value::Method(id) = value {
-            return self.eval_method_call(&id, keywords, arg_count);
+        if let Value::Method(method) = value {
+            return self.eval_method_call(&method, keywords, arg_count);
         }
 
         if let Value::Class(id) = value {
@@ -310,8 +311,7 @@ impl VM {
             )));
         }
 
-        self.stack
-            .push(Value::Object(Rc::new(RefCell::new(object))));
+        self.stack.push(Value::Object(object));
 
         Ok(())
     }
@@ -322,31 +322,31 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let (module, class) = {
-            let object = method.object.borrow();
-            (object.class.module.clone(), object.class.name.clone())
-        };
-        let desc = self
-            .module_cache
-            .lookup_method(&module, &class, &method.name)?;
+        let desc = self.module_cache.lookup_method(
+            &method.class.module,
+            &method.class.name,
+            &method.name,
+        )?;
 
         let mut context = CallContext::new(
             desc.func.pos.clone(),
-            TypeId::new(module.to_string(), format!("{}.{}", class, method.name)),
+            TypeId::new(
+                method.class.module.to_string(),
+                format!("{}.{}", method.class.name, method.name),
+            ),
         );
 
-        context.locals.insert(
-            LocalId::new("this".to_string()),
-            Value::Object(Rc::clone(&method.object)),
-        );
+        context
+            .locals
+            .insert(LocalId::new("this".to_string()), Rc::clone(&method.object));
 
         self.call_stack.push(context);
 
         let func = desc.func.clone();
 
         self.eval_func(
-            &module,
-            &format!("{}.{}", class, method.name),
+            &method.class.module,
+            &format!("{}.{}", method.class.name, method.name),
             keywords,
             arg_count,
             func,
@@ -415,7 +415,9 @@ impl VM {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in values.into_iter().enumerate() {
-                        call_context.args.insert(arg_names[i].to_string(), value);
+                        call_context
+                            .args
+                            .insert(arg_names[i].to_string(), Rc::new(RefCell::new(value)));
                     }
                 } else {
                     let ordered_values =
@@ -430,7 +432,9 @@ impl VM {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in ordered_values {
-                        call_context.args.insert(arg_names[i].to_string(), value);
+                        call_context
+                            .args
+                            .insert(arg_names[i].to_string(), Rc::new(RefCell::new(value)));
                     }
                 }
 
@@ -531,7 +535,7 @@ impl VM {
             Code::MakeArray(len) => {
                 let values = self.stack.pop_many(*len)?;
 
-                self.stack.push(Value::Array(Rc::new(RefCell::new(values))));
+                self.stack.push(Value::Array(values));
             }
             Code::MakeMap(len) => {
                 let mut map = HashMap::new();
@@ -544,7 +548,7 @@ impl VM {
                     map.insert(key, value);
                 }
 
-                self.stack.push(Value::Map(Rc::new(RefCell::new(map))));
+                self.stack.push(Value::Map(map));
             }
             Code::Discard => self.stack.delete()?.into(),
             Code::Return => {
@@ -644,15 +648,14 @@ impl VM {
                     let interface = self.module_cache.lookup_interface(&id.module, &id.name)?;
 
                     let object = self.stack.pop().and_then(to_object)?;
-                    let class_id = { object.borrow().class.clone() };
                     let class = self
                         .module_cache
-                        .lookup_class(&class_id.module, &class_id.name)?;
+                        .lookup_class(&object.class.module, &object.class.name)?;
 
                     if !self.validate_class(class, interface) {
                         return Err(RuntimeError::new(format!(
                             "validation failed, class '{}.{}' doesn't implement interface: {}.{}",
-                            class_id.module, class_id.name, id.module, id.name
+                            object.class.module, object.class.name, id.module, id.name
                         )));
                     }
 
@@ -695,51 +698,7 @@ impl VM {
                 self.call_stack
                     .current_mut()?
                     .locals
-                    .insert(id.clone(), value);
-            }
-            Code::StorePtr => {
-                let value = self.stack.pop()?;
-                let pointer = self.stack.pop()?;
-
-                if let Value::Pointer(pointer) = pointer {
-                    match pointer {
-                        PointerType::FieldPtr((object, field_idx)) => {
-                            let (module, class) = {
-                                let object = object.borrow();
-                                (object.class.module.clone(), object.class.name.clone())
-                            };
-                            let desc = self.module_cache.lookup_class(&module, &class)?;
-                            let (name, field_desc) = desc.fields.get_index(field_idx).unwrap();
-
-                            if !field_desc.mutable {
-                                return Err(RuntimeError::new(format!(
-                                    "field '{}' is not mutable in class: {}.{}",
-                                    name, module, class,
-                                )));
-                            }
-
-                            let mut object = object.borrow_mut();
-
-                            object.fields[field_idx] = value;
-                        }
-                        PointerType::ArrayItemPtr((array, field_idx)) => {
-                            let mut array = array.borrow_mut();
-
-                            array[field_idx] = value;
-                        }
-                        PointerType::MapItemPtr((map, key)) => {
-                            let mut map = map.borrow_mut();
-
-                            map.insert(*key, value);
-                        }
-                    };
-
-                    return Ok(None);
-                }
-
-                return Err(RuntimeError::new(
-                    "invalid type for StorePtr instruction".to_string(),
-                ));
+                    .insert(id.clone(), Rc::new(RefCell::new(value)));
             }
             Code::StoreMut(id) => {
                 let value = self.stack.pop()?;
@@ -747,9 +706,9 @@ impl VM {
                 self.call_stack
                     .current_mut()?
                     .locals
-                    .insert(id.clone(), value);
+                    .insert(id.clone(), Rc::new(RefCell::new(value)));
             }
-            Code::LoadIndex | Code::LoadIndexPtr => {
+            Code::LoadIndex => {
                 let index = self.stack.pop()?;
                 let data = self.stack.pop()?;
 
@@ -759,17 +718,9 @@ impl VM {
 
                         e.with_message(message)
                     })?;
-                    let items = array.borrow();
 
-                    if let Some(item) = items.get(index as usize) {
-                        self.stack.push(if ir.code == Code::LoadIndexPtr {
-                            Value::Pointer(PointerType::ArrayItemPtr((
-                                Rc::clone(&array),
-                                index as usize,
-                            )))
-                        } else {
-                            item.clone()
-                        });
+                    if let Some(item) = array.get(index as usize) {
+                        self.stack.push(item.clone());
 
                         return Ok(None);
                     }
@@ -780,14 +731,35 @@ impl VM {
                 }
 
                 if let Value::Map(map) = data {
-                    let items = map.borrow();
+                    if let Some(item) = map.get(&index) {
+                        self.stack.push(item.clone());
 
-                    if let Some(item) = items.get(&index) {
-                        self.stack.push(if ir.code == Code::LoadIndexPtr {
-                            Value::Pointer(PointerType::MapItemPtr((Rc::clone(&map), index.into())))
-                        } else {
-                            item.clone()
-                        });
+                        return Ok(None);
+                    }
+
+                    return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
+                }
+
+                return Err(RuntimeError::new(format!(
+                    "unable to index type: {}",
+                    data.get_type().name()
+                )));
+            }
+            Code::StoreIndex => {
+                let value = self.stack.pop()?;
+                let index = self.stack.pop()?;
+                let value_ref = self.stack.pop_ref()?;
+                let mut data = value_ref.borrow_mut();
+
+                if let Value::Array(array) = &mut *data {
+                    let index = to_int(index).map_err(|e| {
+                        let message = format!("{} in index lookup", e);
+
+                        e.with_message(message)
+                    })?;
+
+                    if let Some(_) = array.get(index as usize) {
+                        array[index as usize] = value;
 
                         return Ok(None);
                     }
@@ -797,59 +769,75 @@ impl VM {
                     ));
                 }
 
+                if let Value::Map(map) = &mut *data {
+                    if let Some(_) = map.get(&index) {
+                        map.insert(index, value);
+
+                        return Ok(None);
+                    }
+
+                    return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
+                }
+
                 return Err(RuntimeError::new(format!(
                     "unable to index type: {}",
                     data.get_type().name()
                 )));
             }
-            Code::LoadMember(member) | Code::TeeMember(member) | Code::LoadMemberPtr(member) => {
+            Code::LoadMember(member) | Code::TeeMember(member) => {
                 let object = self.stack.pop().and_then(to_object)?;
-                let (module, class) = {
-                    let object = object.borrow();
-                    (object.class.module.clone(), object.class.name.clone())
-                };
-
-                let desc = self.module_cache.lookup_class(&module, &class)?;
+                let desc = self
+                    .module_cache
+                    .lookup_class(&object.class.module, &object.class.name)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
                     let field = &desc.fields[member];
 
-                    if !field.public && self.module_cache.current_name()? != module {
+                    if !field.public && self.module_cache.current_name()? != object.class.module {
                         return Err(RuntimeError::new(format!(
                             "unable to access private field '{}' of class: {}.{}",
-                            member, module, class
+                            member, object.class.module, object.class.name
                         )));
                     }
 
-                    self.stack.push(if let Code::LoadMember(_) = ir.code {
-                        {
-                            let object = object.borrow();
-                            object.fields[index].clone()
-                        }
-                    } else {
-                        Value::Pointer(PointerType::FieldPtr((Rc::clone(&object), index)))
-                    });
+                    let field = object.fields[index].clone();
+
+                    if let Code::TeeMember(_) = ir.code {
+                        self.stack.push(Value::Object(object));
+                    }
+
+                    self.stack.push(field);
 
                     return Ok(None);
                 }
 
-                if let Ok(_) = self.module_cache.lookup_method(&module, &class, member) {
+                if let Ok(_) = self.module_cache.lookup_method(
+                    &object.class.module,
+                    &object.class.name,
+                    member,
+                ) {
                     let method = &desc.methods[member];
 
-                    if !method.func.public && self.module_cache.current_name()? != module {
+                    if !method.func.public
+                        && self.module_cache.current_name()? != object.class.module
+                    {
                         return Err(RuntimeError::new(format!(
                             "unable to access private method '{}(...)' of class: {}.{}",
-                            member, module, class
+                            member, object.class.module, object.class.name
                         )));
                     }
 
+                    let class = object.class.clone();
+                    let object = Rc::new(RefCell::new(Value::Object(object)));
+
                     if let Code::TeeMember(_) = ir.code {
-                        self.stack.push(Value::Object(Rc::clone(&object)));
+                        self.stack.push_ref(Rc::clone(&object));
                     }
 
                     self.stack.push(Value::Method(Method {
                         name: member.clone(),
-                        object: Rc::clone(&object),
+                        class,
+                        object,
                     }));
 
                     return Ok(None);
@@ -857,17 +845,63 @@ impl VM {
 
                 return Err(RuntimeError::new(format!(
                     "no such field or method '{}' for class: {}.{}",
-                    member, module, class,
+                    member, object.class.module, object.class.name,
+                )));
+            }
+            Code::StoreMember(member) => {
+                let object_ref = self.stack.pop_ref()?;
+                let mut data = object_ref.borrow_mut();
+                let value = self.stack.pop()?;
+
+                if let Value::Object(object) = &mut *data {
+                    let desc = self
+                        .module_cache
+                        .lookup_class(&object.class.module, &object.class.name)?;
+
+                    if let Some(index) = desc.fields.get_index_of(member) {
+                        let field = &desc.fields[member];
+
+                        if !field.public && self.module_cache.current_name()? != object.class.module
+                        {
+                            return Err(RuntimeError::new(format!(
+                                "unable to access private field '{}' of class: {}.{}",
+                                member, object.class.module, object.class.name
+                            )));
+                        }
+
+                        object.fields[index] = value;
+
+                        return Ok(None);
+                    }
+
+                    return Err(RuntimeError::new(format!(
+                        "no such field '{}' for class: {}.{}",
+                        member, object.class.module, object.class.name,
+                    )));
+                }
+
+                return Err(RuntimeError::new(format!(
+                    "unable to store member '{}' on invalid type '{}' expected Object",
+                    member,
+                    data.get_type().name(),
                 )));
             }
             Code::Load(id) => {
                 if !self.call_stack.is_empty() {
                     let context = self.call_stack.current_mut()?;
+                    let value = context
+                        .locals
+                        .get(id)
+                        .and_then(|value| Some(Rc::clone(value)))
+                        .or_else(|| {
+                            context
+                                .args
+                                .get(&id.name)
+                                .and_then(|value| Some(Rc::clone(value)))
+                        });
 
-                    if let Some(value) = get_cloned(&context.locals, &id)
-                        .or_else(|| get_cloned(&context.args, &id.name))
-                    {
-                        self.stack.push(value);
+                    if let Some(value) = value {
+                        self.stack.push_ref(value);
 
                         return Ok(None);
                     }
@@ -1007,6 +1041,14 @@ impl VM {
     }
 
     pub fn result(&mut self) -> Option<Value> {
-        self.stack.pop().ok()
+        self.stack
+            .pop_stacked()
+            .ok()
+            .and_then(|stacked| match stacked {
+                Stacked::ByValue(value) => Some(value),
+                Stacked::ByRef(value_ref) => Rc::try_unwrap(value_ref)
+                    .ok()
+                    .and_then(|value| Some(value.into_inner())),
+            })
     }
 }

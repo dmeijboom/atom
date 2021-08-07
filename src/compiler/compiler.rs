@@ -357,13 +357,12 @@ impl Compiler {
     ) -> Result<Vec<IR>> {
         let mut ir = vec![];
 
+        ir.push(self.compile_expr(value)?);
         ir.push(self.compile_expr(&object)?);
         ir.push(vec![IR::new(
-            Code::LoadMemberPtr(member.to_string()),
+            Code::StoreMember(member.to_string()),
             self.pos.clone(),
         )]);
-        ir.push(self.compile_expr(value)?);
-        ir.push(vec![IR::new(Code::StorePtr, self.pos.clone())]);
 
         Ok(ir.concat())
     }
@@ -378,9 +377,8 @@ impl Compiler {
 
         ir.push(self.compile_expr(&object)?);
         ir.push(self.compile_expr(&index)?);
-        ir.push(vec![IR::new(Code::LoadIndexPtr, self.pos.clone())]);
         ir.push(self.compile_expr(&value)?);
-        ir.push(vec![IR::new(Code::StorePtr, self.pos.clone())]);
+        ir.push(vec![IR::new(Code::StoreIndex, self.pos.clone())]);
 
         Ok(ir.concat())
     }

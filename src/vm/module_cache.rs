@@ -9,7 +9,7 @@ use crate::compiler::{self, Func, IR};
 use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::VM;
 
-pub type ExternalFn = fn(&VM, Vec<Value>) -> Result<Option<Value>>;
+pub type ExternalFn = fn(&mut VM, Vec<Value>) -> Result<Option<Value>>;
 
 pub enum FuncSource {
     Native(Rc<Vec<IR>>),

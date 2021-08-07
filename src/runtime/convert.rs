@@ -1,6 +1,3 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::runtime::{Object, TypeId};
 
 use super::result::{Result, RuntimeError};
@@ -49,22 +46,16 @@ pub fn to_float(value: Value) -> Result<f64> {
     }
 }
 
-fn make_object(module: &str, name: &str, fields: Vec<Value>) -> Rc<RefCell<Object>> {
-    Rc::new(RefCell::new(Object::new(TypeId::new(module, name), fields)))
-}
-
 pub fn to_option(value: Option<Value>) -> Value {
     if let Some(value) = value {
-        return Value::Object(make_object(
-            "std.core",
-            "Option",
+        return Value::Object(Object::new(
+            TypeId::new("std.core", "Option"),
             vec![value, Value::Bool(false)],
         ));
     }
 
-    Value::Object(make_object(
-        "std.core",
-        "Option",
+    Value::Object(Object::new(
+        TypeId::new("std.core", "Option"),
         vec![Value::Int(0), Value::Bool(true)],
     ))
 }
@@ -80,7 +71,7 @@ pub fn to_byte(value: &Value) -> Result<u8> {
     )))
 }
 
-pub fn to_array(value: Value) -> Result<Rc<RefCell<Vec<Value>>>> {
+pub fn to_array(value: Value) -> Result<Vec<Value>> {
     if let Value::Array(array) = value {
         return Ok(array);
     }
@@ -91,35 +82,44 @@ pub fn to_array(value: Value) -> Result<Rc<RefCell<Vec<Value>>>> {
     )))
 }
 
-pub fn to_object(value: Value) -> Result<Rc<RefCell<Object>>> {
+pub fn to_object(value: Value) -> Result<Object> {
     match value {
-        Value::Int(val) => Ok(make_object("std.core", "Int", vec![Value::Int(val)])),
-        Value::Float(val) => Ok(make_object("std.core", "Float", vec![Value::Float(val)])),
-        Value::Bool(val) => Ok(make_object("std.core", "Bool", vec![Value::Bool(val)])),
-        Value::Range(val) => Ok(make_object(
-            "std.core",
-            "Range",
+        Value::Int(val) => Ok(Object::new(
+            TypeId::new("std.core", "Int"),
+            vec![Value::Int(val)],
+        )),
+        Value::Float(val) => Ok(Object::new(
+            TypeId::new("std.core", "Float"),
+            vec![Value::Float(val)],
+        )),
+        Value::Bool(val) => Ok(Object::new(
+            TypeId::new("std.core", "Bool"),
+            vec![Value::Bool(val)],
+        )),
+        Value::Range(val) => Ok(Object::new(
+            TypeId::new("std.core", "Range"),
             vec![Value::Int(val.start), Value::Int(val.end)],
         )),
         Value::String(val) => {
             let length = val.len() as i64;
 
-            Ok(make_object(
-                "std.core",
-                "String",
+            Ok(Object::new(
+                TypeId::new("std.core", "String"),
                 vec![Value::String(val), Value::Int(length)],
             ))
         }
         Value::Array(val) => {
-            let length = val.borrow().len() as i64;
+            let length = val.len() as i64;
 
-            Ok(make_object(
-                "std.core",
-                "Array",
+            Ok(Object::new(
+                TypeId::new("std.core", "Array"),
                 vec![Value::Array(val), Value::Int(length)],
             ))
         }
-        Value::Map(val) => Ok(make_object("std.core", "Map", vec![Value::Map(val)])),
+        Value::Map(val) => Ok(Object::new(
+            TypeId::new("std.core", "Map"),
+            vec![Value::Map(val)],
+        )),
         Value::Object(object) => Ok(object),
         _ => Err(RuntimeError::new(format!(
             "invalid type '{}' expected: Object",

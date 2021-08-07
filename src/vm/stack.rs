@@ -1,20 +1,33 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use crate::runtime::Value;
 use crate::runtime::{Result, RuntimeError};
 
-pub(crate) struct Stack {
-    data: Vec<Value>,
+#[derive(PartialEq)]
+pub enum Stacked {
+    ByValue(Value),
+    ByRef(Rc<RefCell<Value>>),
+}
+
+pub struct Stack {
+    data: Vec<Stacked>,
 }
 
 impl Stack {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self { data: vec![] }
     }
 
-    pub(crate) fn push(&mut self, value: Value) {
-        self.data.push(value);
+    pub fn push(&mut self, value: Value) {
+        self.data.push(Stacked::ByValue(value));
     }
 
-    pub(crate) fn delete(&mut self) -> Result<()> {
+    pub fn push_ref(&mut self, value: Rc<RefCell<Value>>) {
+        self.data.push(Stacked::ByRef(value));
+    }
+
+    pub fn delete(&mut self) -> Result<()> {
         self.data.pop().ok_or_else(|| {
             RuntimeError::new("expected element on stack (in discard)".to_string())
         })?;
@@ -22,9 +35,9 @@ impl Stack {
         Ok(())
     }
 
-    pub(crate) fn pop(&mut self) -> Result<Value> {
+    pub fn pop_stacked(&mut self) -> Result<Stacked> {
         if let Some(value) = self.data.pop() {
-            if value == Value::Invalid {
+            if value == Stacked::ByValue(Value::Invalid) {
                 return Err(RuntimeError::new(
                     "unable to use void Fn as a value".to_string(),
                 ));
@@ -36,7 +49,28 @@ impl Stack {
         Err(RuntimeError::new("expecting element on stack".to_string()))
     }
 
-    pub(crate) fn pop_many(&mut self, mut len: usize) -> Result<Vec<Value>> {
+    pub fn pop(&mut self) -> Result<Value> {
+        let stacked = self.pop_stacked()?;
+
+        Ok(match stacked {
+            Stacked::ByValue(value) => value,
+            Stacked::ByRef(value_ref) => value_ref.borrow().clone(),
+        })
+    }
+
+    pub fn pop_ref(&mut self) -> Result<Rc<RefCell<Value>>> {
+        let stacked = self.pop_stacked()?;
+
+        Ok(match stacked {
+            // This is useless as this is a reference of a copied value but other languages
+            // seem to support code like this as well: `[0, 1][0] = 1;`
+            Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
+
+            Stacked::ByRef(value_ref) => value_ref,
+        })
+    }
+
+    pub fn pop_many(&mut self, mut len: usize) -> Result<Vec<Value>> {
         let mut values = vec![];
 
         while len > 0 {

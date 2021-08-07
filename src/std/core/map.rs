@@ -1,28 +1,25 @@
-use std::cell::{RefCell, RefMut};
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use crate::parse_args;
 use crate::runtime::{convert, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_map(
-    vm: &VM,
-    handler: impl FnOnce(RefMut<HashMap<Value, Value>>) -> Option<Value>,
+    vm: &mut VM,
+    handler: impl FnOnce(&mut HashMap<Value, Value>) -> Option<Value>,
 ) -> Result<Option<Value>> {
-    let value = vm.get_local("this").unwrap();
+    let mut value = vm.get_local_mut("this").unwrap();
+    let type_val = value.get_type();
 
-    if let Value::Object(object) = &value {
-        let object = object.borrow();
-
-        if let Value::Map(field_value) = &object.fields[0] {
-            return Ok(handler(field_value.borrow_mut()));
+    if let Value::Object(object) = &mut *value {
+        if let Value::Map(field_value) = &mut object.fields[0] {
+            return Ok(handler(field_value));
         }
     }
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected Map",
-        value.get_type().name()
+        type_val.name()
     )))
 }
 
@@ -32,20 +29,20 @@ pub fn register(module: &mut Module) -> Result<()> {
             parse_args!(values);
 
             use_map(vm, |a| {
-                Some(Value::Array(Rc::new(RefCell::new(
+                Some(Value::Array(
                     a.keys().into_iter().cloned().collect::<Vec<_>>(),
-                ))))
+                ))
             })
         }),
         ("pop", |vm, mut values| {
             let key = parse_args!(values => Any);
 
-            use_map(vm, |mut a| Some(convert::to_option(a.remove(&key))))
+            use_map(vm, |a| Some(convert::to_option(a.remove(&key))))
         }),
         ("clear", |vm, values| {
             parse_args!(values);
 
-            use_map(vm, |mut a| {
+            use_map(vm, |a| {
                 a.clear();
 
                 None

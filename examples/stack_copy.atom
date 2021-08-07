@@ -1,0 +1,19 @@
+class Test {
+    let num;
+
+    fn example() {
+        this.num = this.num + 10;
+
+        return this.num;
+    }
+}
+
+fn main() {
+    let test = Test(num: 10);
+
+    return [
+        test.example(),
+        test.example(),
+        test.example()
+    ];
+}

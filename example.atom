@@ -1,9 +1,7 @@
-import std.io.Reader;
-import std.io.openFile;
-
 fn main() {
-    let file = openFile("/etc/hosts");
-    let lines = file.lines().collect();
+    for ["hi", "bye"] {
+        let x = .upper;
 
-    println(lines);
+        println(x());
+    }
 }

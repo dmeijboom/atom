@@ -1,16 +1,12 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::parse_args;
 use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
-fn use_string(vm: &VM, handler: impl Fn(&String) -> Value) -> Result<Option<Value>> {
-    let value = vm.get_local("this").unwrap();
+fn use_string(vm: &mut VM, handler: impl Fn(&String) -> Value) -> Result<Option<Value>> {
+    let mut value = vm.get_local_mut("this").unwrap();
+    let type_val = value.get_type();
 
-    if let Value::Object(object) = &value {
-        let object = object.borrow();
-
+    if let Value::Object(object) = &mut *value {
         if let Value::String(field_value) = &object.fields[0] {
             return Ok(Some(handler(field_value)));
         }
@@ -18,11 +14,11 @@ fn use_string(vm: &VM, handler: impl Fn(&String) -> Value) -> Result<Option<Valu
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected String",
-        value.get_type().name()
+        type_val.name()
     )))
 }
 
-fn use_into_string(vm: &VM, handler: impl Fn(&String) -> String) -> Result<Option<Value>> {
+fn use_into_string(vm: &mut VM, handler: impl Fn(&String) -> String) -> Result<Option<Value>> {
     use_string(vm, |s| Value::String(handler(s)))
 }
 
@@ -52,7 +48,7 @@ pub fn register(module: &mut Module) -> Result<()> {
                         .collect::<Vec<_>>()
                 };
 
-                Value::Array(Rc::new(RefCell::new(components)))
+                Value::Array(components)
             })
         }),
         ("startsWith", |vm, mut values| {
@@ -75,7 +71,8 @@ pub fn register(module: &mut Module) -> Result<()> {
 
             use_string(vm, |s| {
                 let items = s.chars().map(|c| Value::Char(c)).collect::<Vec<_>>();
-                Value::Array(Rc::new(RefCell::new(items)))
+
+                Value::Array(items)
             })
         }),
         ("repeat", |vm, mut values| {

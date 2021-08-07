@@ -5,7 +5,7 @@ pub mod array;
 pub mod map;
 pub mod string;
 
-pub fn println(_: &VM, values: Vec<Value>) -> Result<Option<Value>> {
+pub fn println(_: &mut VM, values: Vec<Value>) -> Result<Option<Value>> {
     println!(
         "{}",
         values

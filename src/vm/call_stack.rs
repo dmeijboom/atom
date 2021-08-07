@@ -1,4 +1,6 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use crate::ast::Pos;
 use crate::compiler::LocalId;
@@ -8,12 +10,12 @@ pub struct CallContext {
     pub pos: Pos,
     pub id: TypeId,
     pub return_value: Option<Value>,
-    pub args: HashMap<String, Value>,
-    pub locals: HashMap<LocalId, Value>,
+    pub args: HashMap<String, Rc<RefCell<Value>>>,
+    pub locals: HashMap<LocalId, Rc<RefCell<Value>>>,
 }
 
 impl CallContext {
-    pub(crate) fn new(pos: Pos, id: TypeId) -> Self {
+    pub fn new(pos: Pos, id: TypeId) -> Self {
         Self {
             id,
             pos,
@@ -29,39 +31,33 @@ pub struct CallStack {
 }
 
 impl CallStack {
-    pub(crate) fn new() -> Self {
+    pub fn new() -> Self {
         Self { data: vec![] }
     }
 
-    pub(crate) fn push(&mut self, context: CallContext) {
+    pub fn push(&mut self, context: CallContext) {
         self.data.push(context);
     }
 
-    pub(crate) fn pop(&mut self) -> Option<CallContext> {
+    pub fn pop(&mut self) -> Option<CallContext> {
         self.data.pop()
     }
 
-    pub(crate) fn current(&self) -> Result<&CallContext> {
-        self.data
-            .last()
-            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
-    }
-
-    pub(crate) fn current_mut(&mut self) -> Result<&mut CallContext> {
+    pub fn current_mut(&mut self) -> Result<&mut CallContext> {
         self.data
             .last_mut()
             .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
     }
 
-    pub(crate) fn is_empty(&self) -> bool {
+    pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
-    pub(crate) fn last(&self) -> Option<&CallContext> {
+    pub fn last(&self) -> Option<&CallContext> {
         self.data.last()
     }
 
-    pub(crate) fn rewind(&mut self) -> Vec<Trace> {
+    pub fn rewind(&mut self) -> Vec<Trace> {
         let mut stack_trace = vec![];
 
         while !self.data.is_empty() {

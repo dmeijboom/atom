@@ -29,6 +29,7 @@ mod tests {
     #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(17); "operator precedence")]
     #[test_case(include_str!("../examples/class_fields.atom"), Value::String("hello world".to_string()); "class fields")]
     #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
+    #[test_case(include_str!("../examples/stack_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(20), Value::Int(20)]); "stack copy")]
     fn code(source: &str, value: Value) {
         let result = run_code(source);
 

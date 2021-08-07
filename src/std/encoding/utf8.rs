@@ -6,8 +6,7 @@ use crate::vm::Module;
 
 pub fn register(module: &mut Module) -> Result<()> {
     module.register_external_fn("decode", |_, mut values| {
-        let value = parse_args!(values => Array);
-        let data = value.borrow();
+        let data = parse_args!(values => Array);
         let mut bytes = vec![];
 
         for item in data.iter() {
