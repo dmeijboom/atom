@@ -50,14 +50,7 @@ pub fn to_float(value: Value) -> Result<f64> {
 }
 
 fn make_object(module: &str, name: &str, fields: Vec<Value>) -> Rc<RefCell<Object>> {
-    Rc::new(RefCell::new(Object {
-        class: TypeId {
-            name: name.to_string(),
-            module: module.to_string(),
-        },
-        fields,
-        data: vec![],
-    }))
+    Rc::new(RefCell::new(Object::new(TypeId::new(module, name), fields)))
 }
 
 pub fn to_option(value: Option<Value>) -> Value {

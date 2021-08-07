@@ -160,10 +160,7 @@ impl VM {
         }
 
         if let Some(type_desc) = self.module_cache.lookup_type(&module_name, name) {
-            let id = TypeId {
-                name: name.to_string(),
-                module: module_name.clone(),
-            };
+            let id = TypeId::new(module_name.to_string(), name.to_string());
             let value = match type_desc {
                 TypeDesc::Class(class_desc) => {
                     if !class_desc.public {
@@ -260,11 +257,7 @@ impl VM {
             )));
         }
 
-        let mut object = Object {
-            class: id.clone(),
-            fields: vec![],
-            data: vec![],
-        };
+        let mut object = Object::new(id.clone(), vec![]);
 
         let mut values = self
             .stack
@@ -339,10 +332,7 @@ impl VM {
 
         let mut context = CallContext::new(
             desc.func.pos.clone(),
-            TypeId {
-                module: module.clone(),
-                name: format!("{}.{}", class, method.name),
-            },
+            TypeId::new(module.to_string(), format!("{}.{}", class, method.name)),
         );
 
         context.locals.insert(
@@ -892,10 +882,7 @@ impl VM {
                 }
 
                 if let Some(type_value) = current_module.find_type(&id.name) {
-                    let id = TypeId {
-                        name: id.name.clone(),
-                        module: self.module_cache.current_name()?.to_string(),
-                    };
+                    let id = TypeId::new(self.module_cache.current_name()?, id.name.clone());
                     self.stack.push(
                         match type_value {
                             Type::Class => Value::Class(id),

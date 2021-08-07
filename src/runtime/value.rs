@@ -83,8 +83,17 @@ impl ValueType {
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct TypeId {
-    pub name: String,
     pub module: String,
+    pub name: String,
+}
+
+impl TypeId {
+    pub fn new(module: impl ToString, name: impl ToString) -> Self {
+        TypeId {
+            module: module.to_string(),
+            name: name.to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -139,7 +148,23 @@ impl Eq for Data {}
 pub struct Object {
     pub class: TypeId,
     pub fields: Vec<Value>,
-    pub data: Vec<Data>,
+    pub data: Option<Data>,
+}
+
+impl Object {
+    pub fn new(class: TypeId, fields: Vec<Value>) -> Object {
+        Object {
+            class,
+            fields,
+            data: None,
+        }
+    }
+
+    pub fn with_data(mut self, data: Data) -> Self {
+        self.data = Some(data);
+
+        self
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]

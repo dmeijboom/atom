@@ -16,7 +16,7 @@ fn use_file(
     if let Value::Object(object) = &value {
         let mut object = object.borrow_mut();
 
-        if let Some(Data::File(file)) = object.data.get_mut(0) {
+        if let Some(Data::File(file)) = &mut object.data {
             return handler(file);
         }
     }
@@ -32,14 +32,7 @@ pub fn register(module: &mut Module) -> Result<()> {
         let filename = parse_args!(values => String);
         let file =
             File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
-        let object = Object {
-            class: TypeId {
-                name: "File".to_string(),
-                module: "std.io".to_string(),
-            },
-            fields: vec![],
-            data: vec![Data::File(file)],
-        };
+        let object = Object::new(TypeId::new("std.io", "File"), vec![]).with_data(Data::File(file));
 
         Ok(Some(Value::Object(Rc::new(RefCell::new(object)))))
     });
