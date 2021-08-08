@@ -1,0 +1,3 @@
+fn main() {
+    return (Int)10.5 + (Int)20.2 + (Int)(1.8 + 2.9);
+}

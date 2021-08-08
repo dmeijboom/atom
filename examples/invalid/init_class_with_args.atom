@@ -1,0 +1,7 @@
+class Test {
+    let name;
+}
+
+fn main() {
+    Test("hello world");
+}

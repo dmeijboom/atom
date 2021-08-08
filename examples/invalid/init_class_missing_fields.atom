@@ -1,0 +1,9 @@
+class Test {
+    let one;
+    let two;
+    let three;
+}
+
+fn main() {
+    Test(one: 10, two: 20);
+}
