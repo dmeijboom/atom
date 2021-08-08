@@ -313,6 +313,14 @@ impl Compiler {
                     }
                 };
             }
+            Expr::MakeRef(make_ref_expr) => {
+                ir.push(self.compile_expr(&make_ref_expr.expr)?);
+                ir.push(vec![IR::new(Code::MakeRef, self.pos.clone())]);
+            }
+            Expr::Deref(deref_expr) => {
+                ir.push(self.compile_expr(&deref_expr.expr)?);
+                ir.push(vec![IR::new(Code::Deref, self.pos.clone())]);
+            }
         };
 
         Ok(ir.concat())

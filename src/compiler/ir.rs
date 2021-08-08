@@ -39,6 +39,8 @@ pub enum Code {
     Jump(String),
     JumpIfTrue(String),
     Branch((String, String)),
+    MakeRef,
+    Deref,
     LogicalAnd,
     ArithmeticBitOr,
     ArithmeticBitAnd,
@@ -96,6 +98,8 @@ impl Code {
             Code::Branch((label_a, label_b)) => {
                 format!("  branch(label_a: '{}', label_b: '{}')", label_a, label_b)
             }
+            Code::MakeRef => "  makeRef".to_string(),
+            Code::Deref => "  deref".to_string(),
             Code::LogicalAnd => "  and".to_string(),
             Code::ArithmeticBitOr => "  bit_or".to_string(),
             Code::ArithmeticBitAnd => "  bin_and".to_string(),

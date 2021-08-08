@@ -1,4 +1,5 @@
-use std::cell::RefCell;
+use std::cell::{Ref, RefCell};
+use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::runtime::Value;
@@ -8,6 +9,45 @@ use crate::runtime::{Result, RuntimeError};
 pub enum Stacked {
     ByValue(Value),
     ByRef(Rc<RefCell<Value>>),
+}
+
+impl Stacked {
+    pub fn borrow(&self) -> StackedBorrowed<'_> {
+        StackedBorrowed::new(self)
+    }
+}
+
+enum ValueOrRef<'v> {
+    Value(&'v Value),
+    ValueRef(Ref<'v, Value>),
+}
+
+pub struct StackedBorrowed<'s> {
+    data: ValueOrRef<'s>,
+}
+
+impl<'s> StackedBorrowed<'s> {
+    pub fn new(stacked: &'s Stacked) -> Self {
+        match &stacked {
+            Stacked::ByValue(value) => Self {
+                data: ValueOrRef::Value(value),
+            },
+            Stacked::ByRef(value_ref) => Self {
+                data: ValueOrRef::ValueRef(value_ref.borrow()),
+            },
+        }
+    }
+}
+
+impl Deref for StackedBorrowed<'_> {
+    type Target = Value;
+
+    fn deref(&self) -> &Self::Target {
+        match &self.data {
+            ValueOrRef::Value(value) => value,
+            ValueOrRef::ValueRef(value_ref) => &value_ref,
+        }
+    }
 }
 
 pub struct Stack {

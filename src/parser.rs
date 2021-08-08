@@ -106,13 +106,16 @@ peg::parser! {
             left:(@) _ "<" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Lt, right }.into()) }
             left:(@) _ "<=" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Lte, right }.into()) }
             --
+            "&" _ expr:(@) { Expr::MakeRef(MakeRefExpr { pos: (start..expr.pos().end), expr }.into()) }
+            "*" _ expr:(@) { Expr::Deref(DerefExpr { pos: (start..expr.pos().end), expr }.into()) }
+            --
             left:(@) _ "+" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Add, right }.into()) }
             left:(@) _ "-" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Sub, right }.into()) }
             --
             left:(@) _ "*" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Mul, right }.into()) }
             left:(@) _ "/" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Div, right }.into()) }
             --
-            "!" _ expr:@ { Expr::Not(NotExpr {pos: (start..expr.pos().end), expr: expr.into() }) }
+            "!" _ expr:(@) { Expr::Not(NotExpr {pos: (start..expr.pos().end), expr: expr.into() }) }
             --
             object:(@) _ "?." _ member:ident() end:pos() { Expr::MemberCond(MemberCondExpr { pos: (start..end), object, member }.into()) }
             object:(@) _ "." _ member:ident() end:pos() { Expr::Member(MemberExpr { pos: (start..end), object, member }.into()) }
@@ -360,6 +363,50 @@ mod tests {
     #[test_case("\"hello;"; "unterminated string")]
     fn test_invalid_syntax(source: &str) {
         assert_eq!(parse_single(source).is_err(), true, "parsing should fail");
+    }
+
+    #[test]
+    fn test_make_ref() {
+        let source = "&100;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::MakeRef(
+                    MakeRefExpr {
+                        expr: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(100),
+                            pos: 1..4,
+                        }),
+                        pos: 0..4,
+                    }
+                    .into(),
+                ),
+                pos: 0..5,
+            })),
+        );
+    }
+
+    #[test]
+    fn test_deref() {
+        let source = "*100;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Deref(
+                    DerefExpr {
+                        expr: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(100),
+                            pos: 1..4,
+                        }),
+                        pos: 0..4,
+                    }
+                    .into(),
+                ),
+                pos: 0..5,
+            })),
+        );
     }
 
     #[test]

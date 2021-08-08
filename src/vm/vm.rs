@@ -3,12 +3,13 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::hash::Hash;
+use std::ops::Deref;
 use std::path::Path;
 use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
-use crate::runtime::{Method, Object, Result, RuntimeError, TypeId, Value};
+use crate::runtime::{Method, Object, Result, RuntimeError, TypeId, Value, ValueType};
 use crate::std::core::DEFAULT_IMPORTS;
 use crate::std::get_middleware;
 use crate::utils;
@@ -322,6 +323,8 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
+        // @TODO: this has to stay:
+        //let object = to_object(method.object.borrow().clone())?;
         let desc = self.module_cache.lookup_method(
             &method.class.module,
             &method.class.name,
@@ -336,9 +339,16 @@ impl VM {
             ),
         );
 
-        context
-            .locals
-            .insert(LocalId::new("this".to_string()), Rc::clone(&method.object));
+        context.locals.insert(
+            LocalId::new("this".to_string()),
+            if method.object.borrow().get_type() == ValueType::Ref {
+                Rc::clone(&method.object)
+            } else {
+                let object = to_object(method.object.borrow().clone())?;
+
+                Rc::new(RefCell::new(Value::Object(object)))
+            },
+        );
 
         self.call_stack.push(context);
 
@@ -356,6 +366,59 @@ impl VM {
 
         self.stack
             .push(context.return_value.unwrap_or_else(|| Value::Invalid));
+
+        Ok(())
+    }
+
+    fn get_object_type_id(&self, value: &Value) -> TypeId {
+        match value {
+            Value::Object(object) => object.class.clone(),
+            Value::Ref(value_ref) => {
+                let value = value_ref.borrow();
+
+                self.get_object_type_id(&value)
+            }
+            _ => TypeId::new("std.core", value.get_type().name()),
+        }
+    }
+
+    fn get_object_field(&self, value: &Value, index: usize, deref: bool) -> Result<Value> {
+        Ok(match value {
+            Value::Object(object) => object.fields[index].clone(),
+            Value::Ref(value_ref) if deref => {
+                let value = value_ref.borrow();
+
+                self.get_object_field(&value, index, false)?
+            }
+            _ => {
+                let object = to_object(value.clone())?;
+
+                object.fields[index].clone()
+            }
+        })
+    }
+
+    fn set_object_field(
+        &self,
+        object: &mut Value,
+        index: usize,
+        value: Value,
+        deref: bool,
+    ) -> Result<()> {
+        match object {
+            Value::Object(object) => object.fields[index] = value,
+            Value::Ref(object_ref) if deref => {
+                let mut inner = object_ref.borrow_mut();
+
+                self.set_object_field(&mut inner, index, value, false)?
+            }
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "unable to store member on invalid type '{}' expected Object",
+                    object.get_type().name(),
+                )));
+            }
+        };
 
         Ok(())
     }
@@ -526,7 +589,7 @@ impl VM {
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstByte(val) => self.stack.push(Value::Byte(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
-            &Code::MakeRange => {
+            Code::MakeRange => {
                 let to = self.stack.pop().and_then(to_int)?;
                 let from = self.stack.pop().and_then(to_int)?;
 
@@ -555,6 +618,28 @@ impl VM {
                 let return_value = self.stack.pop()?;
 
                 self.call_stack.current_mut()?.return_value = Some(return_value);
+            }
+            Code::MakeRef => {
+                let value = match self.stack.pop_stacked()? {
+                    Stacked::ByValue(value) => Value::Ref(Rc::new(RefCell::new(value))),
+                    Stacked::ByRef(value_ref) => Value::Ref(Rc::clone(&value_ref)),
+                };
+
+                self.stack.push(value);
+            }
+            Code::Deref => {
+                let value = self.stack.pop()?;
+
+                if let Value::Ref(value) = value {
+                    self.stack.push(value.borrow().clone());
+
+                    return Ok(None);
+                }
+
+                return Err(RuntimeError::new(format!(
+                    "unable to dereference: {}",
+                    value.get_type().name()
+                )));
             }
             Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
                 Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),
@@ -644,22 +729,33 @@ impl VM {
             Code::Validate => {
                 let value = self.stack.pop()?;
 
-                if let Value::Interface(id) = &value {
+                if let Value::Interface(id) = value {
                     let interface = self.module_cache.lookup_interface(&id.module, &id.name)?;
 
-                    let object = self.stack.pop().and_then(to_object)?;
-                    let class = self
-                        .module_cache
-                        .lookup_class(&object.class.module, &object.class.name)?;
+                    let stacked = self.stack.pop_stacked()?;
 
-                    if !self.validate_class(class, interface) {
-                        return Err(RuntimeError::new(format!(
-                            "validation failed, class '{}.{}' doesn't implement interface: {}.{}",
-                            object.class.module, object.class.name, id.module, id.name
-                        )));
+                    {
+                        let value = stacked.borrow();
+                        let class_id = match value.deref() {
+                            Value::Object(object) => object.class.clone(),
+                            _ => TypeId::new("std.core", value.get_type().name()),
+                        };
+                        let class = self
+                            .module_cache
+                            .lookup_class(&class_id.module, &class_id.name)?;
+
+                        if !self.validate_class(class, interface) {
+                            return Err(RuntimeError::new(format!(
+                                "validation failed, class '{}.{}' doesn't implement interface: {}.{}",
+                                class_id.module, class_id.name, id.module, id.name
+                            )));
+                        }
                     }
 
-                    self.stack.push(Value::Object(object));
+                    match stacked {
+                        Stacked::ByValue(value) => self.stack.push(value),
+                        Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
+                    };
 
                     return Ok(None);
                 }
@@ -785,25 +881,33 @@ impl VM {
                 )));
             }
             Code::LoadMember(member) | Code::TeeMember(member) => {
-                let object = self.stack.pop().and_then(to_object)?;
+                let stacked = self.stack.pop_stacked()?;
+                let class_id = self.get_object_type_id(stacked.borrow().deref());
                 let desc = self
                     .module_cache
-                    .lookup_class(&object.class.module, &object.class.name)?;
+                    .lookup_class(&class_id.module, &class_id.name)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
                     let field = &desc.fields[member];
 
-                    if !field.public && self.module_cache.current_name()? != object.class.module {
+                    if !field.public && self.module_cache.current_name()? != class_id.module {
                         return Err(RuntimeError::new(format!(
                             "unable to access private field '{}' of class: {}.{}",
-                            member, object.class.module, object.class.name
+                            member, class_id.module, class_id.name
                         )));
                     }
 
-                    let field = object.fields[index].clone();
+                    let field = {
+                        let value_ref = stacked.borrow();
+
+                        self.get_object_field(value_ref.deref(), index, true)?
+                    };
 
                     if let Code::TeeMember(_) = ir.code {
-                        self.stack.push(Value::Object(object));
+                        match stacked {
+                            Stacked::ByValue(value) => self.stack.push(value),
+                            Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
+                        }
                     }
 
                     self.stack.push(field);
@@ -811,24 +915,23 @@ impl VM {
                     return Ok(None);
                 }
 
-                if let Ok(_) = self.module_cache.lookup_method(
-                    &object.class.module,
-                    &object.class.name,
-                    member,
-                ) {
+                if let Ok(_) =
+                    self.module_cache
+                        .lookup_method(&class_id.module, &class_id.name, member)
+                {
                     let method = &desc.methods[member];
 
-                    if !method.func.public
-                        && self.module_cache.current_name()? != object.class.module
-                    {
+                    if !method.func.public && self.module_cache.current_name()? != class_id.module {
                         return Err(RuntimeError::new(format!(
                             "unable to access private method '{}(...)' of class: {}.{}",
-                            member, object.class.module, object.class.name
+                            member, class_id.module, class_id.name
                         )));
                     }
 
-                    let class = object.class.clone();
-                    let object = Rc::new(RefCell::new(Value::Object(object)));
+                    let object = match stacked {
+                        Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
+                        Stacked::ByRef(value_ref) => Rc::clone(&value_ref),
+                    };
 
                     if let Code::TeeMember(_) = ir.code {
                         self.stack.push_ref(Rc::clone(&object));
@@ -836,7 +939,7 @@ impl VM {
 
                     self.stack.push(Value::Method(Method {
                         name: member.clone(),
-                        class,
+                        class: class_id,
                         object,
                     }));
 
@@ -845,45 +948,37 @@ impl VM {
 
                 return Err(RuntimeError::new(format!(
                     "no such field or method '{}' for class: {}.{}",
-                    member, object.class.module, object.class.name,
+                    member, class_id.module, class_id.name,
                 )));
             }
             Code::StoreMember(member) => {
                 let object_ref = self.stack.pop_ref()?;
                 let mut data = object_ref.borrow_mut();
+                let class_id = self.get_object_type_id(&data);
                 let value = self.stack.pop()?;
 
-                if let Value::Object(object) = &mut *data {
-                    let desc = self
-                        .module_cache
-                        .lookup_class(&object.class.module, &object.class.name)?;
+                let desc = self
+                    .module_cache
+                    .lookup_class(&class_id.module, &class_id.name)?;
 
-                    if let Some(index) = desc.fields.get_index_of(member) {
-                        let field = &desc.fields[member];
+                if let Some(index) = desc.fields.get_index_of(member) {
+                    let field = &desc.fields[member];
 
-                        if !field.public && self.module_cache.current_name()? != object.class.module
-                        {
-                            return Err(RuntimeError::new(format!(
-                                "unable to access private field '{}' of class: {}.{}",
-                                member, object.class.module, object.class.name
-                            )));
-                        }
-
-                        object.fields[index] = value;
-
-                        return Ok(None);
+                    if !field.public && self.module_cache.current_name()? != class_id.module {
+                        return Err(RuntimeError::new(format!(
+                            "unable to access private field '{}' of class: {}.{}",
+                            member, class_id.module, class_id.name
+                        )));
                     }
 
-                    return Err(RuntimeError::new(format!(
-                        "no such field '{}' for class: {}.{}",
-                        member, object.class.module, object.class.name,
-                    )));
+                    self.set_object_field(&mut data, index, value, true)?;
+
+                    return Ok(None);
                 }
 
                 return Err(RuntimeError::new(format!(
-                    "unable to store member '{}' on invalid type '{}' expected Object",
-                    member,
-                    data.get_type().name(),
+                    "no such field '{}' for class: {}.{}",
+                    member, class_id.module, class_id.name,
                 )));
             }
             Code::Load(id) => {

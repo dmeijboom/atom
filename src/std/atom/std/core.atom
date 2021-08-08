@@ -85,7 +85,7 @@ pub class Range {
     let to;
 
     pub fn iter() {
-        return RangeIter(from: this.from, to: this.to, index: 0);
+        return &RangeIter(from: this.from, to: this.to, index: 0);
     }
 
     pub fn collect() {
@@ -139,7 +139,7 @@ pub class Array {
     }
 
     pub fn iter() {
-        return ArrayIter(array: this, index: 0);
+        return &ArrayIter(array: this, index: 0);
     }
 
     pub fn append(other) {
@@ -207,7 +207,7 @@ pub class Map {
     let value;
 
     pub fn iter() {
-        return MapIter(data: this.value, keys: this.keys(), index: 0);
+        return &MapIter(data: this.value, keys: this.keys(), index: 0);
     }
 
     pub fn get(key) {

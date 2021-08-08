@@ -41,7 +41,7 @@ impl PartialEq for Func {
 
 impl Eq for Func {}
 
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq)]
 pub enum ValueType {
     Int,
     Float,
@@ -57,7 +57,7 @@ pub enum ValueType {
     Object,
     Array,
     Map,
-    //Ref,
+    Ref,
 }
 
 impl ValueType {
@@ -77,7 +77,7 @@ impl ValueType {
             ValueType::Object => "Object",
             ValueType::Map => "Map",
             ValueType::Array => "Array",
-            //ValueType::Ref => "Ref",
+            ValueType::Ref => "Ref",
         }
     }
 }
@@ -178,6 +178,7 @@ pub enum Value {
     Char(char),
     Byte(u8),
     Bool(bool),
+    Ref(Rc<RefCell<Value>>),
     Range(Range<i64>),
     String(String),
     Class(TypeId),
@@ -187,7 +188,6 @@ pub enum Value {
     Object(Object),
     Array(Vec<Value>),
     Map(HashMap<Value, Value>),
-    //Ref(Rc<Value>),
 }
 
 impl Display for Value {
@@ -220,6 +220,11 @@ impl Display for Value {
                     method.name
                 )
             }
+            Value::Ref(value_ref) => {
+                let value = &value_ref.borrow();
+
+                write!(f, "*{}", value)
+            }
             Value::Object(object) => {
                 write!(
                     f,
@@ -250,12 +255,6 @@ impl Display for Value {
                     .collect::<Vec<_>>()
                     .join(", ")
             ),
-            //Value::Ref(value_ref) => {
-            //    let value_ref = Rc::clone(value_ref);
-            //    let value: &Value = value_ref.borrow();
-
-            //    write!(f, "*{}", value)
-            //}
         }
     }
 }
@@ -269,6 +268,7 @@ impl Hash for Value {
             Value::Char(val) => val.hash(state),
             Value::Byte(val) => val.hash(state),
             Value::Bool(val) => val.hash(state),
+            Value::Ref(val) => val.borrow().hash(state),
             Value::Range(val) => val.hash(state),
             Value::String(val) => val.hash(state),
             Value::Class(class) => class.hash(state),
@@ -282,7 +282,7 @@ impl Hash for Value {
                     key.hash(state);
                     value.hash(state);
                 }
-            } //Value::Ref(val) => val.hash(state),
+            }
         }
     }
 
@@ -305,6 +305,7 @@ impl Clone for Value {
             Value::Char(val) => Value::Char(*val),
             Value::Byte(val) => Value::Byte(*val),
             Value::Bool(val) => Value::Bool(*val),
+            Value::Ref(val) => Value::Ref(Rc::clone(val)),
             Value::Range(val) => Value::Range(val.clone()),
             Value::String(val) => Value::String(val.clone()),
             Value::Class(id) => Value::Class(id.clone()),
@@ -314,7 +315,6 @@ impl Clone for Value {
             Value::Object(object) => Value::Object(object.clone()),
             Value::Array(array) => Value::Array(array.clone()),
             Value::Map(map) => Value::Map(map.clone()),
-            //Value::Ref(val) => Value::Ref(Rc::clone(val)),
         }
     }
 
@@ -332,6 +332,7 @@ impl Value {
             Value::Char(_) => ValueType::Char,
             Value::Byte(_) => ValueType::Byte,
             Value::Bool(_) => ValueType::Bool,
+            Value::Ref(_) => ValueType::Ref,
             Value::Range(_) => ValueType::Range,
             Value::String(_) => ValueType::String,
             Value::Class(_) => ValueType::Class,
@@ -341,7 +342,6 @@ impl Value {
             Value::Object(_) => ValueType::Object,
             Value::Array(_) => ValueType::Array,
             Value::Map(_) => ValueType::Map,
-            //Value::Ref(_) => ValueType::Ref,
         }
     }
 }

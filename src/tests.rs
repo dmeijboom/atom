@@ -26,10 +26,12 @@ mod tests {
     #[test_case(include_str!("../examples/loops.atom"), Value::Int(75); "loops")]
     #[test_case(include_str!("../examples/casts.atom"), Value::Int(34); "casts")]
     #[test_case(include_str!("../examples/if_else.atom"), Value::Int(25); "if else")]
+    #[test_case(include_str!("../examples/references.atom"), Value::Bool(true); "references")]
     #[test_case(include_str!("../examples/simple_return.atom"), Value::Int(10); "simple return")]
     #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
     #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(17); "operator precedence")]
     #[test_case(include_str!("../examples/class_fields.atom"), Value::String("hello world".to_string()); "class fields")]
+    #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(30), Value::Int(40)]); "heap copy")]
     #[test_case(include_str!("../examples/stack_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(20), Value::Int(20)]); "stack copy")]
     fn code_success(source: &str, value: Value) {
         let result = run_code(source);

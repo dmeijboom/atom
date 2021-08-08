@@ -1,7 +1,15 @@
-fn main() {
-    for ["hi", "bye"] {
-        let x = .upper;
+class Test {
+    let value;
 
-        println(x());
+    fn example() {
+        return this.value;
     }
+}
+
+fn main() {
+    let test = &Test(value: 100);
+
+    test.value = 50;
+
+    println(test.example());
 }

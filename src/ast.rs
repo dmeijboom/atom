@@ -150,6 +150,18 @@ pub struct RangeExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct MakeRefExpr {
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct DerefExpr {
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -163,6 +175,8 @@ pub enum Expr {
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
+    MakeRef(Box<MakeRefExpr>),
+    Deref(Box<DerefExpr>),
     Index(Box<IndexExpr>),
     Range(Box<RangeExpr>),
 }
@@ -181,6 +195,8 @@ impl Expr {
             Self::Arithmetic(arithmetic_expr) => arithmetic_expr.pos.clone(),
             Self::Comparison(comparison_expr) => comparison_expr.pos.clone(),
             Self::Logical(logical_expr) => logical_expr.pos.clone(),
+            Self::MakeRef(make_ref_expr) => make_ref_expr.pos.clone(),
+            Self::Deref(deref_expr) => deref_expr.pos.clone(),
             Self::Index(index_expr) => index_expr.pos.clone(),
             Self::Range(range_expr) => range_expr.pos.clone(),
             Expr::Cast(cast_expr) => cast_expr.pos.clone(),
