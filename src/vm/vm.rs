@@ -3,13 +3,15 @@ use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::hash::Hash;
-use std::ops::Deref;
 use std::path::Path;
 use std::rc::Rc;
 
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
-use crate::runtime::{Method, Object, Result, RuntimeError, TypeId, Value, ValueType};
+use crate::runtime::{
+    with_auto_deref, with_auto_deref_mut, Method, Object, Result, RuntimeError, TypeId, Value,
+    ValueType,
+};
 use crate::std::core::DEFAULT_IMPORTS;
 use crate::std::get_middleware;
 use crate::utils;
@@ -370,59 +372,6 @@ impl VM {
         Ok(())
     }
 
-    fn get_object_type_id(&self, value: &Value) -> TypeId {
-        match value {
-            Value::Object(object) => object.class.clone(),
-            Value::Ref(value_ref) => {
-                let value = value_ref.borrow();
-
-                self.get_object_type_id(&value)
-            }
-            _ => TypeId::new("std.core", value.get_type().name()),
-        }
-    }
-
-    fn get_object_field(&self, value: &Value, index: usize, deref: bool) -> Result<Value> {
-        Ok(match value {
-            Value::Object(object) => object.fields[index].clone(),
-            Value::Ref(value_ref) if deref => {
-                let value = value_ref.borrow();
-
-                self.get_object_field(&value, index, false)?
-            }
-            _ => {
-                let object = to_object(value.clone())?;
-
-                object.fields[index].clone()
-            }
-        })
-    }
-
-    fn set_object_field(
-        &self,
-        object: &mut Value,
-        index: usize,
-        value: Value,
-        deref: bool,
-    ) -> Result<()> {
-        match object {
-            Value::Object(object) => object.fields[index] = value,
-            Value::Ref(object_ref) if deref => {
-                let mut inner = object_ref.borrow_mut();
-
-                self.set_object_field(&mut inner, index, value, false)?
-            }
-            _ => {
-                return Err(RuntimeError::new(format!(
-                    "unable to store member on invalid type '{}' expected Object",
-                    object.get_type().name(),
-                )));
-            }
-        };
-
-        Ok(())
-    }
-
     fn prepare_args(
         &self,
         mut values: Vec<Value>,
@@ -736,7 +685,7 @@ impl VM {
 
                     {
                         let value = stacked.borrow();
-                        let class_id = match value.deref() {
+                        let class_id = match &*value {
                             Value::Object(object) => object.class.clone(),
                             _ => TypeId::new("std.core", value.get_type().name()),
                         };
@@ -882,7 +831,10 @@ impl VM {
             }
             Code::LoadMember(member) | Code::TeeMember(member) => {
                 let stacked = self.stack.pop_stacked()?;
-                let class_id = self.get_object_type_id(stacked.borrow().deref());
+                let class_id = with_auto_deref(&stacked.borrow(), |value| match value {
+                    Value::Object(object) => object.class.clone(),
+                    _ => TypeId::new("std.core", value.get_type().name()),
+                });
                 let desc = self
                     .module_cache
                     .lookup_class(&class_id.module, &class_id.name)?;
@@ -897,11 +849,16 @@ impl VM {
                         )));
                     }
 
-                    let field = {
-                        let value_ref = stacked.borrow();
+                    let field = with_auto_deref(&stacked.borrow(), |value| {
+                        Ok(match value {
+                            Value::Object(object) => object.fields[index].clone(),
+                            _ => {
+                                let object = to_object(value.clone())?;
 
-                        self.get_object_field(value_ref.deref(), index, true)?
-                    };
+                                object.fields[index].clone()
+                            }
+                        })
+                    })?;
 
                     if let Code::TeeMember(_) = ir.code {
                         match stacked {
@@ -954,7 +911,10 @@ impl VM {
             Code::StoreMember(member) => {
                 let object_ref = self.stack.pop_ref()?;
                 let mut data = object_ref.borrow_mut();
-                let class_id = self.get_object_type_id(&data);
+                let class_id = with_auto_deref(&data, |value| match value {
+                    Value::Object(object) => object.class.clone(),
+                    _ => TypeId::new("std.core", value.get_type().name()),
+                });
                 let value = self.stack.pop()?;
 
                 let desc = self
@@ -971,7 +931,17 @@ impl VM {
                         )));
                     }
 
-                    self.set_object_field(&mut data, index, value, true)?;
+                    with_auto_deref_mut(&mut data, move |object| {
+                        Ok(match object {
+                            Value::Object(object) => object.fields[index] = value,
+                            _ => {
+                                return Err(RuntimeError::new(format!(
+                                    "unable to store member on invalid type '{}' expected Object",
+                                    object.get_type().name(),
+                                )));
+                            }
+                        })
+                    })?;
 
                     return Ok(None);
                 }

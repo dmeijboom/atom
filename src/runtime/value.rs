@@ -347,3 +347,23 @@ impl Value {
 }
 
 impl Eq for Value {}
+
+pub fn with_auto_deref<T>(value: &Value, handler: impl FnOnce(&Value) -> T) -> T {
+    if let Value::Ref(value_ref) = value {
+        let value = value_ref.borrow();
+
+        return handler(&value);
+    }
+
+    handler(value)
+}
+
+pub fn with_auto_deref_mut<T>(value: &mut Value, handler: impl FnOnce(&mut Value) -> T) -> T {
+    if let Value::Ref(value_ref) = value {
+        let mut value = value_ref.borrow_mut();
+
+        return handler(&mut value);
+    }
+
+    handler(value)
+}
