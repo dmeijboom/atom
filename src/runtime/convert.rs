@@ -1,3 +1,5 @@
+use smallvec::smallvec;
+
 use crate::runtime::{Object, TypeId};
 
 use super::result::{Result, RuntimeError};
@@ -48,16 +50,22 @@ pub fn to_float(value: Value) -> Result<f64> {
 
 pub fn to_option(value: Option<Value>) -> Value {
     if let Some(value) = value {
-        return Value::Object(Object::new(
-            TypeId::new("std.core", "Option"),
-            vec![value, Value::Bool(false)],
-        ));
+        return Value::Object(
+            Object::new(
+                TypeId::new("std.core", "Option"),
+                smallvec![value, Value::Bool(false)],
+            )
+            .into(),
+        );
     }
 
-    Value::Object(Object::new(
-        TypeId::new("std.core", "Option"),
-        vec![Value::Int(0), Value::Bool(true)],
-    ))
+    Value::Object(
+        Object::new(
+            TypeId::new("std.core", "Option"),
+            smallvec![Value::Int(0), Value::Bool(true)],
+        )
+        .into(),
+    )
 }
 
 pub fn to_byte(value: &Value) -> Result<u8> {
@@ -83,47 +91,42 @@ pub fn to_array(value: Value) -> Result<Vec<Value>> {
 }
 
 pub fn to_object(value: Value) -> Result<Object> {
-    match value {
-        Value::Int(val) => Ok(Object::new(
-            TypeId::new("std.core", "Int"),
-            vec![Value::Int(val)],
-        )),
-        Value::Float(val) => Ok(Object::new(
+    Ok(match value {
+        Value::Int(val) => Object::new(TypeId::new("std.core", "Int"), smallvec![Value::Int(val)]),
+        Value::Float(val) => Object::new(
             TypeId::new("std.core", "Float"),
-            vec![Value::Float(val)],
-        )),
-        Value::Bool(val) => Ok(Object::new(
-            TypeId::new("std.core", "Bool"),
-            vec![Value::Bool(val)],
-        )),
-        Value::Range(val) => Ok(Object::new(
+            smallvec![Value::Float(val)],
+        ),
+        Value::Bool(val) => {
+            Object::new(TypeId::new("std.core", "Bool"), smallvec![Value::Bool(val)])
+        }
+        Value::Range(val) => Object::new(
             TypeId::new("std.core", "Range"),
-            vec![Value::Int(val.start), Value::Int(val.end)],
-        )),
+            smallvec![Value::Int(val.start), Value::Int(val.end)],
+        ),
         Value::String(val) => {
             let length = val.len() as i64;
 
-            Ok(Object::new(
+            Object::new(
                 TypeId::new("std.core", "String"),
-                vec![Value::String(val), Value::Int(length)],
-            ))
+                smallvec![Value::String(val), Value::Int(length)],
+            )
         }
         Value::Array(val) => {
             let length = val.len() as i64;
 
-            Ok(Object::new(
+            Object::new(
                 TypeId::new("std.core", "Array"),
-                vec![Value::Array(val), Value::Int(length)],
-            ))
+                smallvec![Value::Array(val), Value::Int(length)],
+            )
         }
-        Value::Map(val) => Ok(Object::new(
-            TypeId::new("std.core", "Map"),
-            vec![Value::Map(val)],
-        )),
-        Value::Object(object) => Ok(object),
-        _ => Err(RuntimeError::new(format!(
-            "invalid type '{}' expected: Object",
-            value.get_type().name()
-        ))),
-    }
+        Value::Map(val) => Object::new(TypeId::new("std.core", "Map"), smallvec![Value::Map(val)]),
+        Value::Object(object) => *object,
+        _ => {
+            return Err(RuntimeError::new(format!(
+                "invalid type '{}' expected: Object",
+                value.get_type().name()
+            )))
+        }
+    })
 }

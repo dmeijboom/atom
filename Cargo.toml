@@ -8,6 +8,7 @@ edition = "2018"
 [dependencies]
 peg = "0.7.0"
 indexmap = "1.7.0"
+smallvec = "1.6.1"
 test-case = "1.1.0"
 rustyline = "8.2.0"
 clap = "3.0.0-beta.2"

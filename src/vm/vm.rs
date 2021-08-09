@@ -6,6 +6,8 @@ use std::hash::Hash;
 use std::path::Path;
 use std::rc::Rc;
 
+use smallvec::SmallVec;
+
 use crate::compiler::{Code, LocalId, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
 use crate::runtime::{
@@ -261,8 +263,6 @@ impl VM {
             )));
         }
 
-        let mut object = Object::new(id.clone(), vec![]);
-
         let mut values = self
             .stack
             .pop_many(arg_count)?
@@ -302,9 +302,11 @@ impl VM {
 
         values.sort_unstable_by_key(|(index, _, _)| *index);
 
+        let mut fields: SmallVec<[Value; 5]> = SmallVec::with_capacity(values.len());
+
         for (index, name, value) in values {
             if index.is_some() {
-                object.fields.push(value);
+                fields.push(value);
                 continue;
             }
 
@@ -314,7 +316,8 @@ impl VM {
             )));
         }
 
-        self.stack.push(Value::Object(object));
+        self.stack
+            .push(Value::Object(Object::new(id.clone(), fields).into()));
 
         Ok(())
     }
@@ -348,7 +351,7 @@ impl VM {
             } else {
                 let object = to_object(method.object.borrow().clone())?;
 
-                Rc::new(RefCell::new(Value::Object(object)))
+                Rc::new(RefCell::new(Value::Object(object.into())))
             },
         );
 
@@ -850,13 +853,23 @@ impl VM {
                     }
 
                     let field = with_auto_deref(&stacked.borrow(), |value| {
-                        Ok(match value {
-                            Value::Object(object) => object.fields[index].clone(),
+                        match value {
+                            Value::Object(object) => object
+                                .get_field(index)
+                                .and_then(|value| Some(value.clone())),
                             _ => {
                                 let object = to_object(value.clone())?;
 
-                                object.fields[index].clone()
+                                object
+                                    .get_field(index)
+                                    .and_then(|value| Some(value.clone()))
                             }
+                        }
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!(
+                                "unable to get unknown field '{}' of class: {}.{}",
+                                member, class_id.module, class_id.name
+                            ))
                         })
                     })?;
 
@@ -933,7 +946,7 @@ impl VM {
 
                     with_auto_deref_mut(&mut data, move |object| {
                         Ok(match object {
-                            Value::Object(object) => object.fields[index] = value,
+                            Value::Object(object) => object.set_field_value(index, value),
                             _ => {
                                 return Err(RuntimeError::new(format!(
                                     "unable to store member on invalid type '{}' expected Object",

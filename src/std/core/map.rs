@@ -12,7 +12,7 @@ fn use_map(
     let type_val = value.get_type();
 
     if let Value::Object(object) = &mut *value {
-        if let Value::Map(field_value) = &mut object.fields[0] {
+        if let Some(Value::Map(field_value)) = object.get_field_mut(0) {
             return Ok(handler(field_value));
         }
     }

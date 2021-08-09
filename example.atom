@@ -2,7 +2,7 @@ class Test {
     let value;
 
     fn example() {
-        return this.value;
+        this.value = 20;
     }
 }
 
@@ -11,5 +11,7 @@ fn main() {
 
     test.value = 50;
 
-    println(test.example());
+    test.example();
+
+    println(test.value);
 }

@@ -6,6 +6,8 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 
+use smallvec::SmallVec;
+
 use crate::compiler::IR;
 
 #[derive(Debug)]
@@ -150,13 +152,13 @@ impl Eq for Data {}
 #[derive(Clone, Debug, PartialEq, Hash, Eq)]
 pub struct Object {
     pub class: TypeId,
-    pub fields: Vec<Value>,
     pub data: Option<Data>,
+    fields: SmallVec<[Value; 5]>,
 }
 
 impl Object {
-    pub fn new(class: TypeId, fields: Vec<Value>) -> Object {
-        Object {
+    pub fn new(class: TypeId, fields: SmallVec<[Value; 5]>) -> Self {
+        Self {
             class,
             fields,
             data: None,
@@ -167,6 +169,24 @@ impl Object {
         self.data = Some(data);
 
         self
+    }
+
+    pub fn get_field(&self, index: usize) -> Option<&Value> {
+        self.fields.get(index)
+    }
+
+    pub fn get_field_mut(&mut self, index: usize) -> Option<&mut Value> {
+        self.fields.get_mut(index)
+    }
+
+    pub fn set_field_value(&mut self, index: usize, value: Value) -> bool {
+        if let Some(field) = self.get_field_mut(index) {
+            *field = value;
+
+            return true;
+        }
+
+        false
     }
 }
 
@@ -185,7 +205,7 @@ pub enum Value {
     Function(TypeId),
     Interface(TypeId),
     Method(Method),
-    Object(Object),
+    Object(Box<Object>),
     Array(Vec<Value>),
     Map(HashMap<Value, Value>),
 }
@@ -226,18 +246,7 @@ impl Display for Value {
                 write!(f, "*{}", value)
             }
             Value::Object(object) => {
-                write!(
-                    f,
-                    "{}.{}({})",
-                    object.class.module,
-                    object.class.name,
-                    object
-                        .fields
-                        .iter()
-                        .map(|field| field.to_string())
-                        .collect::<Vec<_>>()
-                        .join(", ")
-                )
+                write!(f, "{}.{}", object.class.module, object.class.name,)
             }
             Value::Array(val) => write!(
                 f,

@@ -7,7 +7,7 @@ fn use_string(vm: &mut VM, handler: impl Fn(&String) -> Value) -> Result<Option<
     let type_val = value.get_type();
 
     if let Value::Object(object) = &mut *value {
-        if let Value::String(field_value) = &object.fields[0] {
+        if let Some(Value::String(field_value)) = object.get_field_mut(0) {
             return Ok(Some(handler(field_value)));
         }
     }
