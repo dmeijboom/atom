@@ -10,7 +10,6 @@ pub struct CallContext {
     pub pos: Pos,
     pub id: TypeId,
     pub return_value: Option<Value>,
-    pub args: HashMap<String, Rc<RefCell<Value>>>,
     pub locals: HashMap<LocalId, Rc<RefCell<Value>>>,
 }
 
@@ -20,7 +19,6 @@ impl CallContext {
             id,
             pos,
             return_value: None,
-            args: HashMap::new(),
             locals: HashMap::new(),
         }
     }
@@ -41,6 +39,12 @@ impl CallStack {
 
     pub fn pop(&mut self) -> Option<CallContext> {
         self.data.pop()
+    }
+
+    pub fn current(&mut self) -> Result<&CallContext> {
+        self.data
+            .last()
+            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
     }
 
     pub fn current_mut(&mut self) -> Result<&mut CallContext> {

@@ -111,7 +111,7 @@ impl Stack {
     }
 
     pub fn pop_many(&mut self, mut len: usize) -> Result<Vec<Value>> {
-        let mut values = vec![];
+        let mut values = Vec::with_capacity(len);
 
         while len > 0 {
             values.insert(0, self.pop()?);

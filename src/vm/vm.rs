@@ -424,17 +424,19 @@ impl VM {
                 }
 
                 let values = self.stack.pop_many(arg_count)?;
-                let arg_names: Vec<String> = func.args.keys().cloned().collect();
 
                 if keywords.is_empty() {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in values.into_iter().enumerate() {
+                        let (key, _) = func.args.get_index(i).unwrap();
+
                         call_context
-                            .args
-                            .insert(arg_names[i].to_string(), Rc::new(RefCell::new(value)));
+                            .locals
+                            .insert(LocalId::new(key.to_string()), Rc::new(RefCell::new(value)));
                     }
                 } else {
+                    let arg_names: Vec<String> = func.args.keys().cloned().collect();
                     let ordered_values =
                         self.prepare_args(values, keywords, &arg_names)
                             .map_err(|e| {
@@ -447,13 +449,15 @@ impl VM {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in ordered_values {
-                        call_context
-                            .args
-                            .insert(arg_names[i].to_string(), Rc::new(RefCell::new(value)));
+                        call_context.locals.insert(
+                            LocalId::new(arg_names[i].to_string()),
+                            Rc::new(RefCell::new(value)),
+                        );
                     }
                 }
 
                 let source = Rc::clone(&source);
+
                 self._eval(&module_name, source)?;
             }
             FuncSource::External(closure) => {
@@ -966,17 +970,11 @@ impl VM {
             }
             Code::Load(id) => {
                 if !self.call_stack.is_empty() {
-                    let context = self.call_stack.current_mut()?;
+                    let context = self.call_stack.current()?;
                     let value = context
                         .locals
                         .get(id)
-                        .and_then(|value| Some(Rc::clone(value)))
-                        .or_else(|| {
-                            context
-                                .args
-                                .get(&id.name)
-                                .and_then(|value| Some(Rc::clone(value)))
-                        });
+                        .and_then(|value| Some(Rc::clone(value)));
 
                     if let Some(value) = value {
                         self.stack.push_ref(value);
