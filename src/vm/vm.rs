@@ -384,7 +384,7 @@ impl VM {
         let mut ordered_values = BTreeMap::new();
 
         for name in keywords.iter() {
-            if let Ok(arg_idx) = args.binary_search(name) {
+            if let Some(arg_idx) = args.iter().position(|arg| arg == name) {
                 ordered_values.insert(arg_idx, values.remove(0));
                 continue;
             }

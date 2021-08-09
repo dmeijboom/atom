@@ -23,6 +23,7 @@ mod tests {
         Ok(vm.result())
     }
 
+    #[test_case(include_str!("../examples/calls.atom"), Value::Int(0); "calls")]
     #[test_case(include_str!("../examples/loops.atom"), Value::Int(75); "loops")]
     #[test_case(include_str!("../examples/casts.atom"), Value::Int(34); "casts")]
     #[test_case(include_str!("../examples/if_else.atom"), Value::Int(25); "if else")]
