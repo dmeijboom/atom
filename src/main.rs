@@ -31,5 +31,10 @@ fn main() {
                 display_error("", e);
             }
         }
+        Cmd::Stats => {
+            if let Err(e) = cmd::stats() {
+                display_error("", e);
+            }
+        }
     }
 }

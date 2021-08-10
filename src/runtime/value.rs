@@ -204,7 +204,7 @@ pub enum Value {
     Class(TypeId),
     Function(TypeId),
     Interface(TypeId),
-    Method(Method),
+    Method(Box<Method>),
     Object(Box<Object>),
     Array(Vec<Value>),
     Map(HashMap<Value, Value>),

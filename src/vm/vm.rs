@@ -911,11 +911,14 @@ impl VM {
                         self.stack.push_ref(Rc::clone(&object));
                     }
 
-                    self.stack.push(Value::Method(Method {
-                        name: member.clone(),
-                        class: class_id,
-                        object,
-                    }));
+                    self.stack.push(Value::Method(
+                        Method {
+                            name: member.clone(),
+                            class: class_id,
+                            object,
+                        }
+                        .into(),
+                    ));
 
                     return Ok(None);
                 }
