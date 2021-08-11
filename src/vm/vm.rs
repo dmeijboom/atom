@@ -544,7 +544,7 @@ impl VM {
         })
     }
 
-    fn eval_single(&mut self, ir: &IR) -> Result<Option<String>> {
+    fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Option<&'i str>> {
         match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
@@ -1050,20 +1050,16 @@ impl VM {
             Code::Branch((true_label, false_label)) => {
                 let value = self.stack.pop().and_then(to_bool)?;
 
-                return Ok(Some(if value {
-                    true_label.clone()
-                } else {
-                    false_label.clone()
-                }));
+                return Ok(Some(if value { true_label } else { false_label }));
             }
-            Code::Jump(label) => return Ok(Some(label.to_string())),
+            Code::Jump(label) => return Ok(Some(label)),
             Code::JumpIfTrue(label) => {
                 let value = self.stack.pop().and_then(to_bool)?;
 
                 if value {
                     self.stack.push(Value::Bool(value));
 
-                    return Ok(Some(label.clone()));
+                    return Ok(Some(label));
                 }
             }
             Code::Raise => {
