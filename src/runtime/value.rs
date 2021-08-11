@@ -91,11 +91,8 @@ pub struct TypeId {
 }
 
 impl TypeId {
-    pub fn new(module: impl ToString, name: impl ToString) -> Self {
-        TypeId {
-            module: module.to_string(),
-            name: name.to_string(),
-        }
+    pub fn new(module: String, name: String) -> Self {
+        TypeId { module, name }
     }
 }
 

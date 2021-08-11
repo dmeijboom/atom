@@ -52,7 +52,7 @@ pub fn to_option(value: Option<Value>) -> Value {
     if let Some(value) = value {
         return Value::Object(
             Object::new(
-                TypeId::new("std.core", "Option"),
+                TypeId::new("std.core".to_string(), "Option".to_string()),
                 smallvec![value, Value::Bool(false)],
             )
             .into(),
@@ -61,7 +61,7 @@ pub fn to_option(value: Option<Value>) -> Value {
 
     Value::Object(
         Object::new(
-            TypeId::new("std.core", "Option"),
+            TypeId::new("std.core".to_string(), "Option".to_string()),
             smallvec![Value::Int(0), Value::Bool(true)],
         )
         .into(),
@@ -92,23 +92,27 @@ pub fn to_array(value: Value) -> Result<Vec<Value>> {
 
 pub fn to_object(value: Value) -> Result<Object> {
     Ok(match value {
-        Value::Int(val) => Object::new(TypeId::new("std.core", "Int"), smallvec![Value::Int(val)]),
+        Value::Int(val) => Object::new(
+            TypeId::new("std.core".to_string(), "Int".to_string()),
+            smallvec![Value::Int(val)],
+        ),
         Value::Float(val) => Object::new(
-            TypeId::new("std.core", "Float"),
+            TypeId::new("std.core".to_string(), "Float".to_string()),
             smallvec![Value::Float(val)],
         ),
-        Value::Bool(val) => {
-            Object::new(TypeId::new("std.core", "Bool"), smallvec![Value::Bool(val)])
-        }
+        Value::Bool(val) => Object::new(
+            TypeId::new("std.core".to_string(), "Bool".to_string()),
+            smallvec![Value::Bool(val)],
+        ),
         Value::Range(val) => Object::new(
-            TypeId::new("std.core", "Range"),
+            TypeId::new("std.core".to_string(), "Range".to_string()),
             smallvec![Value::Int(val.start), Value::Int(val.end)],
         ),
         Value::String(val) => {
             let length = val.len() as i64;
 
             Object::new(
-                TypeId::new("std.core", "String"),
+                TypeId::new("std.core".to_string(), "String".to_string()),
                 smallvec![Value::String(val), Value::Int(length)],
             )
         }
@@ -116,11 +120,14 @@ pub fn to_object(value: Value) -> Result<Object> {
             let length = val.len() as i64;
 
             Object::new(
-                TypeId::new("std.core", "Array"),
+                TypeId::new("std.core".to_string(), "Array".to_string()),
                 smallvec![Value::Array(val), Value::Int(length)],
             )
         }
-        Value::Map(val) => Object::new(TypeId::new("std.core", "Map"), smallvec![Value::Map(val)]),
+        Value::Map(val) => Object::new(
+            TypeId::new("std.core".to_string(), "Map".to_string()),
+            smallvec![Value::Map(val)],
+        ),
         Value::Object(object) => *object,
         _ => {
             return Err(RuntimeError::new(format!(

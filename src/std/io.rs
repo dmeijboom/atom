@@ -33,8 +33,11 @@ pub fn register(module: &mut Module) -> Result<()> {
         let filename = parse_args!(values => String);
         let file =
             File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
-        let object = Object::new(TypeId::new("std.io", "File"), smallvec![])
-            .with_data(Data::File(Rc::new(RefCell::new(file))));
+        let object = Object::new(
+            TypeId::new("std.io".to_string(), "File".to_string()),
+            smallvec![],
+        )
+        .with_data(Data::File(Rc::new(RefCell::new(file))));
 
         Ok(Some(Value::Object(object.into())))
     });

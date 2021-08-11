@@ -703,7 +703,10 @@ impl VM {
                         let value = stacked.borrow();
                         let class_id = match &*value {
                             Value::Object(object) => object.class.clone(),
-                            _ => TypeId::new("std.core", value.get_type().name()),
+                            _ => TypeId::new(
+                                "std.core".to_string(),
+                                value.get_type().name().to_string(),
+                            ),
                         };
                         let class = self
                             .module_cache
@@ -849,7 +852,7 @@ impl VM {
                 let stacked = self.stack.pop_stacked()?;
                 let class_id = with_auto_deref(&stacked.borrow(), |value| match value {
                     Value::Object(object) => object.class.clone(),
-                    _ => TypeId::new("std.core", value.get_type().name()),
+                    _ => TypeId::new("std.core".to_string(), value.get_type().name().to_string()),
                 });
                 let desc = self
                     .module_cache
@@ -942,7 +945,7 @@ impl VM {
                 let mut data = object_ref.borrow_mut();
                 let class_id = with_auto_deref(&data, |value| match value {
                     Value::Object(object) => object.class.clone(),
-                    _ => TypeId::new("std.core", value.get_type().name()),
+                    _ => TypeId::new("std.core".to_string(), value.get_type().name().to_string()),
                 });
                 let value = self.stack.pop()?;
 
@@ -1024,7 +1027,11 @@ impl VM {
                 }
 
                 if let Some(type_value) = current_module.find_type(name) {
-                    let id = TypeId::new(self.module_cache.current_name()?, name.clone());
+                    let id = TypeId::new(
+                        self.module_cache.current_name()?.to_string(),
+                        name.to_string(),
+                    );
+
                     self.stack.push(
                         match type_value {
                             Type::Class => Value::Class(id),
