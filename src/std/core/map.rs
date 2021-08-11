@@ -4,16 +4,16 @@ use crate::parse_args;
 use crate::runtime::{convert, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
-fn use_map(
+fn use_map<T>(
     vm: &mut VM,
-    handler: impl FnOnce(&mut HashMap<Value, Value>) -> Option<Value>,
-) -> Result<Option<Value>> {
+    handler: impl FnOnce(&mut HashMap<Value, Value>) -> Result<T>,
+) -> Result<T> {
     let mut value = vm.get_local_mut("this").unwrap();
     let type_val = value.get_type();
 
     if let Value::Object(object) = &mut *value {
         if let Some(Value::Map(field_value)) = object.get_field_mut(0) {
-            return Ok(handler(field_value));
+            return Ok(handler(field_value)?);
         }
     }
 
@@ -29,15 +29,16 @@ pub fn register(module: &mut Module) -> Result<()> {
             parse_args!(values);
 
             use_map(vm, |a| {
-                Some(Value::Array(
+                Ok(Some(Value::Array(
                     a.keys().into_iter().cloned().collect::<Vec<_>>(),
-                ))
+                )))
             })
         }),
         ("pop", |vm, mut values| {
             let key = parse_args!(values => Any);
+            let value = use_map(vm, |a| Ok(a.remove(&key)))?;
 
-            use_map(vm, |a| Some(convert::to_option(a.remove(&key))))
+            Ok(Some(convert::to_option(vm, value)?))
         }),
         ("clear", |vm, values| {
             parse_args!(values);
@@ -45,7 +46,7 @@ pub fn register(module: &mut Module) -> Result<()> {
             use_map(vm, |a| {
                 a.clear();
 
-                None
+                Ok(None)
             })
         }),
     ];

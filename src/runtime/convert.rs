@@ -1,6 +1,7 @@
 use smallvec::smallvec;
 
-use crate::runtime::{Object, TypeId};
+use crate::runtime::Object;
+use crate::vm::{ModuleCache, VM};
 
 use super::result::{Result, RuntimeError};
 use super::value::Value;
@@ -48,24 +49,24 @@ pub fn to_float(value: Value) -> Result<f64> {
     }
 }
 
-pub fn to_option(value: Option<Value>) -> Value {
+pub fn to_option(vm: &VM, value: Option<Value>) -> Result<Value> {
     if let Some(value) = value {
-        return Value::Object(
+        return Ok(Value::Object(
             Object::new(
-                TypeId::new("std.core".to_string(), "Option".to_string()),
+                vm.get_type_id("std.core", "Option")?,
                 smallvec![value, Value::Bool(false)],
             )
             .into(),
-        );
+        ));
     }
 
-    Value::Object(
+    Ok(Value::Object(
         Object::new(
-            TypeId::new("std.core".to_string(), "Option".to_string()),
+            vm.get_type_id("std.core", "Option")?,
             smallvec![Value::Int(0), Value::Bool(true)],
         )
         .into(),
-    )
+    ))
 }
 
 pub fn to_byte(value: &Value) -> Result<u8> {
@@ -90,29 +91,29 @@ pub fn to_array(value: Value) -> Result<Vec<Value>> {
     )))
 }
 
-pub fn to_object(value: Value) -> Result<Object> {
+pub fn to_object(module_cache: &ModuleCache, value: Value) -> Result<Object> {
     Ok(match value {
         Value::Int(val) => Object::new(
-            TypeId::new("std.core".to_string(), "Int".to_string()),
+            module_cache.lookup_type_id("std.core", "Int")?,
             smallvec![Value::Int(val)],
         ),
         Value::Float(val) => Object::new(
-            TypeId::new("std.core".to_string(), "Float".to_string()),
+            module_cache.lookup_type_id("std.core", "Float")?,
             smallvec![Value::Float(val)],
         ),
         Value::Bool(val) => Object::new(
-            TypeId::new("std.core".to_string(), "Bool".to_string()),
+            module_cache.lookup_type_id("std.core", "Bool")?,
             smallvec![Value::Bool(val)],
         ),
         Value::Range(val) => Object::new(
-            TypeId::new("std.core".to_string(), "Range".to_string()),
+            module_cache.lookup_type_id("std.core", "Range")?,
             smallvec![Value::Int(val.start), Value::Int(val.end)],
         ),
         Value::String(val) => {
             let length = val.len() as i64;
 
             Object::new(
-                TypeId::new("std.core".to_string(), "String".to_string()),
+                module_cache.lookup_type_id("std.core", "String")?,
                 smallvec![Value::String(val), Value::Int(length)],
             )
         }
@@ -120,12 +121,12 @@ pub fn to_object(value: Value) -> Result<Object> {
             let length = val.len() as i64;
 
             Object::new(
-                TypeId::new("std.core".to_string(), "Array".to_string()),
+                module_cache.lookup_type_id("std.core", "Array")?,
                 smallvec![Value::Array(val), Value::Int(length)],
             )
         }
         Value::Map(val) => Object::new(
-            TypeId::new("std.core".to_string(), "Map".to_string()),
+            module_cache.lookup_type_id("std.core", "Map")?,
             smallvec![Value::Map(val)],
         ),
         Value::Object(object) => *object,

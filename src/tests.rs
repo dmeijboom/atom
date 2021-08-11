@@ -42,7 +42,7 @@ mod tests {
 
     #[test_case(include_str!("../examples/invalid/index_out_of_bounds.atom"), "index out of bounds: 3"; "index out of bounds")]
     #[test_case(include_str!("../examples/invalid/call_int.atom"), "type 'Int' is not callable"; "function call on an integer")]
-    #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for Fn: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
+    #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
     #[test_case(include_str!("../examples/invalid/init_class_with_args.atom"), "unable to initialize main.Test with non-keyword arguments"; "initialize class with non-keyword arguments")]
     #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to initialize main.Test with missing fields: three"; "initialize class with missing fields")]
     fn code_fail(source: &str, message: &str) {

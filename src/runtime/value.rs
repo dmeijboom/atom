@@ -86,27 +86,40 @@ impl ValueType {
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]
 pub struct TypeId {
-    pub module: String,
-    pub name: String,
+    pub module: usize,
+    pub name: usize,
+    pub class: Option<usize>,
 }
 
 impl TypeId {
-    pub fn new(module: String, name: String) -> Self {
-        TypeId { module, name }
+    pub fn new(module: usize, name: usize) -> Self {
+        TypeId {
+            module,
+            name,
+            class: None,
+        }
+    }
+
+    pub fn new_with_class(module: usize, name: usize, class: usize) -> Self {
+        TypeId {
+            module,
+            name,
+            class: Some(class),
+        }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Method {
+    pub id: TypeId,
     pub name: String,
-    pub class: TypeId,
     pub object: Rc<RefCell<Value>>,
 }
 
 impl Hash for Method {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.id.hash(state);
         self.name.hash(state);
-        self.class.hash(state);
     }
 
     fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
@@ -219,23 +232,16 @@ impl Display for Value {
             Value::Range(val) => write!(f, "{:?}", val),
             Value::String(val) => write!(f, "{}", val),
             Value::Class(id) => {
-                write!(f, "{}.{}", id.module, id.name)
+                write!(f, "Class({:?})", id)
             }
             Value::Interface(id) => {
-                write!(f, "{}.{}", id.module, id.name)
+                write!(f, "Interface({:?})", id)
             }
             Value::Function(id) => {
-                write!(f, "{}({}.{})", self.get_type().name(), id.module, id.name)
+                write!(f, "Function({:?})", id)
             }
             Value::Method(method) => {
-                write!(
-                    f,
-                    "{}({}.{}.{})",
-                    self.get_type().name(),
-                    method.class.module,
-                    method.class.name,
-                    method.name
-                )
+                write!(f, "Method({:?})", method.id)
             }
             Value::Ref(value_ref) => {
                 let value = &value_ref.borrow();
@@ -243,7 +249,7 @@ impl Display for Value {
                 write!(f, "*{}", value)
             }
             Value::Object(object) => {
-                write!(f, "{}.{}", object.class.module, object.class.name,)
+                write!(f, "{:?}", object.class)
             }
             Value::Array(val) => write!(
                 f,

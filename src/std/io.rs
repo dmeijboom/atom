@@ -6,7 +6,7 @@ use std::rc::Rc;
 use smallvec::smallvec;
 
 use crate::parse_args;
-use crate::runtime::{Data, Object, Result, RuntimeError, TypeId, Value};
+use crate::runtime::{Data, Object, Result, RuntimeError, Value};
 use crate::vm::{Module, VM};
 
 fn use_file(
@@ -29,15 +29,12 @@ fn use_file(
 }
 
 pub fn register(module: &mut Module) -> Result<()> {
-    module.register_external_fn("openFile", |_, mut values| {
+    module.register_external_fn("openFile", |vm, mut values| {
         let filename = parse_args!(values => String);
         let file =
             File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
-        let object = Object::new(
-            TypeId::new("std.io".to_string(), "File".to_string()),
-            smallvec![],
-        )
-        .with_data(Data::File(Rc::new(RefCell::new(file))));
+        let object = Object::new(vm.get_type_id("std.io", "File")?, smallvec![])
+            .with_data(Data::File(Rc::new(RefCell::new(file))));
 
         Ok(Some(Value::Object(object.into())))
     });

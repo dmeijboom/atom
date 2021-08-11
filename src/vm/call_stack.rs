@@ -4,21 +4,22 @@ use std::rc::Rc;
 
 use crate::ast::Pos;
 use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
+use crate::vm::ModuleCache;
 
 pub struct CallContext {
     pub pos: Pos,
-    pub id: TypeId,
     pub finished: bool,
+    pub target: TypeId,
     pub return_value: Option<Value>,
     pub locals: HashMap<usize, Rc<RefCell<Value>>>,
     pub named_locals: HashMap<String, Rc<RefCell<Value>>>,
 }
 
 impl CallContext {
-    pub fn new(pos: Pos, id: TypeId) -> Self {
+    pub fn new(pos: Pos, target: TypeId) -> Self {
         Self {
-            id,
             pos,
+            target,
             finished: false,
             return_value: None,
             locals: HashMap::new(),
@@ -64,7 +65,7 @@ impl CallStack {
         self.data.last()
     }
 
-    pub fn rewind(&mut self) -> Vec<Trace> {
+    pub fn rewind(&mut self, module_cache: &ModuleCache) -> Vec<Trace> {
         let mut stack_trace = vec![];
 
         while !self.data.is_empty() {
@@ -72,7 +73,10 @@ impl CallStack {
 
             stack_trace.push(Trace {
                 pos: call_context.pos.clone(),
-                func: call_context.id,
+                target: match call_context.target.class {
+                    Some(_) => module_cache.fmt_class(&call_context.target),
+                    None => module_cache.fmt_func(&call_context.target),
+                },
             });
         }
 

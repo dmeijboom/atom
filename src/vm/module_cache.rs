@@ -6,7 +6,7 @@ use indexmap::map::IndexMap;
 
 use crate::ast::Pos;
 use crate::compiler::{self, Func, IR};
-use crate::runtime::{Result, RuntimeError, Value};
+use crate::runtime::{Result, RuntimeError, TypeId, Value};
 use crate::vm::VM;
 
 pub type ExternalFn = fn(&mut VM, Vec<Value>) -> Result<Option<Value>>;
@@ -22,15 +22,17 @@ pub struct ArgumentDesc {
 }
 
 pub struct FuncDesc {
+    pub id: usize,
     pub pos: Pos,
     pub public: bool,
     pub source: FuncSource,
     pub args: IndexMap<String, ArgumentDesc>,
 }
 
-impl From<Func> for FuncDesc {
-    fn from(func: Func) -> Self {
+impl FuncDesc {
+    pub fn new(id: usize, func: Func) -> Self {
         FuncDesc {
+            id,
             pos: func.pos.clone(),
             public: func.public,
             args: func
@@ -52,6 +54,7 @@ impl From<Func> for FuncDesc {
 
 #[derive(Clone)]
 pub struct FieldDesc {
+    pub id: usize,
     pub mutable: bool,
     pub public: bool,
 }
@@ -62,13 +65,15 @@ pub struct MethodDesc {
 
 #[derive(Clone)]
 pub struct InterfaceDesc {
+    pub id: usize,
     pub public: bool,
     pub functions: Vec<String>,
 }
 
 pub struct ClassDesc {
+    pub id: usize,
     pub public: bool,
-    pub methods: HashMap<String, MethodDesc>,
+    pub methods: IndexMap<String, MethodDesc>,
     pub fields: IndexMap<String, FieldDesc>,
 }
 
@@ -79,45 +84,52 @@ pub enum TypeDesc<'t> {
 }
 
 pub enum Type {
-    Class,
-    Function,
-    Interface,
+    Class(usize),
+    Function(usize),
+    Interface(usize),
 }
 
 pub struct Module {
+    pub id: usize,
     pub name: String,
     pub imports: Vec<String>,
     pub filename: Option<PathBuf>,
     pub globals: HashMap<String, Value>,
-    pub func_map: HashMap<String, FuncDesc>,
-    pub class_map: HashMap<String, ClassDesc>,
-    pub interface_map: HashMap<String, InterfaceDesc>,
+    pub func_map: IndexMap<String, FuncDesc>,
+    pub class_map: IndexMap<String, ClassDesc>,
+    pub interface_map: IndexMap<String, InterfaceDesc>,
 }
 
 impl Module {
     pub fn new(module: compiler::Module, filename: Option<PathBuf>) -> Self {
         let mut vm_module = Self {
+            id: 0,
             name: module.name.clone(),
             filename,
             imports: module.imports.clone(),
             globals: HashMap::new(),
-            func_map: HashMap::new(),
-            class_map: HashMap::new(),
-            interface_map: HashMap::new(),
+            func_map: IndexMap::new(),
+            class_map: IndexMap::new(),
+            interface_map: IndexMap::new(),
         };
 
+        let mut id = 0;
+
         for (name, func) in module.funcs {
-            vm_module.func_map.insert(name, func.into());
+            vm_module.func_map.insert(name, FuncDesc::new(id, func));
+
+            id += 1;
         }
 
         for (name, class) in module.classes {
             let mut fields = IndexMap::new();
-            let mut methods = HashMap::new();
+            let mut methods = IndexMap::new();
 
             for (name, field) in class.fields.into_iter() {
                 fields.insert(
                     name,
                     FieldDesc {
+                        id: fields.len(),
                         mutable: field.mutable,
                         public: field.public,
                     },
@@ -125,12 +137,18 @@ impl Module {
             }
 
             for (name, func) in class.funcs {
-                methods.insert(name, MethodDesc { func: func.into() });
+                methods.insert(
+                    name,
+                    MethodDesc {
+                        func: FuncDesc::new(methods.len(), func),
+                    },
+                );
             }
 
             vm_module.class_map.insert(
                 name,
                 ClassDesc {
+                    id: vm_module.class_map.len(),
                     fields,
                     methods,
                     public: class.public,
@@ -142,6 +160,7 @@ impl Module {
             vm_module.interface_map.insert(
                 name,
                 InterfaceDesc {
+                    id: vm_module.interface_map.len(),
                     public: interface.public,
                     functions: interface.functions,
                 },
@@ -165,10 +184,13 @@ impl Module {
                 )));
             }
 
+            let id = class.methods.len();
+
             class.methods.insert(
                 method_name.to_string(),
                 MethodDesc {
                     func: FuncDesc {
+                        id,
                         pos: (0..0),
                         public: true,
                         args: IndexMap::new(),
@@ -187,9 +209,12 @@ impl Module {
     }
 
     pub fn register_external_fn(&mut self, name: &str, func: ExternalFn) {
+        let id = self.func_map.len();
+
         self.func_map.insert(
             name.to_string(),
             FuncDesc {
+                id,
                 pos: (0..0),
                 public: true,
                 args: IndexMap::new(),
@@ -199,16 +224,16 @@ impl Module {
     }
 
     pub fn find_type(&self, name: &str) -> Option<Type> {
-        if self.class_map.contains_key(name) {
-            return Some(Type::Class);
+        if let Some(id) = self.class_map.get_index_of(name) {
+            return Some(Type::Class(id));
         }
 
-        if self.interface_map.contains_key(name) {
-            return Some(Type::Interface);
+        if let Some(id) = self.interface_map.get_index_of(name) {
+            return Some(Type::Interface(id));
         }
 
-        if self.func_map.contains_key(name) {
-            return Some(Type::Function);
+        if let Some(id) = self.func_map.get_index_of(name) {
+            return Some(Type::Function(id));
         }
 
         None
@@ -218,24 +243,26 @@ impl Module {
 pub type Middleware = fn(&mut Module) -> Result<()>;
 
 pub struct ModuleCache {
-    modules: IndexMap<String, Module>,
-    current_module: Option<usize>,
-    middleware: HashMap<String, Middleware>,
     lookup_paths: Vec<PathBuf>,
+    current_module: Option<usize>,
+    modules: IndexMap<String, Module>,
+    middleware: HashMap<String, Middleware>,
 }
 
 impl ModuleCache {
     pub fn new() -> Self {
         Self {
-            modules: IndexMap::new(),
             current_module: None,
             lookup_paths: vec![],
+            modules: IndexMap::new(),
             middleware: HashMap::new(),
         }
     }
 
     pub fn add(&mut self, module: Module) -> Result<()> {
         let mut module = module;
+
+        module.id = self.modules.len();
 
         if let Some(middleware) = self.middleware.get(&module.name) {
             middleware(&mut module)?;
@@ -250,21 +277,15 @@ impl ModuleCache {
         self.middleware.insert(name.to_string(), middleware);
     }
 
-    pub fn set_current(&mut self, name: &str) {
-        if let Some(id) = self.modules.get_index_of(name) {
-            self.current_module = Some(id);
-
-            return;
+    pub fn current_id(&self) -> Result<usize> {
+        if let Some(id) = self.current_module {
+            return Ok(id);
         }
 
-        panic!("unable to set unknown current module: {}", name);
+        Err(RuntimeError::new("no active module found".to_string()))
     }
 
-    pub fn get_current_id(&self) -> Option<usize> {
-        self.current_module
-    }
-
-    pub fn set_current_id(&mut self, id: usize) {
+    pub fn set_current(&mut self, id: usize) {
         self.current_module = Some(id);
     }
 
@@ -278,31 +299,53 @@ impl ModuleCache {
         Err(RuntimeError::new("no active module found".to_string()))
     }
 
-    pub fn current_name(&self) -> Result<&str> {
-        self.current_module
-            .and_then(|id| self.modules.get_index(id))
-            .and_then(|(name, _)| Some(name.as_str()))
-            .ok_or_else(|| RuntimeError::new("no active module found".to_string()))
-    }
-
     pub fn contains_module(&self, module_name: &str) -> bool {
         self.modules.contains_key(module_name)
     }
 
-    pub fn lookup_type(&self, module_name: &str, name: &str) -> Option<TypeDesc> {
-        if let Ok(class_desc) = self.lookup_class(module_name, name) {
-            return Some(TypeDesc::Class(class_desc));
+    pub fn lookup_type(&self, module_name: &str, name: &str) -> Result<(TypeId, TypeDesc)> {
+        if let Some(id) = self.modules.get_index_of(module_name) {
+            if let Ok(class_desc) = self.lookup_class(module_name, name) {
+                return Ok((TypeId::new(id, class_desc.id), TypeDesc::Class(class_desc)));
+            }
+
+            if let Ok(interface_desc) = self.lookup_interface(module_name, name) {
+                return Ok((
+                    TypeId::new(id, interface_desc.id),
+                    TypeDesc::Interface(interface_desc),
+                ));
+            }
+
+            if let Ok(fn_desc) = self.lookup_function(module_name, name) {
+                return Ok((TypeId::new(id, fn_desc.id), TypeDesc::Function(fn_desc)));
+            }
         }
 
-        if let Ok(interface_desc) = self.lookup_interface(module_name, name) {
-            return Some(TypeDesc::Interface(interface_desc));
+        Err(RuntimeError::new(format!(
+            "no such type: {}.{}",
+            module_name, name
+        )))
+    }
+
+    pub fn lookup_type_id(&self, module_name: &str, name: &str) -> Result<TypeId> {
+        if let Some(id) = self.modules.get_index_of(module_name) {
+            if let Ok(class_desc) = self.lookup_class(module_name, name) {
+                return Ok(TypeId::new(id, class_desc.id));
+            }
+
+            if let Ok(interface_desc) = self.lookup_interface(module_name, name) {
+                return Ok(TypeId::new(id, interface_desc.id));
+            }
+
+            if let Ok(fn_desc) = self.lookup_function(module_name, name) {
+                return Ok(TypeId::new(id, fn_desc.id));
+            }
         }
 
-        if let Ok(fn_desc) = self.lookup_function(module_name, name) {
-            return Some(TypeDesc::Function(fn_desc));
-        }
-
-        None
+        Err(RuntimeError::new(format!(
+            "no such type: {}.{}",
+            module_name, name
+        )))
     }
 
     pub fn lookup_class(&self, module_name: &str, class_name: &str) -> Result<&ClassDesc> {
@@ -321,6 +364,16 @@ impl ModuleCache {
             "no such module: {}",
             module_name
         )))
+    }
+
+    pub fn lookup_class_by_id(&self, id: &TypeId) -> Result<&ClassDesc> {
+        if let Some((_, module)) = self.modules.get_index(id.module) {
+            if let Some((_, class_desc)) = module.class_map.get_index(id.name) {
+                return Ok(&class_desc);
+            }
+        }
+
+        Err(RuntimeError::new(format!("no such class: {:?}", id,)))
     }
 
     pub fn lookup_interface(
@@ -345,6 +398,16 @@ impl ModuleCache {
         )))
     }
 
+    pub fn lookup_interface_by_id(&self, id: &TypeId) -> Result<&InterfaceDesc> {
+        if let Some((_, module)) = self.modules.get_index(id.module) {
+            if let Some((_, interface_desc)) = module.interface_map.get_index(id.name) {
+                return Ok(interface_desc);
+            }
+        }
+
+        return Err(RuntimeError::new(format!("no such interface: {:?}", id,)));
+    }
+
     pub fn lookup_function(&self, module_name: &str, function_name: &str) -> Result<&FuncDesc> {
         if let Some(module) = self.modules.get(module_name) {
             if let Some(function_desc) = module.func_map.get(function_name) {
@@ -363,22 +426,36 @@ impl ModuleCache {
         )))
     }
 
-    pub fn lookup_method(
-        &self,
-        module_name: &str,
-        class_name: &str,
-        function_name: &str,
-    ) -> Result<&MethodDesc> {
-        let class_desc = self.lookup_class(module_name, class_name)?;
-
-        if let Some(method) = class_desc.methods.get(function_name) {
-            return Ok(method);
+    pub fn lookup_function_by_id(&self, id: &TypeId) -> Result<&FuncDesc> {
+        if let Some((_, module)) = self.modules.get_index(id.module) {
+            if let Some((_, function_desc)) = module.func_map.get_index(id.name) {
+                return Ok(function_desc);
+            }
         }
 
-        Err(RuntimeError::new(format!(
-            "no such method: {}.{}.{}(..)",
-            module_name, class_name, function_name
-        )))
+        Err(RuntimeError::new(format!("no such function: {:?}", id,)))
+    }
+
+    pub fn lookup_method_by_id(&self, id: &TypeId) -> Result<&MethodDesc> {
+        if let Some((_, module)) = self.modules.get_index(id.module) {
+            if let Some(class) = id.class {
+                if let Some((_, class_desc)) = module.class_map.get_index(class) {
+                    if let Some((_, method_desc)) = class_desc.methods.get_index(id.name) {
+                        return Ok(method_desc);
+                    }
+                }
+            }
+        }
+
+        Err(RuntimeError::new(format!("no such method: {:?}", id)))
+    }
+
+    pub fn lookup_module(&self, name: &str) -> Result<&Module> {
+        if let Some(module) = self.modules.get(name) {
+            return Ok(module);
+        }
+
+        Err(RuntimeError::new(format!("no such module: {}", name)))
     }
 
     pub fn add_lookup_path(&mut self, path: PathBuf) {
@@ -407,5 +484,49 @@ impl ModuleCache {
         }
 
         None
+    }
+
+    pub fn fmt_class(&self, id: &TypeId) -> String {
+        if let Some((module_name, module)) = self.modules.get_index(id.module) {
+            if let Some((class_name, _)) = module.class_map.get_index(id.name) {
+                return format!("{}.{}", module_name, class_name);
+            }
+        }
+
+        "!".to_string()
+    }
+
+    pub fn fmt_interface(&self, id: &TypeId) -> String {
+        if let Some((module_name, module)) = self.modules.get_index(id.module) {
+            if let Some((interface_name, _)) = module.interface_map.get_index(id.name) {
+                return format!("{}.{}", module_name, interface_name);
+            }
+        }
+
+        "!".to_string()
+    }
+
+    pub fn fmt_func(&self, id: &TypeId) -> String {
+        if let Some((module_name, module)) = self.modules.get_index(id.module) {
+            if let Some((func_name, _)) = module.func_map.get_index(id.name) {
+                return format!("{}.{}", module_name, func_name);
+            }
+        }
+
+        "!".to_string()
+    }
+
+    pub fn fmt_method(&self, id: &TypeId) -> String {
+        if let Some((module_name, module)) = self.modules.get_index(id.module) {
+            if let Some(class) = id.class {
+                if let Some((class_name, class_desc)) = module.class_map.get_index(class) {
+                    if let Some((func_name, _)) = class_desc.methods.get_index(id.name) {
+                        return format!("{}.{}.{}", module_name, class_name, func_name);
+                    }
+                }
+            }
+        }
+
+        "!".to_string()
     }
 }

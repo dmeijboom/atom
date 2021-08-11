@@ -131,10 +131,10 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
     }
 
     for trace in e.stack_trace {
-        if trace.func.module != main_module {
+        if !trace.target.starts_with(main_module) {
             message.push_str(&format!(
-                "  > in {}.{}(..) at {}..{}\n",
-                trace.func.module, trace.func.name, trace.pos.start, trace.pos.end,
+                "  > in {}(..) at {}..{}\n",
+                trace.target, trace.pos.start, trace.pos.end,
             ));
 
             continue;
@@ -143,8 +143,8 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
         let (line, column) = parse_line_column(&contents, &trace.pos);
 
         message.push_str(&format!(
-            "  > in {}.{}(..) on line {} at column {}\n",
-            trace.func.module, trace.func.name, line, column,
+            "  > in {}(..) on line {} at column {}\n",
+            trace.target, line, column,
         ));
     }
 

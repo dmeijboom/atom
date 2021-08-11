@@ -2,16 +2,13 @@ use crate::parse_args;
 use crate::runtime::{convert, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
-pub fn use_array(
-    vm: &mut VM,
-    handler: impl FnOnce(&mut Vec<Value>) -> Option<Value>,
-) -> Result<Option<Value>> {
+pub fn use_array<T>(vm: &mut VM, handler: impl FnOnce(&mut Vec<Value>) -> Result<T>) -> Result<T> {
     let mut value = vm.get_local_mut("this").unwrap();
     let type_val = value.get_type();
 
     if let Value::Object(object) = &mut *value {
         if let Some(Value::Array(field_value)) = object.get_field_mut(0) {
-            return Ok(handler(field_value));
+            return Ok(handler(field_value)?);
         }
     }
 
@@ -29,25 +26,29 @@ pub fn register(module: &mut Module) -> Result<()> {
             use_array(vm, |a| {
                 a.push(value);
 
-                None
+                Ok(None)
             })
         }),
         ("pop", |vm, mut values| {
             if values.len() == 1 {
                 let index = parse_args!(values => Int) as usize;
 
-                return use_array(vm, |a| {
-                    Some(convert::to_option(if a.get(index).is_some() {
+                let item = use_array(vm, |a| {
+                    Ok(if a.get(index).is_some() {
                         Some(a.remove(index))
                     } else {
                         None
-                    }))
-                });
+                    })
+                })?;
+
+                return Ok(Some(convert::to_option(vm, item)?));
             }
 
             parse_args!(values);
 
-            use_array(vm, |a| Some(convert::to_option(a.pop())))
+            let item = use_array(vm, |a| Ok(a.pop()))?;
+
+            return Ok(Some(convert::to_option(vm, item)?));
         }),
         ("clear", |vm, values| {
             parse_args!(values);
@@ -55,7 +56,7 @@ pub fn register(module: &mut Module) -> Result<()> {
             use_array(vm, |a| {
                 a.clear();
 
-                None
+                Ok(None)
             })
         }),
     ];

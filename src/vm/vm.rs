@@ -29,6 +29,20 @@ use crate::vm::ClassDesc;
 use super::call_stack::CallStack;
 use super::stack::Stack;
 
+enum Target {
+    Method(TypeId),
+    Function(TypeId),
+}
+
+impl Target {
+    pub fn id(&self) -> &TypeId {
+        match self {
+            Target::Method(id) => &id,
+            Target::Function(id) => &id,
+        }
+    }
+}
+
 fn get_cloned<K: Eq + Hash, V: Clone>(map: &HashMap<K, V>, key: &K) -> Option<V> {
     map.get(key).and_then(|value| Some(value.clone()))
 }
@@ -104,6 +118,10 @@ impl VM {
         Ok(())
     }
 
+    pub fn get_type_id(&self, module: &str, name: &str) -> Result<TypeId> {
+        self.module_cache.lookup_type_id(module, name)
+    }
+
     pub fn get_local_mut(&mut self, local_name: &str) -> Option<RefMut<Value>> {
         if let Ok(context) = self.call_stack.current_mut() {
             return context
@@ -166,34 +184,33 @@ impl VM {
             }
         }
 
-        if let Some(type_desc) = self.module_cache.lookup_type(&module_name, name) {
-            let id = TypeId::new(module_name.to_string(), name.to_string());
+        if let Ok(type_desc) = self.module_cache.lookup_type(&module_name, name) {
             let value = match type_desc {
-                TypeDesc::Class(class_desc) => {
+                (id, TypeDesc::Class(class_desc)) => {
                     if !class_desc.public {
                         return Err(RuntimeError::new(format!(
-                            "unable to import private Class: {}.{}'",
-                            module_name, name,
+                            "unable to import private Class: {}'",
+                            self.module_cache.fmt_class(&id),
                         )));
                     }
 
                     Value::Class(id)
                 }
-                TypeDesc::Interface(interface_desc) => {
+                (id, TypeDesc::Interface(interface_desc)) => {
                     if !interface_desc.public {
                         return Err(RuntimeError::new(format!(
-                            "unable to import private Interface: {}.{}'",
-                            module_name, name,
+                            "unable to import private Interface: {}'",
+                            self.module_cache.fmt_interface(&id),
                         )));
                     }
 
                     Value::Interface(id)
                 }
-                TypeDesc::Function(fn_desc) => {
+                (id, TypeDesc::Function(fn_desc)) => {
                     if !fn_desc.public {
                         return Err(RuntimeError::new(format!(
-                            "unable to import private Fn: {}.{}(...)'",
-                            module_name, name,
+                            "unable to import private Fn: {}(...)'",
+                            self.module_cache.fmt_func(&id),
                         )));
                     }
 
@@ -255,12 +272,12 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let desc = self.module_cache.lookup_class(&id.module, &id.name)?;
+        let desc = self.module_cache.lookup_class_by_id(&id)?;
 
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(format!(
-                "unable to initialize {}.{} with non-keyword arguments",
-                id.module, id.name
+                "unable to initialize {} with non-keyword arguments",
+                self.module_cache.fmt_class(id),
             )));
         }
 
@@ -290,9 +307,8 @@ impl VM {
             }
 
             return Err(RuntimeError::new(format!(
-                "unable to initialize {}.{} with missing fields: {}",
-                id.module,
-                id.name,
+                "unable to initialize {} with missing fields: {}",
+                self.module_cache.fmt_class(id),
                 field_names
                     .into_iter()
                     .map(|(key, _)| key)
@@ -329,28 +345,16 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        // @TODO: this has to stay:
-        //let object = to_object(method.object.borrow().clone())?;
-        let desc = self.module_cache.lookup_method(
-            &method.class.module,
-            &method.class.name,
-            &method.name,
-        )?;
+        let desc = self.module_cache.lookup_method_by_id(&method.id)?;
 
-        let mut context = CallContext::new(
-            desc.func.pos.clone(),
-            TypeId::new(
-                method.class.module.to_string(),
-                format!("{}.{}", method.class.name, method.name),
-            ),
-        );
+        let mut context = CallContext::new(desc.func.pos.clone(), method.id.clone());
 
         context.named_locals.insert(
             "this".to_string(),
             if method.object.borrow().get_type() == ValueType::Ref {
                 Rc::clone(&method.object)
             } else {
-                let object = to_object(method.object.borrow().clone())?;
+                let object = to_object(&self.module_cache, method.object.borrow().clone())?;
 
                 Rc::new(RefCell::new(Value::Object(object.into())))
             },
@@ -358,13 +362,7 @@ impl VM {
 
         self.call_stack.push(context);
 
-        self.eval_func(
-            &method.class.module,
-            &method.name,
-            Some(&method.class.name),
-            keywords,
-            arg_count,
-        )?;
+        self.eval_func(Target::Method(method.id.clone()), keywords, arg_count)?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -402,34 +400,20 @@ impl VM {
         Ok(ordered_values)
     }
 
-    fn eval_func(
-        &mut self,
-        module_name: &str,
-        name: &str,
-        class_name: Option<&str>,
-        keywords: &[String],
-        arg_count: usize,
-    ) -> Result<()> {
-        let func = match class_name {
-            Some(class_name) => {
-                &self
-                    .module_cache
-                    .lookup_method(module_name, class_name, name)?
-                    .func
-            }
-            None => self.module_cache.lookup_function(module_name, name)?,
+    fn eval_func(&mut self, target: Target, keywords: &[String], arg_count: usize) -> Result<()> {
+        let func = match &target {
+            Target::Method(id) => &self.module_cache.lookup_method_by_id(id)?.func,
+            Target::Function(id) => self.module_cache.lookup_function_by_id(id)?,
         };
 
         match &func.source {
             FuncSource::Native(source) => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(format!(
-                        "invalid argument count for Fn: {}.{}(...) (expected {}, not {})",
-                        module_name,
-                        if let Some(class_name) = class_name {
-                            format!("{}.{}", class_name, name)
-                        } else {
-                            name.to_string()
+                        "invalid argument count for target: {}(...) (expected {}, not {})",
+                        match &target {
+                            Target::Method(method) => self.module_cache.fmt_method(method),
+                            Target::Function(func) => self.module_cache.fmt_func(func),
                         },
                         func.args.len(),
                         arg_count,
@@ -450,8 +434,9 @@ impl VM {
                             .map_err(|e| {
                                 let message = e.message.clone();
                                 e.with_message(format!(
-                                    "{} in Fn {}.{}",
-                                    message, module_name, name,
+                                    "{} in target {}",
+                                    message,
+                                    self.module_cache.fmt_func(target.id()),
                                 ))
                             })?;
                     let call_context = self.call_stack.current_mut()?;
@@ -463,17 +448,15 @@ impl VM {
 
                 let source = Rc::clone(source);
 
-                self._eval(module_name, source)?;
+                self._eval(target.id().module, source)?;
             }
             FuncSource::External(closure) => {
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
-                        "unable to use keyword arguments in external Fn: {}.{}",
-                        module_name,
-                        if let Some(class_name) = class_name {
-                            format!("{}.{}", class_name, name)
-                        } else {
-                            name.to_string()
+                        "unable to use keyword arguments in external target: {}(..)",
+                        match &target {
+                            Target::Method(method) => self.module_cache.fmt_method(method),
+                            Target::Function(func) => self.module_cache.fmt_func(func),
                         },
                     )));
                 }
@@ -495,12 +478,12 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let func = self.module_cache.lookup_function(&id.module, &id.name)?;
+        let func = self.module_cache.lookup_function_by_id(id)?;
 
         self.call_stack
             .push(CallContext::new(func.pos.clone(), id.clone()));
 
-        self.eval_func(&id.module, &id.name, None, keywords, arg_count)?;
+        self.eval_func(Target::Function(id.clone()), keywords, arg_count)?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -695,27 +678,24 @@ impl VM {
                 let value = self.stack.pop()?;
 
                 if let Value::Interface(id) = value {
-                    let interface = self.module_cache.lookup_interface(&id.module, &id.name)?;
-
+                    let interface = self.module_cache.lookup_interface_by_id(&id)?;
                     let stacked = self.stack.pop_stacked()?;
 
                     {
                         let value = stacked.borrow();
                         let class_id = match &*value {
-                            Value::Object(object) => object.class.clone(),
-                            _ => TypeId::new(
-                                "std.core".to_string(),
-                                value.get_type().name().to_string(),
-                            ),
-                        };
-                        let class = self
-                            .module_cache
-                            .lookup_class(&class_id.module, &class_id.name)?;
+                            Value::Object(object) => Ok(object.class.clone()),
+                            _ => self
+                                .module_cache
+                                .lookup_type_id("std.core", value.get_type().name()),
+                        }?;
+                        let class = self.module_cache.lookup_class_by_id(&class_id)?;
 
                         if !self.validate_class(class, interface) {
                             return Err(RuntimeError::new(format!(
-                                "validation failed, class '{}.{}' doesn't implement interface: {}.{}",
-                                class_id.module, class_id.name, id.module, id.name
+                                "validation failed, class '{}' doesn't implement interface: {}",
+                                self.module_cache.fmt_class(&class_id),
+                                self.module_cache.fmt_interface(&id),
                             )));
                         }
                     }
@@ -850,21 +830,22 @@ impl VM {
             }
             Code::LoadMember(member) | Code::TeeMember(member) => {
                 let stacked = self.stack.pop_stacked()?;
-                let class_id = with_auto_deref(&stacked.borrow(), |value| match value {
-                    Value::Object(object) => object.class.clone(),
-                    _ => TypeId::new("std.core".to_string(), value.get_type().name().to_string()),
-                });
-                let desc = self
-                    .module_cache
-                    .lookup_class(&class_id.module, &class_id.name)?;
+                let id = with_auto_deref(&stacked.borrow(), |value| match value {
+                    Value::Object(object) => Ok(object.class.clone()),
+                    _ => self
+                        .module_cache
+                        .lookup_type_id("std.core", value.get_type().name()),
+                })?;
+                let desc = self.module_cache.lookup_class_by_id(&id)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
                     let field = &desc.fields[member];
 
-                    if !field.public && self.module_cache.current_name()? != class_id.module {
+                    if !field.public && self.module_cache.current_id()? != id.module {
                         return Err(RuntimeError::new(format!(
-                            "unable to access private field '{}' of class: {}.{}",
-                            member, class_id.module, class_id.name
+                            "unable to access private field '{}' of class: {}",
+                            member,
+                            self.module_cache.fmt_class(&id),
                         )));
                     }
 
@@ -874,7 +855,7 @@ impl VM {
                                 .get_field(index)
                                 .and_then(|value| Some(value.clone())),
                             _ => {
-                                let object = to_object(value.clone())?;
+                                let object = to_object(&self.module_cache, value.clone())?;
 
                                 object
                                     .get_field(index)
@@ -883,8 +864,9 @@ impl VM {
                         }
                         .ok_or_else(|| {
                             RuntimeError::new(format!(
-                                "unable to get unknown field '{}' of class: {}.{}",
-                                member, class_id.module, class_id.name
+                                "unable to get unknown field '{}' of class: {}",
+                                member,
+                                self.module_cache.fmt_class(&id),
                             ))
                         })
                     })?;
@@ -901,16 +883,14 @@ impl VM {
                     return Ok(None);
                 }
 
-                if let Ok(_) =
-                    self.module_cache
-                        .lookup_method(&class_id.module, &class_id.name, member)
-                {
+                if let Some(index) = desc.methods.get_index_of(member) {
                     let method = &desc.methods[member];
 
-                    if !method.func.public && self.module_cache.current_name()? != class_id.module {
+                    if !method.func.public && self.module_cache.current_id()? != id.module {
                         return Err(RuntimeError::new(format!(
-                            "unable to access private method '{}(...)' of class: {}.{}",
-                            member, class_id.module, class_id.name
+                            "unable to access private method '{}(...)' of class: {}",
+                            member,
+                            self.module_cache.fmt_class(&id),
                         )));
                     }
 
@@ -925,8 +905,8 @@ impl VM {
 
                     self.stack.push(Value::Method(
                         Method {
+                            id: TypeId::new_with_class(id.module, index, id.name),
                             name: member.clone(),
-                            class: class_id,
                             object,
                         }
                         .into(),
@@ -936,27 +916,27 @@ impl VM {
                 }
 
                 return Err(RuntimeError::new(format!(
-                    "no such field or method '{}' for class: {}.{}",
-                    member, class_id.module, class_id.name,
+                    "no such field or method '{}' for class: {}",
+                    member,
+                    self.module_cache.fmt_class(&id),
                 )));
             }
             Code::StoreMember(member) => {
                 let object_ref = self.stack.pop_ref()?;
                 let mut data = object_ref.borrow_mut();
                 let class_id = with_auto_deref(&data, |value| match value {
-                    Value::Object(object) => object.class.clone(),
-                    _ => TypeId::new("std.core".to_string(), value.get_type().name().to_string()),
-                });
+                    Value::Object(object) => Ok(object.class.clone()),
+                    _ => self
+                        .module_cache
+                        .lookup_type_id("std.core", value.get_type().name()),
+                })?;
                 let value = self.stack.pop()?;
-
-                let desc = self
-                    .module_cache
-                    .lookup_class(&class_id.module, &class_id.name)?;
+                let desc = self.module_cache.lookup_class_by_id(&class_id)?;
 
                 if let Some(index) = desc.fields.get_index_of(member) {
                     let field = &desc.fields[member];
 
-                    if !field.public && self.module_cache.current_name()? != class_id.module {
+                    if !field.public && self.module_cache.current_id()? != class_id.module {
                         return Err(RuntimeError::new(format!(
                             "unable to access private field '{}' of class: {}.{}",
                             member, class_id.module, class_id.name
@@ -1026,20 +1006,12 @@ impl VM {
                     return Ok(None);
                 }
 
-                if let Some(type_value) = current_module.find_type(name) {
-                    let id = TypeId::new(
-                        self.module_cache.current_name()?.to_string(),
-                        name.to_string(),
-                    );
-
-                    self.stack.push(
-                        match type_value {
-                            Type::Class => Value::Class(id),
-                            Type::Function => Value::Function(id),
-                            Type::Interface => Value::Interface(id),
-                        }
-                        .into(),
-                    );
+                if let Some(typedef) = current_module.find_type(name) {
+                    self.stack.push(match typedef {
+                        Type::Class(id) => Value::Class(TypeId::new(current_module.id, id)),
+                        Type::Function(id) => Value::Function(TypeId::new(current_module.id, id)),
+                        Type::Interface(id) => Value::Interface(TypeId::new(current_module.id, id)),
+                    });
 
                     return Ok(None);
                 }
@@ -1087,10 +1059,10 @@ impl VM {
         )))
     }
 
-    fn _eval(&mut self, module: &str, instructions: Rc<Vec<IR>>) -> Result<()> {
-        let module_id = self.module_cache.get_current_id();
+    fn _eval(&mut self, new_module_id: usize, instructions: Rc<Vec<IR>>) -> Result<()> {
+        let module_id = self.module_cache.current_id().ok();
 
-        self.module_cache.set_current(module);
+        self.module_cache.set_current(new_module_id);
 
         let mut eval = || {
             let mut i = 0;
@@ -1127,15 +1099,17 @@ impl VM {
         let result = eval();
 
         if let Some(id) = module_id {
-            self.module_cache.set_current_id(id);
+            self.module_cache.set_current(id);
         }
 
         result
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
-        self._eval(module, Rc::new(instructions)).map_err(|e| {
-            let e = e.with_stack_trace(self.call_stack.rewind());
+        let module_id = self.module_cache.lookup_module(module)?.id;
+
+        self._eval(module_id, Rc::new(instructions)).map_err(|e| {
+            let e = e.with_stack_trace(self.call_stack.rewind(&self.module_cache));
 
             if let Ok(module) = self.module_cache.current() {
                 return e.with_module(module);
