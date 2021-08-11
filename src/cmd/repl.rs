@@ -1,15 +1,16 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::rc::Rc;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 use crate::ast::{ClassDeclStmt, Expr, ExprStmt, FnDeclStmt, ModuleStmt, ReturnStmt, Stmt};
-use crate::compiler::{Code, Compiler, LocalId, IR};
+use crate::compiler::{Code, Compiler, IR};
 use crate::parser;
 use crate::runtime::{RuntimeError, Value};
 use crate::utils::{display_error, Error};
-use crate::vm::{ClassDesc, FuncDesc, Module, VM};
+use crate::vm::{ClassDesc, FuncDesc, FuncSource, MethodDesc, Module, VM};
 
 enum Action {
     Evaluate(Expr),
@@ -79,11 +80,54 @@ impl AtomEngine {
         }
 
         for (name, func) in self.functions.iter() {
-            module.func_map.insert(name.clone(), func.clone());
+            module.func_map.insert(
+                name.clone(),
+                FuncDesc {
+                    public: func.public,
+                    source: match &func.source {
+                        FuncSource::Native(instructions) => {
+                            FuncSource::Native(Rc::clone(&instructions))
+                        }
+                        FuncSource::External(external_fn) => FuncSource::External(*external_fn),
+                    },
+                    args: func.args.clone(),
+                    pos: func.pos.clone(),
+                },
+            );
         }
 
         for (name, class) in self.classes.iter() {
-            module.class_map.insert(name.clone(), class.clone());
+            module.class_map.insert(
+                name.clone(),
+                ClassDesc {
+                    public: class.public,
+                    methods: class
+                        .methods
+                        .iter()
+                        .map(|(key, method)| {
+                            (
+                                key.clone(),
+                                MethodDesc {
+                                    func: FuncDesc {
+                                        pos: method.func.pos.clone(),
+                                        public: method.func.public,
+                                        source: match &method.func.source {
+                                            FuncSource::Native(instructions) => {
+                                                FuncSource::Native(Rc::clone(instructions))
+                                            }
+                                            FuncSource::External(external_fn) => {
+                                                FuncSource::External(*external_fn)
+                                            }
+                                        },
+                                        args: method.func.args.clone(),
+                                    },
+                                },
+                            )
+                        })
+                        .collect(),
+                    fields: class.fields.clone(),
+                },
+            );
         }
     }
 
@@ -126,7 +170,7 @@ impl AtomEngine {
         vm.eval(
             "main",
             vec![
-                IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+                IR::new(Code::LoadName("main".to_string()), 0..0),
                 IR::new(Code::Call(0), 0..0),
             ],
         )?;

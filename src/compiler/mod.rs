@@ -1,5 +1,5 @@
 pub use compiler::{CompileError, Compiler};
-pub use ir::{Code, LocalId, IR};
+pub use ir::{Code, IR};
 pub use module::{Class, Func, FuncArg, Interface, Module};
 
 mod compiler;

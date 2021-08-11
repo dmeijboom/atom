@@ -13,7 +13,7 @@ use crate::ast::{
 use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field, Interface};
 use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
-use crate::compiler::{Func, FuncArg, LocalId, Module, IR};
+use crate::compiler::{Func, FuncArg, Module, IR};
 
 #[derive(Debug, PartialEq)]
 pub struct CompileError {
@@ -60,10 +60,14 @@ impl Compiler {
         }
     }
 
-    fn set_local(&mut self, name: String, mutable: bool) {
+    fn set_local(&mut self, name: String, mutable: bool) -> Result<Local> {
         let mut scope = self.scope.borrow_mut();
 
-        scope.set_local(Local { mutable, name });
+        scope.set_local(name, mutable).map_err(|e| {
+            let mut e = e;
+            e.pos = self.pos.clone();
+            e
+        })
     }
 
     fn compile_member_cond(
@@ -100,7 +104,7 @@ impl Compiler {
         ir.push(body);
         ir.push(vec![
             IR::new(
-                Code::Load(LocalId::new("some".to_string())),
+                Code::LoadName("some".to_string()),
                 member_cond_expr.pos.clone(),
             ),
             IR::new(Code::Call(1), member_cond_expr.pos.clone()),
@@ -154,15 +158,11 @@ impl Compiler {
             }
             Expr::Ident(ident) => {
                 ir.push(vec![IR::new(
-                    Code::Load(
-                        if let Some((_, scope_id)) =
-                            Scope::get_local(&self.scope, &ident.name, true)
-                        {
-                            LocalId::new_in_scope(ident.name.clone(), scope_id)
-                        } else {
-                            LocalId::new(ident.name.clone())
-                        },
-                    ),
+                    if let Some(local) = Scope::get_local(&self.scope, &ident.name, true) {
+                        Code::Load(local.id)
+                    } else {
+                        Code::LoadName(ident.name.clone())
+                    },
                     ident.pos.clone(),
                 )]);
             }
@@ -327,7 +327,7 @@ impl Compiler {
     }
 
     fn compile_assign_local(&mut self, name: &String, value: &Expr) -> Result<Vec<IR>> {
-        if let Some((local, scope_id)) = Scope::get_local(&self.scope, name, true) {
+        if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(
                     format!("name is not mutable: {}", name),
@@ -335,15 +335,13 @@ impl Compiler {
                 ));
             }
 
-            let local_id = LocalId::new_in_scope(name.to_string(), scope_id);
-
             return Ok(vec![
                 self.compile_expr(value)?,
                 vec![IR::new(
                     if local.mutable {
-                        Code::StoreMut(local_id)
+                        Code::StoreMut(local.id)
                     } else {
-                        Code::Store(local_id)
+                        Code::Store(local.id)
                     },
                     self.pos.clone(),
                 )],
@@ -408,25 +406,23 @@ impl Compiler {
     }
 
     fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
-        if Scope::get_local(&self.scope, name, false).is_some() {
+        let local = if Scope::get_local(&self.scope, name, false).is_some() {
             return Err(CompileError::new(
                 format!("name already defined: {}", name),
                 self.pos.clone(),
             ));
         } else {
-            self.set_local(name.to_string(), mutable);
-        }
+            self.set_local(name.to_string(), mutable)?
+        };
 
         if let Some(expr) = value {
-            let local_id = LocalId::new_in_scope(name.to_string(), self.scope.borrow().id);
-
             return Ok(vec![
                 self.compile_expr(expr)?,
                 vec![IR::new(
                     if mutable {
-                        Code::StoreMut(local_id)
+                        Code::StoreMut(local.id)
                     } else {
-                        Code::Store(local_id)
+                        Code::Store(local.id)
                     },
                     self.pos.clone(),
                 )],
@@ -508,14 +504,14 @@ impl Compiler {
                     let body_label = self.make_label("for_body");
                     let cont_label = self.make_label("for_cont");
 
-                    self.set_local(".".to_string(), false);
+                    let local = self.set_local(".".to_string(), false)?;
 
                     if let Some(expr) = &for_stmt.expr {
                         ir.push(self.compile_expr(expr)?);
                         ir.push(
                             vec![
                                 // step 1. Get the iterator from the object
-                                Code::Load(LocalId::new("Iterable".to_string())),
+                                Code::LoadName("Iterable".to_string()),
                                 Code::Validate,
                                 Code::LoadMember("iter".to_string()),
                                 Code::Call(0),
@@ -531,7 +527,7 @@ impl Compiler {
                                 Code::SetLabel(body_label.clone()),
                                 Code::LoadMember("value".to_string()),
                                 Code::Call(0),
-                                Code::Store(LocalId::new_in_scope(".".to_string(), self.scope_id)),
+                                Code::Store(local.id),
                             ]
                             .into_iter()
                             .map(|code| IR::new(code, self.pos.clone()))
@@ -609,15 +605,6 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt) -> Result<Func> {
-        if Scope::get_local(&self.scope, &fn_decl.name, true).is_some() {
-            return Err(CompileError::new(
-                format!("unable to redefine function: {}", fn_decl.name),
-                self.pos.clone(),
-            ));
-        }
-
-        self.set_local(fn_decl.name.clone(), false);
-
         let body = self.compile_stmt_list(ScopeContext::Function, &fn_decl.body)?;
 
         Ok(Func {
@@ -638,15 +625,6 @@ impl Compiler {
     }
 
     fn compile_class(&mut self, class_decl: &ClassDeclStmt) -> Result<Class> {
-        if Scope::get_local(&self.scope, &class_decl.name, true).is_some() {
-            return Err(CompileError::new(
-                format!("unable to redefine name: {}", class_decl.name),
-                self.pos.clone(),
-            ));
-        }
-
-        self.set_local(class_decl.name.clone(), false);
-
         {
             self.scope_id += 1;
             let new_scope =
@@ -674,8 +652,6 @@ impl Compiler {
                     public: field.public,
                 },
             );
-
-            self.set_local(field.name.to_string(), field.mutable);
         }
 
         let mut funcs = HashMap::new();
@@ -696,15 +672,6 @@ impl Compiler {
     }
 
     fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
-        if Scope::get_local(&self.scope, &interface_decl.name, true).is_some() {
-            return Err(CompileError::new(
-                format!("unable to redefine name: {}", interface_decl.name),
-                self.pos.clone(),
-            ));
-        }
-
-        self.set_local(interface_decl.name.clone(), false);
-
         Ok(Interface {
             name: interface_decl.name.clone(),
             public: interface_decl.public,

@@ -28,24 +28,6 @@ pub struct FuncDesc {
     pub args: IndexMap<String, ArgumentDesc>,
 }
 
-impl Clone for FuncDesc {
-    fn clone(&self) -> Self {
-        Self {
-            pos: self.pos.clone(),
-            args: self.args.clone(),
-            public: self.public,
-            source: match &self.source {
-                FuncSource::Native(instructions) => FuncSource::Native(Rc::clone(&instructions)),
-                FuncSource::External(closure) => FuncSource::External(*closure),
-            },
-        }
-    }
-
-    fn clone_from(&mut self, source: &Self) {
-        *self = source.clone();
-    }
-}
-
 impl From<Func> for FuncDesc {
     fn from(func: Func) -> Self {
         FuncDesc {
@@ -74,7 +56,6 @@ pub struct FieldDesc {
     pub public: bool,
 }
 
-#[derive(Clone)]
 pub struct MethodDesc {
     pub func: FuncDesc,
 }
@@ -85,7 +66,6 @@ pub struct InterfaceDesc {
     pub functions: Vec<String>,
 }
 
-#[derive(Clone)]
 pub struct ClassDesc {
     pub public: bool,
     pub methods: HashMap<String, MethodDesc>,

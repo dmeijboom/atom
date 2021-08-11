@@ -2,28 +2,6 @@ use std::fmt::{Debug, Formatter};
 
 use crate::ast::Pos;
 
-#[derive(Debug, PartialEq, Eq, Clone, Hash)]
-pub struct LocalId {
-    pub name: String,
-    pub scope_hint: Option<usize>,
-}
-
-impl LocalId {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            scope_hint: None,
-        }
-    }
-
-    pub fn new_in_scope(name: String, scope_hint: usize) -> Self {
-        Self {
-            name,
-            scope_hint: Some(scope_hint),
-        }
-    }
-}
-
 #[derive(Clone, PartialEq)]
 pub enum Code {
     ConstInt(i64),
@@ -61,23 +39,16 @@ pub enum Code {
     Cast(String),
     Call(usize),
     CallWithKeywords((Vec<String>, usize)),
-    Store(LocalId),
-    StoreMut(LocalId),
-    Load(LocalId),
+    Store(usize),
+    StoreMut(usize),
+    Load(usize),
+    LoadName(String),
     LoadIndex,
     StoreIndex,
     LoadMember(String),
     TeeMember(String),
     StoreMember(String),
     Raise,
-}
-
-fn format_local_id(id: &LocalId) -> String {
-    if let Some(scope_hint) = id.scope_hint {
-        return format!("name: '{}', scope: {}", id.name, scope_hint);
-    }
-
-    format!("name: '{}'", id.name)
 }
 
 impl Code {
@@ -128,10 +99,11 @@ impl Code {
                     .join(", "),
                 arg_count
             ),
-            Code::Store(id) => format!("  store({})", format_local_id(id)),
-            Code::StoreMut(id) => format!("  storeMut({})", format_local_id(id)),
+            Code::Store(id) => format!("  store(id: {})", id),
+            Code::StoreMut(id) => format!("  storeMut(id: {})", id),
             Code::StoreMember(name) => format!("  storeMember(name: '{}')", name),
-            Code::Load(id) => format!("  load({})", format_local_id(id)),
+            Code::Load(id) => format!("  load(id: {})", id),
+            Code::LoadName(name) => format!("  loadName(name: '{}')", name),
             Code::LoadIndex => "  loadIndex".to_string(),
             Code::StoreIndex => "  storeIndex".to_string(),
             Code::LoadMember(name) => format!("  loadMember(name: '{}')", name),

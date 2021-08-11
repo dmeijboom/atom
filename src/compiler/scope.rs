@@ -2,8 +2,11 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
+use crate::compiler::CompileError;
+
 #[derive(Clone)]
 pub struct Local {
+    pub id: usize,
     pub name: String,
     pub mutable: bool,
 }
@@ -24,21 +27,22 @@ pub enum ScopeContext {
 
 pub struct Scope {
     pub id: usize,
+    local_id: usize,
     pub context: ScopeContext,
     pub locals: HashMap<String, Local>,
     pub parent: Option<Rc<RefCell<Scope>>>,
 }
 
-fn walk<T>(scope: &Rc<RefCell<Scope>>, handler: impl Fn(&Scope) -> Option<T>) -> Option<T> {
+fn walk<T>(scope: &Rc<RefCell<Scope>>, handler: impl Fn(&mut Scope) -> Option<T>) -> Option<T> {
     {
-        let scope = scope.borrow();
+        let mut scope = scope.borrow_mut();
 
-        if let Some(value) = handler(&scope) {
+        if let Some(value) = handler(&mut scope) {
             return Some(value);
         }
     }
 
-    if let Some(parent) = &scope.borrow().parent {
+    if let Some(parent) = &scope.borrow_mut().parent {
         return walk(&Rc::clone(parent), handler);
     }
 
@@ -49,6 +53,7 @@ impl Scope {
     pub fn new() -> Self {
         Self {
             id: 0,
+            local_id: 0,
             parent: None,
             locals: HashMap::new(),
             context: ScopeContext::Global,
@@ -59,13 +64,46 @@ impl Scope {
         Self {
             id,
             context,
+            local_id: 0,
             locals: HashMap::new(),
             parent: Some(Rc::clone(&scope)),
         }
     }
 
-    pub fn set_local(&mut self, local: Local) {
-        self.locals.insert(local.name.clone(), local);
+    pub fn set_local(&mut self, name: String, mutable: bool) -> Result<Local, CompileError> {
+        let id = if let ScopeContext::Function = self.context {
+            let id = self.local_id;
+
+            self.local_id += 1;
+
+            Some(id)
+        } else if let Some(parent) = &self.parent {
+            walk(parent, |scope| {
+                if let ScopeContext::Function = &scope.context {
+                    let id = scope.local_id;
+
+                    scope.local_id += 1;
+
+                    return Some(id);
+                }
+
+                None
+            })
+        } else {
+            None
+        }
+        .ok_or_else(|| {
+            CompileError::new(
+                "unable to set local outside of a function scope".to_string(),
+                0..0,
+            )
+        })?;
+
+        let local = Local { id, name, mutable };
+
+        self.locals.insert(local.name.clone(), local.clone());
+
+        Ok(local)
     }
 
     pub fn in_unsafe_block(scope: &Rc<RefCell<Scope>>) -> bool {
@@ -89,16 +127,12 @@ impl Scope {
         })
     }
 
-    pub fn get_local(
-        scope: &Rc<RefCell<Scope>>,
-        name: &str,
-        parents: bool,
-    ) -> Option<(Local, usize)> {
+    pub fn get_local(scope: &Rc<RefCell<Scope>>, name: &str, parents: bool) -> Option<Local> {
         {
             let scope = scope.borrow();
 
             if let Some(local) = scope.locals.get(name) {
-                return Some((local.clone(), scope.id));
+                return Some(local.clone());
             }
         }
 

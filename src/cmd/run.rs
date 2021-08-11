@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
-use crate::compiler::{Code, Compiler, LocalId, IR};
+use crate::compiler::{Code, Compiler, IR};
 use crate::parser;
 use crate::utils::Error;
 use crate::vm::{Module, VM};
@@ -49,7 +49,7 @@ pub fn command(module_paths: &Vec<PathBuf>, opts: Opts, contents: &str) -> Resul
     vm.eval(
         "main",
         vec![
-            IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+            IR::new(Code::LoadName("main".to_string()), 0..0),
             IR::new(Code::Call(0), 0..0),
         ],
     )?;

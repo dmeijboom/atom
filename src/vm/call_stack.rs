@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::rc::Rc;
 
 use crate::ast::Pos;
-use crate::compiler::LocalId;
 use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
 
 pub struct CallContext {
@@ -11,7 +10,8 @@ pub struct CallContext {
     pub id: TypeId,
     pub finished: bool,
     pub return_value: Option<Value>,
-    pub locals: HashMap<LocalId, Rc<RefCell<Value>>>,
+    pub locals: HashMap<usize, Rc<RefCell<Value>>>,
+    pub named_locals: HashMap<String, Rc<RefCell<Value>>>,
 }
 
 impl CallContext {
@@ -22,6 +22,7 @@ impl CallContext {
             finished: false,
             return_value: None,
             locals: HashMap::new(),
+            named_locals: HashMap::new(),
         }
     }
 }

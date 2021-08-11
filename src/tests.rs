@@ -2,7 +2,7 @@
 mod tests {
     use test_case::test_case;
 
-    use crate::compiler::{Code, LocalId, IR};
+    use crate::compiler::{Code, IR};
     use crate::runtime::Value;
     use crate::utils::{parse_and_compile, Error};
     use crate::vm::VM;
@@ -15,7 +15,7 @@ mod tests {
         vm.eval(
             "main",
             vec![
-                IR::new(Code::Load(LocalId::new("main".to_string())), 0..0),
+                IR::new(Code::LoadName("main".to_string()), 0..0),
                 IR::new(Code::Call(0), 0..0),
             ],
         )?;

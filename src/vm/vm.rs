@@ -8,7 +8,7 @@ use std::rc::Rc;
 
 use smallvec::SmallVec;
 
-use crate::compiler::{Code, LocalId, IR};
+use crate::compiler::{Code, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
 use crate::runtime::{
     with_auto_deref, with_auto_deref_mut, Method, Object, Result, RuntimeError, TypeId, Value,
@@ -101,12 +101,12 @@ impl VM {
         Ok(())
     }
 
-    pub fn get_local_mut(&mut self, name: &str) -> Option<RefMut<Value>> {
+    pub fn get_local_mut(&mut self, local_name: &str) -> Option<RefMut<Value>> {
         if let Ok(context) = self.call_stack.current_mut() {
             return context
-                .locals
+                .named_locals
                 .iter_mut()
-                .filter(|(id, _)| id.scope_hint.is_none() && id.name == name)
+                .filter(|(name, _)| name.as_str() == local_name)
                 .next()
                 .and_then(|(_, value)| Some(value.borrow_mut()));
         }
@@ -342,8 +342,8 @@ impl VM {
             ),
         );
 
-        context.locals.insert(
-            LocalId::new("this".to_string()),
+        context.named_locals.insert(
+            "this".to_string(),
             if method.object.borrow().get_type() == ValueType::Ref {
                 Rc::clone(&method.object)
             } else {
@@ -442,8 +442,8 @@ impl VM {
                         let (key, _) = func.args.get_index(i).unwrap();
 
                         call_context
-                            .locals
-                            .insert(LocalId::new(key.to_string()), Rc::new(RefCell::new(value)));
+                            .named_locals
+                            .insert(key.to_string(), Rc::new(RefCell::new(value)));
                     }
                 } else {
                     let arg_names: Vec<String> = func.args.keys().cloned().collect();
@@ -459,16 +459,15 @@ impl VM {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in ordered_values {
-                        call_context.locals.insert(
-                            LocalId::new(arg_names[i].to_string()),
-                            Rc::new(RefCell::new(value)),
-                        );
+                        call_context
+                            .named_locals
+                            .insert(arg_names[i].to_string(), Rc::new(RefCell::new(value)));
                     }
                 }
 
-                let source = Rc::clone(&source);
+                let source = Rc::clone(source);
 
-                self._eval(&module_name, source)?;
+                self._eval(module_name, source)?;
             }
             FuncSource::External(closure) => {
                 if !keywords.is_empty() {
@@ -1000,16 +999,36 @@ impl VM {
                     }
                 }
 
+                return Err(RuntimeError::new(format!(
+                    "undefined local with id: {}",
+                    id
+                )));
+            }
+            Code::LoadName(name) => {
+                if !self.call_stack.is_empty() {
+                    let context = self.call_stack.current()?;
+                    let value = context
+                        .named_locals
+                        .get(name)
+                        .and_then(|value| Some(Rc::clone(value)));
+
+                    if let Some(value) = value {
+                        self.stack.push_ref(value);
+
+                        return Ok(None);
+                    }
+                }
+
                 let current_module = self.module_cache.current()?;
 
-                if let Some(value) = get_cloned(&current_module.globals, &id.name) {
+                if let Some(value) = get_cloned(&current_module.globals, name) {
                     self.stack.push(value);
 
                     return Ok(None);
                 }
 
-                if let Some(type_value) = current_module.find_type(&id.name) {
-                    let id = TypeId::new(self.module_cache.current_name()?, id.name.clone());
+                if let Some(type_value) = current_module.find_type(name) {
+                    let id = TypeId::new(self.module_cache.current_name()?, name.clone());
                     self.stack.push(
                         match type_value {
                             Type::Class => Value::Class(id),
@@ -1022,7 +1041,7 @@ impl VM {
                     return Ok(None);
                 }
 
-                return Err(RuntimeError::new(format!("no such name: {}", id.name)));
+                return Err(RuntimeError::new(format!("no such name: {}", name)));
             }
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
@@ -1054,7 +1073,7 @@ impl VM {
         Ok(None)
     }
 
-    fn find_label(&self, instructions: Rc<Vec<IR>>, search: &str) -> Result<usize> {
+    fn find_label(&self, instructions: &Vec<IR>, search: &str) -> Result<usize> {
         for (i, ir) in instructions.iter().enumerate() {
             if let Code::SetLabel(label) = &ir.code {
                 if label == search {
@@ -1093,7 +1112,7 @@ impl VM {
                         e
                     }
                 })? {
-                    i = self.find_label(Rc::clone(&instructions), &label)?;
+                    i = self.find_label(&*instructions, &label)?;
                     continue;
                 }
 
