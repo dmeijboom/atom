@@ -6,6 +6,7 @@ use std::hash::Hash;
 use std::path::Path;
 use std::rc::Rc;
 
+use indexmap::map::IndexMap;
 use smallvec::SmallVec;
 
 use crate::compiler::{Code, IR};
@@ -19,7 +20,9 @@ use crate::std::get_middleware;
 use crate::utils;
 use crate::utils::Error;
 use crate::vm::call_stack::CallContext;
-use crate::vm::module_cache::{FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc};
+use crate::vm::module_cache::{
+    ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc,
+};
 use crate::vm::stack::Stacked;
 use crate::vm::ClassDesc;
 
@@ -375,12 +378,12 @@ impl VM {
         &self,
         mut values: Vec<Value>,
         keywords: &[String],
-        args: &Vec<String>,
+        args: &IndexMap<String, ArgumentDesc>,
     ) -> Result<BTreeMap<usize, Value>> {
         let mut ordered_values = BTreeMap::new();
 
         for name in keywords.iter() {
-            if let Some(arg_idx) = args.iter().position(|arg| arg == name) {
+            if let Some(arg_idx) = args.keys().position(|arg| arg == name) {
                 ordered_values.insert(arg_idx, values.remove(0));
                 continue;
             }
@@ -439,16 +442,11 @@ impl VM {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in values.into_iter().enumerate() {
-                        let (key, _) = func.args.get_index(i).unwrap();
-
-                        call_context
-                            .named_locals
-                            .insert(key.to_string(), Rc::new(RefCell::new(value)));
+                        call_context.locals.insert(i, Rc::new(RefCell::new(value)));
                     }
                 } else {
-                    let arg_names: Vec<String> = func.args.keys().cloned().collect();
                     let ordered_values =
-                        self.prepare_args(values, keywords, &arg_names)
+                        self.prepare_args(values, keywords, &func.args)
                             .map_err(|e| {
                                 let message = e.message.clone();
                                 e.with_message(format!(
@@ -459,9 +457,7 @@ impl VM {
                     let call_context = self.call_stack.current_mut()?;
 
                     for (i, value) in ordered_values {
-                        call_context
-                            .named_locals
-                            .insert(arg_names[i].to_string(), Rc::new(RefCell::new(value)));
+                        call_context.locals.insert(i, Rc::new(RefCell::new(value)));
                     }
                 }
 

@@ -60,6 +60,17 @@ impl Compiler {
         }
     }
 
+    fn enter_scope(&mut self, context: ScopeContext) {
+        self.scope_id += 1;
+        let new_scope = Scope::new_with_parent(context, Rc::clone(&self.scope), self.scope_id);
+        self.scope = Rc::new(RefCell::new(new_scope));
+    }
+
+    fn exit_scope(&mut self) {
+        let parent_scope = Rc::clone(self.scope.borrow().parent.as_ref().unwrap());
+        self.scope = parent_scope;
+    }
+
     fn set_local(&mut self, name: String, mutable: bool) -> Result<Local> {
         let mut scope = self.scope.borrow_mut();
 
@@ -433,14 +444,8 @@ impl Compiler {
         Ok(vec![])
     }
 
-    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
+    fn _compile_stmt_list(&mut self, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
         let mut ir = vec![];
-
-        {
-            self.scope_id += 1;
-            let new_scope = Scope::new_with_parent(context, Rc::clone(&self.scope), self.scope_id);
-            self.scope = Rc::new(RefCell::new(new_scope));
-        }
 
         for stmt in tree.iter() {
             self.pos = stmt.pos();
@@ -598,14 +603,29 @@ impl Compiler {
             }
         }
 
-        let parent_scope = Rc::clone(self.scope.borrow().parent.as_ref().unwrap());
-        self.scope = parent_scope;
-
         Ok(ir.concat())
     }
 
+    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
+        self.enter_scope(context);
+
+        let instructions = self._compile_stmt_list(tree)?;
+
+        self.exit_scope();
+
+        Ok(instructions)
+    }
+
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt) -> Result<Func> {
-        let body = self.compile_stmt_list(ScopeContext::Function, &fn_decl.body)?;
+        self.enter_scope(ScopeContext::Function);
+
+        for arg in fn_decl.args.iter() {
+            self.set_local(arg.name.clone(), false)?;
+        }
+
+        let body = self._compile_stmt_list(&fn_decl.body)?;
+
+        self.exit_scope();
 
         Ok(Func {
             pos: fn_decl.pos.clone(),
@@ -625,12 +645,7 @@ impl Compiler {
     }
 
     fn compile_class(&mut self, class_decl: &ClassDeclStmt) -> Result<Class> {
-        {
-            self.scope_id += 1;
-            let new_scope =
-                Scope::new_with_parent(ScopeContext::Class, Rc::clone(&self.scope), self.scope_id);
-            self.scope = Rc::new(RefCell::new(new_scope));
-        }
+        self.enter_scope(ScopeContext::Class);
 
         let mut fields = IndexMap::new();
 
@@ -660,8 +675,7 @@ impl Compiler {
             funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl)?);
         }
 
-        let parent_scope = Rc::clone(self.scope.borrow().parent.as_ref().unwrap());
-        self.scope = parent_scope;
+        self.exit_scope();
 
         Ok(Class {
             name: class_decl.name.clone(),
