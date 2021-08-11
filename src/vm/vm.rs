@@ -968,7 +968,7 @@ impl VM {
                     let context = self.call_stack.current()?;
                     let value = context
                         .locals
-                        .get(id)
+                        .get(*id)
                         .and_then(|value| Some(Rc::clone(value)));
 
                     if let Some(value) = value {

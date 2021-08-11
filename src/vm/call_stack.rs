@@ -11,7 +11,7 @@ pub struct CallContext {
     pub finished: bool,
     pub target: TypeId,
     pub return_value: Option<Value>,
-    pub locals: HashMap<usize, Rc<RefCell<Value>>>,
+    pub locals: Vec<Rc<RefCell<Value>>>,
     pub named_locals: HashMap<String, Rc<RefCell<Value>>>,
 }
 
@@ -20,9 +20,9 @@ impl CallContext {
         Self {
             pos,
             target,
+            locals: vec![],
             finished: false,
             return_value: None,
-            locals: HashMap::new(),
             named_locals: HashMap::new(),
         }
     }
