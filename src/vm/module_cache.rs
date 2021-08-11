@@ -259,11 +259,13 @@ impl ModuleCache {
     }
 
     pub(crate) fn current(&mut self) -> Result<&mut Module> {
-        self.current_module
-            .clone()
-            .as_ref()
-            .and_then(move |name| self.modules.get_mut(name))
-            .ok_or_else(|| RuntimeError::new("no active module found".to_string()))
+        if let Some(name) = &self.current_module {
+            if let Some(module) = self.modules.get_mut(name) {
+                return Ok(module);
+            }
+        }
+
+        Err(RuntimeError::new("no active module found".to_string()))
     }
 
     pub(crate) fn current_name(&self) -> Result<&str> {
