@@ -218,8 +218,8 @@ impl Module {
 pub type Middleware = fn(&mut Module) -> Result<()>;
 
 pub struct ModuleCache {
-    modules: HashMap<String, Module>,
-    current_module: Option<String>,
+    modules: IndexMap<String, Module>,
+    current_module: Option<usize>,
     middleware: HashMap<String, Middleware>,
     lookup_paths: Vec<PathBuf>,
 }
@@ -227,14 +227,14 @@ pub struct ModuleCache {
 impl ModuleCache {
     pub fn new() -> Self {
         Self {
-            modules: HashMap::new(),
+            modules: IndexMap::new(),
             current_module: None,
             lookup_paths: vec![],
             middleware: HashMap::new(),
         }
     }
 
-    pub(crate) fn add(&mut self, module: Module) -> Result<()> {
+    pub fn add(&mut self, module: Module) -> Result<()> {
         let mut module = module;
 
         if let Some(middleware) = self.middleware.get(&module.name) {
@@ -246,21 +246,31 @@ impl ModuleCache {
         Ok(())
     }
 
-    pub(crate) fn register_middleware(&mut self, name: &str, middleware: Middleware) {
+    pub fn register_middleware(&mut self, name: &str, middleware: Middleware) {
         self.middleware.insert(name.to_string(), middleware);
     }
 
-    pub(crate) fn set_current(&mut self, name: &str) {
-        if !self.modules.contains_key(name) {
-            panic!("unable to set unknown current module: {}", name);
+    pub fn set_current(&mut self, name: &str) {
+        if let Some(id) = self.modules.get_index_of(name) {
+            self.current_module = Some(id);
+
+            return;
         }
 
-        self.current_module = Some(name.to_string());
+        panic!("unable to set unknown current module: {}", name);
     }
 
-    pub(crate) fn current(&mut self) -> Result<&mut Module> {
-        if let Some(name) = &self.current_module {
-            if let Some(module) = self.modules.get_mut(name) {
+    pub fn get_current_id(&self) -> Option<usize> {
+        self.current_module
+    }
+
+    pub fn set_current_id(&mut self, id: usize) {
+        self.current_module = Some(id);
+    }
+
+    pub fn current(&mut self) -> Result<&mut Module> {
+        if let Some(id) = &self.current_module {
+            if let Some((_, module)) = self.modules.get_index_mut(*id) {
                 return Ok(module);
             }
         }
@@ -268,18 +278,18 @@ impl ModuleCache {
         Err(RuntimeError::new("no active module found".to_string()))
     }
 
-    pub(crate) fn current_name(&self) -> Result<&str> {
+    pub fn current_name(&self) -> Result<&str> {
         self.current_module
-            .as_ref()
-            .and_then(|name| Some(name.as_str()))
+            .and_then(|id| self.modules.get_index(id))
+            .and_then(|(name, _)| Some(name.as_str()))
             .ok_or_else(|| RuntimeError::new("no active module found".to_string()))
     }
 
-    pub(crate) fn contains_module(&self, module_name: &str) -> bool {
+    pub fn contains_module(&self, module_name: &str) -> bool {
         self.modules.contains_key(module_name)
     }
 
-    pub(crate) fn lookup_type(&self, module_name: &str, name: &str) -> Option<TypeDesc> {
+    pub fn lookup_type(&self, module_name: &str, name: &str) -> Option<TypeDesc> {
         if let Ok(class_desc) = self.lookup_class(module_name, name) {
             return Some(TypeDesc::Class(class_desc));
         }
@@ -295,7 +305,7 @@ impl ModuleCache {
         None
     }
 
-    pub(crate) fn lookup_class(&self, module_name: &str, class_name: &str) -> Result<&ClassDesc> {
+    pub fn lookup_class(&self, module_name: &str, class_name: &str) -> Result<&ClassDesc> {
         if let Some(module) = self.modules.get(module_name) {
             if let Some(class_desc) = module.class_map.get(class_name) {
                 return Ok(class_desc);
@@ -313,7 +323,7 @@ impl ModuleCache {
         )))
     }
 
-    pub(crate) fn lookup_interface(
+    pub fn lookup_interface(
         &self,
         module_name: &str,
         interface_name: &str,
@@ -335,11 +345,7 @@ impl ModuleCache {
         )))
     }
 
-    pub(crate) fn lookup_function(
-        &self,
-        module_name: &str,
-        function_name: &str,
-    ) -> Result<&FuncDesc> {
+    pub fn lookup_function(&self, module_name: &str, function_name: &str) -> Result<&FuncDesc> {
         if let Some(module) = self.modules.get(module_name) {
             if let Some(function_desc) = module.func_map.get(function_name) {
                 return Ok(function_desc);
@@ -357,7 +363,7 @@ impl ModuleCache {
         )))
     }
 
-    pub(crate) fn lookup_method(
+    pub fn lookup_method(
         &self,
         module_name: &str,
         class_name: &str,
@@ -375,11 +381,11 @@ impl ModuleCache {
         )))
     }
 
-    pub(crate) fn add_lookup_path(&mut self, path: PathBuf) {
+    pub fn add_lookup_path(&mut self, path: PathBuf) {
         self.lookup_paths.push(path);
     }
 
-    pub(crate) fn find_module_path(&self, name: &str) -> Option<PathBuf> {
+    pub fn find_module_path(&self, name: &str) -> Option<PathBuf> {
         let components = name.split(".").collect::<Vec<_>>();
 
         for lookup_path in self.lookup_paths.iter() {

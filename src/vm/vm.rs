@@ -1092,11 +1092,7 @@ impl VM {
     }
 
     fn _eval(&mut self, module: &str, instructions: Rc<Vec<IR>>) -> Result<()> {
-        let current_module = self
-            .module_cache
-            .current_name()
-            .ok()
-            .and_then(|name| Some(name.to_string()));
+        let module_id = self.module_cache.get_current_id();
 
         self.module_cache.set_current(module);
 
@@ -1134,8 +1130,8 @@ impl VM {
 
         let result = eval();
 
-        if let Some(module) = current_module {
-            self.module_cache.set_current(&module);
+        if let Some(id) = module_id {
+            self.module_cache.set_current_id(id);
         }
 
         result
