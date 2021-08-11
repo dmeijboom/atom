@@ -1,4 +1,4 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -23,11 +23,12 @@ use crate::vm::call_stack::CallContext;
 use crate::vm::module_cache::{
     ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc,
 };
-use crate::vm::stack::Stacked;
+use crate::vm::stacked::StackedBorrowedMut;
 use crate::vm::ClassDesc;
 
 use super::call_stack::CallStack;
 use super::stack::Stack;
+use super::stacked::Stacked;
 
 enum Target {
     Method(TypeId),
@@ -122,14 +123,14 @@ impl VM {
         self.module_cache.lookup_type_id(module, name)
     }
 
-    pub fn get_local_mut(&mut self, local_name: &str) -> Option<RefMut<Value>> {
+    pub fn get_local_mut(&mut self, local_name: &str) -> Option<StackedBorrowedMut<'_>> {
         if let Ok(context) = self.call_stack.current_mut() {
             return context
                 .named_locals
                 .iter_mut()
                 .filter(|(name, _)| name.as_str() == local_name)
                 .next()
-                .and_then(|(_, value)| Some(value.borrow_mut()));
+                .and_then(|(_, stacked)| Some(stacked.borrow_mut()));
         }
 
         None
@@ -351,13 +352,13 @@ impl VM {
 
         context.named_locals.insert(
             "this".to_string(),
-            if method.object.borrow().get_type() == ValueType::Ref {
+            Stacked::ByRef(if method.object.borrow().get_type() == ValueType::Ref {
                 Rc::clone(&method.object)
             } else {
                 let object = to_object(&self.module_cache, method.object.borrow().clone())?;
 
                 Rc::new(RefCell::new(Value::Object(object.into())))
-            },
+            }),
         );
 
         self.call_stack.push(context);
@@ -421,29 +422,40 @@ impl VM {
                 }
 
                 let values = self.stack.pop_many(arg_count)?;
-
-                if keywords.is_empty() {
-                    let call_context = self.call_stack.current_mut()?;
-
-                    for (i, value) in values.into_iter().enumerate() {
-                        call_context.locals.insert(i, Rc::new(RefCell::new(value)));
-                    }
+                let ordered_values = if keywords.is_empty() {
+                    values
                 } else {
-                    let ordered_values =
-                        self.prepare_args(values, keywords, &func.args)
-                            .map_err(|e| {
-                                let message = e.message.clone();
-                                e.with_message(format!(
-                                    "{} in target {}",
-                                    message,
-                                    self.module_cache.fmt_func(target.id()),
-                                ))
-                            })?;
-                    let call_context = self.call_stack.current_mut()?;
+                    self.prepare_args(values, keywords, &func.args)
+                        .map_err(|e| {
+                            let message = e.message.clone();
+                            e.with_message(format!(
+                                "{} in target {}",
+                                message,
+                                self.module_cache.fmt_func(target.id()),
+                            ))
+                        })?
+                        .into_values()
+                        .collect()
+                };
 
-                    for (i, value) in ordered_values {
-                        call_context.locals.insert(i, Rc::new(RefCell::new(value)));
+                let mut i = 0;
+                let call_context = self.call_stack.current_mut()?;
+
+                for value in ordered_values {
+                    if func
+                        .args
+                        .get_index(i)
+                        .and_then(|(_, arg)| Some(arg.mutable))
+                        .unwrap_or(false)
+                    {
+                        call_context
+                            .locals
+                            .insert(i, Stacked::ByRef(Rc::new(RefCell::new(value))));
+                    } else {
+                        call_context.locals.insert(i, Stacked::ByValue(value));
                     }
+
+                    i += 1;
                 }
 
                 let source = Rc::clone(source);
@@ -742,7 +754,7 @@ impl VM {
                 self.call_stack
                     .current_mut()?
                     .locals
-                    .insert(id.clone(), Rc::new(RefCell::new(value)));
+                    .insert(id.clone(), Stacked::ByValue(value));
             }
             Code::StoreMut(id) => {
                 let value = self.stack.pop()?;
@@ -750,7 +762,7 @@ impl VM {
                 self.call_stack
                     .current_mut()?
                     .locals
-                    .insert(id.clone(), Rc::new(RefCell::new(value)));
+                    .insert(id.clone(), Stacked::ByRef(Rc::new(RefCell::new(value))));
             }
             Code::LoadIndex => {
                 let index = self.stack.pop()?;
@@ -966,13 +978,9 @@ impl VM {
             Code::Load(id) => {
                 if !self.call_stack.is_empty() {
                     let context = self.call_stack.current()?;
-                    let value = context
-                        .locals
-                        .get(*id)
-                        .and_then(|value| Some(Rc::clone(value)));
 
-                    if let Some(value) = value {
-                        self.stack.push_ref(value);
+                    if let Some(stacked) = context.locals.get(*id) {
+                        self.stack.push_stacked(stacked.clone());
 
                         return Ok(None);
                     }
@@ -986,13 +994,9 @@ impl VM {
             Code::LoadName(name) => {
                 if !self.call_stack.is_empty() {
                     let context = self.call_stack.current()?;
-                    let value = context
-                        .named_locals
-                        .get(name)
-                        .and_then(|value| Some(Rc::clone(value)));
 
-                    if let Some(value) = value {
-                        self.stack.push_ref(value);
+                    if let Some(stacked) = context.named_locals.get(name) {
+                        self.stack.push_stacked(stacked.clone());
 
                         return Ok(None);
                     }

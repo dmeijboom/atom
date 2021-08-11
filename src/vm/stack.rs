@@ -1,54 +1,10 @@
-use std::cell::{Ref, RefCell};
-use std::ops::Deref;
+use std::cell::RefCell;
 use std::rc::Rc;
 
 use crate::runtime::Value;
 use crate::runtime::{Result, RuntimeError};
 
-#[derive(PartialEq)]
-pub enum Stacked {
-    ByValue(Value),
-    ByRef(Rc<RefCell<Value>>),
-}
-
-impl Stacked {
-    pub fn borrow(&self) -> StackedBorrowed<'_> {
-        StackedBorrowed::new(self)
-    }
-}
-
-enum ValueOrRef<'v> {
-    Value(&'v Value),
-    ValueRef(Ref<'v, Value>),
-}
-
-pub struct StackedBorrowed<'s> {
-    data: ValueOrRef<'s>,
-}
-
-impl<'s> StackedBorrowed<'s> {
-    pub fn new(stacked: &'s Stacked) -> Self {
-        match &stacked {
-            Stacked::ByValue(value) => Self {
-                data: ValueOrRef::Value(value),
-            },
-            Stacked::ByRef(value_ref) => Self {
-                data: ValueOrRef::ValueRef(value_ref.borrow()),
-            },
-        }
-    }
-}
-
-impl Deref for StackedBorrowed<'_> {
-    type Target = Value;
-
-    fn deref(&self) -> &Self::Target {
-        match &self.data {
-            ValueOrRef::Value(value) => value,
-            ValueOrRef::ValueRef(value_ref) => &value_ref,
-        }
-    }
-}
+use super::stacked::Stacked;
 
 pub struct Stack {
     data: Vec<Stacked>,
@@ -57,6 +13,10 @@ pub struct Stack {
 impl Stack {
     pub fn new() -> Self {
         Self { data: vec![] }
+    }
+
+    pub fn push_stacked(&mut self, stacked: Stacked) {
+        self.data.push(stacked);
     }
 
     pub fn push(&mut self, value: Value) {
