@@ -19,9 +19,7 @@ use crate::std::get_middleware;
 use crate::utils;
 use crate::utils::Error;
 use crate::vm::call_stack::CallContext;
-use crate::vm::module_cache::{
-    FuncDesc, FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc,
-};
+use crate::vm::module_cache::{FuncSource, InterfaceDesc, Module, ModuleCache, Type, TypeDesc};
 use crate::vm::stack::Stacked;
 use crate::vm::ClassDesc;
 
@@ -357,14 +355,12 @@ impl VM {
 
         self.call_stack.push(context);
 
-        let func = desc.func.clone();
-
         self.eval_func(
             &method.class.module,
-            &format!("{}.{}", method.class.name, method.name),
+            &method.name,
+            Some(&method.class.name),
             keywords,
             arg_count,
-            func,
         )?;
 
         let context = self.call_stack.pop().unwrap();
@@ -407,17 +403,31 @@ impl VM {
         &mut self,
         module_name: &str,
         name: &str,
+        class_name: Option<&str>,
         keywords: &[String],
         arg_count: usize,
-        func: FuncDesc,
     ) -> Result<()> {
-        match func.source {
+        let func = match class_name {
+            Some(class_name) => {
+                &self
+                    .module_cache
+                    .lookup_method(module_name, class_name, name)?
+                    .func
+            }
+            None => self.module_cache.lookup_function(module_name, name)?,
+        };
+
+        match &func.source {
             FuncSource::Native(source) => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(format!(
                         "invalid argument count for Fn: {}.{}(...) (expected {}, not {})",
                         module_name,
-                        name,
+                        if let Some(class_name) = class_name {
+                            format!("{}.{}", class_name, name)
+                        } else {
+                            name.to_string()
+                        },
                         func.args.len(),
                         arg_count,
                     )));
@@ -464,7 +474,12 @@ impl VM {
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "unable to use keyword arguments in external Fn: {}.{}",
-                        module_name, name,
+                        module_name,
+                        if let Some(class_name) = class_name {
+                            format!("{}.{}", class_name, name)
+                        } else {
+                            name.to_string()
+                        },
                     )));
                 }
 
@@ -485,15 +500,12 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let func = self
-            .module_cache
-            .lookup_function(&id.module, &id.name)?
-            .clone();
+        let func = self.module_cache.lookup_function(&id.module, &id.name)?;
 
         self.call_stack
             .push(CallContext::new(func.pos.clone(), id.clone()));
 
-        self.eval_func(&id.module, &id.name, keywords, arg_count, func)?;
+        self.eval_func(&id.module, &id.name, None, keywords, arg_count)?;
 
         let context = self.call_stack.pop().unwrap();
 
@@ -572,8 +584,10 @@ impl VM {
             Code::Discard => self.stack.delete()?.into(),
             Code::Return => {
                 let return_value = self.stack.pop()?;
+                let context = self.call_stack.current_mut()?;
 
-                self.call_stack.current_mut()?.return_value = Some(return_value);
+                context.finished = true;
+                context.return_value = Some(return_value);
             }
             Code::MakeRef => {
                 let value = match self.stack.pop_stacked()? {
@@ -1085,7 +1099,7 @@ impl VM {
 
                 // break on early return
                 if let Some(context) = self.call_stack.last() {
-                    if context.return_value.is_some() {
+                    if context.finished {
                         break;
                     }
                 }

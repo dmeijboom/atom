@@ -9,6 +9,7 @@ use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
 pub struct CallContext {
     pub pos: Pos,
     pub id: TypeId,
+    pub finished: bool,
     pub return_value: Option<Value>,
     pub locals: HashMap<LocalId, Rc<RefCell<Value>>>,
 }
@@ -18,6 +19,7 @@ impl CallContext {
         Self {
             id,
             pos,
+            finished: false,
             return_value: None,
             locals: HashMap::new(),
         }

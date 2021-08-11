@@ -77,12 +77,6 @@ impl Stack {
 
     pub fn pop_stacked(&mut self) -> Result<Stacked> {
         if let Some(value) = self.data.pop() {
-            if value == Stacked::ByValue(Value::Invalid) {
-                return Err(RuntimeError::new(
-                    "unable to use void Fn as a value".to_string(),
-                ));
-            }
-
             return Ok(value);
         }
 
@@ -90,18 +84,14 @@ impl Stack {
     }
 
     pub fn pop(&mut self) -> Result<Value> {
-        let stacked = self.pop_stacked()?;
-
-        Ok(match stacked {
+        Ok(match self.pop_stacked()? {
             Stacked::ByValue(value) => value,
             Stacked::ByRef(value_ref) => value_ref.borrow().clone(),
         })
     }
 
     pub fn pop_ref(&mut self) -> Result<Rc<RefCell<Value>>> {
-        let stacked = self.pop_stacked()?;
-
-        Ok(match stacked {
+        Ok(match self.pop_stacked()? {
             // This is useless as this is a reference of a copied value but other languages
             // seem to support code like this as well: `[0, 1][0] = 1;`
             Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
@@ -114,9 +104,11 @@ impl Stack {
         let mut values = Vec::with_capacity(len);
 
         while len > 0 {
-            values.insert(0, self.pop()?);
+            values.push(self.pop()?);
             len -= 1;
         }
+
+        values.reverse();
 
         Ok(values)
     }
