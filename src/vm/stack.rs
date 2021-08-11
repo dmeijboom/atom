@@ -100,15 +100,25 @@ impl Stack {
         })
     }
 
-    pub fn pop_many(&mut self, mut len: usize) -> Result<Vec<Value>> {
-        let mut values = Vec::with_capacity(len);
+    pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
+        let data_len = self.data.len();
 
-        while len > 0 {
-            values.push(self.pop()?);
-            len -= 1;
+        if data_len < len {
+            return Err(RuntimeError::new(format!(
+                "expected {} elements on stack",
+                len
+            )));
         }
 
-        values.reverse();
+        let values = self
+            .data
+            .drain((data_len - len)..)
+            .into_iter()
+            .map(|stacked| match stacked {
+                Stacked::ByValue(value) => value,
+                Stacked::ByRef(value_ref) => value_ref.borrow().clone(),
+            })
+            .collect();
 
         Ok(values)
     }
