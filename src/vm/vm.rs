@@ -1086,28 +1086,31 @@ impl VM {
 
         while i < instructions.len() {
             let ir = &instructions[i];
-            let pos = ir.pos.clone();
 
             // evaluates the instruction and optionally returns a label to jump to
-            if let Some(label) = self.eval_single(ir).map_err(|e| {
-                if e.pos.is_none() {
-                    return e.with_pos(pos);
-                } else {
-                    e
-                }
-            })? {
-                i = self.find_label(&*instructions, &label)?;
-                continue;
-            }
+            match self.eval_single(ir) {
+                Ok(None) => {
+                    // break on early return
+                    if let Some(context) = self.call_stack.last() {
+                        if context.finished {
+                            break;
+                        }
+                    }
 
-            // break on early return
-            if let Some(context) = self.call_stack.last() {
-                if context.finished {
-                    break;
+                    i += 1;
                 }
-            }
+                Ok(Some(label)) => {
+                    i = self.find_label(&*instructions, &label)?;
+                    continue;
+                }
+                Err(e) => {
+                    if e.pos.is_none() {
+                        return Err(e.with_pos(ir.pos.clone()));
+                    };
 
-            i += 1;
+                    return Err(e);
+                }
+            };
         }
 
         if let Some(id) = module_id {
