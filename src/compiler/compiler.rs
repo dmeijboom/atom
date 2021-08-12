@@ -211,7 +211,22 @@ impl Compiler {
                 if let Expr::MemberCond(member_cond_expr) = &call_expr.callee {
                     ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
                 } else {
-                    ir.push(self.compile_expr(&call_expr.callee)?);
+                    let is_target = || {
+                        if let Expr::Ident(ident_expr) = &call_expr.callee {
+                            if let Some(target) = Scope::get_target(&self.scope) {
+                                return target == ident_expr.name;
+                            }
+                        }
+
+                        false
+                    };
+
+                    if is_target() {
+                        ir.push(vec![IR::new(Code::LoadTarget, self.pos.clone())]);
+                    } else {
+                        ir.push(self.compile_expr(&call_expr.callee)?);
+                    }
+
                     ir.push(instructions);
                 }
             }
@@ -616,8 +631,12 @@ impl Compiler {
         Ok(instructions)
     }
 
-    fn compile_fn(&mut self, fn_decl: &FnDeclStmt) -> Result<Func> {
-        self.enter_scope(ScopeContext::Function);
+    fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
+        self.enter_scope(ScopeContext::Function(if is_method {
+            None
+        } else {
+            Some(fn_decl.name.clone())
+        }));
 
         for arg in fn_decl.args.iter() {
             self.set_local(arg.name.clone(), false)?;
@@ -672,7 +691,7 @@ impl Compiler {
         let mut funcs = HashMap::new();
 
         for fn_decl in class_decl.methods.iter() {
-            funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl)?);
+            funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl, true)?);
         }
 
         self.exit_scope();
@@ -708,7 +727,7 @@ impl Compiler {
                 Stmt::FnDecl(fn_decl) => {
                     module
                         .funcs
-                        .insert(fn_decl.name.clone(), self.compile_fn(&fn_decl)?);
+                        .insert(fn_decl.name.clone(), self.compile_fn(&fn_decl, false)?);
                 }
                 Stmt::ClassDecl(class_decl) => {
                     module

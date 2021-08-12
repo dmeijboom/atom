@@ -596,6 +596,7 @@ impl VM {
             Code::StoreMember(member) => self.eval_store_member(member)?,
             Code::Load(id) => self.eval_load(*id)?,
             Code::LoadName(name) => self.eval_load_name(name)?,
+            Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
                 return Ok(Some(self.eval_branch(true_label, false_label)?))
@@ -1118,6 +1119,21 @@ impl VM {
         }
 
         Err(RuntimeError::new(format!("no such name: {}", name)))
+    }
+
+    fn eval_load_target(&mut self) -> Result<()> {
+        if let Some(context) = self.call_stack.last() {
+            self.stack.push(Value::Function(TypeId::new(
+                context.target.module,
+                context.target.name,
+            )));
+
+            return Ok(());
+        }
+
+        Err(RuntimeError::new(
+            "unable to load target outside of call".to_string(),
+        ))
     }
 
     fn eval_branch<'s>(&mut self, true_label: &'s str, false_label: &'s str) -> Result<&'s str> {

@@ -20,9 +20,9 @@ pub enum ScopeContext {
     Global,
     Class,
     IfElse,
-    Function,
     Unsafe,
     ForLoop(ForLoopMeta),
+    Function(Option<String>),
 }
 
 pub struct Scope {
@@ -71,7 +71,7 @@ impl Scope {
     }
 
     pub fn set_local(&mut self, name: String, mutable: bool) -> Result<Local, CompileError> {
-        let id = if let ScopeContext::Function = self.context {
+        let id = if let ScopeContext::Function(_) = self.context {
             let id = self.local_id;
 
             self.local_id += 1;
@@ -79,7 +79,7 @@ impl Scope {
             Some(id)
         } else if let Some(parent) = &self.parent {
             walk(parent, |scope| {
-                if let ScopeContext::Function = &scope.context {
+                if let ScopeContext::Function(_) = &scope.context {
                     let id = scope.local_id;
 
                     scope.local_id += 1;
@@ -143,5 +143,15 @@ impl Scope {
         }
 
         return None;
+    }
+
+    pub fn get_target(scope: &Rc<RefCell<Scope>>) -> Option<String> {
+        walk(scope, |scope| {
+            if let ScopeContext::Function(target) = &scope.context {
+                return target.clone();
+            }
+
+            None
+        })
     }
 }
