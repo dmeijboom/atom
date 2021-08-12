@@ -1,7 +1,6 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
-use std::hash::Hash;
 use std::path::Path;
 use std::rc::Rc;
 
@@ -41,10 +40,6 @@ impl Target {
             Target::Function(id) => &id,
         }
     }
-}
-
-fn get_cloned<K: Eq + Hash, V: Clone>(map: &HashMap<K, V>, key: &K) -> Option<V> {
-    map.get(key).and_then(|value| Some(value.clone()))
 }
 
 fn setup_std(vm: &mut VM) -> Result<()> {
@@ -557,132 +552,22 @@ impl VM {
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstByte(val) => self.stack.push(Value::Byte(*val)),
             Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
-            Code::MakeRange => {
-                let to = self.stack.pop().and_then(to_int)?;
-                let from = self.stack.pop().and_then(to_int)?;
-
-                self.stack.push(Value::Range(from..to));
-            }
-            Code::MakeArray(len) => {
-                let values = self.stack.pop_many(*len)?;
-
-                self.stack.push(Value::Array(values.to_vec()));
-            }
-            Code::MakeMap(len) => {
-                let mut map = HashMap::new();
-                let mut key_values = self.stack.pop_many(len * 2)?;
-
-                for _ in 0..*len {
-                    let key = key_values.remove(0);
-                    let value = key_values.remove(0);
-
-                    map.insert(key, value);
-                }
-
-                self.stack.push(Value::Map(map));
-            }
+            Code::MakeRange => self.eval_make_range()?,
+            Code::MakeArray(len) => self.eval_make_array(*len)?,
+            Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::Discard => self.stack.delete()?.into(),
-            Code::Return => {
-                let return_value = self.stack.pop()?;
-                let context = self.call_stack.current_mut()?;
-
-                context.finished = true;
-                context.return_value = Some(return_value);
-            }
-            Code::MakeRef => {
-                let value = match self.stack.pop_stacked()? {
-                    Stacked::ByValue(value) => Value::Ref(Rc::new(RefCell::new(value))),
-                    Stacked::ByRef(value_ref) => Value::Ref(Rc::clone(&value_ref)),
-                };
-
-                self.stack.push(value);
-            }
-            Code::Deref => {
-                let value = self.stack.pop()?;
-
-                if let Value::Ref(value) = value {
-                    self.stack.push(value.borrow().clone());
-
-                    return Ok(None);
-                }
-
-                return Err(RuntimeError::new(format!(
-                    "unable to dereference: {}",
-                    value.get_type().name()
-                )));
-            }
-            Code::LogicalAnd => self.eval_op("logical and", |left, right| match &left {
-                Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ArithmeticBitOr => self.eval_op("bitwise or", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val | to_int(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ArithmeticBitAnd => self.eval_op("bitwise and", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val & to_int(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ArithmeticAdd => self.eval_op("addition", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val + to_int(right)?)),
-                Value::Float(val) => Ok(Value::Float(*val + to_float(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ArithmeticSub => self.eval_op("subtraction", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val - to_int(right)?)),
-                Value::Float(val) => Ok(Value::Float(*val - to_float(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ArithmeticMul => self.eval_op("multiplication", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val * to_int(right)?)),
-                Value::Float(val) => Ok(Value::Float(*val * to_float(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ArithmeticDiv => self.eval_op("division", |left, right| match &left {
-                Value::Int(val) => Ok(Value::Int(*val / to_int(right)?)),
-                Value::Float(val) => Ok(Value::Float(*val / to_float(right)?)),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            })?,
-            Code::ComparisonEq => {
-                let right = self.stack.pop()?;
-                let left = self.stack.pop()?;
-
-                self.stack.push(Value::Bool(left == right));
-            }
-            Code::ComparisonNeq => {
-                let right = self.stack.pop()?;
-                let left = self.stack.pop()?;
-
-                self.stack.push(Value::Bool(left != right));
-            }
+            Code::Return => self.eval_return()?,
+            Code::MakeRef => self.eval_make_ref()?,
+            Code::Deref => self.eval_deref()?,
+            Code::LogicalAnd => self.eval_logical_and()?,
+            Code::ArithmeticBitOr => self.eval_arithmetic_bit_or()?,
+            Code::ArithmeticBitAnd => self.eval_arithmetic_bit_and()?,
+            Code::ArithmeticAdd => self.eval_arithmetic_add()?,
+            Code::ArithmeticSub => self.eval_arithmetic_sub()?,
+            Code::ArithmeticMul => self.eval_arithmetic_mul()?,
+            Code::ArithmeticDiv => self.eval_arithmetic_div()?,
+            Code::ComparisonEq => self.eval_comparison_eq(true)?,
+            Code::ComparisonNeq => self.eval_comparison_eq(false)?,
             Code::ComparisonGt => {
                 self.eval_comparison_op(|left, right| left > right, |left, right| left > right)?
             }
@@ -695,371 +580,568 @@ impl VM {
             Code::ComparisonLte => {
                 self.eval_comparison_op(|left, right| left <= right, |left, right| left <= right)?
             }
-            Code::Not => {
-                let value = self.stack.pop().and_then(to_bool)?;
-
-                self.stack.push(Value::Bool(!value));
-            }
-            Code::Validate => {
-                let value = self.stack.pop()?;
-
-                if let Value::Interface(id) = value {
-                    let interface = self.module_cache.lookup_interface_by_id(&id)?;
-                    let stacked = self.stack.pop_stacked()?;
-
-                    {
-                        let value = stacked.borrow();
-                        let class_id = match &*value {
-                            Value::Object(object) => Ok(object.class.clone()),
-                            _ => self
-                                .module_cache
-                                .lookup_type_id("std.core", value.get_type().name()),
-                        }?;
-                        let class = self.module_cache.lookup_class_by_id(&class_id)?;
-
-                        if !self.validate_class(class, interface) {
-                            return Err(RuntimeError::new(format!(
-                                "validation failed, class '{}' doesn't implement interface: {}",
-                                self.module_cache.fmt_class(&class_id),
-                                self.module_cache.fmt_interface(&id),
-                            )));
-                        }
-                    }
-
-                    match stacked {
-                        Stacked::ByValue(value) => self.stack.push(value),
-                        Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
-                    };
-
-                    return Ok(None);
-                }
-
-                return Err(RuntimeError::new(format!(
-                    "unable to validate non-interface: {}",
-                    value.get_type().name()
-                )));
-            }
-            Code::Cast(type_name) => {
-                let value = self.stack.pop()?;
-
-                self.stack.push(match value {
-                    Value::Int(val) if type_name == "Float" => Value::Float(val as f64),
-                    Value::Int(val) if type_name == "Byte" => Value::Byte(val as u8),
-                    Value::Float(val) if type_name == "Int" => Value::Int(val as i64),
-                    Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
-                    Value::Byte(val) if type_name == "Int" => Value::Int(val as i64),
-                    Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
-                    Value::Bool(val) if type_name == "Int" => Value::Int(val as i64),
-                    _ => {
-                        return Err(RuntimeError::new(format!(
-                            "unable to cast to invalid type: {}",
-                            type_name
-                        )));
-                    }
-                });
-            }
+            Code::Not => self.eval_not()?,
+            Code::Validate => self.eval_validate()?,
+            Code::Cast(type_name) => self.eval_cast(type_name)?,
             Code::Call(arg_count) => self.eval_call(&vec![], *arg_count)?.into(),
             Code::CallWithKeywords((keywords, arg_count)) => {
                 self.eval_call(keywords, *arg_count)?.into()
             }
-            Code::Store(id) => {
-                let value = self.stack.pop()?;
-
-                self.call_stack
-                    .current_mut()?
-                    .locals
-                    .insert(id.clone(), Stacked::ByValue(value));
+            Code::Store(id) => self.eval_store(*id, false)?,
+            Code::StoreMut(id) => self.eval_store(*id, true)?,
+            Code::LoadIndex => self.eval_load_index()?,
+            Code::StoreIndex => self.eval_store_index()?,
+            Code::LoadMember(member) => self.eval_load_member(member, false)?,
+            Code::TeeMember(member) => self.eval_load_member(member, true)?,
+            Code::StoreMember(member) => self.eval_store_member(member)?,
+            Code::Load(id) => self.eval_load(*id)?,
+            Code::LoadName(name) => self.eval_load_name(name)?,
+            Code::SetLabel(_) => {}
+            Code::Branch((true_label, false_label)) => {
+                return Ok(Some(self.eval_branch(true_label, false_label)?))
             }
-            Code::StoreMut(id) => {
-                let value = self.stack.pop()?;
+            Code::Jump(label) => return Ok(Some(label)),
+            Code::JumpIfTrue(label) => return self.eval_jump_if_true(label),
+            Code::Raise => self.eval_raise()?,
+        };
 
-                self.call_stack
-                    .current_mut()?
-                    .locals
-                    .insert(id.clone(), Stacked::ByRef(Rc::new(RefCell::new(value))));
-            }
-            Code::LoadIndex => {
-                let index = self.stack.pop()?;
-                let data = self.stack.pop()?;
+        Ok(None)
+    }
 
-                if let Value::Array(array) = data {
-                    let index = to_int(index).map_err(|e| {
-                        let message = format!("{} in index lookup", e);
+    fn eval_make_range(&mut self) -> Result<()> {
+        let to = self.stack.pop().and_then(to_int)?;
+        let from = self.stack.pop().and_then(to_int)?;
 
-                        e.with_message(message)
-                    })?;
+        self.stack.push(Value::Range(from..to));
 
-                    if let Some(item) = array.get(index as usize) {
-                        self.stack.push(item.clone());
+        Ok(())
+    }
 
-                        return Ok(None);
-                    }
+    fn eval_make_array(&mut self, len: usize) -> Result<()> {
+        let values = self.stack.pop_many(len)?;
 
-                    return Err(RuntimeError::new(
-                        format!("index out of bounds: {}", index,),
-                    ));
-                }
+        self.stack.push(Value::Array(values.to_vec()));
 
-                if let Value::Map(map) = data {
-                    if let Some(item) = map.get(&index) {
-                        self.stack.push(item.clone());
+        Ok(())
+    }
 
-                        return Ok(None);
-                    }
+    fn eval_make_map(&mut self, len: usize) -> Result<()> {
+        let mut map = HashMap::new();
+        let mut key_values = self.stack.pop_many(len * 2)?;
 
-                    return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
-                }
+        for _ in 0..len {
+            let key = key_values.remove(0);
+            let value = key_values.remove(0);
 
-                return Err(RuntimeError::new(format!(
-                    "unable to index type: {}",
-                    data.get_type().name()
-                )));
-            }
-            Code::StoreIndex => {
-                let value = self.stack.pop()?;
-                let index = self.stack.pop()?;
-                let value_ref = self.stack.pop_ref()?;
-                let mut data = value_ref.borrow_mut();
+            map.insert(key, value);
+        }
 
-                if let Value::Array(array) = &mut *data {
-                    let index = to_int(index).map_err(|e| {
-                        let message = format!("{} in index lookup", e);
+        self.stack.push(Value::Map(map));
 
-                        e.with_message(message)
-                    })?;
+        Ok(())
+    }
 
-                    if let Some(_) = array.get(index as usize) {
-                        array[index as usize] = value;
+    fn eval_return(&mut self) -> Result<()> {
+        let return_value = self.stack.pop()?;
+        let context = self.call_stack.current_mut()?;
 
-                        return Ok(None);
-                    }
+        context.finished = true;
+        context.return_value = Some(return_value);
 
-                    return Err(RuntimeError::new(
-                        format!("index out of bounds: {}", index,),
-                    ));
-                }
+        Ok(())
+    }
 
-                if let Value::Map(map) = &mut *data {
-                    if let Some(_) = map.get(&index) {
-                        map.insert(index, value);
+    fn eval_make_ref(&mut self) -> Result<()> {
+        let value = match self.stack.pop_stacked()? {
+            Stacked::ByValue(value) => Value::Ref(Rc::new(RefCell::new(value))),
+            Stacked::ByRef(value_ref) => Value::Ref(Rc::clone(&value_ref)),
+        };
 
-                        return Ok(None);
-                    }
+        self.stack.push(value);
 
-                    return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
-                }
+        Ok(())
+    }
 
-                return Err(RuntimeError::new(format!(
-                    "unable to index type: {}",
-                    data.get_type().name()
-                )));
-            }
-            Code::LoadMember(member) | Code::TeeMember(member) => {
-                let stacked = self.stack.pop_stacked()?;
-                let id = with_auto_deref(&stacked.borrow(), |value| match value {
+    fn eval_deref(&mut self) -> Result<()> {
+        let value = self.stack.pop()?;
+
+        if let Value::Ref(value) = value {
+            self.stack.push(value.borrow().clone());
+
+            return Ok(());
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to dereference: {}",
+            value.get_type().name()
+        )))
+    }
+
+    fn eval_logical_and(&mut self) -> Result<()> {
+        self.eval_op("logical and", |left, right| match &left {
+            Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_bit_or(&mut self) -> Result<()> {
+        self.eval_op("bitwise or", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(*val | to_int(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_bit_and(&mut self) -> Result<()> {
+        self.eval_op("bitwise and", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(*val & to_int(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_add(&mut self) -> Result<()> {
+        self.eval_op("addition", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(*val + to_int(right)?)),
+            Value::Float(val) => Ok(Value::Float(*val + to_float(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_sub(&mut self) -> Result<()> {
+        self.eval_op("subtraction", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(*val - to_int(right)?)),
+            Value::Float(val) => Ok(Value::Float(*val - to_float(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_mul(&mut self) -> Result<()> {
+        self.eval_op("multiplication", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(*val * to_int(right)?)),
+            Value::Float(val) => Ok(Value::Float(*val * to_float(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_div(&mut self) -> Result<()> {
+        self.eval_op("division", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(*val / to_int(right)?)),
+            Value::Float(val) => Ok(Value::Float(*val / to_float(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_comparison_eq(&mut self, eq: bool) -> Result<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        self.stack.push(Value::Bool((left == right) == eq));
+
+        Ok(())
+    }
+
+    fn eval_not(&mut self) -> Result<()> {
+        let value = self.stack.pop().and_then(to_bool)?;
+
+        self.stack.push(Value::Bool(!value));
+
+        Ok(())
+    }
+
+    fn eval_validate(&mut self) -> Result<()> {
+        let value = self.stack.pop()?;
+
+        if let Value::Interface(id) = value {
+            let interface = self.module_cache.lookup_interface_by_id(&id)?;
+            let stacked = self.stack.pop_stacked()?;
+
+            {
+                let value = stacked.borrow();
+                let class_id = match &*value {
                     Value::Object(object) => Ok(object.class.clone()),
                     _ => self
                         .module_cache
                         .lookup_type_id("std.core", value.get_type().name()),
-                })?;
-                let desc = self.module_cache.lookup_class_by_id(&id)?;
+                }?;
+                let class = self.module_cache.lookup_class_by_id(&class_id)?;
 
-                if let Some(index) = desc.fields.get_index_of(member) {
-                    let field = &desc.fields[member];
-
-                    if !field.public && self.module_cache.current_id()? != id.module {
-                        return Err(RuntimeError::new(format!(
-                            "unable to access private field '{}' of class: {}",
-                            member,
-                            self.module_cache.fmt_class(&id),
-                        )));
-                    }
-
-                    let field = with_auto_deref(&stacked.borrow(), |value| {
-                        match value {
-                            Value::Object(object) => object
-                                .get_field(index)
-                                .and_then(|value| Some(value.clone())),
-                            _ => {
-                                let object = to_object(&self.module_cache, value.clone())?;
-
-                                object
-                                    .get_field(index)
-                                    .and_then(|value| Some(value.clone()))
-                            }
-                        }
-                        .ok_or_else(|| {
-                            RuntimeError::new(format!(
-                                "unable to get unknown field '{}' of class: {}",
-                                member,
-                                self.module_cache.fmt_class(&id),
-                            ))
-                        })
-                    })?;
-
-                    if let Code::TeeMember(_) = ir.code {
-                        match stacked {
-                            Stacked::ByValue(value) => self.stack.push(value),
-                            Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
-                        }
-                    }
-
-                    self.stack.push(field);
-
-                    return Ok(None);
+                if !self.validate_class(class, interface) {
+                    return Err(RuntimeError::new(format!(
+                        "validation failed, class '{}' doesn't implement interface: {}",
+                        self.module_cache.fmt_class(&class_id),
+                        self.module_cache.fmt_interface(&id),
+                    )));
                 }
+            }
 
-                if let Some(index) = desc.methods.get_index_of(member) {
-                    let method = &desc.methods[member];
+            match stacked {
+                Stacked::ByValue(value) => self.stack.push(value),
+                Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
+            };
 
-                    if !method.func.public && self.module_cache.current_id()? != id.module {
-                        return Err(RuntimeError::new(format!(
-                            "unable to access private method '{}(...)' of class: {}",
-                            member,
-                            self.module_cache.fmt_class(&id),
-                        )));
-                    }
+            return Ok(());
+        }
 
-                    let object = match stacked {
-                        Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
-                        Stacked::ByRef(value_ref) => Rc::clone(&value_ref),
-                    };
+        Err(RuntimeError::new(format!(
+            "unable to validate non-interface: {}",
+            value.get_type().name()
+        )))
+    }
 
-                    if let Code::TeeMember(_) = ir.code {
-                        self.stack.push_ref(Rc::clone(&object));
-                    }
+    fn eval_cast(&mut self, type_name: &str) -> Result<()> {
+        let value = self.stack.pop()?;
 
-                    self.stack.push(Value::Method(
-                        Method {
-                            id: TypeId::new_with_class(id.module, index, id.name),
-                            name: member.clone(),
-                            object,
-                        }
-                        .into(),
-                    ));
-
-                    return Ok(None);
-                }
-
+        self.stack.push(match value {
+            Value::Int(val) if type_name == "Float" => Value::Float(val as f64),
+            Value::Int(val) if type_name == "Byte" => Value::Byte(val as u8),
+            Value::Float(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
+            Value::Byte(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
+            Value::Bool(val) if type_name == "Int" => Value::Int(val as i64),
+            _ => {
                 return Err(RuntimeError::new(format!(
-                    "no such field or method '{}' for class: {}",
+                    "unable to cast to invalid type: {}",
+                    type_name
+                )));
+            }
+        });
+
+        Ok(())
+    }
+
+    fn eval_store(&mut self, id: usize, is_mut: bool) -> Result<()> {
+        let value = self.stack.pop()?;
+
+        self.call_stack.current_mut()?.locals.insert(
+            id,
+            if is_mut {
+                Stacked::ByRef(Rc::new(RefCell::new(value)))
+            } else {
+                Stacked::ByValue(value)
+            },
+        );
+
+        Ok(())
+    }
+
+    fn eval_load_index(&mut self) -> Result<()> {
+        let index = self.stack.pop()?;
+        let data = self.stack.pop()?;
+
+        if let Value::Array(array) = data {
+            let index = to_int(index).map_err(|e| {
+                let message = format!("{} in index lookup", e);
+
+                e.with_message(message)
+            })?;
+
+            if let Some(item) = array.get(index as usize) {
+                self.stack.push(item.clone());
+
+                return Ok(());
+            }
+
+            return Err(RuntimeError::new(
+                format!("index out of bounds: {}", index,),
+            ));
+        }
+
+        if let Value::Map(map) = data {
+            if let Some(item) = map.get(&index) {
+                self.stack.push(item.clone());
+
+                return Ok(());
+            }
+
+            return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to index type: {}",
+            data.get_type().name()
+        )))
+    }
+
+    fn eval_store_index(&mut self) -> Result<()> {
+        let value = self.stack.pop()?;
+        let index = self.stack.pop()?;
+        let value_ref = self.stack.pop_ref()?;
+        let mut data = value_ref.borrow_mut();
+
+        if let Value::Array(array) = &mut *data {
+            let index = to_int(index).map_err(|e| {
+                let message = format!("{} in index lookup", e);
+
+                e.with_message(message)
+            })?;
+
+            if let Some(_) = array.get(index as usize) {
+                array[index as usize] = value;
+
+                return Ok(());
+            }
+
+            return Err(RuntimeError::new(
+                format!("index out of bounds: {}", index,),
+            ));
+        }
+
+        if let Value::Map(map) = &mut *data {
+            if let Some(_) = map.get(&index) {
+                map.insert(index, value);
+
+                return Ok(());
+            }
+
+            return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to index type: {}",
+            data.get_type().name()
+        )))
+    }
+
+    fn eval_load_member(&mut self, member: &str, push_back: bool) -> Result<()> {
+        let stacked = self.stack.pop_stacked()?;
+        let id = with_auto_deref(&stacked.borrow(), |value| match value {
+            Value::Object(object) => Ok(object.class.clone()),
+            _ => self
+                .module_cache
+                .lookup_type_id("std.core", value.get_type().name()),
+        })?;
+        let desc = self.module_cache.lookup_class_by_id(&id)?;
+
+        if let Some(index) = desc.fields.get_index_of(member) {
+            let field = &desc.fields[member];
+
+            if !field.public && self.module_cache.current_id()? != id.module {
+                return Err(RuntimeError::new(format!(
+                    "unable to access private field '{}' of class: {}",
                     member,
                     self.module_cache.fmt_class(&id),
                 )));
             }
-            Code::StoreMember(member) => {
-                let object_ref = self.stack.pop_ref()?;
-                let mut data = object_ref.borrow_mut();
-                let class_id = with_auto_deref(&data, |value| match value {
-                    Value::Object(object) => Ok(object.class.clone()),
-                    _ => self
-                        .module_cache
-                        .lookup_type_id("std.core", value.get_type().name()),
-                })?;
-                let value = self.stack.pop()?;
-                let desc = self.module_cache.lookup_class_by_id(&class_id)?;
 
-                if let Some(index) = desc.fields.get_index_of(member) {
-                    let field = &desc.fields[member];
+            let field = with_auto_deref(&stacked.borrow(), |value| {
+                match value {
+                    Value::Object(object) => object
+                        .get_field(index)
+                        .and_then(|value| Some(value.clone())),
+                    _ => {
+                        let object = to_object(&self.module_cache, value.clone())?;
 
-                    if !field.public && self.module_cache.current_id()? != class_id.module {
+                        object
+                            .get_field(index)
+                            .and_then(|value| Some(value.clone()))
+                    }
+                }
+                .ok_or_else(|| {
+                    RuntimeError::new(format!(
+                        "unable to get unknown field '{}' of class: {}",
+                        member,
+                        self.module_cache.fmt_class(&id),
+                    ))
+                })
+            })?;
+
+            if push_back {
+                match stacked {
+                    Stacked::ByValue(value) => self.stack.push(value),
+                    Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
+                }
+            }
+
+            self.stack.push(field);
+
+            return Ok(());
+        }
+
+        if let Some(index) = desc.methods.get_index_of(member) {
+            let method = &desc.methods[member];
+
+            if !method.func.public && self.module_cache.current_id()? != id.module {
+                return Err(RuntimeError::new(format!(
+                    "unable to access private method '{}(...)' of class: {}",
+                    member,
+                    self.module_cache.fmt_class(&id),
+                )));
+            }
+
+            let object = match stacked {
+                Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
+                Stacked::ByRef(value_ref) => Rc::clone(&value_ref),
+            };
+
+            if push_back {
+                self.stack.push_ref(Rc::clone(&object));
+            }
+
+            self.stack.push(Value::Method(
+                Method {
+                    id: TypeId::new_with_class(id.module, index, id.name),
+                    name: member.to_string(),
+                    object,
+                }
+                .into(),
+            ));
+
+            return Ok(());
+        }
+
+        Err(RuntimeError::new(format!(
+            "no such field or method '{}' for class: {}",
+            member,
+            self.module_cache.fmt_class(&id),
+        )))
+    }
+
+    fn eval_store_member(&mut self, member: &str) -> Result<()> {
+        let object_ref = self.stack.pop_ref()?;
+        let mut data = object_ref.borrow_mut();
+        let class_id = with_auto_deref(&data, |value| match value {
+            Value::Object(object) => Ok(object.class.clone()),
+            _ => self
+                .module_cache
+                .lookup_type_id("std.core", value.get_type().name()),
+        })?;
+        let value = self.stack.pop()?;
+        let desc = self.module_cache.lookup_class_by_id(&class_id)?;
+
+        if let Some(index) = desc.fields.get_index_of(member) {
+            let field = &desc.fields[member];
+
+            if !field.public && self.module_cache.current_id()? != class_id.module {
+                return Err(RuntimeError::new(format!(
+                    "unable to access private field '{}' of class: {}.{}",
+                    member, class_id.module, class_id.name
+                )));
+            }
+
+            with_auto_deref_mut(&mut data, move |object| {
+                Ok(match object {
+                    Value::Object(object) => object.set_field_value(index, value),
+                    _ => {
                         return Err(RuntimeError::new(format!(
-                            "unable to access private field '{}' of class: {}.{}",
-                            member, class_id.module, class_id.name
+                            "unable to store member on invalid type '{}' expected Object",
+                            object.get_type().name(),
                         )));
                     }
+                })
+            })?;
 
-                    with_auto_deref_mut(&mut data, move |object| {
-                        Ok(match object {
-                            Value::Object(object) => object.set_field_value(index, value),
-                            _ => {
-                                return Err(RuntimeError::new(format!(
-                                    "unable to store member on invalid type '{}' expected Object",
-                                    object.get_type().name(),
-                                )));
-                            }
-                        })
-                    })?;
+            return Ok(());
+        }
 
-                    return Ok(None);
-                }
+        Err(RuntimeError::new(format!(
+            "no such field '{}' for class: {}.{}",
+            member, class_id.module, class_id.name,
+        )))
+    }
 
-                return Err(RuntimeError::new(format!(
-                    "no such field '{}' for class: {}.{}",
-                    member, class_id.module, class_id.name,
-                )));
+    fn eval_load(&mut self, id: usize) -> Result<()> {
+        if !self.call_stack.is_empty() {
+            let context = self.call_stack.current()?;
+
+            if let Some(stacked) = context.locals.get(id) {
+                self.stack.push_stacked(stacked.clone());
+
+                return Ok(());
             }
-            Code::Load(id) => {
-                if !self.call_stack.is_empty() {
-                    let context = self.call_stack.current()?;
+        }
 
-                    if let Some(stacked) = context.locals.get(*id) {
-                        self.stack.push_stacked(stacked.clone());
+        Err(RuntimeError::new(format!(
+            "undefined local with id: {}",
+            id
+        )))
+    }
 
-                        return Ok(None);
-                    }
-                }
+    fn eval_load_name(&mut self, name: &str) -> Result<()> {
+        if !self.call_stack.is_empty() {
+            let context = self.call_stack.current()?;
 
-                return Err(RuntimeError::new(format!(
-                    "undefined local with id: {}",
-                    id
-                )));
+            if let Some(stacked) = context.named_locals.get(name) {
+                self.stack.push_stacked(stacked.clone());
+
+                return Ok(());
             }
-            Code::LoadName(name) => {
-                if !self.call_stack.is_empty() {
-                    let context = self.call_stack.current()?;
+        }
 
-                    if let Some(stacked) = context.named_locals.get(name) {
-                        self.stack.push_stacked(stacked.clone());
+        let current_module = self.module_cache.current()?;
 
-                        return Ok(None);
-                    }
-                }
+        if let Some(value) = current_module
+            .globals
+            .get(name)
+            .and_then(|value| Some(value.clone()))
+        {
+            self.stack.push(value);
 
-                let current_module = self.module_cache.current()?;
+            return Ok(());
+        }
 
-                if let Some(value) = get_cloned(&current_module.globals, name) {
-                    self.stack.push(value);
+        if let Some(typedef) = current_module.find_type(name) {
+            self.stack.push(match typedef {
+                Type::Class(id) => Value::Class(TypeId::new(current_module.id, id)),
+                Type::Function(id) => Value::Function(TypeId::new(current_module.id, id)),
+                Type::Interface(id) => Value::Interface(TypeId::new(current_module.id, id)),
+            });
 
-                    return Ok(None);
-                }
+            return Ok(());
+        }
 
-                if let Some(typedef) = current_module.find_type(name) {
-                    self.stack.push(match typedef {
-                        Type::Class(id) => Value::Class(TypeId::new(current_module.id, id)),
-                        Type::Function(id) => Value::Function(TypeId::new(current_module.id, id)),
-                        Type::Interface(id) => Value::Interface(TypeId::new(current_module.id, id)),
-                    });
+        Err(RuntimeError::new(format!("no such name: {}", name)))
+    }
 
-                    return Ok(None);
-                }
+    fn eval_branch<'s>(&mut self, true_label: &'s str, false_label: &'s str) -> Result<&'s str> {
+        let value = self.stack.pop().and_then(to_bool)?;
 
-                return Err(RuntimeError::new(format!("no such name: {}", name)));
-            }
-            Code::SetLabel(_) => {}
-            Code::Branch((true_label, false_label)) => {
-                let value = self.stack.pop().and_then(to_bool)?;
+        Ok(if value { true_label } else { false_label })
+    }
 
-                return Ok(Some(if value { true_label } else { false_label }));
-            }
-            Code::Jump(label) => return Ok(Some(label)),
-            Code::JumpIfTrue(label) => {
-                let value = self.stack.pop().and_then(to_bool)?;
+    fn eval_jump_if_true<'s>(&mut self, label: &'s str) -> Result<Option<&'s str>> {
+        let value = self.stack.pop().and_then(to_bool)?;
 
-                if value {
-                    self.stack.push(Value::Bool(value));
+        if value {
+            self.stack.push(Value::Bool(value));
 
-                    return Ok(Some(label));
-                }
-            }
-            Code::Raise => {
-                let value = self.stack.pop()?;
-
-                return Err(RuntimeError::new(value.to_string()));
-            }
-        };
+            return Ok(Some(label));
+        }
 
         Ok(None)
+    }
+
+    fn eval_raise(&mut self) -> Result<()> {
+        let value = self.stack.pop()?;
+
+        Err(RuntimeError::new(value.to_string()))
     }
 
     fn find_label(&self, instructions: &Vec<IR>, search: &str) -> Result<usize> {
