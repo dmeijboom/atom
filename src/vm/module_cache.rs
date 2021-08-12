@@ -3,13 +3,14 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
+use smallvec::SmallVec;
 
 use crate::ast::Pos;
 use crate::compiler::{self, Func, IR};
 use crate::runtime::{Result, RuntimeError, TypeId, Value};
 use crate::vm::VM;
 
-pub type ExternalFn = fn(&mut VM, Vec<Value>) -> Result<Option<Value>>;
+pub type ExternalFn = fn(&mut VM, SmallVec<[Value; 2]>) -> Result<Option<Value>>;
 
 pub enum FuncSource {
     Native(Rc<Vec<IR>>),
@@ -224,16 +225,16 @@ impl Module {
     }
 
     pub fn find_type(&self, name: &str) -> Option<Type> {
+        if let Some(id) = self.func_map.get_index_of(name) {
+            return Some(Type::Function(id));
+        }
+
         if let Some(id) = self.class_map.get_index_of(name) {
             return Some(Type::Class(id));
         }
 
         if let Some(id) = self.interface_map.get_index_of(name) {
             return Some(Type::Interface(id));
-        }
-
-        if let Some(id) = self.func_map.get_index_of(name) {
-            return Some(Type::Function(id));
         }
 
         None

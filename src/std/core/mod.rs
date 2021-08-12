@@ -1,3 +1,5 @@
+use smallvec::SmallVec;
+
 use crate::runtime::{Result, Value};
 use crate::vm::{Module, VM};
 
@@ -5,7 +7,7 @@ pub mod array;
 pub mod map;
 pub mod string;
 
-pub fn println(_: &mut VM, values: Vec<Value>) -> Result<Option<Value>> {
+pub fn println(_: &mut VM, values: SmallVec<[Value; 2]>) -> Result<Option<Value>> {
     println!(
         "{}",
         values

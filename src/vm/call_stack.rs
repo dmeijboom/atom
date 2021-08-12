@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use smallvec::SmallVec;
+
 use crate::ast::Pos;
 use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
 use crate::vm::stacked::Stacked;
@@ -10,19 +12,19 @@ pub struct CallContext {
     pub finished: bool,
     pub target: TypeId,
     pub return_value: Option<Value>,
-    pub locals: Vec<Stacked>,
+    pub locals: SmallVec<[Stacked; 2]>,
     pub named_locals: HashMap<String, Stacked>,
 }
 
 impl CallContext {
-    pub fn new(pos: Pos, target: TypeId) -> Self {
+    pub fn new_with_locals(pos: Pos, target: TypeId, capacity: usize) -> Self {
         Self {
             pos,
             target,
-            locals: vec![],
             finished: false,
             return_value: None,
             named_locals: HashMap::new(),
+            locals: SmallVec::with_capacity(capacity),
         }
     }
 }

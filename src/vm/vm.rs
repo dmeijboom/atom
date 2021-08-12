@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::hash::Hash;
@@ -320,7 +319,7 @@ impl VM {
 
         values.sort_unstable_by_key(|(index, _, _)| *index);
 
-        let mut fields: SmallVec<[Value; 5]> = SmallVec::with_capacity(values.len());
+        let mut fields = SmallVec::with_capacity(values.len());
 
         for (index, name, value) in values {
             if index.is_some() {
@@ -348,7 +347,11 @@ impl VM {
     ) -> Result<()> {
         let desc = self.module_cache.lookup_method_by_id(&method.id)?;
 
-        let mut context = CallContext::new(desc.func.pos.clone(), method.id.clone());
+        let mut context = CallContext::new_with_locals(
+            desc.func.pos.clone(),
+            method.id.clone(),
+            desc.func.args.len(),
+        );
 
         context.named_locals.insert(
             "this".to_string(),
@@ -375,7 +378,7 @@ impl VM {
 
     fn prepare_args(
         &self,
-        mut values: Vec<Value>,
+        mut values: SmallVec<[Value; 2]>,
         keywords: &[String],
         args: &IndexMap<String, ArgumentDesc>,
     ) -> Result<BTreeMap<usize, Value>> {
@@ -492,8 +495,11 @@ impl VM {
     ) -> Result<()> {
         let func = self.module_cache.lookup_function_by_id(id)?;
 
-        self.call_stack
-            .push(CallContext::new(func.pos.clone(), id.clone()));
+        self.call_stack.push(CallContext::new_with_locals(
+            func.pos.clone(),
+            id.clone(),
+            func.args.len(),
+        ));
 
         self.eval_func(Target::Function(id.clone()), keywords, arg_count)?;
 
@@ -519,24 +525,28 @@ impl VM {
         Ok(())
     }
 
-    fn eval_comparison_op(&mut self, op: impl FnOnce(Ordering) -> bool) -> Result<()> {
-        self.eval_op("ordering comparison", |left, right| match left {
-            Value::Int(val) => Ok(Value::Bool(op(val.cmp(&to_int(right)?)))),
-            Value::Float(val) => {
-                if let Some(ord) = val.partial_cmp(&to_float(right)?) {
-                    return Ok(Value::Bool(op(ord)));
-                }
+    fn eval_comparison_op(
+        &mut self,
+        int_op: impl FnOnce(i64, i64) -> bool,
+        float_op: impl FnOnce(f64, f64) -> bool,
+    ) -> Result<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
 
-                Err(RuntimeError::new(
-                    "unable to compare invalid Float".to_string(),
-                ))
+        self.stack.push(
+            match left {
+                Value::Int(val) => Ok(Value::Bool(int_op(val, to_int(right)?))),
+                Value::Float(val) => Ok(Value::Bool(float_op(val, to_float(right)?))),
+                _ => Err(RuntimeError::new(format!(
+                    "invalid types: {} and {}",
+                    left.get_type().name(),
+                    right.get_type().name()
+                ))),
             }
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
+            .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?,
+        );
+
+        Ok(())
     }
 
     fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Option<&'i str>> {
@@ -556,7 +566,7 @@ impl VM {
             Code::MakeArray(len) => {
                 let values = self.stack.pop_many(*len)?;
 
-                self.stack.push(Value::Array(values));
+                self.stack.push(Value::Array(values.to_vec()));
             }
             Code::MakeMap(len) => {
                 let mut map = HashMap::new();
@@ -673,13 +683,17 @@ impl VM {
 
                 self.stack.push(Value::Bool(left != right));
             }
-            Code::ComparisonGt => self.eval_comparison_op(|ord| ord == Ordering::Greater)?,
-            Code::ComparisonGte => {
-                self.eval_comparison_op(|ord| ord == Ordering::Greater || ord == Ordering::Equal)?
+            Code::ComparisonGt => {
+                self.eval_comparison_op(|left, right| left > right, |left, right| left > right)?
             }
-            Code::ComparisonLt => self.eval_comparison_op(|ord| ord == Ordering::Less)?.into(),
+            Code::ComparisonGte => {
+                self.eval_comparison_op(|left, right| left >= right, |left, right| left >= right)?
+            }
+            Code::ComparisonLt => {
+                self.eval_comparison_op(|left, right| left < right, |left, right| left < right)?
+            }
             Code::ComparisonLte => {
-                self.eval_comparison_op(|ord| ord == Ordering::Less || ord == Ordering::Equal)?
+                self.eval_comparison_op(|left, right| left <= right, |left, right| left <= right)?
             }
             Code::Not => {
                 let value = self.stack.pop().and_then(to_bool)?;
@@ -1068,45 +1082,39 @@ impl VM {
 
         self.module_cache.set_current(new_module_id);
 
-        let mut eval = || {
-            let mut i = 0;
+        let mut i = 0;
 
-            while i < instructions.len() {
-                let ir = &instructions[i];
-                let pos = ir.pos.clone();
+        while i < instructions.len() {
+            let ir = &instructions[i];
+            let pos = ir.pos.clone();
 
-                // evaluates the instruction and optionally returns a label to jump to
-                if let Some(label) = self.eval_single(ir).map_err(|e| {
-                    if e.pos.is_none() {
-                        return e.with_pos(pos);
-                    } else {
-                        e
-                    }
-                })? {
-                    i = self.find_label(&*instructions, &label)?;
-                    continue;
+            // evaluates the instruction and optionally returns a label to jump to
+            if let Some(label) = self.eval_single(ir).map_err(|e| {
+                if e.pos.is_none() {
+                    return e.with_pos(pos);
+                } else {
+                    e
                 }
-
-                // break on early return
-                if let Some(context) = self.call_stack.last() {
-                    if context.finished {
-                        break;
-                    }
-                }
-
-                i += 1;
+            })? {
+                i = self.find_label(&*instructions, &label)?;
+                continue;
             }
 
-            Ok(())
-        };
+            // break on early return
+            if let Some(context) = self.call_stack.last() {
+                if context.finished {
+                    break;
+                }
+            }
 
-        let result = eval();
+            i += 1;
+        }
 
         if let Some(id) = module_id {
             self.module_cache.set_current(id);
         }
 
-        result
+        Ok(())
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {

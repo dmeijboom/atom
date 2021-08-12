@@ -1,6 +1,8 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
+use smallvec::SmallVec;
+
 use crate::runtime::Value;
 use crate::runtime::{Result, RuntimeError};
 
@@ -60,7 +62,7 @@ impl Stack {
         })
     }
 
-    pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
+    pub fn pop_many(&mut self, len: usize) -> Result<SmallVec<[Value; 2]>> {
         let data_len = self.data.len();
 
         if data_len < len {
@@ -68,6 +70,14 @@ impl Stack {
                 "expected {} elements on stack",
                 len
             )));
+        }
+
+        // Resort to a single (or double) .pop() when pop_many was called with a single element
+        if len == 1 {
+            return Ok(SmallVec::<[Value; 2]>::from_buf_and_len(
+                [self.pop()?, Value::Invalid],
+                1,
+            ));
         }
 
         let values = self
