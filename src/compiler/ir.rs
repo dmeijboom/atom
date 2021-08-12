@@ -1,6 +1,28 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 use crate::ast::Pos;
+
+#[derive(Clone, PartialEq)]
+pub struct Label {
+    pub name: String,
+    pub index: Option<usize>,
+}
+
+impl Label {
+    pub fn new(name: String) -> Self {
+        Self { name, index: None }
+    }
+}
+
+impl Display for Label {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        if let Some(index) = self.index {
+            return write!(f, "label: '{}', index: {}", self.name, index);
+        }
+
+        write!(f, "label: '{}'", self.name)
+    }
+}
 
 #[derive(Clone, PartialEq)]
 pub enum Code {
@@ -14,9 +36,9 @@ pub enum Code {
     MakeMap(usize),
     MakeRange,
     SetLabel(String),
-    Jump(String),
-    JumpIfTrue(String),
-    Branch((String, String)),
+    Jump(Label),
+    JumpIfTrue(Label),
+    Branch((Label, Label)),
     MakeRef,
     Deref,
     LogicalAnd,
@@ -65,10 +87,10 @@ impl Code {
             Code::MakeMap(size) => format!("  makeMap(size: {})", size),
             Code::MakeRange => "  makeRange".to_string(),
             Code::SetLabel(label) => format!("{}:", label),
-            Code::Jump(label) => format!("  jump(label: '{}')", label),
-            Code::JumpIfTrue(label) => format!("  jumpIfTrue(label: '{}')", label),
+            Code::Jump(label) => format!("  jump({})", label),
+            Code::JumpIfTrue(label) => format!("  jumpIfTrue({})", label),
             Code::Branch((label_a, label_b)) => {
-                format!("  branch(label_a: '{}', label_b: '{}')", label_a, label_b)
+                format!("  branch(true: {{{}}}, false: {{{}}})", label_a, label_b)
             }
             Code::MakeRef => "  makeRef".to_string(),
             Code::Deref => "  deref".to_string(),

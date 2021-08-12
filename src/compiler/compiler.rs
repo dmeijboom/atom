@@ -13,7 +13,7 @@ use crate::ast::{
 use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field, Interface};
 use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
-use crate::compiler::{Func, FuncArg, Module, IR};
+use crate::compiler::{Func, FuncArg, Label, Module, IR};
 
 #[derive(Debug, PartialEq)]
 pub struct CompileError {
@@ -43,6 +43,7 @@ pub type Result<T> = std::result::Result<T, CompileError>;
 
 pub struct Compiler {
     pos: Pos,
+    optimize: bool,
     scope_id: usize,
     tree: Vec<Stmt>,
     labels: Vec<String>,
@@ -55,6 +56,7 @@ impl Compiler {
             tree,
             pos: 0..0,
             scope_id: 0,
+            optimize: true,
             labels: vec![],
             scope: Rc::new(RefCell::new(Scope::new())),
         }
@@ -98,7 +100,10 @@ impl Compiler {
             ),
             IR::new(Code::Call(0), member_cond_expr.pos.clone()),
             IR::new(
-                Code::Branch((label_some.clone(), label_none.clone())),
+                Code::Branch((
+                    Label::new(label_some.clone()),
+                    Label::new(label_none.clone()),
+                )),
                 member_cond_expr.pos.clone(),
             ),
             IR::new(Code::SetLabel(label_some), member_cond_expr.pos.clone()),
@@ -221,7 +226,7 @@ impl Compiler {
                         false
                     };
 
-                    if is_target() {
+                    if self.optimize && is_target() {
                         ir.push(vec![IR::new(Code::LoadTarget, self.pos.clone())]);
                     } else {
                         ir.push(self.compile_expr(&call_expr.callee)?);
@@ -265,9 +270,9 @@ impl Compiler {
                 )]);
             }
             Expr::Map(map_expr) => {
-                for keyval in map_expr.key_values.iter() {
-                    ir.push(self.compile_expr(&keyval.key)?);
-                    ir.push(self.compile_expr(&keyval.value)?);
+                for key_val in map_expr.key_values.iter() {
+                    ir.push(self.compile_expr(&key_val.key)?);
+                    ir.push(self.compile_expr(&key_val.value)?);
                 }
 
                 ir.push(vec![IR::new(
@@ -328,7 +333,7 @@ impl Compiler {
                         let label = self.make_label("or");
 
                         ir.push(vec![IR::new(
-                            Code::JumpIfTrue(label.clone()),
+                            Code::JumpIfTrue(Label::new(label.clone())),
                             logical_expr.pos.clone(),
                         )]);
                         ir.push(self.compile_expr(&logical_expr.right)?);
@@ -475,12 +480,12 @@ impl Compiler {
                     ir.push(vec![
                         IR::new(
                             Code::Branch((
-                                if_label.clone(),
-                                if if_stmt.alt.is_empty() {
+                                Label::new(if_label.clone()),
+                                Label::new(if if_stmt.alt.is_empty() {
                                     cont_label.clone()
                                 } else {
                                     else_label.clone()
-                                },
+                                }),
                             )),
                             self.pos.clone(),
                         ),
@@ -492,13 +497,13 @@ impl Compiler {
                         ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
                     } else {
                         ir.push(vec![IR::new(
-                            Code::Jump(cont_label.clone()),
+                            Code::Jump(Label::new(cont_label.clone())),
                             self.pos.clone(),
                         )]);
                         ir.push(vec![IR::new(Code::SetLabel(else_label), self.pos.clone())]);
                         ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.alt)?);
                         ir.push(vec![IR::new(
-                            Code::Jump(cont_label.clone()),
+                            Code::Jump(Label::new(cont_label.clone())),
                             self.pos.clone(),
                         )]);
                         ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
@@ -542,7 +547,10 @@ impl Compiler {
                                 // step 3. Check if it has a value and either continue or stop
                                 Code::TeeMember("isSome".to_string()),
                                 Code::Call(0),
-                                Code::Branch((body_label.clone(), cont_label.clone())),
+                                Code::Branch((
+                                    Label::new(body_label.clone()),
+                                    Label::new(cont_label.clone()),
+                                )),
                                 // step 4. Evaluate the body and so on..
                                 Code::SetLabel(body_label.clone()),
                                 Code::LoadMember("value".to_string()),
@@ -560,7 +568,7 @@ impl Compiler {
                             &for_stmt.body,
                         )?);
                         ir.push(vec![
-                            IR::new(Code::Jump(for_label), self.pos.clone()),
+                            IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),
                             IR::new(Code::SetLabel(cont_label), self.pos.clone()),
                             IR::new(Code::Discard, self.pos.clone()),
                         ]);
@@ -576,7 +584,7 @@ impl Compiler {
                             &for_stmt.body,
                         )?);
                         ir.push(vec![
-                            IR::new(Code::Jump(for_label), self.pos.clone()),
+                            IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),
                             IR::new(Code::SetLabel(cont_label), self.pos.clone()),
                         ]);
                     }
@@ -588,7 +596,7 @@ impl Compiler {
 
                     if let Some(meta) = Scope::get_for_loop(&self.scope) {
                         ir.push(vec![IR::new(
-                            Code::Jump(meta.continue_label.clone()),
+                            Code::Jump(Label::new(meta.continue_label.clone())),
                             self.pos.clone(),
                         )]);
                     } else {
@@ -618,7 +626,46 @@ impl Compiler {
             }
         }
 
-        Ok(ir.concat())
+        if !self.optimize {
+            return Ok(ir.concat());
+        }
+
+        // Pre-compute label indexes when optimizations were enabled
+        let mut instructions: Vec<IR> = ir.concat();
+        let mut labels = HashMap::new();
+
+        for (i, ir) in instructions.iter().enumerate() {
+            if let Code::SetLabel(name) = &ir.code {
+                labels.insert(name.clone(), i);
+            }
+        }
+
+        for ir in instructions.iter_mut() {
+            match &mut ir.code {
+                Code::Jump(label) => {
+                    if let Some(index) = labels.get(&label.name) {
+                        label.index = Some(*index);
+                    }
+                }
+                Code::JumpIfTrue(label) => {
+                    if let Some(index) = labels.get(&label.name) {
+                        label.index = Some(*index);
+                    }
+                }
+                Code::Branch((true_label, false_label)) => {
+                    if let Some(index) = labels.get(&true_label.name) {
+                        true_label.index = Some(*index);
+                    }
+
+                    if let Some(index) = labels.get(&false_label.name) {
+                        false_label.index = Some(*index);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Ok(instructions)
     }
 
     fn compile_stmt_list(&mut self, context: ScopeContext, tree: &Vec<Stmt>) -> Result<Vec<IR>> {

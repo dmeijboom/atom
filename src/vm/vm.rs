@@ -7,7 +7,7 @@ use std::rc::Rc;
 use indexmap::map::IndexMap;
 use smallvec::SmallVec;
 
-use crate::compiler::{Code, IR};
+use crate::compiler::{Code, Label, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
 use crate::runtime::{
     with_auto_deref, with_auto_deref_mut, Method, Object, Result, RuntimeError, TypeId, Value,
@@ -544,7 +544,7 @@ impl VM {
         Ok(())
     }
 
-    fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Option<&'i str>> {
+    fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Option<&'i Label>> {
         match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
@@ -1136,13 +1136,17 @@ impl VM {
         ))
     }
 
-    fn eval_branch<'s>(&mut self, true_label: &'s str, false_label: &'s str) -> Result<&'s str> {
+    fn eval_branch<'s>(
+        &mut self,
+        true_label: &'s Label,
+        false_label: &'s Label,
+    ) -> Result<&'s Label> {
         let value = self.stack.pop().and_then(to_bool)?;
 
         Ok(if value { true_label } else { false_label })
     }
 
-    fn eval_jump_if_true<'s>(&mut self, label: &'s str) -> Result<Option<&'s str>> {
+    fn eval_jump_if_true<'s>(&mut self, label: &'s Label) -> Result<Option<&'s Label>> {
         let value = self.stack.pop().and_then(to_bool)?;
 
         if value {
@@ -1198,7 +1202,11 @@ impl VM {
                     i += 1;
                 }
                 Ok(Some(label)) => {
-                    i = self.find_label(&*instructions, &label)?;
+                    i = match label.index {
+                        Some(index) => index,
+                        None => self.find_label(&*instructions, &label.name)?,
+                    };
+
                     continue;
                 }
                 Err(e) => {
