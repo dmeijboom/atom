@@ -19,7 +19,15 @@ macro_rules! parse_args {
     };
 
     ($values:expr, String) => {
-        $values.remove(0).to_string()
+        {
+            let value = $values.remove(0);
+
+            if let Value::String(value) = value {
+                value
+            } else {
+                return Err(crate::runtime::RuntimeError::new(format!("invalid type '{}', expected: String", value.get_type().name())))
+            }
+        }
     };
 
     ($values:expr, Array) => {

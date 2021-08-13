@@ -1,6 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fmt::{Display, Formatter};
 use std::fs;
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
@@ -218,57 +217,6 @@ pub enum Value {
     Object(Box<Object>),
     Array(Vec<Value>),
     Map(HashMap<Value, Value>),
-}
-
-impl Display for Value {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Value::Invalid => write!(f, "!"),
-            Value::Int(val) => write!(f, "{}", val),
-            Value::Float(val) => write!(f, "{}", val),
-            Value::Char(val) => write!(f, "{}", val),
-            Value::Byte(val) => write!(f, "{}", val),
-            Value::Bool(val) => write!(f, "{}", val),
-            Value::Range(val) => write!(f, "{:?}", val),
-            Value::String(val) => write!(f, "{}", val),
-            Value::Class(id) => {
-                write!(f, "Class({:?})", id)
-            }
-            Value::Interface(id) => {
-                write!(f, "Interface({:?})", id)
-            }
-            Value::Function(id) => {
-                write!(f, "Function({:?})", id)
-            }
-            Value::Method(method) => {
-                write!(f, "Method({:?})", method.id)
-            }
-            Value::Ref(value_ref) => {
-                let value = &value_ref.borrow();
-
-                write!(f, "*{}", value)
-            }
-            Value::Object(object) => {
-                write!(f, "{:?}", object.class)
-            }
-            Value::Array(val) => write!(
-                f,
-                "[{}]",
-                val.iter()
-                    .map(|value| value.to_string())
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-            Value::Map(val) => write!(
-                f,
-                "{{{}}}",
-                val.iter()
-                    .map(|(key, value)| format!("{}: {}", key, value))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            ),
-        }
-    }
 }
 
 impl Hash for Value {

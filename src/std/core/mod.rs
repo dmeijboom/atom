@@ -8,12 +8,12 @@ pub mod map;
 pub mod range;
 pub mod string;
 
-pub fn println(_: &mut VM, values: SmallVec<[Value; 2]>) -> Result<Option<Value>> {
+pub fn println(vm: &mut VM, values: SmallVec<[Value; 2]>) -> Result<Option<Value>> {
     println!(
         "{}",
         values
             .into_iter()
-            .map(|value| format!("{}", value))
+            .map(|value| vm.fmt_value(&value))
             .collect::<Vec<_>>()
             .join(", "),
     );

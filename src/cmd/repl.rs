@@ -156,7 +156,7 @@ impl AtomEngine {
         Ok(module)
     }
 
-    fn eval(&self, expr: Expr) -> Result<Option<Value>, Error> {
+    fn eval(&self, expr: Expr) -> Result<VM, Error> {
         let module = self.create_module(Stmt::FnDecl(FnDeclStmt {
             name: "main".to_string(),
             public: false,
@@ -179,15 +179,17 @@ impl AtomEngine {
             ],
         )?;
 
-        Ok(vm.result())
+        Ok(vm)
     }
 }
 
 fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
     match parse_action(line)? {
         Action::Evaluate(expr) => {
-            if let Some(result) = engine.eval(expr)? {
-                println!("({}) {}", result.get_type().name(), result);
+            let mut vm = engine.eval(expr)?;
+
+            if let Some(value) = vm.result() {
+                println!("{}", vm.fmt_value(&value));
             } else {
                 println!("nil");
             }
@@ -211,8 +213,10 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
             Ok(())
         }
         Action::SetVariable((name, expr)) => {
-            if let Some(result) = engine.eval(expr)? {
-                engine.vars.insert(name, result);
+            let mut vm = engine.eval(expr)?;
+
+            if let Some(value) = vm.result() {
+                engine.vars.insert(name, value);
 
                 return Ok(());
             }

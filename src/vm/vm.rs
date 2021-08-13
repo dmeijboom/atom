@@ -840,15 +840,21 @@ impl VM {
 
     fn eval_store(&mut self, id: usize, is_mut: bool) -> Result<()> {
         let value = self.stack.pop()?;
+        let context = self.call_stack.current_mut()?;
+        let locals_len = context.locals.len();
+        let stacked = if is_mut {
+            Stacked::ByRef(Rc::new(RefCell::new(value)))
+        } else {
+            Stacked::ByValue(value)
+        };
 
-        self.call_stack.current_mut()?.locals.insert(
-            id,
-            if is_mut {
-                Stacked::ByRef(Rc::new(RefCell::new(value)))
-            } else {
-                Stacked::ByValue(value)
-            },
-        );
+        if id < locals_len {
+            let item = unsafe { context.locals.get_unchecked_mut(id) };
+
+            *item = stacked;
+        } else {
+            context.locals.insert(id, stacked);
+        }
 
         Ok(())
     }
@@ -883,7 +889,10 @@ impl VM {
                     return Ok(());
                 }
 
-                return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
+                return Err(RuntimeError::new(format!(
+                    "index out of bounds: {}",
+                    self.fmt_value(&index)
+                )));
             }
 
             Err(RuntimeError::new(format!(
@@ -1017,9 +1026,9 @@ impl VM {
         }
 
         Err(RuntimeError::new(format!(
-            "no such field or method '{}' for class: {}",
+            "no such field or method '{}' for: {}",
             member,
-            self.module_cache.fmt_class(&id),
+            self.fmt_value(&stacked.borrow()),
         )))
     }
 
@@ -1159,7 +1168,67 @@ impl VM {
     fn eval_raise(&mut self) -> Result<()> {
         let value = self.stack.pop()?;
 
-        Err(RuntimeError::new(value.to_string()))
+        Err(RuntimeError::new(self.fmt_value(&value)))
+    }
+
+    pub fn fmt_value(&self, value: &Value) -> String {
+        match value {
+            Value::Invalid => "!".to_string(),
+            Value::Int(val) => format!("{}", val),
+            Value::Float(val) => format!("{}", val),
+            Value::Char(val) => format!("{}", val),
+            Value::Byte(val) => format!("{}", val),
+            Value::Bool(val) => format!("{}", val),
+            Value::Ref(value_ref) => {
+                format!("*{}", self.fmt_value(&value_ref.borrow()))
+            }
+            Value::Range(val) => format!("{}..{}", val.start, val.end),
+            Value::String(val) => format!("{}", val),
+            Value::Class(id) => format!("{}", self.module_cache.fmt_class(id)),
+            Value::Function(id) => format!("{}(...)", self.module_cache.fmt_func(id)),
+            Value::Interface(id) => format!("{}", self.module_cache.fmt_interface(id)),
+            Value::Method(method) => {
+                format!("{}(...)", self.module_cache.fmt_method(&method.id))
+            }
+            Value::Object(object) => {
+                let class_desc = self.module_cache.lookup_class_by_id(&object.class).unwrap();
+
+                format!(
+                    "{}({})",
+                    self.module_cache.fmt_class(&object.class),
+                    class_desc
+                        .fields
+                        .iter()
+                        .map(|(key, field_desc)| format!(
+                            "{}{}: {}",
+                            if field_desc.public { "*" } else { "" },
+                            key,
+                            self.fmt_value(object.get_field(field_desc.id).unwrap())
+                        ))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+            Value::Array(array) => format!(
+                "[{}]",
+                array
+                    .iter()
+                    .map(|item| self.fmt_value(item))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Value::Map(map) => format!(
+                "{{{}}}",
+                map.iter()
+                    .map(|(key, value)| format!(
+                        "{}: {}",
+                        self.fmt_value(key),
+                        self.fmt_value(value)
+                    ))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
     }
 
     fn find_label(&self, instructions: &Vec<IR>, search: &str) -> Result<usize> {
