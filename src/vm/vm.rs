@@ -8,7 +8,7 @@ use indexmap::map::IndexMap;
 use smallvec::SmallVec;
 
 use crate::compiler::{Code, Label, IR};
-use crate::runtime::convert::{to_bool, to_float, to_int, to_object};
+use crate::runtime::convert::{to_bool, to_float, to_int};
 use crate::runtime::{
     with_auto_deref, with_auto_deref_mut, Method, Object, Result, RuntimeError, TypeId, Value,
     ValueType,
@@ -323,8 +323,9 @@ impl VM {
             }
 
             return Err(RuntimeError::new(format!(
-                "unable to initialize {}.{} without field: {}",
-                id.module, id.name, name,
+                "unable to initialize {} with unknown field: {}",
+                self.module_cache.fmt_class(id),
+                name,
             )));
         }
 
@@ -348,14 +349,13 @@ impl VM {
             desc.func.args.len(),
         );
 
+        let object_type = method.object.borrow().get_type();
+
         context.named_locals.insert(
             "this".to_string(),
-            Stacked::ByRef(if method.object.borrow().get_type() == ValueType::Ref {
-                Rc::clone(&method.object)
-            } else {
-                let object = to_object(&self.module_cache, method.object.borrow().clone())?;
-
-                Rc::new(RefCell::new(Value::Object(object.into())))
+            Stacked::ByRef(match object_type {
+                ValueType::Ref => Rc::clone(&method.object),
+                _ => Rc::clone(&method.object),
             }),
         );
 
@@ -857,38 +857,40 @@ impl VM {
         let index = self.stack.pop()?;
         let data = self.stack.pop()?;
 
-        if let Value::Array(array) = data {
-            let index = to_int(index).map_err(|e| {
-                let message = format!("{} in index lookup", e);
+        with_auto_deref(&data, |value| {
+            if let Value::Array(array) = value {
+                let index = to_int(index).map_err(|e| {
+                    let message = format!("{} in index lookup", e);
 
-                e.with_message(message)
-            })?;
+                    e.with_message(message)
+                })?;
 
-            if let Some(item) = array.get(index as usize) {
-                self.stack.push(item.clone());
+                if let Some(item) = array.get(index as usize) {
+                    self.stack.push(item.clone());
 
-                return Ok(());
+                    return Ok(());
+                }
+
+                return Err(RuntimeError::new(
+                    format!("index out of bounds: {}", index,),
+                ));
             }
 
-            return Err(RuntimeError::new(
-                format!("index out of bounds: {}", index,),
-            ));
-        }
+            if let Value::Map(map) = value {
+                if let Some(item) = map.get(&index) {
+                    self.stack.push(item.clone());
 
-        if let Value::Map(map) = data {
-            if let Some(item) = map.get(&index) {
-                self.stack.push(item.clone());
+                    return Ok(());
+                }
 
-                return Ok(());
+                return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
             }
 
-            return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
-        }
-
-        Err(RuntimeError::new(format!(
-            "unable to index type: {}",
-            data.get_type().name()
-        )))
+            Err(RuntimeError::new(format!(
+                "unable to index type: {}",
+                data.get_type().name()
+            )))
+        })
     }
 
     fn eval_store_index(&mut self) -> Result<()> {
@@ -897,38 +899,36 @@ impl VM {
         let value_ref = self.stack.pop_ref()?;
         let mut data = value_ref.borrow_mut();
 
-        if let Value::Array(array) = &mut *data {
-            let index = to_int(index).map_err(|e| {
-                let message = format!("{} in index lookup", e);
+        with_auto_deref_mut(&mut data, |data| {
+            if let Value::Array(array) = &mut *data {
+                let index = to_int(index).map_err(|e| {
+                    let message = format!("{} in index lookup", e);
 
-                e.with_message(message)
-            })?;
+                    e.with_message(message)
+                })?;
 
-            if let Some(_) = array.get(index as usize) {
-                array[index as usize] = value;
+                if let Some(_) = array.get(index as usize) {
+                    array[index as usize] = value;
+
+                    return Ok(());
+                }
+
+                return Err(RuntimeError::new(
+                    format!("index out of bounds: {}", index,),
+                ));
+            }
+
+            if let Value::Map(map) = &mut *data {
+                map.insert(index.clone(), value);
 
                 return Ok(());
             }
 
-            return Err(RuntimeError::new(
-                format!("index out of bounds: {}", index,),
-            ));
-        }
-
-        if let Value::Map(map) = &mut *data {
-            if let Some(_) = map.get(&index) {
-                map.insert(index, value);
-
-                return Ok(());
-            }
-
-            return Err(RuntimeError::new(format!("index out of bounds: {}", index)));
-        }
-
-        Err(RuntimeError::new(format!(
-            "unable to index type: {}",
-            data.get_type().name()
-        )))
+            Err(RuntimeError::new(format!(
+                "unable to index type: {}",
+                data.get_type().name()
+            )))
+        })
     }
 
     fn eval_load_member(&mut self, member: &str, push_back: bool) -> Result<()> {
@@ -953,25 +953,23 @@ impl VM {
             }
 
             let field = with_auto_deref(&stacked.borrow(), |value| {
-                match value {
-                    Value::Object(object) => object
+                if let Value::Object(object) = value {
+                    return object
                         .get_field(index)
-                        .and_then(|value| Some(value.clone())),
-                    _ => {
-                        let object = to_object(&self.module_cache, value.clone())?;
-
-                        object
-                            .get_field(index)
-                            .and_then(|value| Some(value.clone()))
-                    }
+                        .and_then(|value| Some(value.clone()))
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!(
+                                "unable to get unknown field '{}' of class: {}",
+                                member,
+                                self.module_cache.fmt_class(&id),
+                            ))
+                        });
                 }
-                .ok_or_else(|| {
-                    RuntimeError::new(format!(
-                        "unable to get unknown field '{}' of class: {}",
-                        member,
-                        self.module_cache.fmt_class(&id),
-                    ))
-                })
+
+                Err(RuntimeError::new(format!(
+                    "unable to lookup field of class: {}",
+                    self.module_cache.fmt_class(&id)
+                )))
             })?;
 
             if push_back {

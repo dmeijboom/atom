@@ -1,0 +1,7 @@
+fn main() {
+    let mut map = {};
+
+    map.set("name", "atom");
+
+    return map.get("name").value();
+}

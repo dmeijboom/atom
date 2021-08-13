@@ -15,7 +15,7 @@ pub class LinesIter {
         for {
             let bytes = this.readable.read(1);
 
-            if buff.length == 0 && bytes.length == 0 {
+            if buff.len() == 0 && bytes.len() == 0 {
                 return none();
             }
 
@@ -69,7 +69,7 @@ pub class Reader {
         for {
             let buffSize = 1024;
             let buff = this.readable.read(buffSize);
-            let len = buff.length;
+            let len = buff.len();
 
             if len > 0 {
                 output.append(buff);

@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 use crate::parse_args;
-use crate::runtime::{convert, Result, RuntimeError, Value};
+use crate::runtime::{convert, with_auto_deref_mut, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_map<T>(
@@ -9,18 +9,19 @@ fn use_map<T>(
     handler: impl FnOnce(&mut HashMap<Value, Value>) -> Result<T>,
 ) -> Result<T> {
     let mut value = vm.get_local_mut("this").unwrap();
-    let type_val = value.get_type();
 
-    if let Value::Object(object) = &mut *value {
-        if let Some(Value::Map(field_value)) = object.get_field_mut(0) {
-            return Ok(handler(field_value)?);
+    with_auto_deref_mut(&mut value, |value| {
+        let type_val = value.get_type();
+
+        if let Value::Map(map) = value {
+            return Ok(handler(map)?);
         }
-    }
 
-    Err(RuntimeError::new(format!(
-        "invalid type '{}', expected Map",
-        type_val.name()
-    )))
+        Err(RuntimeError::new(format!(
+            "invalid type '{}', expected Map",
+            type_val.name()
+        )))
+    })
 }
 
 pub fn register(module: &mut Module) -> Result<()> {

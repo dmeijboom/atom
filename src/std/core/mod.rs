@@ -5,6 +5,7 @@ use crate::vm::{Module, VM};
 
 pub mod array;
 pub mod map;
+pub mod range;
 pub mod string;
 
 pub fn println(_: &mut VM, values: SmallVec<[Value; 2]>) -> Result<Option<Value>> {
@@ -26,6 +27,7 @@ pub fn register(module: &mut Module) -> Result<()> {
     string::register(module)?;
     array::register(module)?;
     map::register(module)?;
+    range::register(module)?;
 
     Ok(())
 }

@@ -1,0 +1,5 @@
+fn main() {
+    let map = {};
+
+    map.test_example();
+}

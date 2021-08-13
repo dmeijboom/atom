@@ -1,21 +1,22 @@
 use crate::parse_args;
-use crate::runtime::{convert, Result, RuntimeError, Value};
+use crate::runtime::{convert, with_auto_deref_mut, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 pub fn use_array<T>(vm: &mut VM, handler: impl FnOnce(&mut Vec<Value>) -> Result<T>) -> Result<T> {
     let mut value = vm.get_local_mut("this").unwrap();
-    let type_val = value.get_type();
 
-    if let Value::Object(object) = &mut *value {
-        if let Some(Value::Array(field_value)) = object.get_field_mut(0) {
-            return Ok(handler(field_value)?);
+    with_auto_deref_mut(&mut value, |value| {
+        let type_val = value.get_type();
+
+        if let Value::Array(array) = value {
+            return Ok(handler(array)?);
         }
-    }
 
-    Err(RuntimeError::new(format!(
-        "invalid type '{}', expected Array",
-        type_val.name()
-    )))
+        Err(RuntimeError::new(format!(
+            "invalid type '{}', expected Array",
+            type_val.name()
+        )))
+    })
 }
 
 pub fn register(module: &mut Module) -> Result<()> {
@@ -48,7 +49,12 @@ pub fn register(module: &mut Module) -> Result<()> {
 
             let item = use_array(vm, |a| Ok(a.pop()))?;
 
-            return Ok(Some(convert::to_option(vm, item)?));
+            Ok(Some(convert::to_option(vm, item)?))
+        }),
+        ("len", |vm, values| {
+            parse_args!(values);
+
+            use_array(vm, |a| Ok(Some(Value::Int(a.len() as i64))))
         }),
         ("clear", |vm, values| {
             parse_args!(values);

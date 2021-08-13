@@ -1,7 +1,7 @@
 use smallvec::smallvec;
 
 use crate::runtime::Object;
-use crate::vm::{ModuleCache, VM};
+use crate::vm::VM;
 
 use super::result::{Result, RuntimeError};
 use super::value::Value;
@@ -89,52 +89,4 @@ pub fn to_array(value: Value) -> Result<Vec<Value>> {
         "invalid type '{}' expected: Array",
         value.get_type().name()
     )))
-}
-
-pub fn to_object(module_cache: &ModuleCache, value: Value) -> Result<Object> {
-    Ok(match value {
-        Value::Int(val) => Object::new(
-            module_cache.lookup_type_id("std.core", "Int")?,
-            smallvec![Value::Int(val)],
-        ),
-        Value::Float(val) => Object::new(
-            module_cache.lookup_type_id("std.core", "Float")?,
-            smallvec![Value::Float(val)],
-        ),
-        Value::Bool(val) => Object::new(
-            module_cache.lookup_type_id("std.core", "Bool")?,
-            smallvec![Value::Bool(val)],
-        ),
-        Value::Range(val) => Object::new(
-            module_cache.lookup_type_id("std.core", "Range")?,
-            smallvec![Value::Int(val.start), Value::Int(val.end)],
-        ),
-        Value::String(val) => {
-            let length = val.len() as i64;
-
-            Object::new(
-                module_cache.lookup_type_id("std.core", "String")?,
-                smallvec![Value::String(val), Value::Int(length)],
-            )
-        }
-        Value::Array(val) => {
-            let length = val.len() as i64;
-
-            Object::new(
-                module_cache.lookup_type_id("std.core", "Array")?,
-                smallvec![Value::Array(val), Value::Int(length)],
-            )
-        }
-        Value::Map(val) => Object::new(
-            module_cache.lookup_type_id("std.core", "Map")?,
-            smallvec![Value::Map(val)],
-        ),
-        Value::Object(object) => *object,
-        _ => {
-            return Err(RuntimeError::new(format!(
-                "invalid type '{}' expected: Object",
-                value.get_type().name()
-            )))
-        }
-    })
 }

@@ -32,6 +32,7 @@ mod tests {
     #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
     #[test_case(include_str!("../examples/call_arg_order.atom"), Value::Bool(true); "call arg order")]
     #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(17); "operator precedence")]
+    #[test_case(include_str!("../examples/map_basics.atom"), Value::String("atom".to_string()); "map basics")]
     #[test_case(include_str!("../examples/class_fields.atom"), Value::String("hello world".to_string()); "class fields")]
     #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(30), Value::Int(40)]); "heap copy")]
     #[test_case(include_str!("../examples/stack_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(20), Value::Int(20)]); "stack copy")]
@@ -44,6 +45,7 @@ mod tests {
     #[test_case(include_str!("../examples/invalid/index_out_of_bounds.atom"), "index out of bounds: 3"; "index out of bounds")]
     #[test_case(include_str!("../examples/invalid/call_int.atom"), "type 'Int' is not callable"; "function call on an integer")]
     #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
+    #[test_case(include_str!("../examples/invalid/method_not_found.atom"), "no such field or method 'test_example' for class: std.core.Map"; "method not found on a map type")]
     #[test_case(include_str!("../examples/invalid/init_class_with_args.atom"), "unable to initialize main.Test with non-keyword arguments"; "initialize class with non-keyword arguments")]
     #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to initialize main.Test with missing fields: three"; "initialize class with missing fields")]
     fn code_fail(source: &str, message: &str) {

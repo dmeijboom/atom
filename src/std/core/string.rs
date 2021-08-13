@@ -6,10 +6,8 @@ fn use_string(vm: &mut VM, handler: impl Fn(&String) -> Value) -> Result<Option<
     let mut value = vm.get_local_mut("this").unwrap();
     let type_val = value.get_type();
 
-    if let Value::Object(object) = &mut *value {
-        if let Some(Value::String(field_value)) = object.get_field_mut(0) {
-            return Ok(Some(handler(field_value)));
-        }
+    if let Value::String(s) = &mut *value {
+        return Ok(Some(handler(s)));
     }
 
     Err(RuntimeError::new(format!(
@@ -79,6 +77,11 @@ pub fn register(module: &mut Module) -> Result<()> {
             let count = parse_args!(values => Int);
 
             use_into_string(vm, |s| s.repeat(count as usize))
+        }),
+        ("len", |vm, values| {
+            parse_args!(values);
+
+            use_string(vm, |s| Value::Int(s.len() as i64))
         }),
     ];
 

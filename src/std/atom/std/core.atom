@@ -36,39 +36,28 @@ pub fn none() {
 }
 
 pub class String {
-    let value;
     pub let length;
 }
 
-pub class Int {
-    let value;
-}
+pub class Int {}
 
-pub class Float {
-    let value;
-}
+pub class Float {}
 
-pub class Char {
-    let value;
-}
+pub class Char {}
 
-pub class Byte {
-    let value;
-}
+pub class Byte {}
 
-pub class Bool {
-    let value;
-}
+pub class Bool {}
 
 pub class RangeIter {
-    let from;
-    let to;
+    let start;
+    let end;
     let mut index;
 
     pub fn next() {
-        let index = this.from + this.index;
+        let index = this.start + this.index;
 
-        if index >= this.to {
+        if index >= this.end {
             return none();
         }
 
@@ -81,11 +70,8 @@ pub class RangeIter {
 }
 
 pub class Range {
-    let from;
-    let to;
-
     pub fn iter() {
-        return &RangeIter(from: this.from, to: this.to, index: 0);
+        return &RangeIter(start: this.start(), end: this.end(), index: 0);
     }
 
     pub fn collect() {
@@ -104,7 +90,7 @@ pub class ArrayIter {
     let mut index;
 
     pub fn next() {
-        if this.index >= this.array.length {
+        if this.index >= this.array.len() {
             return none();
         }
 
@@ -117,16 +103,13 @@ pub class ArrayIter {
 }
 
 pub class Array {
-    let data;
-    pub let length;
-
     pub fn nth(index) {
-        if index < 0 || this.length <= index {
+        if index < 0 || this.len() <= index {
             return none();
         }
 
         unsafe {
-            return some(this.data[index]);
+            return some(this[index]);
         }
     }
 
@@ -135,7 +118,7 @@ pub class Array {
     }
 
     pub fn last() {
-        return this.nth(this.length-1);
+        return this.nth(this.len()-1);
     }
 
     pub fn iter() {
@@ -150,7 +133,7 @@ pub class Array {
                 break;
             }
 
-            this.data.push(item.value());
+            this.push(item.value());
         }
     }
 
@@ -159,7 +142,7 @@ pub class Array {
 
         for range {
             unsafe {
-                output.push(this.data[.]);
+                output.push(this[.]);
             }
         }
 
@@ -188,7 +171,7 @@ pub class MapIter {
     let mut index;
 
     pub fn next() {
-        if this.index >= this.keys.length {
+        if this.index >= this.keys.len() {
             return none();
         }
 
@@ -204,10 +187,8 @@ pub class MapIter {
 }
 
 pub class Map {
-    let value;
-
     pub fn iter() {
-        return &MapIter(data: this.value, keys: this.keys(), index: 0);
+        return &MapIter(data: this, keys: this.keys(), index: 0);
     }
 
     pub fn get(key) {
@@ -216,13 +197,13 @@ pub class Map {
         }
 
         unsafe {
-            return some(this.value[key]);
+            return some(this[key]);
         }
     }
 
     pub fn set(key, value) {
         unsafe {
-            this.value[key] = value;
+            this[key] = value;
         }
     }
 }
