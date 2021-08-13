@@ -75,7 +75,7 @@ impl CallStack {
             stack_trace.push(Trace {
                 pos: call_context.pos.clone(),
                 target: match call_context.target.class {
-                    Some(_) => module_cache.fmt_class(&call_context.target),
+                    Some(_) => module_cache.fmt_method(&call_context.target),
                     None => module_cache.fmt_func(&call_context.target),
                 },
             });
