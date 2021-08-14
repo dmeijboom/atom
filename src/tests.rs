@@ -38,7 +38,6 @@ mod tests {
     #[test_case(include_str!("../examples/class_fields.atom"), Value::String("hello world".to_string()); "class fields")]
     #[test_case(include_str!("../examples/template_string.atom"), Value::String("Hello { World 120".to_string()); "template string")]
     #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(30), Value::Int(40)]); "heap copy")]
-    #[test_case(include_str!("../examples/stack_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(20), Value::Int(20)]); "stack copy")]
     fn code_success(source: &str, value: Value) {
         let result = run_code(source);
 

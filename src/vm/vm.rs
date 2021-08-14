@@ -11,7 +11,6 @@ use crate::compiler::{Code, Label, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int};
 use crate::runtime::{
     with_auto_deref, with_auto_deref_mut, Method, Object, Result, RuntimeError, TypeId, Value,
-    ValueType,
 };
 use crate::std::core::DEFAULT_IMPORTS;
 use crate::std::get_middleware;
@@ -356,14 +355,9 @@ impl VM {
             desc.func.args.len(),
         );
 
-        let object_type = method.object.borrow().get_type();
-
         context.named_locals.insert(
             "this".to_string(),
-            Stacked::ByRef(match object_type {
-                ValueType::Ref => Rc::clone(&method.object),
-                _ => Rc::clone(&method.object),
-            }),
+            Stacked::ByRef(Rc::clone(&method.object)),
         );
 
         self.call_stack.push(context);
@@ -447,12 +441,15 @@ impl VM {
                 let call_context = self.call_stack.current_mut()?;
 
                 for value in ordered_values {
-                    if func
+                    let is_mutable = func
                         .args
                         .get_index(i)
                         .and_then(|(_, arg)| Some(arg.mutable))
-                        .unwrap_or(false)
-                    {
+                        .unwrap_or(false);
+
+                    // Immutable locals can be placed on the stack as their contents will not be changed but we
+                    // don't want to do this for non-primitive types because that will be slower in most cases
+                    if !value.get_type().is_primitive() || is_mutable {
                         call_context
                             .locals
                             .insert(i, Stacked::ByRef(Rc::new(RefCell::new(value))));
@@ -875,11 +872,11 @@ impl VM {
         Ok(())
     }
 
-    fn eval_store(&mut self, id: usize, is_mut: bool) -> Result<()> {
+    fn eval_store(&mut self, id: usize, is_mutable: bool) -> Result<()> {
         let value = self.stack.pop()?.into_value();
         let context = self.call_stack.current_mut()?;
         let locals_len = context.locals.len();
-        let stacked = if is_mut {
+        let stacked = if !value.get_type().is_primitive() || is_mutable {
             Stacked::ByRef(Rc::new(RefCell::new(value)))
         } else {
             Stacked::ByValue(value)

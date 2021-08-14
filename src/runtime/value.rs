@@ -81,6 +81,13 @@ impl ValueType {
             ValueType::Ref => "Ref",
         }
     }
+
+    pub fn is_primitive(&self) -> bool {
+        match self {
+            ValueType::Map | ValueType::String | ValueType::Object | ValueType::Array => false,
+            _ => true,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Hash, Eq)]

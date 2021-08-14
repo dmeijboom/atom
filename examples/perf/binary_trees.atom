@@ -11,7 +11,7 @@ fn make_tree(value, depth) {
 
     let value2 = value + value;
 
-    return Node(
+    return &Node(
         value: value,
         left: some(make_tree((value + value) - 1, depth - 1)),
         right: some(make_tree(value + value, depth - 1)),
