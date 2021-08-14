@@ -373,7 +373,7 @@ impl Compiler {
         Ok(ir.concat())
     }
 
-    fn compile_assign_local(&mut self, name: &String, value: &Expr) -> Result<Vec<IR>> {
+    fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
         if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(
@@ -405,13 +405,13 @@ impl Compiler {
     fn compile_assign_member(
         &mut self,
         object: &Expr,
-        member: &String,
+        member: &str,
         value: &Expr,
     ) -> Result<Vec<IR>> {
         let mut ir = vec![];
 
         ir.push(self.compile_expr(value)?);
-        ir.push(self.compile_expr(&object)?);
+        ir.push(self.compile_expr(object)?);
         ir.push(vec![IR::new(
             Code::StoreMember(member.to_string()),
             self.pos.clone(),
@@ -428,9 +428,9 @@ impl Compiler {
     ) -> Result<Vec<IR>> {
         let mut ir = vec![];
 
-        ir.push(self.compile_expr(&object)?);
-        ir.push(self.compile_expr(&index)?);
-        ir.push(self.compile_expr(&value)?);
+        ir.push(self.compile_expr(object)?);
+        ir.push(self.compile_expr(index)?);
+        ir.push(self.compile_expr(value)?);
         ir.push(vec![IR::new(Code::StoreIndex, self.pos.clone())]);
 
         Ok(ir.concat())
@@ -480,7 +480,7 @@ impl Compiler {
         Ok(vec![])
     }
 
-    fn _compile_stmt_list(&mut self, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
+    fn _compile_stmt_list(&mut self, tree: &[Stmt]) -> Result<Vec<IR>> {
         let mut ir = vec![];
 
         for stmt in tree.iter() {
@@ -697,7 +697,7 @@ impl Compiler {
         Ok(instructions)
     }
 
-    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &Vec<Stmt>) -> Result<Vec<IR>> {
+    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &[Stmt]) -> Result<Vec<IR>> {
         self.enter_scope(context);
 
         let instructions = self._compile_stmt_list(tree)?;

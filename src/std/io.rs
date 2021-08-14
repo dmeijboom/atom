@@ -58,7 +58,7 @@ pub fn register(module: &mut Module) -> Result<()> {
             let values = buff
                 .into_iter()
                 .take(bytes_read)
-                .map(|b| Value::Byte(b))
+                .map(Value::Byte)
                 .collect();
 
             Ok(Some(Value::Array(values)))

@@ -68,7 +68,7 @@ pub fn register(module: &mut Module) -> Result<()> {
             parse_args!(values);
 
             use_string(vm, |s| {
-                let items = s.chars().map(|c| Value::Char(c)).collect::<Vec<_>>();
+                let items = s.chars().map(Value::Char).collect::<Vec<_>>();
 
                 Value::Array(items)
             })

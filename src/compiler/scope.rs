@@ -142,7 +142,7 @@ impl Scope {
             }
         }
 
-        return None;
+        None
     }
 
     pub fn get_target(scope: &Rc<RefCell<Scope>>) -> Option<String> {

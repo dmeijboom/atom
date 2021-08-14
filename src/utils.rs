@@ -69,7 +69,7 @@ pub fn display_parse_error(e: ParseError<LineCol>) {
 
     eprintln!(
         "ParseError: {} on line {} at column {}",
-        if e.expected.tokens().collect::<Vec<_>>().len() <= 3 {
+        if e.expected.tokens().count() <= 3 {
             format!(
                 "expected one of: {}",
                 e.expected
@@ -140,7 +140,7 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
             continue;
         }
 
-        let (line, column) = parse_line_column(&contents, &trace.pos);
+        let (line, column) = parse_line_column(contents, &trace.pos);
 
         message.push_str(&format!(
             "  > in {}(..) on line {} at column {}\n",
@@ -152,7 +152,7 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
     message.push_str(&e.message);
 
     if let Some(pos) = e.pos {
-        let (line, column) = parse_line_column(&contents, &pos);
+        let (line, column) = parse_line_column(contents, &pos);
 
         message.push_str(&format!(" on line {} at column {}", line, column));
     }
@@ -163,7 +163,7 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
 pub fn display_error(source: &str, e: Error) {
     match e {
         Error::Compile(e) => display_compile_error(e),
-        Error::Runtime(e) => display_runtime_error("main", &source, e),
+        Error::Runtime(e) => display_runtime_error("main", source, e),
         Error::ParseError(e) => display_parse_error(e),
     }
 }

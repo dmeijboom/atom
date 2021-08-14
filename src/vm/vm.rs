@@ -41,8 +41,8 @@ enum Target {
 impl Target {
     pub fn id(&self) -> &TypeId {
         match self {
-            Target::Method(id) => &id,
-            Target::Function(id) => &id,
+            Target::Method(id) => id,
+            Target::Function(id) => id,
         }
     }
 }
@@ -126,10 +126,7 @@ impl VM {
         if let Ok(context) = self.call_stack.current_mut() {
             return context
                 .named_locals
-                .iter_mut()
-                .filter(|(name, _)| name.as_str() == local_name)
-                .next()
-                .and_then(|(_, stacked)| Some(stacked.borrow_mut()));
+                .iter_mut().find(|(name, _)| name.as_str() == local_name).map(|(_, stacked)| stacked.borrow_mut());
         }
 
         None
@@ -146,7 +143,7 @@ impl VM {
     }
 
     fn import_in_module(&mut self, module: &mut Module, path: &str) -> Result<()> {
-        let mut components = path.split(".").collect::<Vec<_>>();
+        let mut components = path.split('.').collect::<Vec<_>>();
 
         if components.len() < 2 {
             return Err(RuntimeError::new(format!("invalid import path: {}", path)));
@@ -273,7 +270,7 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let desc = self.module_cache.lookup_class_by_id(&id)?;
+        let desc = self.module_cache.lookup_class_by_id(id)?;
 
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(format!(
@@ -367,7 +364,7 @@ impl VM {
         let context = self.call_stack.pop().unwrap();
 
         self.stack
-            .push(context.return_value.unwrap_or_else(|| Value::Void));
+            .push(context.return_value.unwrap_or(Value::Void));
 
         Ok(())
     }
@@ -437,14 +434,12 @@ impl VM {
                         .collect()
                 };
 
-                let mut i = 0;
                 let call_context = self.call_stack.current_mut()?;
 
-                for value in ordered_values {
+                for (i, value) in ordered_values.into_iter().enumerate() {
                     let is_mutable = func
                         .args
-                        .get_index(i)
-                        .and_then(|(_, arg)| Some(arg.mutable))
+                        .get_index(i).map(|(_, arg)| arg.mutable)
                         .unwrap_or(false);
 
                     // Immutable locals can be placed on the stack as their contents will not be changed but we
@@ -456,8 +451,6 @@ impl VM {
                     } else {
                         call_context.locals.insert(i, Stacked::ByValue(value));
                     }
-
-                    i += 1;
                 }
 
                 let source = Rc::clone(source);
@@ -505,7 +498,7 @@ impl VM {
         let context = self.call_stack.pop().unwrap();
 
         self.stack
-            .push(context.return_value.unwrap_or_else(|| Value::Void));
+            .push(context.return_value.unwrap_or(Value::Void));
 
         Ok(())
     }
@@ -560,7 +553,7 @@ impl VM {
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
-            Code::Discard => self.stack.delete()?.into(),
+            Code::Discard => self.stack.delete()?,
             Code::Return => {
                 self.eval_return()?;
 
@@ -593,9 +586,9 @@ impl VM {
             Code::Not => self.eval_not()?,
             Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
-            Code::Call(arg_count) => self.eval_call(&vec![], *arg_count)?.into(),
+            Code::Call(arg_count) => self.eval_call(&[], *arg_count)?,
             Code::CallWithKeywords((keywords, arg_count)) => {
-                self.eval_call(keywords, *arg_count)?.into()
+                self.eval_call(keywords, *arg_count)?
             }
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,
@@ -950,7 +943,7 @@ impl VM {
                     e.with_message(message)
                 })?;
 
-                if let Some(_) = array.get(index as usize) {
+                if array.get(index as usize).is_some() {
                     array[index as usize] = value;
 
                     return Ok(());
@@ -998,8 +991,7 @@ impl VM {
             let field = with_auto_deref(&stacked.borrow(), |value| {
                 if let Value::Object(object) = value {
                     return object
-                        .get_field(index)
-                        .and_then(|value| Some(value.clone()))
+                        .get_field(index).cloned()
                         .ok_or_else(|| {
                             RuntimeError::new(format!(
                                 "unable to get unknown field '{}' of class: {}",
@@ -1141,8 +1133,7 @@ impl VM {
 
         if let Some(value) = current_module
             .globals
-            .get(name)
-            .and_then(|value| Some(value.clone()))
+            .get(name).cloned()
         {
             self.stack.push(value);
 
@@ -1217,10 +1208,10 @@ impl VM {
                 format!("*{}", self.fmt_value(&value_ref.borrow()))
             }
             Value::Range(val) => format!("{}..{}", val.start, val.end),
-            Value::String(val) => format!("{}", val),
-            Value::Class(id) => format!("{}", self.module_cache.fmt_class(id)),
+            Value::String(val) => val.to_string(),
+            Value::Class(id) => self.module_cache.fmt_class(id),
             Value::Function(id) => format!("{}(...)", self.module_cache.fmt_func(id)),
-            Value::Interface(id) => format!("{}", self.module_cache.fmt_interface(id)),
+            Value::Interface(id) => self.module_cache.fmt_interface(id),
             Value::Method(method) => {
                 format!("{}(...)", self.module_cache.fmt_method(&method.id))
             }
@@ -1265,7 +1256,7 @@ impl VM {
         }
     }
 
-    fn find_label(&self, instructions: &Vec<IR>, search: &str) -> Result<usize> {
+    fn find_label(&self, instructions: &[IR], search: &str) -> Result<usize> {
         for (i, ir) in instructions.iter().enumerate() {
             if let Code::SetLabel(label) = &ir.code {
                 if label == search {
@@ -1343,8 +1334,7 @@ impl VM {
         self.stack.pop().ok().and_then(|stacked| match stacked {
             Stacked::ByValue(value) => Some(value),
             Stacked::ByRef(value_ref) => Rc::try_unwrap(value_ref)
-                .ok()
-                .and_then(|value| Some(value.into_inner())),
+                .ok().map(|value| value.into_inner()),
         })
     }
 }

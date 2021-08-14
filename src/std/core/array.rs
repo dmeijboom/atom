@@ -9,7 +9,7 @@ pub fn use_array<T>(vm: &mut VM, handler: impl FnOnce(&mut Vec<Value>) -> Result
         let type_val = value.get_type();
 
         if let Value::Array(array) = value {
-            return Ok(handler(array)?);
+            return handler(array);
         }
 
         Err(RuntimeError::new(format!(

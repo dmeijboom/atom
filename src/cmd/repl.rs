@@ -27,7 +27,7 @@ fn parse_action(input: &str) -> Result<Action, Error> {
             // Maybe an expression?
             if let Ok(expr) = parser::parse_expr(input) {
                 Ok(vec![Stmt::Expr(ExprStmt {
-                    pos: expr.pos().clone(),
+                    pos: expr.pos(),
                     expr,
                 })])
             } else {
@@ -37,7 +37,7 @@ fn parse_action(input: &str) -> Result<Action, Error> {
     }?;
     let stmt = tree.pop();
 
-    if tree.len() > 0 {
+    if !tree.is_empty() {
         return Err(
             RuntimeError::new("unable to parse more than one statement".to_string()).into(),
         );
@@ -87,7 +87,7 @@ impl AtomEngine {
                     public: func.public,
                     source: match &func.source {
                         FuncSource::Native(instructions) => {
-                            FuncSource::Native(Rc::clone(&instructions))
+                            FuncSource::Native(Rc::clone(instructions))
                         }
                         FuncSource::External(external_fn) => FuncSource::External(*external_fn),
                     },

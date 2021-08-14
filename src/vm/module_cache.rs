@@ -114,12 +114,8 @@ impl Module {
             interface_map: IndexMap::new(),
         };
 
-        let mut id = 0;
-
-        for (name, func) in module.funcs {
+        for (id, (name, func)) in module.funcs.into_iter().enumerate() {
             vm_module.func_map.insert(name, FuncDesc::new(id, func));
-
-            id += 1;
         }
 
         for (name, class) in module.classes {
@@ -370,7 +366,7 @@ impl ModuleCache {
     pub fn lookup_class_by_id(&self, id: &TypeId) -> Result<&ClassDesc> {
         if let Some((_, module)) = self.modules.get_index(id.module) {
             if let Some((_, class_desc)) = module.class_map.get_index(id.name) {
-                return Ok(&class_desc);
+                return Ok(class_desc);
             }
         }
 
@@ -464,7 +460,7 @@ impl ModuleCache {
     }
 
     pub fn find_module_path(&self, name: &str) -> Option<PathBuf> {
-        let components = name.split(".").collect::<Vec<_>>();
+        let components = name.split('.').collect::<Vec<_>>();
 
         for lookup_path in self.lookup_paths.iter() {
             let mut path = lookup_path.clone();

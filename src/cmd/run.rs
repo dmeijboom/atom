@@ -16,7 +16,7 @@ pub struct Opts {
     show_ir: bool,
 }
 
-pub fn command(module_paths: &Vec<PathBuf>, opts: Opts, contents: &str) -> Result<(), Error> {
+pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(), Error> {
     let tree = parser::parse(contents)?;
 
     if opts.show_ast {

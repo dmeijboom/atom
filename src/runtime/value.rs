@@ -34,10 +34,6 @@ impl PartialEq for Func {
     fn eq(&self, other: &Self) -> bool {
         self.name.as_str() == other.name.as_str()
     }
-
-    fn ne(&self, other: &Self) -> bool {
-        self.name.as_str() != other.name.as_str()
-    }
 }
 
 impl Eq for Func {}
@@ -83,10 +79,10 @@ impl ValueType {
     }
 
     pub fn is_primitive(&self) -> bool {
-        match self {
-            ValueType::Map | ValueType::String | ValueType::Object | ValueType::Array => false,
-            _ => true,
-        }
+        !matches!(
+            self,
+            ValueType::Map | ValueType::String | ValueType::Object | ValueType::Array
+        )
     }
 }
 

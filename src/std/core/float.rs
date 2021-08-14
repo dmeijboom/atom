@@ -9,7 +9,7 @@ fn use_float<T>(vm: &mut VM, handler: impl FnOnce(&mut f64) -> Result<T>) -> Res
         let type_val = value.get_type();
 
         if let Value::Float(val) = value {
-            return Ok(handler(val)?);
+            return handler(val);
         }
 
         Err(RuntimeError::new(format!(

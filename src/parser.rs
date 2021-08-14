@@ -322,7 +322,7 @@ mod tests {
     #[test_case("\"hi \\n\";", "hi \n", 0..7; "string with escaped newline")]
     fn test_string_literal(source: &str, value: &str, pos: Pos) {
         assert_eq!(
-            parse_single(&source),
+            parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Literal(LiteralExpr {
                     literal: Literal::String(value.to_string()),
@@ -526,14 +526,12 @@ mod tests {
                                 literal: Literal::Int(1),
                                 pos: (0..1),
                             }
-                            .into()
                         ),
                         right: Expr::Literal(
                             LiteralExpr {
                                 literal: Literal::Int(2),
                                 pos: (5..6),
                             }
-                            .into()
                         ),
                         op,
                         pos: (0..6),
@@ -565,14 +563,12 @@ mod tests {
                                 literal: Literal::Int(1),
                                 pos: (0..1),
                             }
-                            .into()
                         ),
                         right: Expr::Literal(
                             LiteralExpr {
                                 literal: Literal::Int(2),
                                 pos: (3 + width..4 + width),
                             }
-                            .into()
                         ),
                         op,
                         pos: (0..4 + width),
@@ -605,14 +601,12 @@ mod tests {
                                 literal: Literal::Int(1),
                                 pos: (0..1),
                             }
-                            .into()
                         ),
                         right: Expr::Literal(
                             LiteralExpr {
                                 literal: Literal::Int(2),
                                 pos: (3 + width..4 + width),
                             }
-                            .into()
                         ),
                         op,
                         pos: (0..4 + width),

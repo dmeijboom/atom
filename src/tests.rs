@@ -55,10 +55,10 @@ mod tests {
 
         assert_eq!(
             Some(message.to_string()),
-            result.err().and_then(|e| match e {
-                Error::Compile(e) => Some(e.message),
-                Error::Runtime(e) => Some(e.message),
-                Error::ParseError(_) => Some("unexpected parse error".to_string()),
+            result.err().map(|e| match e {
+                Error::Compile(e) => e.message,
+                Error::Runtime(e) => e.message,
+                Error::ParseError(_) => "unexpected parse error".to_string(),
             })
         );
     }

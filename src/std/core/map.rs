@@ -14,7 +14,7 @@ fn use_map<T>(
         let type_val = value.get_type();
 
         if let Value::Map(map) = value {
-            return Ok(handler(map)?);
+            return handler(map);
         }
 
         Err(RuntimeError::new(format!(

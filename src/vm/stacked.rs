@@ -78,7 +78,7 @@ impl Deref for StackedBorrowed<'_> {
     fn deref(&self) -> &Self::Target {
         match &self.data {
             ValueOrRef::Value(value) => value,
-            ValueOrRef::ValueRef(value_ref) => &value_ref,
+            ValueOrRef::ValueRef(value_ref) => value_ref,
         }
     }
 }

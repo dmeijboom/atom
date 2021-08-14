@@ -11,7 +11,7 @@ fn use_range<T>(vm: &mut VM, handler: impl FnOnce(&mut Range<i64>) -> Result<T>)
         let type_val = value.get_type();
 
         if let Value::Range(range) = value {
-            return Ok(handler(range)?);
+            return handler(range);
         }
 
         Err(RuntimeError::new(format!(

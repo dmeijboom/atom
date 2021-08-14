@@ -53,7 +53,7 @@ impl RuntimeError {
         self.filename = module
             .filename
             .clone()
-            .and_then(|filename| filename.to_str().and_then(|s| Some(s.to_string())));
+            .and_then(|filename| filename.to_str().map(|s| s.to_string()));
 
         self
     }
