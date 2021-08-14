@@ -18,6 +18,23 @@ impl Stacked {
     pub fn borrow_mut(&mut self) -> StackedBorrowedMut<'_> {
         StackedBorrowedMut::new(self)
     }
+
+    pub fn into_value(self) -> Value {
+        match self {
+            Self::ByValue(value) => value,
+            Self::ByRef(value_ref) => value_ref.borrow().clone(),
+        }
+    }
+
+    pub fn into_ref(self) -> Rc<RefCell<Value>> {
+        match self {
+            // This is useless as this is a reference of a copied value but other languages
+            // seem to support code like this as well: `[0, 1][0] = 1;`
+            Self::ByValue(value) => Rc::new(RefCell::new(value)),
+
+            Self::ByRef(value_ref) => value_ref,
+        }
+    }
 }
 
 impl Clone for Stacked {

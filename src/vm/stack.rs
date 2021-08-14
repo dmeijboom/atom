@@ -37,29 +37,12 @@ impl Stack {
         Ok(())
     }
 
-    pub fn pop_stacked(&mut self) -> Result<Stacked> {
+    pub fn pop(&mut self) -> Result<Stacked> {
         if let Some(value) = self.data.pop() {
             return Ok(value);
         }
 
         Err(RuntimeError::new("expecting element on stack".to_string()))
-    }
-
-    pub fn pop(&mut self) -> Result<Value> {
-        Ok(match self.pop_stacked()? {
-            Stacked::ByValue(value) => value,
-            Stacked::ByRef(value_ref) => value_ref.borrow().clone(),
-        })
-    }
-
-    pub fn pop_ref(&mut self) -> Result<Rc<RefCell<Value>>> {
-        Ok(match self.pop_stacked()? {
-            // This is useless as this is a reference of a copied value but other languages
-            // seem to support code like this as well: `[0, 1][0] = 1;`
-            Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
-
-            Stacked::ByRef(value_ref) => value_ref,
-        })
     }
 
     pub fn pop_many(&mut self, len: usize) -> Result<SmallVec<[Value; 2]>> {
@@ -75,7 +58,7 @@ impl Stack {
         // Resort to a single (or double) .pop() when pop_many was called with a single element
         if len == 1 {
             return Ok(SmallVec::<[Value; 2]>::from_buf_and_len(
-                [self.pop()?, Value::Void],
+                [self.pop()?.into_value(), Value::Void],
                 1,
             ));
         }
