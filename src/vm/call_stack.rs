@@ -9,7 +9,6 @@ use crate::vm::ModuleCache;
 
 pub struct CallContext {
     pub pos: Pos,
-    pub finished: bool,
     pub target: TypeId,
     pub return_value: Option<Value>,
     pub locals: SmallVec<[Stacked; 2]>,
@@ -21,7 +20,6 @@ impl CallContext {
         Self {
             pos,
             target,
-            finished: false,
             return_value: None,
             named_locals: HashMap::new(),
             locals: SmallVec::with_capacity(capacity),

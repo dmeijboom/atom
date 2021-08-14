@@ -28,6 +28,12 @@ use super::call_stack::CallStack;
 use super::stack::Stack;
 use super::stacked::Stacked;
 
+enum Flow<'i> {
+    JumpTo(&'i Label),
+    Return,
+    Continue,
+}
+
 enum Target {
     Method(TypeId),
     Function(TypeId),
@@ -544,7 +550,7 @@ impl VM {
         Ok(())
     }
 
-    fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Option<&'i Label>> {
+    fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
@@ -556,7 +562,11 @@ impl VM {
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::Discard => self.stack.delete()?.into(),
-            Code::Return => self.eval_return()?,
+            Code::Return => {
+                self.eval_return()?;
+
+                return Ok(Flow::Return);
+            }
             Code::MakeRef => self.eval_make_ref()?,
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
@@ -599,14 +609,14 @@ impl VM {
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
-                return Ok(Some(self.eval_branch(true_label, false_label)?))
+                return Ok(Flow::JumpTo(self.eval_branch(true_label, false_label)?))
             }
-            Code::Jump(label) => return Ok(Some(label)),
+            Code::Jump(label) => return Ok(Flow::JumpTo(label)),
             Code::JumpIfTrue(label) => return self.eval_jump_if_true(label),
             Code::Raise => self.eval_raise()?,
         };
 
-        Ok(None)
+        Ok(Flow::Continue)
     }
 
     fn eval_make_range(&mut self) -> Result<()> {
@@ -646,7 +656,6 @@ impl VM {
         let return_value = self.stack.pop()?;
         let context = self.call_stack.current_mut()?;
 
-        context.finished = true;
         context.return_value = Some(return_value);
 
         Ok(())
@@ -1153,16 +1162,16 @@ impl VM {
         Ok(if value { true_label } else { false_label })
     }
 
-    fn eval_jump_if_true<'s>(&mut self, label: &'s Label) -> Result<Option<&'s Label>> {
+    fn eval_jump_if_true<'i>(&mut self, label: &'i Label) -> Result<Flow<'i>> {
         let value = self.stack.pop().and_then(to_bool)?;
 
         if value {
             self.stack.push(Value::Bool(value));
 
-            return Ok(Some(label));
+            return Ok(Flow::JumpTo(label));
         }
 
-        Ok(None)
+        Ok(Flow::Continue)
     }
 
     fn eval_raise(&mut self) -> Result<()> {
@@ -1258,24 +1267,20 @@ impl VM {
 
             // evaluates the instruction and optionally returns a label to jump to
             match self.eval_single(ir) {
-                Ok(None) => {
-                    // break on early return
-                    if let Some(context) = self.call_stack.last() {
-                        if context.finished {
-                            break;
-                        }
+                Ok(flow) => match flow {
+                    Flow::Continue => i += 1,
+                    Flow::Return => {
+                        break;
                     }
+                    Flow::JumpTo(label) => {
+                        i = match label.index {
+                            Some(index) => index,
+                            None => self.find_label(&*instructions, &label.name)?,
+                        };
 
-                    i += 1;
-                }
-                Ok(Some(label)) => {
-                    i = match label.index {
-                        Some(index) => index,
-                        None => self.find_label(&*instructions, &label.name)?,
-                    };
-
-                    continue;
-                }
+                        continue;
+                    }
+                },
                 Err(e) => {
                     if e.pos.is_none() {
                         return Err(e.with_pos(ir.pos.clone()));
