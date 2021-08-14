@@ -8,7 +8,7 @@ use indexmap::map::IndexMap;
 
 use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, InterfaceDeclStmt, Literal,
-    LogicalOp, MemberCondExpr, Pos, Stmt,
+    LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
 };
 use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field, Interface};
@@ -167,6 +167,21 @@ impl Compiler {
                 },
                 literal_expr.pos.clone(),
             )]),
+            Expr::Template(template_expr) => {
+                for component in template_expr.components.iter() {
+                    ir.push(match component {
+                        TemplateComponent::String(s) => {
+                            vec![IR::new(Code::ConstString(s.clone()), self.pos.clone())]
+                        }
+                        TemplateComponent::Expr(expr) => self.compile_expr(expr)?,
+                    });
+                }
+
+                ir.push(vec![IR::new(
+                    Code::MakeTemplate(template_expr.components.len()),
+                    self.pos.clone(),
+                )]);
+            }
             Expr::Range(range_expr) => {
                 ir.push(self.compile_expr(&range_expr.from)?);
                 ir.push(self.compile_expr(&range_expr.to)?);

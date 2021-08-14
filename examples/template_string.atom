@@ -1,0 +1,5 @@
+fn main() {
+    let num = 120;
+
+    return f"{"h".upper()}ello \{ World {num}";
+}

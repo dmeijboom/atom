@@ -163,6 +163,18 @@ pub struct DerefExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum TemplateComponent {
+    String(String),
+    Expr(Expr),
+}
+
+#[derive(Debug, PartialEq)]
+pub struct TemplateExpr {
+    pub components: Vec<TemplateComponent>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -180,6 +192,7 @@ pub enum Expr {
     Deref(Box<DerefExpr>),
     Index(Box<IndexExpr>),
     Range(Box<RangeExpr>),
+    Template(TemplateExpr),
 }
 
 impl Expr {
@@ -200,7 +213,8 @@ impl Expr {
             Self::Deref(deref_expr) => deref_expr.pos.clone(),
             Self::Index(index_expr) => index_expr.pos.clone(),
             Self::Range(range_expr) => range_expr.pos.clone(),
-            Expr::Cast(cast_expr) => cast_expr.pos.clone(),
+            Self::Cast(cast_expr) => cast_expr.pos.clone(),
+            Self::Template(template_expr) => template_expr.pos.clone(),
         }
     }
 }

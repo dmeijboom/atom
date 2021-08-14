@@ -69,6 +69,17 @@ peg::parser! {
         rule literal_expr() -> Expr
             = start:pos() literal:literal() end:pos() { Expr::Literal(LiteralExpr { literal, pos: (start..end) }) }
 
+        rule template_char() -> char
+            = "\\{" { '{' }
+                / !"{" c:string_char() { c }
+
+        rule template_component() -> TemplateComponent
+            = "{" _ expr:expr() _ "}" { TemplateComponent::Expr(expr) }
+                / value:template_char()+ { TemplateComponent::String(value.into_iter().collect::<String>()) }
+
+        rule template_expr() -> Expr
+            = start:pos() "f" "\"" components:template_component()* "\"" end:pos() { Expr::Template(TemplateExpr { components, pos: (start..end) }) }
+
         rule keyval() -> KeyValue
             = start:pos() key:expr() _ ":" _ value:expr() end:pos() { KeyValue { key, value, pos: (start..end) } }
 
@@ -83,7 +94,7 @@ peg::parser! {
                 / start:pos() "." !['0'..='9'] end:pos() { Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }) }
 
         rule prefix() -> Expr
-            = literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr()
+            = template_expr() / literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr()
 
         rule keyword_arg() -> KeywordArg
             = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }

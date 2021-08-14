@@ -561,6 +561,7 @@ impl VM {
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
+            Code::MakeTemplate(len) => self.eval_make_template(*len)?,
             Code::Discard => self.stack.delete()?.into(),
             Code::Return => {
                 self.eval_return()?;
@@ -649,6 +650,19 @@ impl VM {
         }
 
         self.stack.push(Value::Map(map));
+
+        Ok(())
+    }
+
+    fn eval_make_template(&mut self, len: usize) -> Result<()> {
+        let s = self
+            .stack
+            .pop_many(len)?
+            .into_iter()
+            .map(|value| self.fmt_value(&value))
+            .collect::<String>();
+
+        self.stack.push(Value::String(s));
 
         Ok(())
     }
