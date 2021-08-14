@@ -3,14 +3,13 @@ use std::collections::HashMap;
 use smallvec::SmallVec;
 
 use crate::ast::Pos;
-use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
+use crate::runtime::{Result, RuntimeError, Trace, TypeId};
 use crate::vm::stacked::Stacked;
 use crate::vm::ModuleCache;
 
 pub struct CallContext {
     pub pos: Pos,
     pub target: TypeId,
-    pub return_value: Option<Value>,
     pub locals: SmallVec<[Stacked; 2]>,
     pub named_locals: HashMap<String, Stacked>,
 }
@@ -20,7 +19,6 @@ impl CallContext {
         Self {
             pos,
             target,
-            return_value: None,
             named_locals: HashMap::new(),
             locals: SmallVec::with_capacity(capacity),
         }

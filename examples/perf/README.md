@@ -18,7 +18,7 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | lua | 0.28s |
 | python | 0.51s |
 | python3 | 0.57s |
-| **atom** | 0.98s |
+| **atom** | 0.96s |
 
 
 ### Binary Trees

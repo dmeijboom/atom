@@ -27,7 +27,9 @@ pub fn to_int(value: Value) -> Result<i64> {
                 return Ok(int_val);
             }
 
-            Err(RuntimeError::new("unable to safely cast Float to Int".to_string()))
+            Err(RuntimeError::new(
+                "unable to safely cast Float to Int".to_string(),
+            ))
         }
         _ => Err(RuntimeError::new(format!(
             "invalid type '{}' expected: Int",

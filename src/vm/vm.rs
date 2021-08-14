@@ -29,7 +29,7 @@ use super::stacked::Stacked;
 
 enum Flow<'i> {
     JumpTo(&'i Label),
-    Return,
+    Return(Value),
     Continue,
 }
 
@@ -126,7 +126,9 @@ impl VM {
         if let Ok(context) = self.call_stack.current_mut() {
             return context
                 .named_locals
-                .iter_mut().find(|(name, _)| name.as_str() == local_name).map(|(_, stacked)| stacked.borrow_mut());
+                .iter_mut()
+                .find(|(name, _)| name.as_str() == local_name)
+                .map(|(_, stacked)| stacked.borrow_mut());
         }
 
         None
@@ -359,12 +361,12 @@ impl VM {
 
         self.call_stack.push(context);
 
-        self.eval_func(Target::Method(method.id.clone()), keywords, arg_count)?;
+        let return_value =
+            self.eval_func(Target::Method(method.id.clone()), keywords, arg_count)?;
 
-        let context = self.call_stack.pop().unwrap();
+        self.call_stack.pop();
 
-        self.stack
-            .push(context.return_value.unwrap_or(Value::Void));
+        self.stack.push(return_value);
 
         Ok(())
     }
@@ -397,7 +399,12 @@ impl VM {
         Ok(ordered_values)
     }
 
-    fn eval_func(&mut self, target: Target, keywords: &[String], arg_count: usize) -> Result<()> {
+    fn eval_func(
+        &mut self,
+        target: Target,
+        keywords: &[String],
+        arg_count: usize,
+    ) -> Result<Value> {
         let func = match &target {
             Target::Method(id) => &self.module_cache.lookup_method_by_id(id)?.func,
             Target::Function(id) => self.module_cache.lookup_function_by_id(id)?,
@@ -439,7 +446,8 @@ impl VM {
                 for (i, value) in ordered_values.into_iter().enumerate() {
                     let is_mutable = func
                         .args
-                        .get_index(i).map(|(_, arg)| arg.mutable)
+                        .get_index(i)
+                        .map(|(_, arg)| arg.mutable)
                         .unwrap_or(false);
 
                     // Immutable locals can be placed on the stack as their contents will not be changed but we
@@ -455,7 +463,9 @@ impl VM {
 
                 let source = Rc::clone(source);
 
-                self._eval(target.id().module, source)?;
+                if let Some(result) = self._eval(target.id().module, source)? {
+                    return Ok(result);
+                }
             }
             FuncSource::External(closure) => {
                 if !keywords.is_empty() {
@@ -471,12 +481,12 @@ impl VM {
                 let values = self.stack.pop_many(arg_count)?;
 
                 if let Some(return_value) = closure(self, values)? {
-                    self.call_stack.current_mut()?.return_value = Some(return_value);
+                    return Ok(return_value);
                 }
             }
         };
 
-        Ok(())
+        Ok(Value::Void)
     }
 
     fn eval_function_call(
@@ -493,12 +503,11 @@ impl VM {
             func.args.len(),
         ));
 
-        self.eval_func(Target::Function(id.clone()), keywords, arg_count)?;
+        let return_value = self.eval_func(Target::Function(id.clone()), keywords, arg_count)?;
 
-        let context = self.call_stack.pop().unwrap();
+        self.call_stack.pop();
 
-        self.stack
-            .push(context.return_value.unwrap_or(Value::Void));
+        self.stack.push(return_value);
 
         Ok(())
     }
@@ -554,11 +563,7 @@ impl VM {
             Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
             Code::Discard => self.stack.delete()?,
-            Code::Return => {
-                self.eval_return()?;
-
-                return Ok(Flow::Return);
-            }
+            Code::Return => return Ok(Flow::Return(self.eval_return()?)),
             Code::MakeRef => self.eval_make_ref()?,
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
@@ -658,13 +663,8 @@ impl VM {
         Ok(())
     }
 
-    fn eval_return(&mut self) -> Result<()> {
-        let return_value = self.stack.pop()?.into_value();
-        let context = self.call_stack.current_mut()?;
-
-        context.return_value = Some(return_value);
-
-        Ok(())
+    fn eval_return(&mut self) -> Result<Value> {
+        Ok(self.stack.pop()?.into_value())
     }
 
     fn eval_make_ref(&mut self) -> Result<()> {
@@ -990,15 +990,13 @@ impl VM {
 
             let field = with_auto_deref(&stacked.borrow(), |value| {
                 if let Value::Object(object) = value {
-                    return object
-                        .get_field(index).cloned()
-                        .ok_or_else(|| {
-                            RuntimeError::new(format!(
-                                "unable to get unknown field '{}' of class: {}",
-                                member,
-                                self.module_cache.fmt_class(&id),
-                            ))
-                        });
+                    return object.get_field(index).cloned().ok_or_else(|| {
+                        RuntimeError::new(format!(
+                            "unable to get unknown field '{}' of class: {}",
+                            member,
+                            self.module_cache.fmt_class(&id),
+                        ))
+                    });
                 }
 
                 Err(RuntimeError::new(format!(
@@ -1131,10 +1129,7 @@ impl VM {
 
         let current_module = self.module_cache.current()?;
 
-        if let Some(value) = current_module
-            .globals
-            .get(name).cloned()
-        {
+        if let Some(value) = current_module.globals.get(name).cloned() {
             self.stack.push(value);
 
             return Ok(());
@@ -1271,12 +1266,13 @@ impl VM {
         )))
     }
 
-    fn _eval(&mut self, new_module_id: usize, instructions: Rc<Vec<IR>>) -> Result<()> {
+    fn _eval(&mut self, new_module_id: usize, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
         let module_id = self.module_cache.current_id().ok();
 
         self.module_cache.set_current(new_module_id);
 
         let mut i = 0;
+        let mut return_value = None;
 
         while i < instructions.len() {
             let ir = &instructions[i];
@@ -1285,7 +1281,8 @@ impl VM {
             match self.eval_single(ir) {
                 Ok(flow) => match flow {
                     Flow::Continue => i += 1,
-                    Flow::Return => {
+                    Flow::Return(value) => {
+                        return_value = Some(value);
                         break;
                     }
                     Flow::JumpTo(label) => {
@@ -1311,7 +1308,7 @@ impl VM {
             self.module_cache.set_current(id);
         }
 
-        Ok(())
+        Ok(return_value)
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
@@ -1334,7 +1331,8 @@ impl VM {
         self.stack.pop().ok().and_then(|stacked| match stacked {
             Stacked::ByValue(value) => Some(value),
             Stacked::ByRef(value_ref) => Rc::try_unwrap(value_ref)
-                .ok().map(|value| value.into_inner()),
+                .ok()
+                .map(|value| value.into_inner()),
         })
     }
 }

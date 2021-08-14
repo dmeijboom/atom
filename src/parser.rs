@@ -521,18 +521,14 @@ mod tests {
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Logical(
                     LogicalExpr {
-                        left: Expr::Literal(
-                            LiteralExpr {
-                                literal: Literal::Int(1),
-                                pos: (0..1),
-                            }
-                        ),
-                        right: Expr::Literal(
-                            LiteralExpr {
-                                literal: Literal::Int(2),
-                                pos: (5..6),
-                            }
-                        ),
+                        left: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(1),
+                            pos: (0..1),
+                        }),
+                        right: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(2),
+                            pos: (5..6),
+                        }),
                         op,
                         pos: (0..6),
                     }
@@ -558,18 +554,14 @@ mod tests {
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Comparison(
                     ComparisonExpr {
-                        left: Expr::Literal(
-                            LiteralExpr {
-                                literal: Literal::Int(1),
-                                pos: (0..1),
-                            }
-                        ),
-                        right: Expr::Literal(
-                            LiteralExpr {
-                                literal: Literal::Int(2),
-                                pos: (3 + width..4 + width),
-                            }
-                        ),
+                        left: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(1),
+                            pos: (0..1),
+                        }),
+                        right: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(2),
+                            pos: (3 + width..4 + width),
+                        }),
                         op,
                         pos: (0..4 + width),
                     }
@@ -596,18 +588,14 @@ mod tests {
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Arithmetic(
                     ArithmeticExpr {
-                        left: Expr::Literal(
-                            LiteralExpr {
-                                literal: Literal::Int(1),
-                                pos: (0..1),
-                            }
-                        ),
-                        right: Expr::Literal(
-                            LiteralExpr {
-                                literal: Literal::Int(2),
-                                pos: (3 + width..4 + width),
-                            }
-                        ),
+                        left: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(1),
+                            pos: (0..1),
+                        }),
+                        right: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(2),
+                            pos: (3 + width..4 + width),
+                        }),
                         op,
                         pos: (0..4 + width),
                     }

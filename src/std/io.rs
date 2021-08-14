@@ -55,11 +55,7 @@ pub fn register(module: &mut Module) -> Result<()> {
                 .read(&mut buff)
                 .map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
 
-            let values = buff
-                .into_iter()
-                .take(bytes_read)
-                .map(Value::Byte)
-                .collect();
+            let values = buff.into_iter().take(bytes_read).map(Value::Byte).collect();
 
             Ok(Some(Value::Array(values)))
         })
