@@ -75,7 +75,7 @@ impl Stack {
         // Resort to a single (or double) .pop() when pop_many was called with a single element
         if len == 1 {
             return Ok(SmallVec::<[Value; 2]>::from_buf_and_len(
-                [self.pop()?, Value::Invalid],
+                [self.pop()?, Value::Void],
                 1,
             ));
         }

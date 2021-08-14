@@ -372,7 +372,7 @@ impl VM {
         let context = self.call_stack.pop().unwrap();
 
         self.stack
-            .push(context.return_value.unwrap_or_else(|| Value::Invalid));
+            .push(context.return_value.unwrap_or_else(|| Value::Void));
 
         Ok(())
     }
@@ -507,7 +507,7 @@ impl VM {
         let context = self.call_stack.pop().unwrap();
 
         self.stack
-            .push(context.return_value.unwrap_or_else(|| Value::Invalid));
+            .push(context.return_value.unwrap_or_else(|| Value::Void));
 
         Ok(())
     }
@@ -1182,7 +1182,7 @@ impl VM {
 
     pub fn fmt_value(&self, value: &Value) -> String {
         match value {
-            Value::Invalid => "!".to_string(),
+            Value::Void => "!".to_string(),
             Value::Int(val) => format!("{}", val),
             Value::Float(val) => format!("{}", val),
             Value::Char(val) => format!("{}", val),

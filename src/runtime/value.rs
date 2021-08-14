@@ -201,7 +201,7 @@ impl Object {
 
 #[derive(Debug, PartialEq)]
 pub enum Value {
-    Invalid,
+    Void,
     Int(i64),
     Float(f64),
     Char(char),
@@ -222,7 +222,7 @@ pub enum Value {
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
         match self {
-            Value::Invalid => panic!("Invalid can't be hashed"),
+            Value::Void => panic!("Void can't be hashed"),
             Value::Int(val) => val.hash(state),
             Value::Float(val) => val.to_string().hash(state),
             Value::Char(val) => val.hash(state),
@@ -259,7 +259,7 @@ impl Hash for Value {
 impl Clone for Value {
     fn clone(&self) -> Self {
         match self {
-            Value::Invalid => panic!("Invalid can't be cloned"),
+            Value::Void => panic!("Void can't be cloned"),
             Value::Int(val) => Value::Int(*val),
             Value::Float(val) => Value::Float(*val),
             Value::Char(val) => Value::Char(*val),
@@ -286,7 +286,7 @@ impl Clone for Value {
 impl Value {
     pub fn get_type(&self) -> ValueType {
         match self {
-            Value::Invalid => panic!("Invalid has no type"),
+            Value::Void => panic!("Void has no type"),
             Value::Int(_) => ValueType::Int,
             Value::Float(_) => ValueType::Float,
             Value::Char(_) => ValueType::Char,
