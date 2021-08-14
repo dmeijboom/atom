@@ -4,6 +4,7 @@ use crate::runtime::{Result, Value};
 use crate::vm::{Module, VM};
 
 pub mod array;
+pub mod float;
 pub mod map;
 pub mod range;
 pub mod string;
@@ -28,26 +29,17 @@ pub fn register(module: &mut Module) -> Result<()> {
     array::register(module)?;
     map::register(module)?;
     range::register(module)?;
+    float::register(module)?;
 
     Ok(())
 }
 
-pub const DEFAULT_IMPORTS: &[&str; 17] = &[
+pub const DEFAULT_IMPORTS: &[&str; 7] = &[
     "std.core.println",
-    "std.core.Option",
     "std.core.some",
     "std.core.none",
-    "std.core.String",
-    "std.core.Char",
-    "std.core.Byte",
-    "std.core.Bool",
-    "std.core.Int",
-    "std.core.Float",
     "std.core.RangeIter",
-    "std.core.Range",
     "std.core.ArrayIter",
-    "std.core.Array",
-    "std.core.Map",
     "std.core.KeyValue",
     "std.core.Iterable",
 ];

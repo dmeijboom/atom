@@ -50,6 +50,7 @@ pub class Byte {}
 pub class Bool {}
 
 pub class RangeIter {
+    let step;
     let start;
     let end;
     let mut index;
@@ -63,15 +64,38 @@ pub class RangeIter {
 
         let value = some(index);
 
-        this.index = this.index + 1;
+        this.index = this.index + this.step;
 
         return value;
     }
 }
 
+pub class RangeStep {
+    let range;
+    let step;
+
+    pub fn iter() {
+        return &RangeIter(start: this.range.start(), end: this.range.end(), step: this.step, index: 0);
+    }
+
+    pub fn collect() {
+        let mut output = [];
+
+        for this {
+            output.push(.);
+        }
+
+        return output;
+    }
+}
+
 pub class Range {
     pub fn iter() {
-        return &RangeIter(start: this.start(), end: this.end(), index: 0);
+        return &RangeIter(start: this.start(), end: this.end(), step: 1, index: 0);
+    }
+
+    pub fn step(n) {
+        return RangeStep(range: this, step: n);
     }
 
     pub fn collect() {
