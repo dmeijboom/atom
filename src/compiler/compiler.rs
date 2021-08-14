@@ -299,6 +299,7 @@ impl Compiler {
                         ArithmeticOp::Div => Code::ArithmeticDiv,
                         ArithmeticOp::Add => Code::ArithmeticAdd,
                         ArithmeticOp::Sub => Code::ArithmeticSub,
+                        ArithmeticOp::Exp => Code::ArithmeticExp,
                         ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
                         ArithmeticOp::BitOr => Code::ArithmeticBitOr,
                     },

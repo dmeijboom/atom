@@ -575,6 +575,7 @@ impl VM {
             Code::ArithmeticAdd => self.eval_arithmetic_add()?,
             Code::ArithmeticSub => self.eval_arithmetic_sub()?,
             Code::ArithmeticMul => self.eval_arithmetic_mul()?,
+            Code::ArithmeticExp => self.eval_arithmetic_exp()?,
             Code::ArithmeticDiv => self.eval_arithmetic_div()?,
             Code::ComparisonEq => self.eval_comparison_eq(true)?,
             Code::ComparisonNeq => self.eval_comparison_eq(false)?,
@@ -748,6 +749,18 @@ impl VM {
         self.eval_op("multiplication", |left, right| match &left {
             Value::Int(val) => Ok(Value::Int(*val * to_int(right)?)),
             Value::Float(val) => Ok(Value::Float(*val * to_float(right)?)),
+            _ => Err(RuntimeError::new(format!(
+                "invalid types: {} and {}",
+                left.get_type().name(),
+                right.get_type().name()
+            ))),
+        })
+    }
+
+    fn eval_arithmetic_exp(&mut self) -> Result<()> {
+        self.eval_op("exponent", |left, right| match &left {
+            Value::Int(val) => Ok(Value::Int(val.pow(to_int(right)? as u32))),
+            Value::Float(val) => Ok(Value::Float(val.powf(to_float(right)?))),
             _ => Err(RuntimeError::new(format!(
                 "invalid types: {} and {}",
                 left.get_type().name(),

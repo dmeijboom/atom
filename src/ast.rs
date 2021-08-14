@@ -18,6 +18,7 @@ pub enum ArithmeticOp {
     Div,
     Add,
     Sub,
+    Exp,
     BitAnd,
     BitOr,
 }
