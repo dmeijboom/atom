@@ -7,15 +7,22 @@ use crate::runtime::{Result, RuntimeError, Trace, TypeId};
 use crate::vm::stacked::Stacked;
 use crate::vm::ModuleCache;
 
+#[derive(Clone)]
+pub struct Target {
+    pub type_id: TypeId,
+    pub module_id: usize,
+    pub method_name: Option<String>,
+}
+
 pub struct CallContext {
     pub pos: Pos,
-    pub target: TypeId,
+    pub target: Target,
     pub locals: SmallVec<[Stacked; 2]>,
     pub named_locals: HashMap<String, Stacked>,
 }
 
 impl CallContext {
-    pub fn new_with_locals(pos: Pos, target: TypeId, capacity: usize) -> Self {
+    pub fn new_with_locals(pos: Pos, target: Target, capacity: usize) -> Self {
         Self {
             pos,
             target,
@@ -70,9 +77,15 @@ impl CallStack {
 
             stack_trace.push(Trace {
                 pos: call_context.pos.clone(),
-                target: match call_context.target.class {
-                    Some(_) => module_cache.fmt_method(&call_context.target),
-                    None => module_cache.fmt_func(&call_context.target),
+                target: match &call_context.target.method_name {
+                    Some(name) => {
+                        format!(
+                            "{}.{}",
+                            module_cache.fmt_type(call_context.target.type_id),
+                            name
+                        )
+                    }
+                    None => module_cache.fmt_type(call_context.target.type_id),
                 },
             });
         }

@@ -83,7 +83,6 @@ impl AtomEngine {
             module.func_map.insert(
                 name.clone(),
                 FuncDesc {
-                    id: module.func_map.len(),
                     public: func.public,
                     source: match &func.source {
                         FuncSource::Native(instructions) => {
@@ -101,18 +100,15 @@ impl AtomEngine {
             module.class_map.insert(
                 name.clone(),
                 ClassDesc {
-                    id: module.class_map.len(),
                     public: class.public,
                     methods: class
                         .methods
                         .iter()
-                        .enumerate()
-                        .map(|(id, (key, method))| {
+                        .map(|(key, method)| {
                             (
                                 key.clone(),
                                 MethodDesc {
                                     func: FuncDesc {
-                                        id,
                                         pos: method.func.pos.clone(),
                                         public: method.func.public,
                                         source: match &method.func.source {
@@ -125,6 +121,7 @@ impl AtomEngine {
                                         },
                                         args: method.func.args.clone(),
                                     },
+                                    class_name: name.clone(),
                                 },
                             )
                         })
