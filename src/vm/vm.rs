@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::ops::{Add, BitAnd, BitOr, Div, Mul, Sub};
 use std::path::Path;
 use std::rc::Rc;
 
@@ -26,6 +27,43 @@ use crate::vm::ClassDesc;
 use super::call_stack::CallStack;
 use super::stack::Stack;
 use super::stacked::Stacked;
+
+macro_rules! arithmetic_op {
+    ($vm:expr, int_only: $opname:ident) => {
+        let right = $vm.stack.pop()?.into_value();
+        let left = $vm.stack.pop()?.into_value();
+
+        $vm.stack.push(match left {
+            Value::Int(val) => Value::Int(val.$opname(to_int(right)?)),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "invalid type '{}' and '{}' in {}",
+                    left.get_type().name(),
+                    right.get_type().name(),
+                    stringify!($ident)
+                )))
+            }
+        });
+    };
+
+    ($vm:expr, $opname:ident) => {
+        let right = $vm.stack.pop()?.into_value();
+        let left = $vm.stack.pop()?.into_value();
+
+        $vm.stack.push(match left {
+            Value::Int(val) => Value::Int(val.$opname(to_int(right)?)),
+            Value::Float(val) => Value::Float(val.$opname(to_float(right)?)),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "invalid type '{}' and '{}' in {}",
+                    left.get_type().name(),
+                    right.get_type().name(),
+                    stringify!($ident)
+                )))
+            }
+        });
+    };
+}
 
 enum Flow<'i> {
     JumpTo(&'i Label),
@@ -443,20 +481,20 @@ impl VM {
                 let call_context = self.call_stack.current_mut()?;
 
                 for (i, value) in ordered_values.into_iter().enumerate() {
-                    let is_mutable = func
-                        .args
-                        .get_index(i)
-                        .map(|(_, arg)| arg.mutable)
-                        .unwrap_or(false);
-
                     // Immutable locals can be placed on the stack as their contents will not be changed but we
                     // don't want to do this for non-primitive types because that will be slower in most cases
-                    if !value.get_type().is_primitive() || is_mutable {
+                    if !value.get_type().is_primitive()
+                        || func
+                            .args
+                            .get_index(i)
+                            .map(|(_, arg)| arg.mutable)
+                            .unwrap_or(false)
+                    {
                         call_context
                             .locals
-                            .insert(i, Stacked::ByRef(Rc::new(RefCell::new(value))));
+                            .push(Stacked::ByRef(Rc::new(RefCell::new(value))));
                     } else {
-                        call_context.locals.insert(i, Stacked::ByValue(value));
+                        call_context.locals.push(Stacked::ByValue(value));
                     }
                 }
 
@@ -707,79 +745,45 @@ impl VM {
     }
 
     fn eval_arithmetic_bit_or(&mut self) -> Result<()> {
-        self.eval_op("bitwise or", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(*val | to_int(right)?)),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
+        arithmetic_op!(self, int_only: bitor);
+
+        Ok(())
     }
 
     fn eval_arithmetic_bit_and(&mut self) -> Result<()> {
-        self.eval_op("bitwise and", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(*val & to_int(right)?)),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
+        arithmetic_op!(self, int_only: bitand);
+
+        Ok(())
     }
 
     fn eval_arithmetic_add(&mut self) -> Result<()> {
-        self.eval_op("addition", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(*val + to_int(right)?)),
-            Value::Float(val) => Ok(Value::Float(*val + to_float(right)?)),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
+        arithmetic_op!(self, add);
+
+        Ok(())
     }
 
     fn eval_arithmetic_sub(&mut self) -> Result<()> {
-        self.eval_op("subtraction", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(*val - to_int(right)?)),
-            Value::Float(val) => Ok(Value::Float(*val - to_float(right)?)),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
+        arithmetic_op!(self, sub);
+
+        Ok(())
     }
 
     fn eval_arithmetic_mul(&mut self) -> Result<()> {
-        self.eval_op("multiplication", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(*val * to_int(right)?)),
-            Value::Float(val) => Ok(Value::Float(*val * to_float(right)?)),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
+        arithmetic_op!(self, mul);
+
+        Ok(())
+    }
+
+    fn eval_arithmetic_div(&mut self) -> Result<()> {
+        arithmetic_op!(self, div);
+
+        Ok(())
     }
 
     fn eval_arithmetic_exp(&mut self) -> Result<()> {
         self.eval_op("exponent", |left, right| match &left {
             Value::Int(val) => Ok(Value::Int(val.pow(to_int(right)? as u32))),
             Value::Float(val) => Ok(Value::Float(val.powf(to_float(right)?))),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
-    }
-
-    fn eval_arithmetic_div(&mut self) -> Result<()> {
-        self.eval_op("division", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(*val / to_int(right)?)),
-            Value::Float(val) => Ok(Value::Float(*val / to_float(right)?)),
             _ => Err(RuntimeError::new(format!(
                 "invalid types: {} and {}",
                 left.get_type().name(),
@@ -1291,23 +1295,26 @@ impl VM {
     }
 
     fn _eval(&mut self, new_module_id: usize, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
-        let module_id = self.module_cache.current_id().ok();
+        let module_id = self.module_cache.current_id();
 
         self.module_cache.set_current(new_module_id);
 
         let mut i = 0;
-        let mut return_value = None;
+        let instructions_len = instructions.len();
 
-        while i < instructions.len() {
+        while i < instructions_len {
             let ir = &instructions[i];
 
-            // evaluates the instruction and optionally returns a label to jump to
+            // Evaluates the instruction and optionally returns a label to jump to
             match self.eval_single(ir) {
                 Ok(flow) => match flow {
                     Flow::Continue => i += 1,
                     Flow::Return(value) => {
-                        return_value = Some(value);
-                        break;
+                        if let Ok(id) = module_id {
+                            self.module_cache.set_current(id);
+                        }
+
+                        return Ok(Some(value));
                     }
                     Flow::JumpTo(label) => {
                         i = match label.index {
@@ -1328,11 +1335,11 @@ impl VM {
             };
         }
 
-        if let Some(id) = module_id {
+        if let Ok(id) = module_id {
             self.module_cache.set_current(id);
         }
 
-        Ok(return_value)
+        Ok(None)
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
