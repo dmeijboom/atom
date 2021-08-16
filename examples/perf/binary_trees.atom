@@ -1,19 +1,19 @@
 class Node {
     let left;
-    let right;
     let value;
+    let right;
 }
 
 fn make_tree(value, depth) {
     if depth == 0 {
-        return Node(left: none(), value: value, right: none());
+        return &Node(left: none(), value: value, right: none());
     }
 
     let value2 = value + value;
 
-    return Node(
-        value: value,
+    return &Node(
         left: some(make_tree((value + value) - 1, depth - 1)),
+        value: value,
         right: some(make_tree(value + value, depth - 1)),
     );
 }

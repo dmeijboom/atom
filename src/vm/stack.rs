@@ -1,8 +1,6 @@
 use std::cell::RefCell;
 use std::rc::Rc;
 
-use smallvec::SmallVec;
-
 use crate::runtime::Value;
 use crate::runtime::{Result, RuntimeError};
 
@@ -45,7 +43,11 @@ impl Stack {
         Err(RuntimeError::new("expecting element on stack".to_string()))
     }
 
-    pub fn pop_many(&mut self, len: usize) -> Result<SmallVec<[Value; 2]>> {
+    pub fn pop_many_t<T: std::fmt::Debug>(
+        &mut self,
+        len: usize,
+        mut map: impl FnMut(Value) -> T,
+    ) -> Result<Vec<T>> {
         let data_len = self.data.len();
 
         if data_len < len {
@@ -55,24 +57,41 @@ impl Stack {
             )));
         }
 
-        // Resort to a single (or double) .pop() when pop_many was called with a single element
-        if len == 1 {
-            return Ok(SmallVec::<[Value; 2]>::from_buf_and_len(
-                [self.pop()?.into_value(), Value::Void],
-                1,
-            ));
-        }
-
-        let values = self
+        Ok(self
             .data
             .drain((data_len - len)..)
             .into_iter()
             .map(|stacked| match stacked {
-                Stacked::ByValue(value) => value,
-                Stacked::ByRef(value_ref) => value_ref.borrow().clone(),
+                Stacked::ByValue(value) => map(value),
+                Stacked::ByRef(value_ref) => map(value_ref.borrow().clone()),
             })
-            .collect();
+            .collect())
+    }
 
-        Ok(values)
+    pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
+        self.pop_many_t(len, |v| v)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::runtime::Value;
+
+    use super::Stack;
+
+    #[test]
+    fn test_pop_many() {
+        let mut stack = Stack::new();
+
+        stack.push(Value::Int(10));
+        stack.push(Value::Int(20));
+        stack.push(Value::Int(30));
+        stack.push(Value::Int(40));
+        stack.push(Value::Int(50));
+
+        assert_eq!(
+            stack.pop_many(3),
+            Ok(vec![Value::Int(30), Value::Int(40), Value::Int(50)])
+        );
     }
 }

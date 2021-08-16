@@ -50,9 +50,9 @@ pub class Byte {}
 pub class Bool {}
 
 pub class RangeIter {
-    let step;
     let start;
     let end;
+    let step;
     let mut index;
 
     pub fn next() {

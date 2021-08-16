@@ -28,6 +28,7 @@ mod tests {
     #[test_case(include_str!("../examples/casts.atom"), Value::Int(34); "casts")]
     #[test_case(include_str!("../examples/if_else.atom"), Value::Int(25); "if else")]
     #[test_case(include_str!("../examples/range_iter.atom"), Value::Int(100); "range iter")]
+    #[test_case(include_str!("../examples/init_class.atom"), Value::Int(200); "init class")]
     #[test_case(include_str!("../examples/references.atom"), Value::Bool(true); "references")]
     #[test_case(include_str!("../examples/simple_return.atom"), Value::Int(10); "simple return")]
     #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
@@ -48,8 +49,8 @@ mod tests {
     #[test_case(include_str!("../examples/invalid/call_int.atom"), "type 'Int' is not callable"; "function call on an integer")]
     #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
     #[test_case(include_str!("../examples/invalid/method_not_found.atom"), "no such field or method 'test_example' for: {}"; "method not found on a map type")]
-    #[test_case(include_str!("../examples/invalid/init_class_with_args.atom"), "unable to initialize main.Test with non-keyword arguments"; "initialize class with non-keyword arguments")]
-    #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to initialize main.Test with missing fields: three"; "initialize class with missing fields")]
+    #[test_case(include_str!("../examples/invalid/init_class_with_args.atom"), "unable to initialize 'main.Test' with non-keyword arguments"; "initialize class with non-keyword arguments")]
+    #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to initialize 'main.Test' without field: three"; "initialize class with missing fields")]
     fn code_fail(source: &str, message: &str) {
         let result = run_code(source);
 

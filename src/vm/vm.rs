@@ -6,7 +6,6 @@ use std::path::Path;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
-use smallvec::SmallVec;
 
 use crate::compiler::{Code, Label, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int};
@@ -296,70 +295,61 @@ impl VM {
 
     fn eval_class_init(&mut self, id: TypeId, keywords: &[String], arg_count: usize) -> Result<()> {
         let type_val = self.module_cache.lookup_type_by_id(id)?;
-        let desc = type_val.try_as_class()?;
+        let class_desc = type_val.try_as_class()?;
 
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(format!(
-                "unable to initialize {} with non-keyword arguments",
+                "unable to initialize '{}' with non-keyword arguments",
                 self.module_cache.fmt_type(type_val.id),
             )));
         }
 
-        let mut values = self
-            .stack
-            .pop_many(arg_count)?
-            .into_iter()
-            .enumerate()
-            .map(|(keyword_idx, value)| {
-                let name = &keywords[keyword_idx];
-                let arg_idx = desc.fields.get_index_of(name);
+        // Verify if there aren't any unknown field names
+        for keyword in keywords {
+            if !class_desc.fields.contains_key(keyword) {
+                return Err(RuntimeError::new(format!(
+                    "unable to initialize '{}' with unknown field: {}",
+                    self.module_cache.fmt_type(type_val.id),
+                    keyword
+                )));
+            }
+        }
 
-                (arg_idx, name.as_str(), value)
-            })
-            .collect::<Vec<_>>();
+        let mut is_sorted = true;
 
-        if values.len() != desc.fields.len() {
-            let mut field_names = desc
-                .fields
-                .keys()
-                .cloned()
-                .map(|key| (key.clone(), key))
-                .collect::<HashMap<_, _>>();
-
-            for (_, name, _) in values {
-                field_names.remove(name);
+        // Verify if all fields are initialized
+        for (i, (field_name, _)) in class_desc.fields.iter().enumerate() {
+            if !keywords.contains(field_name) {
+                return Err(RuntimeError::new(format!(
+                    "unable to initialize '{}' without field: {}",
+                    self.module_cache.fmt_type(type_val.id),
+                    field_name,
+                )));
             }
 
-            return Err(RuntimeError::new(format!(
-                "unable to initialize {} with missing fields: {}",
-                self.module_cache.fmt_type(type_val.id),
-                field_names
-                    .into_iter()
-                    .map(|(key, _)| key)
-                    .collect::<Vec<_>>()
-                    .join(", "),
-            )));
-        }
-
-        values.sort_unstable_by_key(|(index, _, _)| *index);
-
-        let mut fields = SmallVec::with_capacity(values.len());
-
-        for (index, name, value) in values {
-            if index.is_some() {
-                fields.push(value);
-                continue;
+            if is_sorted && field_name != &keywords[i] {
+                is_sorted = false;
             }
-
-            return Err(RuntimeError::new(format!(
-                "unable to initialize {} with unknown field: {}",
-                self.module_cache.fmt_type(type_val.id),
-                name,
-            )));
         }
+
+        let fields = if is_sorted {
+            self.stack.pop_many(arg_count)?
+        } else {
+            let mut i = 0;
+            let mut fields = self.stack.pop_many_t(class_desc.fields.len(), |value| {
+                let index = class_desc.fields.get_index_of(&keywords[i]).unwrap();
+
+                i += 1;
+
+                (index, value)
+            })?;
+
+            fields.sort_unstable_by_key(|(i, _)| *i);
+            fields.into_iter().map(|(_, value)| value).collect()
+        };
 
         self.stack
-            .push(Value::Object(Object::new(type_val.id, fields).into()));
+            .push(Value::Object(Object::new(type_val.id, fields)));
 
         Ok(())
     }
@@ -403,7 +393,7 @@ impl VM {
 
     fn prepare_args(
         &self,
-        mut values: SmallVec<[Value; 2]>,
+        mut values: Vec<Value>,
         keywords: &[String],
         args: &IndexMap<String, ArgumentDesc>,
     ) -> Result<BTreeMap<usize, Value>> {

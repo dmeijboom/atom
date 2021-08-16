@@ -32,4 +32,4 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | python | 0.37s |
 | python3 | 0.38s |
 | lua | 0.52s |
-| **atom** | 5.43s |
+| **atom** | 4.10s |

@@ -3,14 +3,13 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
-use smallvec::SmallVec;
 
 use crate::ast::Pos;
 use crate::compiler::{self, Func, IR};
 use crate::runtime::{Result, RuntimeError, TypeId, Value};
 use crate::vm::VM;
 
-pub type ExternalFn = fn(&mut VM, SmallVec<[Value; 2]>) -> Result<Option<Value>>;
+pub type ExternalFn = fn(&mut VM, Vec<Value>) -> Result<Option<Value>>;
 
 pub enum FuncSource {
     Native(Rc<Vec<IR>>),

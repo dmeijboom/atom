@@ -5,8 +5,6 @@ use std::hash::{Hash, Hasher};
 use std::ops::Range;
 use std::rc::Rc;
 
-use smallvec::SmallVec;
-
 use crate::compiler::IR;
 
 #[derive(Debug)]
@@ -138,11 +136,11 @@ impl Eq for Data {}
 pub struct Object {
     pub class: TypeId,
     pub data: Option<Data>,
-    fields: SmallVec<[Value; 5]>,
+    fields: Vec<Value>,
 }
 
 impl Object {
-    pub fn new(class: TypeId, fields: SmallVec<[Value; 5]>) -> Self {
+    pub fn new(class: TypeId, fields: Vec<Value>) -> Self {
         Self {
             class,
             fields,
@@ -187,8 +185,8 @@ pub enum Value {
     Range(Range<i64>),
     String(String),
     Type(TypeId),
+    Object(Object),
     Method(Box<Method>),
-    Object(Box<Object>),
     Array(Vec<Value>),
     Map(HashMap<Value, Value>),
 }

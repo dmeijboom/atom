@@ -3,8 +3,6 @@ use std::fs::File;
 use std::io::Read;
 use std::rc::Rc;
 
-use smallvec::smallvec;
-
 use crate::parse_args;
 use crate::runtime::{Data, Object, Result, RuntimeError, Value};
 use crate::vm::{Module, VM};
@@ -33,10 +31,10 @@ pub fn register(module: &mut Module) -> Result<()> {
         let filename = parse_args!(values => String);
         let file =
             File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
-        let object = Object::new(vm.get_type_id("std.io", "File")?, smallvec![])
+        let object = Object::new(vm.get_type_id("std.io", "File")?, vec![])
             .with_data(Data::File(Rc::new(RefCell::new(file))));
 
-        Ok(Some(Value::Object(object.into())))
+        Ok(Some(Value::Object(object)))
     });
 
     module.register_external_method("File", "read", |vm, mut values| {

@@ -1,5 +1,3 @@
-use smallvec::smallvec;
-
 use crate::runtime::Object;
 use crate::vm::VM;
 
@@ -51,22 +49,16 @@ pub fn to_float(value: Value) -> Result<f64> {
 
 pub fn to_option(vm: &VM, value: Option<Value>) -> Result<Value> {
     if let Some(value) = value {
-        return Ok(Value::Object(
-            Object::new(
-                vm.get_type_id("std.core", "Option")?,
-                smallvec![value, Value::Bool(false)],
-            )
-            .into(),
-        ));
+        return Ok(Value::Object(Object::new(
+            vm.get_type_id("std.core", "Option")?,
+            vec![value, Value::Bool(false)],
+        )));
     }
 
-    Ok(Value::Object(
-        Object::new(
-            vm.get_type_id("std.core", "Option")?,
-            smallvec![Value::Int(0), Value::Bool(true)],
-        )
-        .into(),
-    ))
+    Ok(Value::Object(Object::new(
+        vm.get_type_id("std.core", "Option")?,
+        vec![Value::Int(0), Value::Bool(true)],
+    )))
 }
 
 pub fn to_byte(value: &Value) -> Result<u8> {
