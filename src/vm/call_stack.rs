@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use smallvec::SmallVec;
+use wyhash2::WyHash;
 
 use crate::ast::Pos;
 use crate::runtime::{Result, RuntimeError, Trace, TypeId};
@@ -18,7 +19,7 @@ pub struct CallContext {
     pub pos: Pos,
     pub target: Target,
     pub locals: SmallVec<[Stacked; 2]>,
-    pub named_locals: HashMap<String, Stacked>,
+    pub named_locals: HashMap<String, Stacked, WyHash>,
 }
 
 impl CallContext {
@@ -26,7 +27,7 @@ impl CallContext {
         Self {
             pos,
             target,
-            named_locals: HashMap::new(),
+            named_locals: HashMap::with_hasher(WyHash::with_seed(0)),
             locals: SmallVec::with_capacity(capacity),
         }
     }

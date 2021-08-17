@@ -137,6 +137,8 @@ pub struct Module {
     pub imports: Vec<String>,
     pub filename: Option<PathBuf>,
     pub globals: HashMap<String, Value>,
+
+    // These maps will be consumed by the cache
     pub func_map: HashMap<String, FuncDesc>,
     pub class_map: HashMap<String, ClassDesc>,
     pub interface_map: HashMap<String, InterfaceDesc>,
