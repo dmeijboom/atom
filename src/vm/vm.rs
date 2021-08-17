@@ -81,9 +81,10 @@ macro_rules! arithmetic_op {
 }
 
 enum Flow<'i> {
-    JumpTo(&'i Label),
-    Return(Value),
     Continue,
+    Return(Value),
+    TailCall(usize),
+    JumpTo(&'i Label),
 }
 
 fn setup_std(vm: &mut VM) -> Result<()> {
@@ -243,12 +244,7 @@ impl VM {
         Err(RuntimeError::new(format!("unable to import: {}", path)))
     }
 
-    fn eval_tail_call(
-        &mut self,
-        module_id: usize,
-        instructions: &Rc<Vec<IR>>,
-        arg_count: usize,
-    ) -> Result<()> {
+    fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
         // Reset locals, we can do this quite easily as the first n-locals are the arguments
         let context = self.call_stack.current_mut()?;
         let mut values = self.stack.pop_many(arg_count)?;
@@ -277,12 +273,6 @@ impl VM {
         if !context.named_locals.is_empty() {
             context.named_locals.clear();
         }
-
-        let return_value = self
-            ._eval(module_id, Rc::clone(instructions))?
-            .unwrap_or_else(|| Value::Void);
-
-        self.stack.push(return_value);
 
         Ok(())
     }
@@ -589,12 +579,7 @@ impl VM {
         Ok(())
     }
 
-    fn eval_single<'i>(
-        &mut self,
-        module_id: ModuleId,
-        instructions: &'i Rc<Vec<IR>>,
-        ir: &'i IR,
-    ) -> Result<Flow<'i>> {
+    fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
             Code::ConstNil => self.stack.push(Value::Option(None)),
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
@@ -638,9 +623,7 @@ impl VM {
             Code::Cast(type_name) => self.eval_cast(type_name)?,
             Code::Call(arg_count) => self.eval_call(&[], *arg_count)?,
             Code::CallKeywords((keywords, arg_count)) => self.eval_call(keywords, *arg_count)?,
-            Code::TailCall(arg_count) => {
-                self.eval_tail_call(module_id, instructions, *arg_count)?
-            }
+            Code::TailCall(arg_count) => return Ok(Flow::TailCall(*arg_count)),
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,
             Code::LoadIndex => self.eval_load_index()?,
@@ -1350,35 +1333,68 @@ impl VM {
 
     fn _eval(&mut self, module_id: ModuleId, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
         let mut i = 0;
+        let mut return_addr = vec![];
         let instructions_len = instructions.len();
 
-        while i < instructions_len {
-            let ir = &instructions[i];
+        loop {
+            while i < instructions_len {
+                let ir = &instructions[i];
 
-            // Evaluates the instruction and optionally returns a label to jump to
-            match self.eval_single(module_id, &instructions, ir) {
-                Ok(flow) => match flow {
-                    Flow::Continue => i += 1,
-                    Flow::Return(value) => return Ok(Some(value)),
-                    Flow::JumpTo(label) => {
-                        i = match label.index {
-                            Some(index) => index,
-                            None => self.find_label(&*instructions, &label.name)?,
+                // Evaluates the instruction and optionally returns a label to jump to
+                match self.eval_single(module_id, ir) {
+                    Ok(flow) => match flow {
+                        Flow::Continue => i += 1,
+                        Flow::Return(value) => {
+                            if let Some(addr) = return_addr.pop() {
+                                i = addr;
+
+                                self.stack.push(value);
+
+                                continue;
+                            }
+
+                            return Ok(Some(value));
+                        }
+                        Flow::JumpTo(label) => {
+                            i = match label.index {
+                                Some(index) => index,
+                                None => self.find_label(&*instructions, &label.name)?,
+                            };
+
+                            continue;
+                        }
+                        Flow::TailCall(arg_count) => {
+                            return_addr.push(i + 1);
+
+                            self.eval_tail_call(arg_count)?;
+
+                            i = 0;
+
+                            continue;
+                        }
+                    },
+                    Err(e) => {
+                        if e.pos.is_none() {
+                            return Err(e
+                                .with_pos(ir.pos.clone())
+                                .with_module(self.module_cache.lookup_module_by_id(module_id)?));
                         };
 
-                        continue;
+                        return Err(e);
                     }
-                },
-                Err(e) => {
-                    if e.pos.is_none() {
-                        return Err(e
-                            .with_pos(ir.pos.clone())
-                            .with_module(self.module_cache.lookup_module_by_id(module_id)?));
-                    };
+                };
+            }
 
-                    return Err(e);
-                }
-            };
+            // We're finished but there is stil a return-address, this means we're expected to have pushed a return-value
+            if let Some(addr) = return_addr.pop() {
+                i = addr;
+
+                self.stack.push(Value::Void);
+
+                continue;
+            }
+
+            break;
         }
 
         Ok(None)

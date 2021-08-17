@@ -36,7 +36,7 @@ impl From<ParseError<LineCol>> for Error {
 
 pub fn parse_and_compile(source: &str, filename: Option<PathBuf>) -> Result<Module, Error> {
     let tree = parser::parse(source)?;
-    let compiler = Compiler::new(tree);
+    let compiler = Compiler::new(tree, true);
     let module = compiler.compile()?;
 
     Ok(Module::new(module, filename))

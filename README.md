@@ -8,6 +8,7 @@ Atom is a general purpose dynamically typed programming language combining featu
 
 ## Features
 
+- Tail calls
 - Simple REPL
 - Dynamically typed
 - No null or uninitialized fields

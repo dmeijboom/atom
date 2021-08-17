@@ -14,6 +14,8 @@ pub struct Opts {
     show_ast: bool,
     #[clap(long)]
     show_ir: bool,
+    #[clap(long)]
+    no_optimizations: bool,
 }
 
 pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(), Error> {
@@ -23,7 +25,7 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(
         println!("{:#?}", tree);
     }
 
-    let compiler = Compiler::new(tree);
+    let compiler = Compiler::new(tree, !opts.no_optimizations);
     let compiled_module = compiler.compile()?;
 
     if opts.show_ir {

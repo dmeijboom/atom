@@ -51,12 +51,12 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(tree: Vec<Stmt>) -> Self {
+    pub fn new(tree: Vec<Stmt>, optimize: bool) -> Self {
         Self {
             tree,
+            optimize,
             pos: 0..0,
             scope_id: 0,
-            optimize: true,
             labels: vec![],
             scope: Rc::new(RefCell::new(Scope::new())),
         }

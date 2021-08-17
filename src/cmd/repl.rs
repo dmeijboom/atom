@@ -143,7 +143,7 @@ impl AtomEngine {
     }
 
     fn create_module(&self, stmt: Stmt) -> Result<Module, Error> {
-        let compiler = Compiler::new(vec![stmt]);
+        let compiler = Compiler::new(vec![stmt], true);
         let compiled_module = compiler.compile()?;
 
         let mut module = Module::new(compiled_module, Some("stdin".into()));
