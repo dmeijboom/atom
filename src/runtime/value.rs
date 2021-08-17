@@ -86,14 +86,14 @@ pub type TypeId = usize;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Method {
-    pub name: String,
+    pub id: usize,
     pub class_id: TypeId,
     pub object: Rc<RefCell<Value>>,
 }
 
 impl Hash for Method {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
+        self.id.hash(state);
         self.class_id.hash(state);
     }
 

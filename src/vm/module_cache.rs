@@ -76,13 +76,13 @@ pub struct ClassDesc {
 }
 
 impl ClassDesc {
-    pub fn get_method(&self, name: &str) -> Result<&MethodDesc> {
-        self.methods
-            .iter()
-            .filter(|(method_name, _)| method_name.as_str() == name)
-            .map(|(_, method)| method)
-            .next()
-            .ok_or_else(|| RuntimeError::new(format!("no such method: {}", name)))
+    pub fn get_method(&self, id: usize) -> Result<&MethodDesc> {
+        let (_, method_desc) = self
+            .methods
+            .get_index(id)
+            .ok_or_else(|| RuntimeError::new(format!("no such method with ID: {}", id)))?;
+
+        Ok(method_desc)
     }
 }
 

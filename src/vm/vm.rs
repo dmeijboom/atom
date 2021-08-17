@@ -357,11 +357,11 @@ impl VM {
     ) -> Result<()> {
         let type_val = self.module_cache.lookup_type_by_id(method.class_id)?;
         let class_desc = type_val.try_as_class()?;
-        let method_desc = class_desc.get_method(&method.name)?;
+        let method_desc = class_desc.get_method(method.id)?;
         let target = Target {
             type_id: method.class_id,
             module_id: type_val.module_id,
-            method_name: Some(method.name.clone()),
+            method_id: Some(method.id),
         };
 
         self.call_stack.push(CallContext::new_with_locals(
@@ -414,14 +414,14 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<Value> {
-        let func = match &target.method_name {
-            Some(name) => {
+        let func = match target.method_id {
+            Some(id) => {
                 let class_desc = self
                     .module_cache
                     .lookup_type_by_id(target.type_id)?
                     .try_as_class()?;
 
-                &class_desc.get_method(name)?.func
+                &class_desc.get_method(id)?.func
             }
             None => self
                 .module_cache
@@ -513,7 +513,7 @@ impl VM {
         let target = Target {
             type_id: type_val.id,
             module_id: type_val.module_id,
-            method_name: None,
+            method_id: None,
         };
 
         self.call_stack.push(CallContext::new_with_locals(
@@ -1019,9 +1019,7 @@ impl VM {
             return Ok(());
         }
 
-        if desc.methods.contains_key(member) {
-            let method = &desc.methods[member];
-
+        if let Some((method_id, _, method)) = desc.methods.get_full(member) {
             if !method.func.public && module_id != type_val.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private method '{}(...)' of class: {}",
@@ -1041,9 +1039,9 @@ impl VM {
 
             self.stack.push(Value::Method(
                 Method {
-                    class_id: type_val.id,
-                    name: member.to_string(),
                     object,
+                    id: method_id,
+                    class_id: type_val.id,
                 }
                 .into(),
             ));
@@ -1207,8 +1205,24 @@ impl VM {
     }
 
     pub fn fmt_target(&self, target: &Target) -> String {
-        match &target.method_name {
-            Some(name) => format!("{}.{}", self.module_cache.fmt_type(target.type_id), name),
+        match target.method_id {
+            Some(id) => {
+                if let Ok(class) = self
+                    .module_cache
+                    .lookup_type_by_id(target.type_id)
+                    .and_then(|t| t.try_as_class())
+                {
+                    if let Some((method_name, _)) = class.methods.get_index(id) {
+                        return format!(
+                            "{}.{}",
+                            self.module_cache.fmt_type(target.type_id),
+                            method_name
+                        );
+                    }
+                }
+
+                "!".to_string()
+            }
             None => self.module_cache.fmt_type(target.type_id),
         }
     }
@@ -1232,11 +1246,21 @@ impl VM {
             Value::String(val) => val.to_string(),
             Value::Type(id) => self.module_cache.fmt_type(*id),
             Value::Method(method) => {
-                format!(
-                    "{}.{}(...)",
-                    self.module_cache.fmt_type(method.class_id),
-                    method.name
-                )
+                if let Ok(class) = self
+                    .module_cache
+                    .lookup_type_by_id(method.class_id)
+                    .and_then(|t| t.try_as_class())
+                {
+                    if let Some((method_name, _)) = class.methods.get_index(method.id) {
+                        return format!(
+                            "{}.{}(...)",
+                            self.module_cache.fmt_type(method.class_id),
+                            method_name,
+                        );
+                    }
+                }
+
+                "!".to_string()
             }
             Value::Object(object) => {
                 let class_desc = self

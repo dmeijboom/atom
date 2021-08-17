@@ -14,7 +14,7 @@ use crate::vm::ModuleCache;
 pub struct Target {
     pub type_id: TypeId,
     pub module_id: usize,
-    pub method_name: Option<String>,
+    pub method_id: Option<usize>,
 }
 
 pub struct CallContext {
@@ -87,13 +87,24 @@ impl CallStack {
 
             stack_trace.push(Trace {
                 pos: call_context.pos.clone(),
-                target: match &call_context.target.method_name {
-                    Some(name) => {
-                        format!(
-                            "{}.{}",
-                            module_cache.fmt_type(call_context.target.type_id),
-                            name
-                        )
+                target: match call_context.target.method_id {
+                    Some(id) => {
+                        if let Ok(class) = module_cache
+                            .lookup_type_by_id(call_context.target.type_id)
+                            .and_then(|t| t.try_as_class())
+                        {
+                            if let Some((method_name, _)) = class.methods.get_index(id) {
+                                format!(
+                                    "{}.{}",
+                                    module_cache.fmt_type(call_context.target.type_id),
+                                    method_name
+                                )
+                            } else {
+                                "!".to_string()
+                            }
+                        } else {
+                            "!".to_string()
+                        }
                     }
                     None => module_cache.fmt_type(call_context.target.type_id),
                 },
