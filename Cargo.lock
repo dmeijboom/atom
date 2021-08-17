@@ -10,7 +10,6 @@ dependencies = [
  "indexmap",
  "peg",
  "rustyline",
- "smallvec",
  "snmalloc-rs",
  "test-case",
  "wyhash2",

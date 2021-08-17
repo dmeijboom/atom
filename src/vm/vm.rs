@@ -21,11 +21,27 @@ use crate::vm::call_stack::{CallContext, Target};
 use crate::vm::module_cache::{
     ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, ModuleId, TypeDesc,
 };
-use crate::vm::ClassDesc;
+use crate::vm::{ClassDesc, FuncDesc};
 
 use super::call_stack::CallStack;
 use super::stack::Stack;
 use super::stacked::Stacked;
+
+fn argument_to_stacked(func: &FuncDesc, i: usize, value: Value) -> Stacked {
+    // Immutable locals can be placed on the stack as their contents will not be changed but we
+    // don't want to do this for non-primitive types because that will be slower in most cases
+    if !value.get_type().is_primitive()
+        || func
+            .args
+            .get_index(i)
+            .map(|(_, arg)| arg.mutable)
+            .unwrap_or(false)
+    {
+        Stacked::ByRef(Rc::new(RefCell::new(value)))
+    } else {
+        Stacked::ByValue(value)
+    }
+}
 
 macro_rules! arithmetic_op {
     ($vm:expr, int_only: $opname:ident) => {
@@ -314,12 +330,8 @@ impl VM {
             method_id: None,
         };
 
-        self.call_stack.push(CallContext::new_with_locals(
-            func.pos.clone(),
-            target.clone(),
-            None,
-            func.args.len(),
-        ));
+        self.call_stack
+            .push(CallContext::new(func.pos.clone(), target.clone(), None));
 
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
@@ -405,11 +417,10 @@ impl VM {
             method_id: Some(method.id),
         };
 
-        self.call_stack.push(CallContext::new_with_locals(
+        self.call_stack.push(CallContext::new(
             method_desc.func.pos.clone(),
             target.clone(),
             Some(Rc::clone(&method.object)),
-            method_desc.func.args.len(),
         ));
 
         let return_value = self.eval_func(&target, keywords, arg_count)?;
@@ -480,11 +491,21 @@ impl VM {
                     )));
                 }
 
-                let values = self.stack.pop_many(arg_count)?;
-                let ordered_values = if keywords.is_empty() {
-                    values
+                if keywords.is_empty() {
+                    let mut i = 0;
+
+                    self.call_stack.current_mut()?.locals =
+                        self.stack.pop_many_t(arg_count, |value| {
+                            let stacked = argument_to_stacked(func, i, value);
+
+                            i += 1;
+
+                            stacked
+                        })?;
                 } else {
-                    self.prepare_args(values, keywords, &func.args)
+                    let unordered_values = self.stack.pop_many(arg_count)?;
+                    let values = self
+                        .prepare_args(unordered_values, keywords, &func.args)
                         .map_err(|e| {
                             let message = e.message.clone();
                             e.with_message(format!(
@@ -494,26 +515,14 @@ impl VM {
                             ))
                         })?
                         .into_values()
-                        .collect()
-                };
+                        .collect::<Vec<Value>>();
 
-                let call_context = self.call_stack.current_mut()?;
+                    let call_context = self.call_stack.current_mut()?;
 
-                for (i, value) in ordered_values.into_iter().enumerate() {
-                    // Immutable locals can be placed on the stack as their contents will not be changed but we
-                    // don't want to do this for non-primitive types because that will be slower in most cases
-                    if !value.get_type().is_primitive()
-                        || func
-                            .args
-                            .get_index(i)
-                            .map(|(_, arg)| arg.mutable)
-                            .unwrap_or(false)
-                    {
+                    for (i, value) in values.into_iter().enumerate() {
                         call_context
                             .locals
-                            .push(Stacked::ByRef(Rc::new(RefCell::new(value))));
-                    } else {
-                        call_context.locals.push(Stacked::ByValue(value));
+                            .push(argument_to_stacked(func, i, value));
                     }
                 }
 
@@ -667,7 +676,7 @@ impl VM {
     fn eval_make_array(&mut self, len: usize) -> Result<()> {
         let values = self.stack.pop_many(len)?;
 
-        self.stack.push(Value::Array(values.to_vec()));
+        self.stack.push(Value::Array(values));
 
         Ok(())
     }

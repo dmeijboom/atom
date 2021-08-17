@@ -1,5 +1,5 @@
-use crate::runtime::{Result, Value};
-use crate::vm::{Module, VM};
+use crate::runtime::Result;
+use crate::vm::Module;
 
 pub mod array;
 pub mod float;
@@ -8,21 +8,19 @@ pub mod option;
 pub mod range;
 pub mod string;
 
-pub fn println(vm: &mut VM, values: Vec<Value>) -> Result<Option<Value>> {
-    println!(
-        "{}",
-        values
-            .into_iter()
-            .map(|value| vm.fmt_value(&value))
-            .collect::<Vec<_>>()
-            .join(", "),
-    );
-
-    Ok(None)
-}
-
 pub fn register(module: &mut Module) -> Result<()> {
-    module.register_external_fn("println", println);
+    module.register_external_fn("println", |vm, values| {
+        println!(
+            "{}",
+            values
+                .into_iter()
+                .map(|value| vm.fmt_value(&value))
+                .collect::<Vec<_>>()
+                .join(", "),
+        );
+
+        Ok(None)
+    });
 
     option::register(module)?;
     string::register(module)?;

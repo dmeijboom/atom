@@ -2,7 +2,6 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use smallvec::SmallVec;
 use wyhash2::WyHash;
 
 use crate::ast::Pos;
@@ -20,24 +19,23 @@ pub struct Target {
 pub struct CallContext {
     pub pos: Pos,
     pub target: Target,
-    pub locals: SmallVec<[Stacked; 2]>,
+    pub locals: Vec<Stacked>,
     pub this: Option<Rc<RefCell<Value>>>,
     pub named_locals: HashMap<String, Stacked, WyHash>,
 }
 
 impl CallContext {
-    pub fn new_with_locals(
+    pub fn new(
         pos: Pos,
         target: Target,
         this: Option<Rc<RefCell<Value>>>,
-        capacity: usize,
     ) -> Self {
         Self {
             pos,
             this,
             target,
             named_locals: HashMap::with_hasher(WyHash::with_seed(0)),
-            locals: SmallVec::with_capacity(capacity),
+            locals: vec![],
         }
     }
 }

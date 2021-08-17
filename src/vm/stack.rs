@@ -43,11 +43,7 @@ impl Stack {
         Err(RuntimeError::new("expecting element on stack".to_string()))
     }
 
-    pub fn pop_many_t<T: std::fmt::Debug>(
-        &mut self,
-        len: usize,
-        mut map: impl FnMut(Value) -> T,
-    ) -> Result<Vec<T>> {
+    pub fn pop_many_t<T>(&mut self, len: usize, mut map: impl FnMut(Value) -> T) -> Result<Vec<T>> {
         let data_len = self.data.len();
 
         if data_len < len {
