@@ -43,8 +43,8 @@ fn argument_to_stacked(func: &FuncDesc, i: usize, value: Value) -> Stacked {
     }
 }
 
-macro_rules! arithmetic_op {
-    ($vm:expr, int_only: $opname:ident) => {
+macro_rules! impl_op {
+    ($vm:expr, int_only: $opname:ident) => {{
         let right = $vm.stack.pop()?.into_value();
         let left = $vm.stack.pop()?.into_value();
 
@@ -56,12 +56,34 @@ macro_rules! arithmetic_op {
                     left.get_type().name(),
                     right.get_type().name(),
                     stringify!($ident)
-                )))
+                )));
             }
         });
-    };
 
-    ($vm:expr, $opname:ident) => {
+        Ok(())
+    }};
+
+    ($vm:expr, compare: $opname:ident) => {{
+        let right = $vm.stack.pop()?.into_value();
+        let left = $vm.stack.pop()?.into_value();
+
+        $vm.stack.push(match left {
+            Value::Int(val) => Value::Bool(val.$opname(&to_int(right)?)),
+            Value::Float(val) => Value::Bool(val.$opname(&to_float(right)?)),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "invalid type '{}' and '{}' in {}",
+                    left.get_type().name(),
+                    right.get_type().name(),
+                    stringify!($ident)
+                )));
+            }
+        });
+
+        Ok(())
+    }};
+
+    ($vm:expr, $opname:ident) => {{
         let right = $vm.stack.pop()?.into_value();
         let left = $vm.stack.pop()?.into_value();
 
@@ -74,10 +96,12 @@ macro_rules! arithmetic_op {
                     left.get_type().name(),
                     right.get_type().name(),
                     stringify!($ident)
-                )))
+                )));
             }
         });
-    };
+
+        Ok(())
+    }};
 }
 
 enum Flow<'i> {
@@ -541,44 +565,6 @@ impl VM {
         Ok(Value::Void)
     }
 
-    fn eval_op(
-        &mut self,
-        name: &str,
-        op: impl FnOnce(Value, Value) -> Result<Value>,
-    ) -> Result<()> {
-        let right = self.stack.pop()?.into_value();
-        let left = self.stack.pop()?.into_value();
-
-        self.stack
-            .push(op(left, right).map_err(|e| RuntimeError::new(format!("{} in {}", e, name)))?);
-
-        Ok(())
-    }
-
-    fn eval_comparison_op(
-        &mut self,
-        int_op: impl FnOnce(i64, i64) -> bool,
-        float_op: impl FnOnce(f64, f64) -> bool,
-    ) -> Result<()> {
-        let right = self.stack.pop()?.into_value();
-        let left = self.stack.pop()?.into_value();
-
-        self.stack.push(
-            match left {
-                Value::Int(val) => Ok(Value::Bool(int_op(val, to_int(right)?))),
-                Value::Float(val) => Ok(Value::Bool(float_op(val, to_float(right)?))),
-                _ => Err(RuntimeError::new(format!(
-                    "invalid types: {} and {}",
-                    left.get_type().name(),
-                    right.get_type().name()
-                ))),
-            }
-            .map_err(|e| RuntimeError::new(format!("{} in comparison", e)))?,
-        );
-
-        Ok(())
-    }
-
     fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
             Code::ConstNil => self.stack.push(Value::Option(None)),
@@ -604,20 +590,12 @@ impl VM {
             Code::ArithmeticMul => self.eval_arithmetic_mul()?,
             Code::ArithmeticExp => self.eval_arithmetic_exp()?,
             Code::ArithmeticDiv => self.eval_arithmetic_div()?,
-            Code::ComparisonEq => self.eval_comparison_eq(true)?,
-            Code::ComparisonNeq => self.eval_comparison_eq(false)?,
-            Code::ComparisonGt => {
-                self.eval_comparison_op(|left, right| left > right, |left, right| left > right)?
-            }
-            Code::ComparisonGte => {
-                self.eval_comparison_op(|left, right| left >= right, |left, right| left >= right)?
-            }
-            Code::ComparisonLt => {
-                self.eval_comparison_op(|left, right| left < right, |left, right| left < right)?
-            }
-            Code::ComparisonLte => {
-                self.eval_comparison_op(|left, right| left <= right, |left, right| left <= right)?
-            }
+            Code::ComparisonEq => self.eval_comparison_eq()?,
+            Code::ComparisonNeq => self.eval_comparison_neq()?,
+            Code::ComparisonGt => self.eval_comparison_gt()?,
+            Code::ComparisonGte => self.eval_comparison_gte()?,
+            Code::ComparisonLt => self.eval_comparison_lt()?,
+            Code::ComparisonLte => self.eval_comparison_lte()?,
             Code::Not => self.eval_not()?,
             Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
@@ -724,71 +702,98 @@ impl VM {
     }
 
     fn eval_logical_and(&mut self) -> Result<()> {
-        self.eval_op("logical and", |left, right| match &left {
-            Value::Bool(val) => Ok(Value::Bool(*val && to_bool(right)?)),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
-    }
-
-    fn eval_arithmetic_bit_or(&mut self) -> Result<()> {
-        arithmetic_op!(self, int_only: bitor);
-
-        Ok(())
-    }
-
-    fn eval_arithmetic_bit_and(&mut self) -> Result<()> {
-        arithmetic_op!(self, int_only: bitand);
-
-        Ok(())
-    }
-
-    fn eval_arithmetic_add(&mut self) -> Result<()> {
-        arithmetic_op!(self, add);
-
-        Ok(())
-    }
-
-    fn eval_arithmetic_sub(&mut self) -> Result<()> {
-        arithmetic_op!(self, sub);
-
-        Ok(())
-    }
-
-    fn eval_arithmetic_mul(&mut self) -> Result<()> {
-        arithmetic_op!(self, mul);
-
-        Ok(())
-    }
-
-    fn eval_arithmetic_div(&mut self) -> Result<()> {
-        arithmetic_op!(self, div);
-
-        Ok(())
-    }
-
-    fn eval_arithmetic_exp(&mut self) -> Result<()> {
-        self.eval_op("exponent", |left, right| match &left {
-            Value::Int(val) => Ok(Value::Int(val.pow(to_int(right)? as u32))),
-            Value::Float(val) => Ok(Value::Float(val.powf(to_float(right)?))),
-            _ => Err(RuntimeError::new(format!(
-                "invalid types: {} and {}",
-                left.get_type().name(),
-                right.get_type().name()
-            ))),
-        })
-    }
-
-    fn eval_comparison_eq(&mut self, eq: bool) -> Result<()> {
         let right = self.stack.pop()?.into_value();
         let left = self.stack.pop()?.into_value();
 
-        self.stack.push(Value::Bool((left == right) == eq));
+        self.stack.push(match left {
+            Value::Bool(val) => Value::Bool(val && to_bool(right)?),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "invalid types: {} and {} in logical and",
+                    left.get_type().name(),
+                    right.get_type().name()
+                )))
+            }
+        });
 
         Ok(())
+    }
+
+    fn eval_arithmetic_bit_or(&mut self) -> Result<()> {
+        impl_op!(self, int_only: bitor)
+    }
+
+    fn eval_arithmetic_bit_and(&mut self) -> Result<()> {
+        impl_op!(self, int_only: bitand)
+    }
+
+    fn eval_arithmetic_add(&mut self) -> Result<()> {
+        impl_op!(self, add)
+    }
+
+    fn eval_arithmetic_sub(&mut self) -> Result<()> {
+        impl_op!(self, sub)
+    }
+
+    fn eval_arithmetic_mul(&mut self) -> Result<()> {
+        impl_op!(self, mul)
+    }
+
+    fn eval_arithmetic_div(&mut self) -> Result<()> {
+        impl_op!(self, div)
+    }
+
+    fn eval_arithmetic_exp(&mut self) -> Result<()> {
+        let right = self.stack.pop()?.into_value();
+        let left = self.stack.pop()?.into_value();
+
+        self.stack.push(match left {
+            Value::Int(val) => Value::Int(val.pow(to_int(right)? as u32)),
+            Value::Float(val) => Value::Float(val.powf(to_float(right)?)),
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "invalid types: {} and {} in exponent",
+                    left.get_type().name(),
+                    right.get_type().name()
+                )))
+            }
+        });
+
+        Ok(())
+    }
+
+    fn eval_comparison_eq(&mut self) -> Result<()> {
+        let right = self.stack.pop()?.into_value();
+        let left = self.stack.pop()?.into_value();
+
+        self.stack.push(Value::Bool(left.eq(&right)));
+
+        Ok(())
+    }
+
+    fn eval_comparison_neq(&mut self) -> Result<()> {
+        let right = self.stack.pop()?.into_value();
+        let left = self.stack.pop()?.into_value();
+
+        self.stack.push(Value::Bool(left.ne(&right)));
+
+        Ok(())
+    }
+
+    fn eval_comparison_gt(&mut self) -> Result<()> {
+        impl_op!(self, compare: gt)
+    }
+
+    fn eval_comparison_gte(&mut self) -> Result<()> {
+        impl_op!(self, compare: ge)
+    }
+
+    fn eval_comparison_lt(&mut self) -> Result<()> {
+        impl_op!(self, compare: lt)
+    }
+
+    fn eval_comparison_lte(&mut self) -> Result<()> {
+        impl_op!(self, compare: le)
     }
 
     fn eval_not(&mut self) -> Result<()> {

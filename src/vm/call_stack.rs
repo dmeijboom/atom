@@ -25,11 +25,7 @@ pub struct CallContext {
 }
 
 impl CallContext {
-    pub fn new(
-        pos: Pos,
-        target: Target,
-        this: Option<Rc<RefCell<Value>>>,
-    ) -> Self {
+    pub fn new(pos: Pos, target: Target, this: Option<Rc<RefCell<Value>>>) -> Self {
         Self {
             pos,
             this,
