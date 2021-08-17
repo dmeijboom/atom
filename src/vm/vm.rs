@@ -1,6 +1,7 @@
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::mem;
 use std::ops::{Add, BitAnd, BitOr, Div, Mul, Sub};
 use std::path::Path;
 use std::rc::Rc;
@@ -202,40 +203,23 @@ impl VM {
         }
 
         if let Ok(type_val) = self.module_cache.lookup_type(&module_name, name) {
-            let value = match &type_val.desc {
-                TypeDesc::Class(class_desc) => {
-                    if !class_desc.public {
-                        return Err(RuntimeError::new(format!(
-                            "unable to import private Class: {}'",
-                            self.module_cache.fmt_type(type_val.id),
-                        )));
-                    }
-
-                    Value::Type(type_val.id)
-                }
-                TypeDesc::Interface(interface_desc) => {
-                    if !interface_desc.public {
-                        return Err(RuntimeError::new(format!(
-                            "unable to import private Interface: {}'",
-                            self.module_cache.fmt_type(type_val.id),
-                        )));
-                    }
-
-                    Value::Type(type_val.id)
-                }
-                TypeDesc::Function(fn_desc) => {
-                    if !fn_desc.public {
-                        return Err(RuntimeError::new(format!(
-                            "unable to import private Fn: {}(...)'",
-                            self.module_cache.fmt_type(type_val.id),
-                        )));
-                    }
-
-                    Value::Type(type_val.id)
-                }
+            let (type_name, is_public) = match &type_val.desc {
+                TypeDesc::Class(class_desc) => ("Class", class_desc.public),
+                TypeDesc::Interface(interface_desc) => ("Interface", interface_desc.public),
+                TypeDesc::Function(fn_desc) => ("Fn", fn_desc.public),
             };
 
-            module.globals.insert(name.to_string(), value);
+            if !is_public {
+                return Err(RuntimeError::new(format!(
+                    "unable to import private {}: {}'",
+                    type_name,
+                    self.module_cache.fmt_type(type_val.id),
+                )));
+            }
+
+            module
+                .globals
+                .insert(name.to_string(), Value::Type(type_val.id));
 
             return Ok(());
         }
@@ -243,42 +227,70 @@ impl VM {
         Err(RuntimeError::new(format!("unable to import: {}", path)))
     }
 
-    fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
-        // make sure each keyword is unique
-        if !keywords.is_empty() {
-            let mut unique_keys = vec![];
+    fn eval_tail_call(
+        &mut self,
+        module_id: usize,
+        instructions: &Rc<Vec<IR>>,
+        arg_count: usize,
+    ) -> Result<()> {
+        // Reset locals, we can do this quite easily as the first n-locals are the arguments
+        let context = self.call_stack.current_mut()?;
+        let mut values = self.stack.pop_many(arg_count)?;
 
-            for key in keywords.iter() {
-                if unique_keys.contains(key) {
-                    return Err(RuntimeError::new(format!(
-                        "duplicate keyword argument: {}",
-                        key
-                    )));
+        for i in 0..arg_count {
+            let local = unsafe { context.locals.get_unchecked_mut(i) };
+            let arg_value = unsafe { values.get_unchecked_mut(i) };
+
+            match local {
+                Stacked::ByValue(value) => mem::swap(value, arg_value),
+                Stacked::ByRef(value_ref) => {
+                    let mut value = Value::Void;
+
+                    mem::swap(&mut value, arg_value);
+
+                    let mut arg_value_ref = Rc::new(RefCell::new(value));
+                    mem::swap(value_ref, &mut arg_value_ref);
                 }
-
-                unique_keys.push(key.to_string());
-            }
+            };
         }
 
+        if context.locals.len() > arg_count {
+            context.locals.drain(arg_count..);
+        }
+
+        if !context.named_locals.is_empty() {
+            context.named_locals.clear();
+        }
+
+        let return_value = self
+            ._eval(module_id, Rc::clone(instructions))?
+            .unwrap_or_else(|| Value::Void);
+
+        self.stack.push(return_value);
+
+        Ok(())
+    }
+
+    fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
         let value = self
             .stack
             .pop()
             .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?
             .into_value();
 
-        if let Value::Type(id) = &value {
-            let type_val = self.module_cache.lookup_type_by_id(*id)?;
+        if let Value::Type(id) = value {
+            let type_val = self.module_cache.lookup_type_by_id(id)?;
 
             if let TypeDesc::Function(_) = &type_val.desc {
-                return self.eval_function_call(*id, keywords, arg_count);
+                return self.eval_function_call(id, keywords, arg_count);
             }
 
             if let TypeDesc::Class(_) = &type_val.desc {
-                return self.eval_class_init(*id, keywords, arg_count);
+                return self.eval_class_init(id, keywords, arg_count);
             }
         }
 
-        if let Value::Method(method) = &value {
+        if let Value::Method(method) = value {
             return self.eval_method_call(&method, keywords, arg_count);
         }
 
@@ -286,6 +298,35 @@ impl VM {
             "type '{}' is not callable",
             value.get_type().name()
         )))
+    }
+
+    fn eval_function_call(
+        &mut self,
+        id: TypeId,
+        keywords: &[String],
+        arg_count: usize,
+    ) -> Result<()> {
+        let type_val = self.module_cache.lookup_type_by_id(id)?;
+        let func = type_val.try_as_func()?;
+        let target = Target {
+            type_id: type_val.id,
+            module_id: type_val.module_id,
+            method_id: None,
+        };
+
+        self.call_stack.push(CallContext::new_with_locals(
+            func.pos.clone(),
+            target.clone(),
+            None,
+            func.args.len(),
+        ));
+
+        let return_value = self.eval_func(&target, keywords, arg_count)?;
+
+        self.call_stack.pop();
+        self.stack.push(return_value);
+
+        Ok(())
     }
 
     fn eval_class_init(&mut self, id: TypeId, keywords: &[String], arg_count: usize) -> Result<()> {
@@ -374,7 +415,6 @@ impl VM {
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
         self.call_stack.pop();
-
         self.stack.push(return_value);
 
         Ok(())
@@ -502,36 +542,6 @@ impl VM {
         Ok(Value::Void)
     }
 
-    fn eval_function_call(
-        &mut self,
-        id: TypeId,
-        keywords: &[String],
-        arg_count: usize,
-    ) -> Result<()> {
-        let type_val = self.module_cache.lookup_type_by_id(id)?;
-        let func = type_val.try_as_func()?;
-        let target = Target {
-            type_id: type_val.id,
-            module_id: type_val.module_id,
-            method_id: None,
-        };
-
-        self.call_stack.push(CallContext::new_with_locals(
-            func.pos.clone(),
-            target.clone(),
-            None,
-            func.args.len(),
-        ));
-
-        let return_value = self.eval_func(&target, keywords, arg_count)?;
-
-        self.call_stack.pop();
-
-        self.stack.push(return_value);
-
-        Ok(())
-    }
-
     fn eval_op(
         &mut self,
         name: &str,
@@ -570,7 +580,12 @@ impl VM {
         Ok(())
     }
 
-    fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
+    fn eval_single<'i>(
+        &mut self,
+        module_id: ModuleId,
+        instructions: &'i Rc<Vec<IR>>,
+        ir: &'i IR,
+    ) -> Result<Flow<'i>> {
         match &ir.code {
             Code::ConstNil => self.stack.push(Value::Option(None)),
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
@@ -613,8 +628,9 @@ impl VM {
             Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
             Code::Call(arg_count) => self.eval_call(&[], *arg_count)?,
-            Code::CallWithKeywords((keywords, arg_count)) => {
-                self.eval_call(keywords, *arg_count)?
+            Code::CallKeywords((keywords, arg_count)) => self.eval_call(keywords, *arg_count)?,
+            Code::TailCall(arg_count) => {
+                self.eval_tail_call(module_id, instructions, *arg_count)?
             }
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,
@@ -1331,7 +1347,7 @@ impl VM {
             let ir = &instructions[i];
 
             // Evaluates the instruction and optionally returns a label to jump to
-            match self.eval_single(module_id, ir) {
+            match self.eval_single(module_id, &instructions, ir) {
                 Ok(flow) => match flow {
                     Flow::Continue => i += 1,
                     Flow::Return(value) => return Ok(Some(value)),

@@ -222,8 +222,24 @@ impl Compiler {
                 let instructions = vec![if names.is_empty() {
                     IR::new(Code::Call(call_expr.args.len()), call_expr.pos.clone())
                 } else {
+                    // Make sure each keyword argument is unique
+                    if !names.is_empty() {
+                        let mut unique_keys = vec![];
+
+                        for key in names.iter() {
+                            if unique_keys.contains(key) {
+                                return Err(CompileError::new(
+                                    format!("duplicate keyword argument: {}", key),
+                                    self.pos.clone(),
+                                ));
+                            }
+
+                            unique_keys.push(key.to_string());
+                        }
+                    }
+
                     IR::new(
-                        Code::CallWithKeywords((
+                        Code::CallKeywords((
                             names,
                             call_expr.keyword_args.len() + call_expr.args.len(),
                         )),
@@ -710,6 +726,33 @@ impl Compiler {
         Ok(instructions)
     }
 
+    fn has_no_side_effects(&self, code: &Code) -> bool {
+        match code {
+            Code::ArithmeticAdd
+            | Code::ArithmeticSub
+            | Code::ArithmeticMul
+            | Code::ArithmeticDiv
+            | Code::ArithmeticExp
+            | Code::Return
+            | Code::ArithmeticBitAnd
+            | Code::ArithmeticBitOr
+            | Code::ComparisonEq
+            | Code::ComparisonNeq
+            | Code::ComparisonGt
+            | Code::ComparisonGte
+            | Code::ComparisonLt
+            | Code::ComparisonLte
+            | Code::ConstString(_)
+            | Code::ConstBool(_)
+            | Code::ConstByte(_)
+            | Code::ConstChar(_)
+            | Code::ConstFloat(_)
+            | Code::ConstInt(_)
+            | Code::ConstNil => true,
+            _ => false,
+        }
+    }
+
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
         self.enter_scope(ScopeContext::Function(if is_method {
             None
@@ -721,9 +764,47 @@ impl Compiler {
             self.set_local(arg.name.clone(), false)?;
         }
 
-        let body = self._compile_stmt_list(&fn_decl.body)?;
+        let mut body = self._compile_stmt_list(&fn_decl.body)?;
 
         self.exit_scope();
+
+        // Let's check if we can optimize tail recursion call
+        if self.optimize {
+            loop {
+                let index = || {
+                    for (i, ir) in body.iter().enumerate() {
+                        if ir.code == Code::LoadTarget {
+                            let next_code = body.get(i + 1).and_then(|ir| Some(&ir.code));
+
+                            if let Some(Code::Call(arg_count)) = next_code {
+                                if !body
+                                    .iter()
+                                    .skip(i + 2)
+                                    .any(|ir| !self.has_no_side_effects(&ir.code))
+                                {
+                                    return Some((i, *arg_count));
+                                }
+                            }
+                        }
+                    }
+
+                    None
+                };
+
+                match index() {
+                    // No more tail recursions calls were found
+                    None => break,
+
+                    // Replace the two instructions with a tail-recursion-call one
+                    Some((index, arg_count)) => {
+                        let call = &mut body[index];
+                        call.code = Code::TailCall(arg_count);
+
+                        body.remove(index + 1);
+                    }
+                }
+            }
+        }
 
         Ok(Func {
             pos: fn_decl.pos.clone(),

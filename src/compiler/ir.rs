@@ -24,6 +24,14 @@ impl Display for Label {
     }
 }
 
+fn format_keywords(keywords: &[String]) -> String {
+    keywords
+        .iter()
+        .map(|name| format!("'{}'", name))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[derive(Clone, PartialEq)]
 pub enum Code {
     ConstNil,
@@ -63,7 +71,8 @@ pub enum Code {
     Validate,
     Cast(String),
     Call(usize),
-    CallWithKeywords((Vec<String>, usize)),
+    CallKeywords((Vec<String>, usize)),
+    TailCall(usize),
     Store(usize),
     StoreMut(usize),
     Load(usize),
@@ -120,15 +129,12 @@ impl Code {
             Code::Validate => "  validate".to_string(),
             Code::Cast(type_name) => format!("  cast(type_name: '{}')", type_name),
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
-            Code::CallWithKeywords((keywords, arg_count)) => format!(
+            Code::CallKeywords((keywords, arg_count)) => format!(
                 "  callKw(keywords: {}, arg_count: {})",
-                keywords
-                    .iter()
-                    .map(|name| format!("'{}'", name))
-                    .collect::<Vec<_>>()
-                    .join(", "),
+                format_keywords(keywords),
                 arg_count
             ),
+            Code::TailCall(arg_count) => format!("  tailCall(arg_count: {})", arg_count),
             Code::Store(id) => format!("  store(id: {})", id),
             Code::StoreMut(id) => format!("  storeMut(id: {})", id),
             Code::StoreMember(name) => format!("  storeMember(name: '{}')", name),
