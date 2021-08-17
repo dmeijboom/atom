@@ -10,6 +10,7 @@ use crate::runtime::{Result, RuntimeError, TypeId, Value};
 use crate::vm::VM;
 
 pub type ExternalFn = fn(&mut VM, Vec<Value>) -> Result<Option<Value>>;
+pub type ModuleId = usize;
 
 pub enum FuncSource {
     Native(Rc<Vec<IR>>),
@@ -80,7 +81,7 @@ impl ClassDesc {
             .iter()
             .filter(|(method_name, _)| method_name.as_str() == name)
             .map(|(_, method)| method)
-            .nth(0)
+            .next()
             .ok_or_else(|| RuntimeError::new(format!("no such method: {}", name)))
     }
 }
@@ -131,7 +132,7 @@ impl Type {
 }
 
 pub struct Module {
-    pub id: usize,
+    pub id: ModuleId,
     pub name: String,
     pub imports: Vec<String>,
     pub filename: Option<PathBuf>,
@@ -260,7 +261,6 @@ pub type Middleware = fn(&mut Module) -> Result<()>;
 pub struct ModuleCache {
     types: Vec<Type>,
     lookup_paths: Vec<PathBuf>,
-    current_module: Option<usize>,
     modules: IndexMap<String, Module>,
     middleware: HashMap<String, Middleware>,
 }
@@ -269,7 +269,6 @@ impl ModuleCache {
     pub fn new() -> Self {
         Self {
             types: vec![],
-            current_module: None,
             lookup_paths: vec![],
             modules: IndexMap::new(),
             middleware: HashMap::new(),
@@ -328,28 +327,6 @@ impl ModuleCache {
         self.middleware.insert(name.to_string(), middleware);
     }
 
-    pub fn current_id(&self) -> Result<usize> {
-        if let Some(id) = self.current_module {
-            return Ok(id);
-        }
-
-        Err(RuntimeError::new("no active module found".to_string()))
-    }
-
-    pub fn set_current(&mut self, id: usize) {
-        self.current_module = Some(id);
-    }
-
-    pub fn current(&mut self) -> Result<&mut Module> {
-        if let Some(id) = &self.current_module {
-            if let Some((_, module)) = self.modules.get_index_mut(*id) {
-                return Ok(module);
-            }
-        }
-
-        Err(RuntimeError::new("no active module found".to_string()))
-    }
-
     pub fn contains_module(&self, module_name: &str) -> bool {
         self.modules.contains_key(module_name)
     }
@@ -360,7 +337,7 @@ impl ModuleCache {
                 .types
                 .iter()
                 .filter(|type_val| type_val.module_id == id && type_val.name == name)
-                .nth(0)
+                .next()
             {
                 return Ok(result);
             }
@@ -372,19 +349,25 @@ impl ModuleCache {
         )))
     }
 
-    pub fn lookup_current_module_type_id(&self, name: &str) -> Option<TypeId> {
-        if let Some(id) = self.current_module {
-            if let Some(result) = self
-                .types
-                .iter()
-                .filter(|type_val| type_val.module_id == id && type_val.name == name)
-                .nth(0)
-            {
-                return Some(result.id);
-            }
+    pub fn lookup_module_type_id(&self, module_id: usize, name: &str) -> Option<TypeId> {
+        if let Some(result) = self
+            .types
+            .iter()
+            .filter(|type_val| type_val.module_id == module_id && type_val.name == name)
+            .next()
+        {
+            return Some(result.id);
         }
 
         None
+    }
+
+    pub fn lookup_module_by_id(&self, id: ModuleId) -> Result<&Module> {
+        if let Some((_, module)) = self.modules.get_index(id) {
+            return Ok(module);
+        }
+
+        Err(RuntimeError::new(format!("no such module: {}", id)))
     }
 
     pub fn lookup_module(&self, name: &str) -> Result<&Module> {

@@ -18,7 +18,7 @@ use crate::utils;
 use crate::utils::Error;
 use crate::vm::call_stack::{CallContext, Target};
 use crate::vm::module_cache::{
-    ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, TypeDesc,
+    ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, ModuleId, TypeDesc,
 };
 use crate::vm::stacked::StackedBorrowedMut;
 use crate::vm::ClassDesc;
@@ -580,7 +580,7 @@ impl VM {
         Ok(())
     }
 
-    fn eval_single<'i>(&mut self, ir: &'i IR) -> Result<Flow<'i>> {
+    fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
@@ -629,11 +629,11 @@ impl VM {
             Code::StoreMut(id) => self.eval_store(*id, true)?,
             Code::LoadIndex => self.eval_load_index()?,
             Code::StoreIndex => self.eval_store_index()?,
-            Code::LoadMember(member) => self.eval_load_member(member, false)?,
-            Code::TeeMember(member) => self.eval_load_member(member, true)?,
-            Code::StoreMember(member) => self.eval_store_member(member)?,
+            Code::LoadMember(member) => self.eval_load_member(module_id, member, false)?,
+            Code::TeeMember(member) => self.eval_load_member(module_id, member, true)?,
+            Code::StoreMember(member) => self.eval_store_member(module_id, member)?,
             Code::Load(id) => self.eval_load(*id)?,
-            Code::LoadName(name) => self.eval_load_name(name)?,
+            Code::LoadName(name) => self.eval_load_name(module_id, name)?,
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
@@ -970,7 +970,12 @@ impl VM {
         })
     }
 
-    fn eval_load_member(&mut self, member: &str, push_back: bool) -> Result<()> {
+    fn eval_load_member(
+        &mut self,
+        module_id: ModuleId,
+        member: &str,
+        push_back: bool,
+    ) -> Result<()> {
         let stacked = self.stack.pop()?;
         let id = with_auto_deref(&stacked.borrow(), |value| match value {
             Value::Object(object) => Ok(object.class.clone()),
@@ -985,7 +990,7 @@ impl VM {
         if let Some(index) = desc.fields.get_index_of(member) {
             let field = &desc.fields[member];
 
-            if !field.public && self.module_cache.current_id()? != type_val.module_id {
+            if !field.public && module_id != type_val.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
                     member,
@@ -1025,7 +1030,7 @@ impl VM {
         if desc.methods.contains_key(member) {
             let method = &desc.methods[member];
 
-            if !method.func.public && self.module_cache.current_id()? != type_val.module_id {
+            if !method.func.public && module_id != type_val.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private method '{}(...)' of class: {}",
                     member,
@@ -1061,7 +1066,7 @@ impl VM {
         )))
     }
 
-    fn eval_store_member(&mut self, member: &str) -> Result<()> {
+    fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
         let object_ref = self.stack.pop()?.into_ref();
         let mut data = object_ref.borrow_mut();
         let class_id = with_auto_deref(&data, |value| match value {
@@ -1078,7 +1083,7 @@ impl VM {
         if let Some(index) = class_desc.fields.get_index_of(member) {
             let field = &class_desc.fields[member];
 
-            if !field.public && self.module_cache.current_id()? != type_val.module_id {
+            if !field.public && module_id != type_val.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
                     member,
@@ -1125,7 +1130,7 @@ impl VM {
         )))
     }
 
-    fn eval_load_name(&mut self, name: &str) -> Result<()> {
+    fn eval_load_name(&mut self, module_id: ModuleId, name: &str) -> Result<()> {
         if !self.call_stack.is_empty() {
             let context = self.call_stack.current()?;
 
@@ -1136,17 +1141,15 @@ impl VM {
             }
         }
 
-        {
-            let current_module = self.module_cache.current()?;
+        let current_module = self.module_cache.lookup_module_by_id(module_id)?;
 
-            if let Some(value) = current_module.globals.get(name).cloned() {
-                self.stack.push(value);
+        if let Some(value) = current_module.globals.get(name).cloned() {
+            self.stack.push(value);
 
-                return Ok(());
-            }
+            return Ok(());
         }
 
-        if let Some(typedef) = self.module_cache.lookup_current_module_type_id(name) {
+        if let Some(typedef) = self.module_cache.lookup_module_type_id(module_id, name) {
             self.stack.push(Value::Type(typedef));
 
             return Ok(());
@@ -1284,11 +1287,7 @@ impl VM {
         )))
     }
 
-    fn _eval(&mut self, new_module_id: usize, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
-        let module_id = self.module_cache.current_id();
-
-        self.module_cache.set_current(new_module_id);
-
+    fn _eval(&mut self, module_id: ModuleId, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
         let mut i = 0;
         let instructions_len = instructions.len();
 
@@ -1296,16 +1295,10 @@ impl VM {
             let ir = &instructions[i];
 
             // Evaluates the instruction and optionally returns a label to jump to
-            match self.eval_single(ir) {
+            match self.eval_single(module_id, ir) {
                 Ok(flow) => match flow {
                     Flow::Continue => i += 1,
-                    Flow::Return(value) => {
-                        if let Ok(id) = module_id {
-                            self.module_cache.set_current(id);
-                        }
-
-                        return Ok(Some(value));
-                    }
+                    Flow::Return(value) => return Ok(Some(value)),
                     Flow::JumpTo(label) => {
                         i = match label.index {
                             Some(index) => index,
@@ -1317,16 +1310,14 @@ impl VM {
                 },
                 Err(e) => {
                     if e.pos.is_none() {
-                        return Err(e.with_pos(ir.pos.clone()));
+                        return Err(e
+                            .with_pos(ir.pos.clone())
+                            .with_module(self.module_cache.lookup_module_by_id(module_id)?));
                     };
 
                     return Err(e);
                 }
             };
-        }
-
-        if let Ok(id) = module_id {
-            self.module_cache.set_current(id);
         }
 
         Ok(None)
@@ -1335,15 +1326,8 @@ impl VM {
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
         let module_id = self.module_cache.lookup_module(module)?.id;
 
-        self._eval(module_id, Rc::new(instructions)).map_err(|e| {
-            let e = e.with_stack_trace(self.call_stack.rewind(&self.module_cache));
-
-            if let Ok(module) = self.module_cache.current() {
-                return e.with_module(module);
-            }
-
-            e
-        })?;
+        self._eval(module_id, Rc::new(instructions))
+            .map_err(|e| e.with_stack_trace(self.call_stack.rewind(&self.module_cache)))?;
 
         Ok(())
     }
