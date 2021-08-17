@@ -39,7 +39,7 @@ pub fn register(module: &mut Module) -> Result<()> {
             let key = parse_args!(values => Any);
             let value = use_map(vm, |a| Ok(a.remove(&key)))?;
 
-            Ok(Some(convert::to_option(vm, value)?))
+            Ok(Some(convert::to_option(value)))
         }),
         ("clear", |vm, values| {
             parse_args!(values);

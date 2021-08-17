@@ -42,14 +42,14 @@ pub fn register(module: &mut Module) -> Result<()> {
                     })
                 })?;
 
-                return Ok(Some(convert::to_option(vm, item)?));
+                return Ok(Some(convert::to_option(item)));
             }
 
             parse_args!(values);
 
             let item = use_array(vm, |a| Ok(a.pop()))?;
 
-            Ok(Some(convert::to_option(vm, item)?))
+            Ok(Some(convert::to_option(item)))
         }),
         ("len", |vm, values| {
             parse_args!(values);

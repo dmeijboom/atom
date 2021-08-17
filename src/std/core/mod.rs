@@ -4,6 +4,7 @@ use crate::vm::{Module, VM};
 pub mod array;
 pub mod float;
 pub mod map;
+pub mod option;
 pub mod range;
 pub mod string;
 
@@ -23,6 +24,7 @@ pub fn println(vm: &mut VM, values: Vec<Value>) -> Result<Option<Value>> {
 pub fn register(module: &mut Module) -> Result<()> {
     module.register_external_fn("println", println);
 
+    option::register(module)?;
     string::register(module)?;
     array::register(module)?;
     map::register(module)?;
@@ -32,10 +34,9 @@ pub fn register(module: &mut Module) -> Result<()> {
     Ok(())
 }
 
-pub const DEFAULT_IMPORTS: &[&str; 7] = &[
+pub const DEFAULT_IMPORTS: &[&str; 6] = &[
     "std.core.println",
     "std.core.some",
-    "std.core.none",
     "std.core.RangeIter",
     "std.core.ArrayIter",
     "std.core.KeyValue",

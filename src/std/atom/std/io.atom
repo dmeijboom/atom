@@ -16,7 +16,7 @@ pub class LinesIter {
             let bytes = this.readable.read(1);
 
             if buff.len() == 0 && bytes.len() == 0 {
-                return none();
+                return nil;
             }
 
             if bytes.first() == some(b'\n') {

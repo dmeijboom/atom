@@ -26,6 +26,7 @@ impl Display for Label {
 
 #[derive(Clone, PartialEq)]
 pub enum Code {
+    ConstNil,
     ConstInt(i64),
     ConstBool(bool),
     ConstFloat(f64),
@@ -79,6 +80,7 @@ pub enum Code {
 impl Code {
     fn description(&self) -> String {
         match self {
+            Code::ConstNil => "constNil".to_string(),
             Code::ConstInt(val) => format!("  constInt({})", val),
             Code::ConstBool(val) => format!("  constBool({})", val),
             Code::ConstFloat(val) => format!("  constFloat({})", val),

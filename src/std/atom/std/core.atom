@@ -4,36 +4,7 @@ pub interface Iterable {
     fn iter();
 }
 
-pub class Option {
-    let _value;
-    let isNil;
-
-    pub fn value() {
-        return this._value;
-    }
-
-    pub fn isSome() {
-        return !this.isNil;
-    }
-
-    pub fn isNone() {
-        return this.isNil;
-    }
-}
-
-pub fn some(value) {
-    return Option(
-        _value: value,
-        isNil: false
-    );
-}
-
-pub fn none() {
-    return Option(
-        _value: 0,
-        isNil: true
-    );
-}
+pub class Option {}
 
 pub class String {
     pub let length;
@@ -59,7 +30,7 @@ pub class RangeIter {
         let index = this.start + this.index;
 
         if index >= this.end {
-            return none();
+            return nil;
         }
 
         let value = some(index);
@@ -115,7 +86,7 @@ pub class ArrayIter {
 
     pub fn next() {
         if this.index >= this.array.len() {
-            return none();
+            return nil;
         }
 
         let value = this.array.nth(this.index);
@@ -129,7 +100,7 @@ pub class ArrayIter {
 pub class Array {
     pub fn nth(index) {
         if index < 0 || this.len() <= index {
-            return none();
+            return nil;
         }
 
         unsafe {
@@ -196,12 +167,12 @@ pub class MapIter {
 
     pub fn next() {
         if this.index >= this.keys.len() {
-            return none();
+            return nil;
         }
 
         unsafe {
             let key = this.keys[this.index];
-            let key_value = KeyValue(key: key, value: this.data[key]);
+            let key_value = &KeyValue(key: key, value: this.data[key]);
 
             this.index = this.index + 1;
 
@@ -217,7 +188,7 @@ pub class Map {
 
     pub fn get(key) {
         if !this.keys().contains(key) {
-            return none();
+            return nil;
         }
 
         unsafe {

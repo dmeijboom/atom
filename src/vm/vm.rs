@@ -582,6 +582,7 @@ impl VM {
 
     fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
+            Code::ConstNil => self.stack.push(Value::Option(None)),
             Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
             Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
             Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
@@ -1213,6 +1214,10 @@ impl VM {
             Value::Char(val) => format!("{}", val),
             Value::Byte(val) => format!("{}", val),
             Value::Bool(val) => format!("{}", val),
+            Value::Option(val) => match val {
+                None => format!("std.core.Option(None)"),
+                Some(val) => format!("std.core.Option({})", self.fmt_value(val)),
+            },
             Value::Ref(value_ref) => {
                 format!("*{}", self.fmt_value(&value_ref.borrow()))
             }

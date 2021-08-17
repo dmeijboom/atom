@@ -37,6 +37,9 @@ peg::parser! {
         rule bool_lit() -> Literal
             = value:$("true" / "false") { Literal::Bool(value.parse().unwrap()) }
 
+        rule nil_lit() -> Literal
+            = "nil" { Literal::Nil }
+
         rule char() -> char
             = value:$([_]) { value.parse().unwrap() }
 
@@ -64,7 +67,7 @@ peg::parser! {
                 / !("\"" / "\\" / ("\r"? "\n")) value:char() { value }
 
         rule literal() -> Literal
-            = bool_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
+            = bool_lit() / nil_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
 
         rule literal_expr() -> Expr
             = start:pos() literal:literal() end:pos() { Expr::Literal(LiteralExpr { literal, pos: (start..end) }) }
@@ -1031,5 +1034,21 @@ mod tests {
                 pos: 0..13,
             })),
         );
+    }
+
+    #[test]
+    fn nil_lit() {
+        let source = "nil;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Nil,
+                    pos: 0..3
+                }),
+                pos: 0..4,
+            }))
+        )
     }
 }

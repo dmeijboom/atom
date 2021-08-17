@@ -1,6 +1,3 @@
-use crate::runtime::Object;
-use crate::vm::VM;
-
 use super::result::{Result, RuntimeError};
 use super::value::Value;
 
@@ -47,18 +44,8 @@ pub fn to_float(value: Value) -> Result<f64> {
     }
 }
 
-pub fn to_option(vm: &VM, value: Option<Value>) -> Result<Value> {
-    if let Some(value) = value {
-        return Ok(Value::Object(Object::new(
-            vm.get_type_id("std.core", "Option")?,
-            vec![value, Value::Bool(false)],
-        )));
-    }
-
-    Ok(Value::Object(Object::new(
-        vm.get_type_id("std.core", "Option")?,
-        vec![Value::Int(0), Value::Bool(true)],
-    )))
+pub fn to_option(value: Option<Value>) -> Value {
+    Value::Option(value.and_then(|value| Some(value.into())))
 }
 
 pub fn to_byte(value: &Value) -> Result<u8> {
