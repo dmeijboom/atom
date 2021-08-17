@@ -1,18 +1,19 @@
+use std::ops::DerefMut;
+
 use crate::parse_args;
 use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_string(vm: &mut VM, handler: impl Fn(&String) -> Value) -> Result<Option<Value>> {
-    let mut value = vm.get_local_mut("this").unwrap();
-    let type_val = value.get_type();
+    let value = vm.get_fn_self().unwrap();
 
-    if let Value::String(s) = &mut *value {
+    if let Value::String(s) = value.borrow_mut().deref_mut() {
         return Ok(Some(handler(s)));
     }
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected String",
-        type_val.name()
+        value.borrow().get_type().name()
     )))
 }
 

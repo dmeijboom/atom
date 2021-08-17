@@ -190,7 +190,9 @@ impl Compiler {
             }
             Expr::Ident(ident) => {
                 ir.push(vec![IR::new(
-                    if let Some(local) = Scope::get_local(&self.scope, &ident.name, true) {
+                    if ident.name == "this" && Scope::in_function_block(&self.scope) {
+                        Code::LoadSelf
+                    } else if let Some(local) = Scope::get_local(&self.scope, &ident.name, true) {
                         Code::Load(local.id)
                     } else {
                         Code::LoadName(ident.name.clone())

@@ -1,5 +1,5 @@
-use std::cell::{Ref, RefCell, RefMut};
-use std::ops::{Deref, DerefMut};
+use std::cell::{Ref, RefCell};
+use std::ops::Deref;
 use std::rc::Rc;
 
 use crate::runtime::Value;
@@ -15,14 +15,13 @@ impl Stacked {
         StackedBorrowed::new(self)
     }
 
-    pub fn borrow_mut(&mut self) -> StackedBorrowedMut<'_> {
-        StackedBorrowedMut::new(self)
-    }
-
     pub fn into_value(self) -> Value {
         match self {
             Self::ByValue(value) => value,
-            Self::ByRef(value_ref) => value_ref.borrow().clone(),
+            Self::ByRef(value_ref) => match Rc::try_unwrap(value_ref) {
+                Ok(value_cell) => value_cell.into_inner(),
+                Err(value_ref) => value_ref.borrow().clone(),
+            },
         }
     }
 
@@ -79,48 +78,6 @@ impl Deref for StackedBorrowed<'_> {
         match &self.data {
             ValueOrRef::Value(value) => value,
             ValueOrRef::ValueRef(value_ref) => value_ref,
-        }
-    }
-}
-
-enum ValueOrRefMut<'v> {
-    Value(&'v mut Value),
-    ValueRef(RefMut<'v, Value>),
-}
-
-pub struct StackedBorrowedMut<'s> {
-    data: ValueOrRefMut<'s>,
-}
-
-impl<'s> StackedBorrowedMut<'s> {
-    pub fn new(stacked: &'s mut Stacked) -> Self {
-        match stacked {
-            Stacked::ByValue(value) => Self {
-                data: ValueOrRefMut::Value(value),
-            },
-            Stacked::ByRef(value_ref) => Self {
-                data: ValueOrRefMut::ValueRef(value_ref.borrow_mut()),
-            },
-        }
-    }
-}
-
-impl Deref for StackedBorrowedMut<'_> {
-    type Target = Value;
-
-    fn deref(&self) -> &Self::Target {
-        match &self.data {
-            ValueOrRefMut::Value(value) => value,
-            ValueOrRefMut::ValueRef(value_ref) => value_ref,
-        }
-    }
-}
-
-impl DerefMut for StackedBorrowedMut<'_> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        match &mut self.data {
-            ValueOrRefMut::Value(value) => value,
-            ValueOrRefMut::ValueRef(value_ref) => value_ref,
         }
     }
 }

@@ -1,6 +1,7 @@
-use std::cell::{RefCell, RefMut};
+use std::cell::RefCell;
 use std::fs::File;
 use std::io::Read;
+use std::ops::DerefMut;
 use std::rc::Rc;
 
 use crate::parse_args;
@@ -9,20 +10,19 @@ use crate::vm::{Module, VM};
 
 fn use_file(
     vm: &mut VM,
-    handler: impl FnOnce(RefMut<File>) -> Result<Option<Value>>,
+    handler: impl FnOnce(&mut File) -> Result<Option<Value>>,
 ) -> Result<Option<Value>> {
-    let mut value = vm.get_local_mut("this").unwrap();
-    let type_val = value.get_type();
+    let value = vm.get_fn_self().unwrap();
 
-    if let Value::Object(object) = &mut *value {
+    if let Value::Object(object) = value.borrow_mut().deref_mut() {
         if let Some(Data::File(file)) = &object.data {
-            return handler(Rc::clone(file).borrow_mut());
+            return handler(&mut Rc::clone(file).borrow_mut());
         }
     }
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected File",
-        type_val.name(),
+        value.borrow().get_type().name(),
     )))
 }
 
@@ -40,7 +40,7 @@ pub fn register(module: &mut Module) -> Result<()> {
     module.register_external_method("File", "read", |vm, mut values| {
         let max = parse_args!(values => Int);
 
-        use_file(vm, |mut file| {
+        use_file(vm, |file| {
             let mut buff = vec![];
 
             buff.reserve(max as usize);

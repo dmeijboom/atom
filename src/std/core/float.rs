@@ -1,22 +1,20 @@
+use std::ops::DerefMut;
+
 use crate::parse_args;
-use crate::runtime::{with_auto_deref_mut, Result, RuntimeError, Value};
+use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_float<T>(vm: &mut VM, handler: impl FnOnce(&mut f64) -> Result<T>) -> Result<T> {
-    let mut value = vm.get_local_mut("this").unwrap();
+    let value = vm.get_fn_self().unwrap();
 
-    with_auto_deref_mut(&mut value, |value| {
-        let type_val = value.get_type();
+    if let Value::Float(val) = value.borrow_mut().deref_mut() {
+        return handler(val);
+    }
 
-        if let Value::Float(val) = value {
-            return handler(val);
-        }
-
-        Err(RuntimeError::new(format!(
-            "invalid type '{}', expected Int",
-            type_val.name()
-        )))
-    })
+    Err(RuntimeError::new(format!(
+        "invalid type '{}', expected Int",
+        value.borrow().get_type().name()
+    )))
 }
 
 pub fn register(module: &mut Module) -> Result<()> {

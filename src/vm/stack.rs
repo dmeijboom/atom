@@ -61,10 +61,7 @@ impl Stack {
             .data
             .drain((data_len - len)..)
             .into_iter()
-            .map(|stacked| match stacked {
-                Stacked::ByValue(value) => map(value),
-                Stacked::ByRef(value_ref) => map(value_ref.borrow().clone()),
-            })
+            .map(|stacked| map(stacked.into_value()))
             .collect())
     }
 

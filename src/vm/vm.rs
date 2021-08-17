@@ -20,7 +20,6 @@ use crate::vm::call_stack::{CallContext, Target};
 use crate::vm::module_cache::{
     ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, ModuleId, TypeDesc,
 };
-use crate::vm::stacked::StackedBorrowedMut;
 use crate::vm::ClassDesc;
 
 use super::call_stack::CallStack;
@@ -145,13 +144,9 @@ impl VM {
         Ok(self.module_cache.lookup_type(module, name)?.id)
     }
 
-    pub fn get_local_mut(&mut self, local_name: &str) -> Option<StackedBorrowedMut<'_>> {
-        if let Ok(context) = self.call_stack.current_mut() {
-            return context
-                .named_locals
-                .iter_mut()
-                .find(|(name, _)| name.as_str() == local_name)
-                .map(|(_, stacked)| stacked.borrow_mut());
+    pub fn get_fn_self(&self) -> Option<Rc<RefCell<Value>>> {
+        if let Ok(context) = self.call_stack.current() {
+            return context.this.as_ref().and_then(|rc| Some(Rc::clone(rc)));
         }
 
         None
@@ -369,18 +364,12 @@ impl VM {
             method_name: Some(method.name.clone()),
         };
 
-        let mut context = CallContext::new_with_locals(
+        self.call_stack.push(CallContext::new_with_locals(
             method_desc.func.pos.clone(),
             target.clone(),
+            Some(Rc::clone(&method.object)),
             method_desc.func.args.len(),
-        );
-
-        context.named_locals.insert(
-            "this".to_string(),
-            Stacked::ByRef(Rc::clone(&method.object)),
-        );
-
-        self.call_stack.push(context);
+        ));
 
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
@@ -530,6 +519,7 @@ impl VM {
         self.call_stack.push(CallContext::new_with_locals(
             func.pos.clone(),
             target.clone(),
+            None,
             func.args.len(),
         ));
 
@@ -634,6 +624,7 @@ impl VM {
             Code::TeeMember(member) => self.eval_load_member(module_id, member, true)?,
             Code::StoreMember(member) => self.eval_store_member(module_id, member)?,
             Code::Load(id) => self.eval_load(*id)?,
+            Code::LoadSelf => self.eval_load_self()?,
             Code::LoadName(name) => self.eval_load_name(module_id, name)?,
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
@@ -1128,6 +1119,22 @@ impl VM {
         Err(RuntimeError::new(format!(
             "undefined local with id: {}",
             id
+        )))
+    }
+
+    fn eval_load_self(&mut self) -> Result<()> {
+        if !self.call_stack.is_empty() {
+            let context = self.call_stack.current()?;
+
+            if let Some(this) = &context.this {
+                self.stack.push_ref(Rc::clone(this));
+
+                return Ok(());
+            }
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to load 'this' outside of Fn scope"
         )))
     }
 

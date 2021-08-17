@@ -117,6 +117,17 @@ impl Scope {
         .unwrap_or(false)
     }
 
+    pub fn in_function_block(scope: &Rc<RefCell<Scope>>) -> bool {
+        walk(scope, |scope| {
+            if let ScopeContext::Function(_) = &scope.context {
+                return Some(true);
+            }
+
+            None
+        })
+        .unwrap_or(false)
+    }
+
     pub fn get_for_loop(scope: &Rc<RefCell<Scope>>) -> Option<ForLoopMeta> {
         walk(scope, |scope| {
             if let ScopeContext::ForLoop(meta) = &scope.context {

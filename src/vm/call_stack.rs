@@ -1,10 +1,12 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
+use std::rc::Rc;
 
 use smallvec::SmallVec;
 use wyhash2::WyHash;
 
 use crate::ast::Pos;
-use crate::runtime::{Result, RuntimeError, Trace, TypeId};
+use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
 use crate::vm::stacked::Stacked;
 use crate::vm::ModuleCache;
 
@@ -19,13 +21,20 @@ pub struct CallContext {
     pub pos: Pos,
     pub target: Target,
     pub locals: SmallVec<[Stacked; 2]>,
+    pub this: Option<Rc<RefCell<Value>>>,
     pub named_locals: HashMap<String, Stacked, WyHash>,
 }
 
 impl CallContext {
-    pub fn new_with_locals(pos: Pos, target: Target, capacity: usize) -> Self {
+    pub fn new_with_locals(
+        pos: Pos,
+        target: Target,
+        this: Option<Rc<RefCell<Value>>>,
+        capacity: usize,
+    ) -> Self {
         Self {
             pos,
+            this,
             target,
             named_locals: HashMap::with_hasher(WyHash::with_seed(0)),
             locals: SmallVec::with_capacity(capacity),
@@ -50,7 +59,7 @@ impl CallStack {
         self.data.pop()
     }
 
-    pub fn current(&mut self) -> Result<&CallContext> {
+    pub fn current(&self) -> Result<&CallContext> {
         self.data
             .last()
             .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
