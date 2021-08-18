@@ -1020,10 +1020,7 @@ impl VM {
             })?;
 
             if push_back {
-                match stacked {
-                    Stacked::ByValue(value) => self.stack.push(value),
-                    Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
-                }
+                self.stack.push_stacked(stacked);
             }
 
             self.stack.push(field);
