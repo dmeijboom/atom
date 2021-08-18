@@ -1,8 +1,8 @@
 fn main() {
     let mut output = 0;
 
-    for 0..5 {
-        output = output + (. * 10);
+    for i in 0..5 {
+        output = output + (i * 10);
     }
 
     return output;

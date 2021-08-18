@@ -23,7 +23,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(fn|if|for|module|import|else|class|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
+                <string>\b(fn|if|for|in|module|import|else|class|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
                 <key>name</key>
                 <string>keyword.control.atom</string>
             </dict>
@@ -268,7 +268,7 @@
             <dict>
                 <key>match</key>
                 <string>
-                    \b(fn|for|if|else|break|return|mut)\b
+                    \b(fn|for|in|if|else|break|return|mut)\b
                 </string>
                 <key>name</key>
                 <string>invalid.illegal.name.atom</string>

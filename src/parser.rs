@@ -171,8 +171,11 @@ peg::parser! {
         rule if_stmt() -> Stmt
             = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:else_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.unwrap_or_default(), pos: (start..end) }) }
 
+        rule for_alias() -> String
+            = __ name:ident() __ "in" { name }
+
         rule for_stmt() -> Stmt
-            = start:pos() "for" __ expr:expr()? _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, body, pos: (start..end) }) }
+            = start:pos() "for" alias:for_alias()? __ expr:expr()? _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, alias, body, pos: (start..end) }) }
 
         rule break_stmt() -> Stmt
             = start:pos() "break" __ label:ident() _ ";" end:pos() { Stmt::Break(BreakStmt { label: Some(label), pos: (start..end) }) }
@@ -949,12 +952,40 @@ mod tests {
     }
 
     #[test]
+    fn for_stmt_with_expr_and_alias() {
+        let source = "for item in [1] { 40; }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::For(ForStmt {
+                alias: Some("item".to_string()),
+                expr: Some(Expr::Array(ArrayExpr {
+                    items: vec![Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(1),
+                        pos: (13..14),
+                    })],
+                    pos: (12..15),
+                })),
+                body: vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(40),
+                        pos: (18..20),
+                    }),
+                    pos: (18..21),
+                })],
+                pos: (0..23),
+            })),
+        );
+    }
+
+    #[test]
     fn for_stmt_with_expr() {
         let source = "for [1] { 40; }";
 
         assert_eq!(
             parse_single(source),
             Ok(Stmt::For(ForStmt {
+                alias: None,
                 expr: Some(Expr::Array(ArrayExpr {
                     items: vec![Expr::Literal(LiteralExpr {
                         literal: Literal::Int(1),
@@ -981,6 +1012,7 @@ mod tests {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::For(ForStmt {
+                alias: None,
                 expr: None,
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {

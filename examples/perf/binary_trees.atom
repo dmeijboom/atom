@@ -36,12 +36,11 @@ fn main() {
     let long_lived_tree = make_tree(0, max_depth);
     let mut iterations = 2 ** max_depth;
 
-    for (min_depth..stretch_depth).step(2) {
-        let depth = .;
+    for depth in (min_depth..stretch_depth).step(2) {
         let mut check = 0;
 
-        for 1..(iterations + 1) {
-            check = check + check_tree(make_tree(., depth)) + check_tree(make_tree(0 - ., depth));
+        for i in 1..(iterations + 1) {
+            check = check + check_tree(make_tree(i, depth)) + check_tree(make_tree(0 - i, depth));
         }
 
         println(f"{iterations * 2} trees of depth {depth} check: {check}");

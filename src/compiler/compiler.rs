@@ -563,7 +563,6 @@ impl Compiler {
                     let cont_label = self.make_label("for_cont");
 
                     let iter = self.set_local("__iter__".to_string(), false)?;
-                    let local = self.set_local(".".to_string(), false)?;
 
                     if let Some(expr) = &for_stmt.expr {
                         ir.push(self.compile_expr(expr)?);
@@ -572,21 +571,29 @@ impl Compiler {
                             continue_label: cont_label.clone(),
                         }));
 
+                        let local = self.set_local(
+                            match &for_stmt.alias {
+                                None => "__item__".to_string(),
+                                Some(name) => name.clone(),
+                            },
+                            false,
+                        )?;
+
                         ir.push(
                             vec![
-                                // step 1. Get the iterator from the object
+                                // Step 1. Get the iterator from the object
                                 Code::LoadName("Iterable".to_string()),
                                 Code::Validate,
                                 Code::LoadMember("iter".to_string()),
                                 Code::Call(0),
                                 Code::Store(iter.id),
-                                // step 2. Now in the loop, get the next value from the iterator
+                                // Step 2. Now in the loop, get the next value from the iterator
                                 Code::SetLabel(for_label.clone()),
                                 Code::Load(iter.id),
                                 Code::LoadMember("next".to_string()),
                                 Code::Call(0),
                                 Code::Store(local.id),
-                                // step 3. Check if it has a value and either continue or stop
+                                // Step 3. Check if it has a value and either continue or stop
                                 Code::Load(local.id),
                                 Code::LoadMember("isSome".to_string()),
                                 Code::Call(0),
@@ -594,17 +601,24 @@ impl Compiler {
                                     Label::new(body_label.clone()),
                                     Label::new(cont_label.clone()),
                                 )),
-                                // step 4. Evaluate the body and so on..
+                                // Step 4. Evaluate the body and so on..
                                 Code::SetLabel(body_label.clone()),
-                                Code::Load(local.id),
-                                Code::LoadMember("value".to_string()),
-                                Code::Call(0),
-                                Code::Store(local.id),
                             ]
                             .into_iter()
                             .map(|code| IR::new(code, self.pos.clone()))
                             .collect::<Vec<_>>(),
                         );
+
+                        // Only store the current item when requested
+                        if for_stmt.alias.is_some() {
+                            ir.push(vec![
+                                IR::new(Code::Load(local.id), self.pos.clone()),
+                                IR::new(Code::LoadMember("value".to_string()), self.pos.clone()),
+                                IR::new(Code::Call(0), self.pos.clone()),
+                                IR::new(Code::Store(local.id), self.pos.clone()),
+                            ]);
+                        }
+
                         ir.push(self._compile_stmt_list(&for_stmt.body)?);
                         ir.push(vec![
                             IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),

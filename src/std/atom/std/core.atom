@@ -52,8 +52,8 @@ pub class RangeStep {
     pub fn collect() {
         let mut output = [];
 
-        for this {
-            output.push(.);
+        for i in this {
+            output.push(i);
         }
 
         return output;
@@ -72,8 +72,8 @@ pub class Range {
     pub fn collect() {
         let mut output = [];
 
-        for this {
-            output.push(.);
+        for i in this {
+            output.push(i);
         }
 
         return output;
@@ -135,9 +135,9 @@ pub class Array {
     pub fn slice(range) {
         let mut output = [];
 
-        for range {
+        for item in range {
             unsafe {
-                output.push(this[.]);
+                output.push(this[item]);
             }
         }
 
@@ -145,8 +145,8 @@ pub class Array {
     }
 
     pub fn contains(value) {
-        for this {
-            if . == value {
+        for item in this {
+            if item == value {
                 return true;
             }
         }

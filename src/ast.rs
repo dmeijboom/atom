@@ -330,6 +330,7 @@ pub struct ModuleStmt {
 #[derive(Debug, PartialEq)]
 pub struct ForStmt {
     pub expr: Option<Expr>,
+    pub alias: Option<String>,
     pub body: Vec<Stmt>,
     pub pos: Pos,
 }
