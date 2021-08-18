@@ -164,7 +164,7 @@ impl VM {
     pub fn register_module(&mut self, module: Module) -> Result<()> {
         let mut module = module;
 
-        // skip default imports for the core module
+        // Skip default imports for non-core modules
         if module.name != "std.core" {
             for name in DEFAULT_IMPORTS {
                 self.import_in_module(&mut module, name)?;
@@ -188,7 +188,7 @@ impl VM {
 
     pub fn get_fn_self(&self) -> Option<Rc<RefCell<Value>>> {
         if let Ok(context) = self.call_stack.current() {
-            return context.this.as_ref().and_then(|rc| Some(Rc::clone(rc)));
+            return context.this.as_ref().map(|rc| Rc::clone(rc));
         }
 
         None
@@ -499,7 +499,7 @@ impl VM {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(format!(
                         "invalid argument count for target: {}(...) (expected {}, not {})",
-                        self.fmt_target(&target),
+                        self.fmt_target(target),
                         func.args.len(),
                         arg_count,
                     )));
@@ -525,11 +525,10 @@ impl VM {
                             e.with_message(format!(
                                 "{} in target {}(...)",
                                 message,
-                                self.fmt_target(&target),
+                                self.fmt_target(target),
                             ))
                         })?
-                        .into_values()
-                        .collect::<Vec<Value>>();
+                        .into_values();
 
                     let call_context = self.call_stack.current_mut()?;
 
@@ -550,7 +549,7 @@ impl VM {
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "unable to use keyword arguments in external target: {}(..)",
-                        self.fmt_target(&target),
+                        self.fmt_target(target),
                     )));
                 }
 
@@ -816,11 +815,11 @@ impl VM {
                 {
                     let value = stacked.borrow();
                     let class_id = match &*value {
-                        Value::Object(object) => Ok(object.class.clone()),
+                        Value::Object(object) => Ok(object.class),
                         _ => self
                             .module_cache
                             .lookup_type("std.core", value.get_type().name())
-                            .and_then(|type_val| Ok(type_val.id)),
+                            .map(|type_val| type_val.id),
                     }?;
                     let class = self
                         .module_cache
@@ -983,11 +982,11 @@ impl VM {
     ) -> Result<()> {
         let stacked = self.stack.pop()?;
         let id = with_auto_deref(&stacked.borrow(), |value| match value {
-            Value::Object(object) => Ok(object.class.clone()),
+            Value::Object(object) => Ok(object.class),
             _ => self
                 .module_cache
                 .lookup_type("std.core", value.get_type().name())
-                .and_then(|type_val| Ok(type_val.id)),
+                .map(|type_val| type_val.id),
         })?;
         let type_val = self.module_cache.lookup_type_by_id(id)?;
         let desc = type_val.try_as_class()?;
@@ -1073,11 +1072,11 @@ impl VM {
         let object_ref = self.stack.pop()?.into_ref();
         let mut data = object_ref.borrow_mut();
         let class_id = with_auto_deref(&data, |value| match value {
-            Value::Object(object) => Ok(object.class.clone()),
+            Value::Object(object) => Ok(object.class),
             _ => self
                 .module_cache
                 .lookup_type("std.core", value.get_type().name())
-                .and_then(|type_val| Ok(type_val.id)),
+                .map(|type_val| type_val.id),
         })?;
         let value = self.stack.pop()?.into_value();
         let type_val = self.module_cache.lookup_type_by_id(class_id)?;
@@ -1144,9 +1143,9 @@ impl VM {
             }
         }
 
-        Err(RuntimeError::new(format!(
-            "unable to load 'this' outside of Fn scope"
-        )))
+        Err(RuntimeError::new(
+            "unable to load 'this' outside of Fn scope".to_string(),
+        ))
     }
 
     fn eval_load_name(&mut self, module_id: ModuleId, name: &str) -> Result<()> {
@@ -1249,7 +1248,7 @@ impl VM {
             Value::Byte(val) => format!("{}", val),
             Value::Bool(val) => format!("{}", val),
             Value::Option(val) => match val {
-                None => format!("std.core.Option(None)"),
+                None => "std.core.Option(None)".to_string(),
                 Some(val) => format!("std.core.Option({})", self.fmt_value(val)),
             },
             Value::Ref(value_ref) => {

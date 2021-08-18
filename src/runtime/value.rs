@@ -243,7 +243,7 @@ impl Clone for Value {
             Value::Ref(val) => Value::Ref(Rc::clone(val)),
             Value::Range(val) => Value::Range(val.clone()),
             Value::String(val) => Value::String(val.clone()),
-            Value::Type(type_id) => Value::Type(type_id.clone()),
+            Value::Type(type_id) => Value::Type(*type_id),
             Value::Method(id) => Value::Method(id.clone()),
             Value::Object(object) => Value::Object(object.clone()),
             Value::Array(array) => Value::Array(array.clone()),

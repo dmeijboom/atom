@@ -45,7 +45,7 @@ pub fn to_float(value: Value) -> Result<f64> {
 }
 
 pub fn to_option(value: Option<Value>) -> Value {
-    Value::Option(value.and_then(|value| Some(value.into())))
+    Value::Option(value.map(|value| value.into()))
 }
 
 pub fn to_byte(value: &Value) -> Result<u8> {

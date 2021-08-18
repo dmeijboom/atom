@@ -445,14 +445,13 @@ impl Compiler {
         index: &Expr,
         value: &Expr,
     ) -> Result<Vec<IR>> {
-        let mut ir = vec![];
-
-        ir.push(self.compile_expr(object)?);
-        ir.push(self.compile_expr(index)?);
-        ir.push(self.compile_expr(value)?);
-        ir.push(vec![IR::new(Code::StoreIndex, self.pos.clone())]);
-
-        Ok(ir.concat())
+        Ok(vec![
+            self.compile_expr(object)?,
+            self.compile_expr(index)?,
+            self.compile_expr(value)?,
+            vec![IR::new(Code::StoreIndex, self.pos.clone())],
+        ]
+        .concat())
     }
 
     fn compile_assign(&mut self, left: &Expr, right: &Expr) -> Result<Vec<IR>> {
@@ -528,9 +527,7 @@ impl Compiler {
                     ]);
                     ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
 
-                    if if_stmt.alt.is_empty() {
-                        ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
-                    } else {
+                    if !if_stmt.alt.is_empty() {
                         ir.push(vec![IR::new(
                             Code::Jump(Label::new(cont_label.clone())),
                             self.pos.clone(),
@@ -541,8 +538,9 @@ impl Compiler {
                             Code::Jump(Label::new(cont_label.clone())),
                             self.pos.clone(),
                         )]);
-                        ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
                     }
+
+                    ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
                 }
                 Stmt::Expr(expr_stmt) => {
                     ir.push(self.compile_expr(&expr_stmt.expr)?);
@@ -727,30 +725,30 @@ impl Compiler {
     }
 
     fn has_no_side_effects(&self, code: &Code) -> bool {
-        match code {
+        matches!(
+            code,
             Code::ArithmeticAdd
-            | Code::ArithmeticSub
-            | Code::ArithmeticMul
-            | Code::ArithmeticDiv
-            | Code::ArithmeticExp
-            | Code::Return
-            | Code::ArithmeticBitAnd
-            | Code::ArithmeticBitOr
-            | Code::ComparisonEq
-            | Code::ComparisonNeq
-            | Code::ComparisonGt
-            | Code::ComparisonGte
-            | Code::ComparisonLt
-            | Code::ComparisonLte
-            | Code::ConstString(_)
-            | Code::ConstBool(_)
-            | Code::ConstByte(_)
-            | Code::ConstChar(_)
-            | Code::ConstFloat(_)
-            | Code::ConstInt(_)
-            | Code::ConstNil => true,
-            _ => false,
-        }
+                | Code::ArithmeticSub
+                | Code::ArithmeticMul
+                | Code::ArithmeticDiv
+                | Code::ArithmeticExp
+                | Code::Return
+                | Code::ArithmeticBitAnd
+                | Code::ArithmeticBitOr
+                | Code::ComparisonEq
+                | Code::ComparisonNeq
+                | Code::ComparisonGt
+                | Code::ComparisonGte
+                | Code::ComparisonLt
+                | Code::ComparisonLte
+                | Code::ConstString(_)
+                | Code::ConstBool(_)
+                | Code::ConstByte(_)
+                | Code::ConstChar(_)
+                | Code::ConstFloat(_)
+                | Code::ConstInt(_)
+                | Code::ConstNil
+        )
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
@@ -774,7 +772,7 @@ impl Compiler {
                 let index = || {
                     for (i, ir) in body.iter().enumerate() {
                         if ir.code == Code::LoadTarget {
-                            let next_code = body.get(i + 1).and_then(|ir| Some(&ir.code));
+                            let next_code = body.get(i + 1).map(|ir| &ir.code);
 
                             if let Some(Code::Call(arg_count)) = next_code {
                                 if !body

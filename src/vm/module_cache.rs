@@ -338,8 +338,7 @@ impl ModuleCache {
             if let Some(result) = self
                 .types
                 .iter()
-                .filter(|type_val| type_val.module_id == id && type_val.name == name)
-                .next()
+                .find(|type_val| type_val.module_id == id && type_val.name == name)
             {
                 return Ok(result);
             }
@@ -355,8 +354,7 @@ impl ModuleCache {
         if let Some(result) = self
             .types
             .iter()
-            .filter(|type_val| type_val.module_id == module_id && type_val.name == name)
-            .next()
+            .find(|type_val| type_val.module_id == module_id && type_val.name == name)
         {
             return Some(result.id);
         }
