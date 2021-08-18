@@ -991,9 +991,7 @@ impl VM {
         let type_val = self.module_cache.lookup_type_by_id(id)?;
         let desc = type_val.try_as_class()?;
 
-        if let Some(index) = desc.fields.get_index_of(member) {
-            let field = &desc.fields[member];
-
+        if let Some((index, _, field)) = desc.fields.get_full(member) {
             if !field.public && module_id != type_val.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
