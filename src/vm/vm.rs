@@ -393,8 +393,10 @@ impl VM {
             fields.into_iter().map(|(_, value)| value).collect()
         };
 
-        self.stack
-            .push(Value::Object(AtomRef::new(Object::new(type_val.id, fields))));
+        self.stack.push(Value::Object(AtomRef::new(Object::new(
+            type_val.id,
+            fields,
+        ))));
 
         Ok(())
     }
@@ -1000,12 +1002,18 @@ impl VM {
         let type_val = self.module_cache.lookup_type_by_id(class_id)?;
         let class_desc = type_val.try_as_class()?;
 
-        if let Some(index) = class_desc.fields.get_index_of(member) {
-            let field = &class_desc.fields[member];
-
+        if let Some((index, _, field)) = class_desc.fields.get_full(member) {
             if !field.public && module_id != type_val.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
+                    member,
+                    self.module_cache.fmt_type(class_id)
+                )));
+            }
+
+            if !field.mutable {
+                return Err(RuntimeError::new(format!(
+                    "unable to assign to immutable field '{}' of class: {}",
                     member,
                     self.module_cache.fmt_type(class_id)
                 )));

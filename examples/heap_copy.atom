@@ -1,5 +1,5 @@
 class Test {
-    let num;
+    let mut num;
 
     fn example() {
         this.num = this.num + 10;
