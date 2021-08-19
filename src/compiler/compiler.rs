@@ -427,16 +427,15 @@ impl Compiler {
         member: &str,
         value: &Expr,
     ) -> Result<Vec<IR>> {
-        let mut ir = vec![];
-
-        ir.push(self.compile_expr(value)?);
-        ir.push(self.compile_expr(object)?);
-        ir.push(vec![IR::new(
-            Code::StoreMember(member.to_string()),
-            self.pos.clone(),
-        )]);
-
-        Ok(ir.concat())
+        Ok(vec![
+            self.compile_expr(value)?,
+            self.compile_expr(object)?,
+            vec![IR::new(
+                Code::StoreMember(member.to_string()),
+                self.pos.clone(),
+            )],
+        ]
+        .concat())
     }
 
     fn compile_assign_index(

@@ -333,7 +333,7 @@ impl VM {
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
         self.call_stack.pop();
-        self.stack.push(return_value.into());
+        self.stack.push(return_value);
 
         Ok(())
     }
@@ -394,7 +394,7 @@ impl VM {
         };
 
         self.stack
-            .push(Value::Object(AtomRef::new(Object::new(type_val.id, fields))).into());
+            .push(Value::Object(AtomRef::new(Object::new(type_val.id, fields))));
 
         Ok(())
     }
@@ -423,7 +423,7 @@ impl VM {
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
         self.call_stack.pop();
-        self.stack.push(return_value.into());
+        self.stack.push(return_value);
 
         Ok(())
     }
@@ -547,7 +547,7 @@ impl VM {
             Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
             Code::Discard => self.stack.delete()?,
-            Code::Return => return Ok(Flow::Return(self.eval_return()?)),
+            Code::Return => return Ok(Flow::Return(self.stack.pop()?)),
             Code::MakeRef => self.eval_make_ref()?,
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
@@ -594,8 +594,8 @@ impl VM {
     }
 
     fn eval_make_range(&mut self) -> Result<()> {
-        let to = self.stack.pop().and_then(|s| to_int(s))?;
-        let from = self.stack.pop().and_then(|s| to_int(s))?;
+        let to = self.stack.pop().and_then(to_int)?;
+        let from = self.stack.pop().and_then(to_int)?;
 
         self.stack.push(Value::Range(from..to));
 
@@ -637,10 +637,6 @@ impl VM {
         self.stack.push(Value::String(AtomRef::new(s)));
 
         Ok(())
-    }
-
-    fn eval_return(&mut self) -> Result<Value> {
-        Ok(self.stack.pop()?)
     }
 
     fn eval_make_ref(&mut self) -> Result<()> {
@@ -909,7 +905,7 @@ impl VM {
                 ))
             }
             Value::Map(mut map) => {
-                map.as_mut().insert(index.clone(), value);
+                map.as_mut().insert(index, value);
 
                 Ok(())
             }
