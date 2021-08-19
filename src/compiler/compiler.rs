@@ -762,6 +762,7 @@ impl Compiler {
                 | Code::ConstFloat(_)
                 | Code::ConstInt(_)
                 | Code::ConstNil
+                | Code::Discard
         )
     }
 

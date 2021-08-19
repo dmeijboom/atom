@@ -61,7 +61,7 @@ pub fn to_byte(value: &Value) -> Result<u8> {
 
 pub fn to_array(value: Value) -> Result<Vec<Value>> {
     if let Value::Array(array) = value {
-        return Ok(array);
+        return Ok(array.clone_inner_or_unwrap());
     }
 
     Err(RuntimeError::new(format!(

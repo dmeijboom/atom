@@ -1,12 +1,9 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use wyhash2::WyHash;
 
 use crate::ast::Pos;
 use crate::runtime::{Result, RuntimeError, Trace, TypeId, Value};
-use crate::vm::stacked::Stacked;
 use crate::vm::ModuleCache;
 
 #[derive(Clone)]
@@ -19,13 +16,13 @@ pub struct Target {
 pub struct CallContext {
     pub pos: Pos,
     pub target: Target,
-    pub locals: Vec<Stacked>,
-    pub this: Option<Rc<RefCell<Value>>>,
-    pub named_locals: HashMap<String, Stacked, WyHash>,
+    pub locals: Vec<Value>,
+    pub this: Option<Value>,
+    pub named_locals: HashMap<String, Value, WyHash>,
 }
 
 impl CallContext {
-    pub fn new(pos: Pos, target: Target, this: Option<Rc<RefCell<Value>>>) -> Self {
+    pub fn new(pos: Pos, target: Target, this: Option<Value>) -> Self {
         Self {
             pos,
             this,

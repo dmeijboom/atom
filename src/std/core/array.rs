@@ -1,23 +1,18 @@
 use crate::parse_args;
-use crate::runtime::{convert, with_auto_deref_mut, Result, RuntimeError, Value};
+use crate::runtime::{convert, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 pub fn use_array<T>(vm: &mut VM, handler: impl FnOnce(&mut Vec<Value>) -> Result<T>) -> Result<T> {
-    let value = vm.get_fn_self().unwrap();
-    let result = with_auto_deref_mut(&mut value.borrow_mut(), |value| {
-        let type_val = value.get_type();
+    let value = vm.get_fn_self()?;
 
-        if let Value::Array(array) = value {
-            return handler(array);
-        }
+    if let Value::Array(array) = value {
+        return handler(array.as_mut());
+    }
 
-        Err(RuntimeError::new(format!(
-            "invalid type '{}', expected Array",
-            type_val.name()
-        )))
-    });
-
-    result
+    Err(RuntimeError::new(format!(
+        "invalid type '{}', expected Array",
+        value.get_type().name()
+    )))
 }
 
 pub fn register(module: &mut Module) -> Result<()> {

@@ -1,28 +1,23 @@
 use std::collections::HashMap;
 
 use crate::parse_args;
-use crate::runtime::{convert, with_auto_deref_mut, Result, RuntimeError, Value};
+use crate::runtime::{convert, AtomRef, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_map<T>(
     vm: &mut VM,
     handler: impl FnOnce(&mut HashMap<Value, Value>) -> Result<T>,
 ) -> Result<T> {
-    let value = vm.get_fn_self().unwrap();
-    let result = with_auto_deref_mut(&mut value.borrow_mut(), |value| {
-        let type_val = value.get_type();
+    let value = vm.get_fn_self()?;
 
-        if let Value::Map(map) = value {
-            return handler(map);
-        }
+    if let Value::Map(map) = value {
+        return handler(map.as_mut());
+    }
 
-        Err(RuntimeError::new(format!(
-            "invalid type '{}', expected Map",
-            type_val.name()
-        )))
-    });
-
-    result
+    Err(RuntimeError::new(format!(
+        "invalid type '{}', expected Map",
+        value.get_type().name()
+    )))
 }
 
 pub fn register(module: &mut Module) -> Result<()> {
@@ -30,11 +25,16 @@ pub fn register(module: &mut Module) -> Result<()> {
         ("keys", |vm, values| {
             parse_args!(values);
 
-            use_map(vm, |a| {
-                Ok(Some(Value::Array(
-                    a.keys().into_iter().cloned().collect::<Vec<_>>(),
-                )))
+            use_map(vm, |m| {
+                let keys = m.keys().into_iter().cloned().collect::<Vec<_>>();
+
+                Ok(Some(Value::Array(AtomRef::new(keys))))
             })
+        }),
+        ("len", |vm, values| {
+            parse_args!(values);
+
+            use_map(vm, |m| Ok(Some(Value::Int(m.len() as i64))))
         }),
         ("pop", |vm, mut values| {
             let key = parse_args!(values => Any);
@@ -45,8 +45,8 @@ pub fn register(module: &mut Module) -> Result<()> {
         ("clear", |vm, values| {
             parse_args!(values);
 
-            use_map(vm, |a| {
-                a.clear();
+            use_map(vm, |m| {
+                m.clear();
 
                 Ok(None)
             })

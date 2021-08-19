@@ -46,7 +46,7 @@ pub class RangeStep {
     let step;
 
     pub fn iter() {
-        return &RangeIter(start: this.range.start(), end: this.range.end(), step: this.step, index: 0);
+        return RangeIter(start: this.range.start(), end: this.range.end(), step: this.step, index: 0);
     }
 
     pub fn collect() {
@@ -62,7 +62,7 @@ pub class RangeStep {
 
 pub class Range {
     pub fn iter() {
-        return &RangeIter(start: this.start(), end: this.end(), step: 1, index: 0);
+        return RangeIter(start: this.start(), end: this.end(), step: 1, index: 0);
     }
 
     pub fn step(n) {
@@ -117,7 +117,7 @@ pub class Array {
     }
 
     pub fn iter() {
-        return &ArrayIter(array: this, index: 0);
+        return ArrayIter(array: this, index: 0);
     }
 
     pub fn append(other) {
@@ -172,7 +172,7 @@ pub class MapIter {
 
         unsafe {
             let key = this.keys[this.index];
-            let key_value = &KeyValue(key: key, value: this.data[key]);
+            let key_value = KeyValue(key: key, value: this.data[key]);
 
             this.index = this.index + 1;
 
@@ -183,7 +183,7 @@ pub class MapIter {
 
 pub class Map {
     pub fn iter() {
-        return &MapIter(data: this, keys: this.keys(), index: 0);
+        return MapIter(data: this, keys: this.keys(), index: 0);
     }
 
     pub fn get(key) {

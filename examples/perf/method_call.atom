@@ -32,7 +32,7 @@ class NthToggle {
 fn main() {
     let NUM = 100000;
     let mut val = 1;
-    let toggle = &Toggle(bool: val);
+    let toggle = Toggle(bool: val);
 
     for 0..NUM {
         val = toggle.activate().value();
@@ -55,7 +55,7 @@ fn main() {
 
     val = 1;
 
-    let ntoggle = &NthToggle(toggle: &Toggle(bool: 3), countMax: 3, counter: 0);
+    let ntoggle = NthToggle(toggle: Toggle(bool: 3), countMax: 3, counter: 0);
 
     for 0..NUM {
         val = ntoggle.activate().toggle.value();

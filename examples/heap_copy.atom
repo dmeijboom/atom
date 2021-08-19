@@ -9,7 +9,7 @@ class Test {
 }
 
 fn main() {
-    let test = &Test(num: 10);
+    let test = Test(num: 10);
 
     return [
         test.example(),

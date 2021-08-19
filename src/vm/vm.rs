@@ -1,4 +1,3 @@
-use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::mem;
@@ -10,43 +9,24 @@ use indexmap::map::IndexMap;
 
 use crate::compiler::{Code, Label, IR};
 use crate::runtime::convert::{to_bool, to_float, to_int};
-use crate::runtime::{
-    with_auto_deref, with_auto_deref_mut, Method, Object, Result, RuntimeError, TypeId, Value,
-};
+use crate::runtime::{AtomRef, Method, Object, Result, RuntimeError, TypeId, Value};
 use crate::std::core::DEFAULT_IMPORTS;
 use crate::std::get_middleware;
 use crate::utils;
 use crate::utils::Error;
-use crate::vm::call_stack::{CallContext, Target};
+use crate::vm::call_context::{CallContext, Target};
 use crate::vm::module_cache::{
     ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, ModuleId, TypeDesc,
 };
-use crate::vm::{ClassDesc, FuncDesc};
+use crate::vm::ClassDesc;
 
-use super::call_stack::CallStack;
+use super::call_context::CallStack;
 use super::stack::Stack;
-use super::stacked::Stacked;
-
-fn argument_to_stacked(func: &FuncDesc, i: usize, value: Value) -> Stacked {
-    // Immutable locals can be placed on the stack as their contents will not be changed but we
-    // don't want to do this for non-primitive types because that will be slower in most cases
-    if !value.get_type().is_primitive()
-        || func
-            .args
-            .get_index(i)
-            .map(|(_, arg)| arg.mutable)
-            .unwrap_or(false)
-    {
-        Stacked::ByRef(Rc::new(RefCell::new(value)))
-    } else {
-        Stacked::ByValue(value)
-    }
-}
 
 macro_rules! impl_op {
     ($vm:expr, int_only: $opname:ident) => {{
-        let right = $vm.stack.pop()?.into_value();
-        let left = $vm.stack.pop()?.into_value();
+        let right = $vm.stack.pop()?;
+        let left = $vm.stack.pop()?;
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Int(val.$opname(to_int(right)?)),
@@ -64,8 +44,8 @@ macro_rules! impl_op {
     }};
 
     ($vm:expr, compare: $opname:ident) => {{
-        let right = $vm.stack.pop()?.into_value();
-        let left = $vm.stack.pop()?.into_value();
+        let right = $vm.stack.pop()?;
+        let left = $vm.stack.pop()?;
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Bool(val.$opname(&to_int(right)?)),
@@ -84,8 +64,8 @@ macro_rules! impl_op {
     }};
 
     ($vm:expr, $opname:ident) => {{
-        let right = $vm.stack.pop()?.into_value();
-        let left = $vm.stack.pop()?.into_value();
+        let right = $vm.stack.pop()?;
+        let left = $vm.stack.pop()?;
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Int(val.$opname(to_int(right)?)),
@@ -182,16 +162,30 @@ impl VM {
         Ok(())
     }
 
+    fn get_class_type_id(&self, value: &Value) -> Result<TypeId> {
+        match &value {
+            Value::Object(object) => Ok(object.as_ref().class),
+            _ => self
+                .module_cache
+                .lookup_type("std.core", value.get_type().name())
+                .map(|type_val| type_val.id),
+        }
+    }
+
     pub fn get_type_id(&self, module: &str, name: &str) -> Result<TypeId> {
         Ok(self.module_cache.lookup_type(module, name)?.id)
     }
 
-    pub fn get_fn_self(&self) -> Option<Rc<RefCell<Value>>> {
-        if let Ok(context) = self.call_stack.current() {
-            return context.this.as_ref().map(|rc| Rc::clone(rc));
-        }
+    pub fn get_fn_self(&mut self) -> Result<&mut Value> {
+        let value = if let Ok(context) = self.call_stack.current_mut() {
+            context.this.as_mut()
+        } else {
+            None
+        };
 
-        None
+        value.ok_or_else(|| {
+            RuntimeError::new("unable to get 'this' outside method call".to_string())
+        })
     }
 
     fn validate_class(&self, class: &ClassDesc, interface: &InterfaceDesc) -> bool {
@@ -277,17 +271,7 @@ impl VM {
             let local = unsafe { context.locals.get_unchecked_mut(i) };
             let arg_value = unsafe { values.get_unchecked_mut(i) };
 
-            match local {
-                Stacked::ByValue(value) => mem::swap(value, arg_value),
-                Stacked::ByRef(value_ref) => {
-                    let mut value = Value::Void;
-
-                    mem::swap(&mut value, arg_value);
-
-                    let mut arg_value_ref = Rc::new(RefCell::new(value));
-                    mem::swap(value_ref, &mut arg_value_ref);
-                }
-            };
+            mem::swap(local, arg_value);
         }
 
         if context.locals.len() > arg_count {
@@ -305,8 +289,7 @@ impl VM {
         let value = self
             .stack
             .pop()
-            .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?
-            .into_value();
+            .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
         if let Value::Type(id) = value {
             let type_val = self.module_cache.lookup_type_by_id(id)?;
@@ -350,7 +333,7 @@ impl VM {
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
         self.call_stack.pop();
-        self.stack.push(return_value);
+        self.stack.push(return_value.into());
 
         Ok(())
     }
@@ -411,7 +394,7 @@ impl VM {
         };
 
         self.stack
-            .push(Value::Object(Object::new(type_val.id, fields)));
+            .push(Value::Object(AtomRef::new(Object::new(type_val.id, fields))).into());
 
         Ok(())
     }
@@ -434,13 +417,13 @@ impl VM {
         self.call_stack.push(CallContext::new(
             method_desc.func.pos.clone(),
             target.clone(),
-            Some(Rc::clone(&method.object)),
+            Some(method.value.clone()),
         ));
 
         let return_value = self.eval_func(&target, keywords, arg_count)?;
 
         self.call_stack.pop();
-        self.stack.push(return_value);
+        self.stack.push(return_value.into());
 
         Ok(())
     }
@@ -506,16 +489,7 @@ impl VM {
                 }
 
                 if keywords.is_empty() {
-                    let mut i = 0;
-
-                    self.call_stack.current_mut()?.locals =
-                        self.stack.pop_many_t(arg_count, |value| {
-                            let stacked = argument_to_stacked(func, i, value);
-
-                            i += 1;
-
-                            stacked
-                        })?;
+                    self.call_stack.current_mut()?.locals = self.stack.pop_many(arg_count)?;
                 } else {
                     let unordered_values = self.stack.pop_many(arg_count)?;
                     let values = self
@@ -528,15 +502,10 @@ impl VM {
                                 self.fmt_target(target),
                             ))
                         })?
-                        .into_values();
+                        .into_values()
+                        .collect();
 
-                    let call_context = self.call_stack.current_mut()?;
-
-                    for (i, value) in values.into_iter().enumerate() {
-                        call_context
-                            .locals
-                            .push(argument_to_stacked(func, i, value));
-                    }
+                    self.call_stack.current_mut()?.locals = values;
                 }
 
                 let source = Rc::clone(source);
@@ -572,7 +541,7 @@ impl VM {
             Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
             Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
             Code::ConstByte(val) => self.stack.push(Value::Byte(*val)),
-            Code::ConstString(val) => self.stack.push(Value::String(val.clone())),
+            Code::ConstString(val) => self.stack.push(Value::String(AtomRef::new(val.clone()))),
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
@@ -625,8 +594,8 @@ impl VM {
     }
 
     fn eval_make_range(&mut self) -> Result<()> {
-        let to = self.stack.pop().and_then(|s| to_int(s.into_value()))?;
-        let from = self.stack.pop().and_then(|s| to_int(s.into_value()))?;
+        let to = self.stack.pop().and_then(|s| to_int(s))?;
+        let from = self.stack.pop().and_then(|s| to_int(s))?;
 
         self.stack.push(Value::Range(from..to));
 
@@ -636,7 +605,7 @@ impl VM {
     fn eval_make_array(&mut self, len: usize) -> Result<()> {
         let values = self.stack.pop_many(len)?;
 
-        self.stack.push(Value::Array(values));
+        self.stack.push(Value::Array(AtomRef::new(values)));
 
         Ok(())
     }
@@ -652,7 +621,7 @@ impl VM {
             map.insert(key, value);
         }
 
-        self.stack.push(Value::Map(map));
+        self.stack.push(Value::Map(AtomRef::new(map)));
 
         Ok(())
     }
@@ -665,31 +634,28 @@ impl VM {
             .map(|value| self.fmt_value(&value))
             .collect::<String>();
 
-        self.stack.push(Value::String(s));
+        self.stack.push(Value::String(AtomRef::new(s)));
 
         Ok(())
     }
 
     fn eval_return(&mut self) -> Result<Value> {
-        Ok(self.stack.pop()?.into_value())
+        Ok(self.stack.pop()?)
     }
 
     fn eval_make_ref(&mut self) -> Result<()> {
-        let value = match self.stack.pop()? {
-            Stacked::ByValue(value) => Value::Ref(Rc::new(RefCell::new(value))),
-            Stacked::ByRef(value_ref) => Value::Ref(Rc::clone(&value_ref)),
-        };
+        let value = self.stack.pop()?;
 
-        self.stack.push(value);
+        self.stack.push(Value::Ref(AtomRef::new(value)));
 
         Ok(())
     }
 
     fn eval_deref(&mut self) -> Result<()> {
-        let value = self.stack.pop()?.into_value();
+        let value = self.stack.pop()?;
 
         if let Value::Ref(value) = value {
-            self.stack.push(value.borrow().clone());
+            self.stack.push(value.clone_inner_or_unwrap());
 
             return Ok(());
         }
@@ -701,8 +667,8 @@ impl VM {
     }
 
     fn eval_logical_and(&mut self) -> Result<()> {
-        let right = self.stack.pop()?.into_value();
-        let left = self.stack.pop()?.into_value();
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
 
         self.stack.push(match left {
             Value::Bool(val) => Value::Bool(val && to_bool(right)?),
@@ -743,8 +709,8 @@ impl VM {
     }
 
     fn eval_arithmetic_exp(&mut self) -> Result<()> {
-        let right = self.stack.pop()?.into_value();
-        let left = self.stack.pop()?.into_value();
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
 
         self.stack.push(match left {
             Value::Int(val) => Value::Int(val.pow(to_int(right)? as u32)),
@@ -762,8 +728,8 @@ impl VM {
     }
 
     fn eval_comparison_eq(&mut self) -> Result<()> {
-        let right = self.stack.pop()?.into_value();
-        let left = self.stack.pop()?.into_value();
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
 
         self.stack.push(Value::Bool(left.eq(&right)));
 
@@ -771,8 +737,8 @@ impl VM {
     }
 
     fn eval_comparison_neq(&mut self) -> Result<()> {
-        let right = self.stack.pop()?.into_value();
-        let left = self.stack.pop()?.into_value();
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
 
         self.stack.push(Value::Bool(left.ne(&right)));
 
@@ -796,7 +762,7 @@ impl VM {
     }
 
     fn eval_not(&mut self) -> Result<()> {
-        let value = self.stack.pop().and_then(|s| to_bool(s.into_value()))?;
+        let value = self.stack.pop().and_then(to_bool)?;
 
         self.stack.push(Value::Bool(!value));
 
@@ -804,41 +770,28 @@ impl VM {
     }
 
     fn eval_validate(&mut self) -> Result<()> {
-        let value = self.stack.pop()?.into_value();
+        let value = self.stack.pop()?;
 
         if let Value::Type(id) = &value {
             let type_val = self.module_cache.lookup_type_by_id(*id)?;
 
             if let Ok(interface) = type_val.try_as_interface() {
-                let stacked = self.stack.pop()?;
+                let value = self.stack.pop()?;
+                let class_id = self.get_class_type_id(&value)?;
+                let class = self
+                    .module_cache
+                    .lookup_type_by_id(class_id)?
+                    .try_as_class()?;
 
-                {
-                    let value = stacked.borrow();
-                    let class_id = match &*value {
-                        Value::Object(object) => Ok(object.class),
-                        _ => self
-                            .module_cache
-                            .lookup_type("std.core", value.get_type().name())
-                            .map(|type_val| type_val.id),
-                    }?;
-                    let class = self
-                        .module_cache
-                        .lookup_type_by_id(class_id)?
-                        .try_as_class()?;
-
-                    if !self.validate_class(class, interface) {
-                        return Err(RuntimeError::new(format!(
-                            "validation failed, class '{}' doesn't implement interface: {}",
-                            self.module_cache.fmt_type(class_id),
-                            self.module_cache.fmt_type(type_val.id),
-                        )));
-                    }
+                if !self.validate_class(class, interface) {
+                    return Err(RuntimeError::new(format!(
+                        "validation failed, class '{}' doesn't implement interface: {}",
+                        self.module_cache.fmt_type(class_id),
+                        self.module_cache.fmt_type(type_val.id),
+                    )));
                 }
 
-                match stacked {
-                    Stacked::ByValue(value) => self.stack.push(value),
-                    Stacked::ByRef(value_ref) => self.stack.push_ref(value_ref),
-                };
+                self.stack.push(value);
 
                 return Ok(());
             }
@@ -851,7 +804,7 @@ impl VM {
     }
 
     fn eval_cast(&mut self, type_name: &str) -> Result<()> {
-        let value = self.stack.pop()?.into_value();
+        let value = self.stack.pop()?;
 
         self.stack.push(match value {
             Value::Int(val) if type_name == "Float" => Value::Float(val as f64),
@@ -872,83 +825,78 @@ impl VM {
         Ok(())
     }
 
-    fn eval_store(&mut self, id: usize, is_mutable: bool) -> Result<()> {
-        let value = self.stack.pop()?.into_value();
+    fn eval_store(&mut self, id: usize, _is_mutable: bool) -> Result<()> {
+        let value = self.stack.pop()?;
         let context = self.call_stack.current_mut()?;
         let locals_len = context.locals.len();
-        let stacked = if !value.get_type().is_primitive() || is_mutable {
-            Stacked::ByRef(Rc::new(RefCell::new(value)))
-        } else {
-            Stacked::ByValue(value)
-        };
 
         if id < locals_len {
             let item = unsafe { context.locals.get_unchecked_mut(id) };
 
-            *item = stacked;
+            *item = value;
         } else {
-            context.locals.insert(id, stacked);
+            context.locals.insert(id, value);
         }
 
         Ok(())
     }
 
     fn eval_load_index(&mut self) -> Result<()> {
-        let index = self.stack.pop()?.into_value();
-        let data = self.stack.pop()?.into_value();
+        let index = self.stack.pop()?;
+        let value = self.stack.pop()?;
 
-        with_auto_deref(&data, |value| {
-            if let Value::Array(array) = value {
+        match value {
+            Value::Array(array) => {
                 let index = to_int(index).map_err(|e| {
                     let message = format!("{} in index lookup", e);
 
                     e.with_message(message)
                 })?;
 
-                if let Some(item) = array.get(index as usize) {
+                if let Some(item) = array.as_ref().get(index as usize) {
                     self.stack.push(item.clone());
 
                     return Ok(());
                 }
 
-                return Err(RuntimeError::new(
+                Err(RuntimeError::new(
                     format!("index out of bounds: {}", index,),
-                ));
+                ))
             }
-
-            if let Value::Map(map) = value {
-                if let Some(item) = map.get(&index) {
+            Value::Map(map) => {
+                if let Some(item) = map.as_ref().get(&index) {
                     self.stack.push(item.clone());
 
                     return Ok(());
                 }
 
-                return Err(RuntimeError::new(format!(
+                Err(RuntimeError::new(format!(
                     "index out of bounds: {}",
                     self.fmt_value(&index)
-                )));
+                )))
             }
-
-            Err(RuntimeError::new(format!(
+            _ => Err(RuntimeError::new(format!(
                 "unable to index type: {}",
-                data.get_type().name()
-            )))
-        })
+                value.get_type().name()
+            ))),
+        }
     }
 
     fn eval_store_index(&mut self) -> Result<()> {
-        let value = self.stack.pop()?.into_value();
-        let index = self.stack.pop()?.into_value();
-        let value_ref = self.stack.pop()?.into_ref();
-        let mut data = value_ref.borrow_mut();
+        let value = self.stack.pop()?;
+        let index = self.stack.pop()?;
 
-        with_auto_deref_mut(&mut data, |data| {
-            if let Value::Array(array) = &mut *data {
+        let data = self.stack.pop()?;
+
+        match data {
+            Value::Array(mut array) => {
                 let index = to_int(index).map_err(|e| {
                     let message = format!("{} in index lookup", e);
 
                     e.with_message(message)
                 })?;
+
+                let array = array.as_mut();
 
                 if array.get(index as usize).is_some() {
                     array[index as usize] = value;
@@ -956,22 +904,20 @@ impl VM {
                     return Ok(());
                 }
 
-                return Err(RuntimeError::new(
+                Err(RuntimeError::new(
                     format!("index out of bounds: {}", index,),
-                ));
+                ))
             }
+            Value::Map(mut map) => {
+                map.as_mut().insert(index.clone(), value);
 
-            if let Value::Map(map) = &mut *data {
-                map.insert(index.clone(), value);
-
-                return Ok(());
+                Ok(())
             }
-
-            Err(RuntimeError::new(format!(
+            _ => Err(RuntimeError::new(format!(
                 "unable to index type: {}",
                 data.get_type().name()
-            )))
-        })
+            ))),
+        }
     }
 
     fn eval_load_member(
@@ -980,50 +926,42 @@ impl VM {
         member: &str,
         push_back: bool,
     ) -> Result<()> {
-        let stacked = self.stack.pop()?;
-        let id = with_auto_deref(&stacked.borrow(), |value| match value {
-            Value::Object(object) => Ok(object.class),
-            _ => self
-                .module_cache
-                .lookup_type("std.core", value.get_type().name())
-                .map(|type_val| type_val.id),
-        })?;
-        let type_val = self.module_cache.lookup_type_by_id(id)?;
+        let value = self.stack.pop()?;
+        let class_id = self.get_class_type_id(&value)?;
+        let type_val = self.module_cache.lookup_type_by_id(class_id)?;
         let desc = type_val.try_as_class()?;
 
         if let Some((index, _, field)) = desc.fields.get_full(member) {
-            if !field.public && module_id != type_val.module_id {
-                return Err(RuntimeError::new(format!(
-                    "unable to access private field '{}' of class: {}",
-                    member,
-                    self.module_cache.fmt_type(id),
-                )));
-            }
-
-            let field = with_auto_deref(&stacked.borrow(), |value| {
-                if let Value::Object(object) = value {
-                    return object.get_field(index).cloned().ok_or_else(|| {
-                        RuntimeError::new(format!(
-                            "unable to get unknown field '{}' of class: {}",
-                            member,
-                            self.module_cache.fmt_type(id),
-                        ))
-                    });
+            if let Value::Object(object) = value {
+                if !field.public && module_id != type_val.module_id {
+                    return Err(RuntimeError::new(format!(
+                        "unable to access private field '{}' of class: {}",
+                        member,
+                        self.module_cache.fmt_type(class_id),
+                    )));
                 }
 
-                Err(RuntimeError::new(format!(
-                    "unable to lookup field of class: {}",
-                    self.module_cache.fmt_type(id)
-                )))
-            })?;
+                let field = object.as_ref().get_field(index).cloned().ok_or_else(|| {
+                    RuntimeError::new(format!(
+                        "unable to get unknown field '{}' of class: {}",
+                        member,
+                        self.module_cache.fmt_type(class_id),
+                    ))
+                })?;
 
-            if push_back {
-                self.stack.push_stacked(stacked);
+                if push_back {
+                    self.stack.push(Value::Object(object));
+                }
+
+                self.stack.push(field);
+
+                return Ok(());
             }
 
-            self.stack.push(field);
-
-            return Ok(());
+            return Err(RuntimeError::new(format!(
+                "unable to lookup field of type: {}",
+                value.get_type().name(),
+            )));
         }
 
         if let Some((method_id, _, method)) = desc.methods.get_full(member) {
@@ -1031,22 +969,17 @@ impl VM {
                 return Err(RuntimeError::new(format!(
                     "unable to access private method '{}(...)' of class: {}",
                     member,
-                    self.module_cache.fmt_type(id),
+                    self.module_cache.fmt_type(class_id),
                 )));
             }
 
-            let object = match stacked {
-                Stacked::ByValue(value) => Rc::new(RefCell::new(value)),
-                Stacked::ByRef(value_ref) => Rc::clone(&value_ref),
-            };
-
             if push_back {
-                self.stack.push_ref(Rc::clone(&object));
+                self.stack.push(value.clone());
             }
 
             self.stack.push(Value::Method(
                 Method {
-                    object,
+                    value,
                     id: method_id,
                     class_id: type_val.id,
                 }
@@ -1059,21 +992,15 @@ impl VM {
         Err(RuntimeError::new(format!(
             "no such field or method '{}' for: {}",
             member,
-            self.fmt_value(&stacked.borrow()),
+            self.fmt_value(&value),
         )))
     }
 
     fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
-        let object_ref = self.stack.pop()?.into_ref();
-        let mut data = object_ref.borrow_mut();
-        let class_id = with_auto_deref(&data, |value| match value {
-            Value::Object(object) => Ok(object.class),
-            _ => self
-                .module_cache
-                .lookup_type("std.core", value.get_type().name())
-                .map(|type_val| type_val.id),
-        })?;
-        let value = self.stack.pop()?.into_value();
+        let object = self.stack.pop()?;
+        let class_id = self.get_class_type_id(&object)?;
+
+        let value = self.stack.pop()?;
         let type_val = self.module_cache.lookup_type_by_id(class_id)?;
         let class_desc = type_val.try_as_class()?;
 
@@ -1088,19 +1015,16 @@ impl VM {
                 )));
             }
 
-            with_auto_deref_mut(&mut data, move |object| {
-                Ok(match object {
-                    Value::Object(object) => object.set_field_value(index, value),
-                    _ => {
-                        return Err(RuntimeError::new(format!(
-                            "unable to store member on invalid type '{}' expected Object",
-                            object.get_type().name(),
-                        )));
-                    }
-                })
-            })?;
+            if let Value::Object(mut object) = object {
+                object.as_mut().set_field_value(index, value);
 
-            return Ok(());
+                return Ok(());
+            }
+
+            return Err(RuntimeError::new(format!(
+                "unable to store member on invalid type '{}' expected Object",
+                object.get_type().name(),
+            )));
         }
 
         Err(RuntimeError::new(format!(
@@ -1114,8 +1038,8 @@ impl VM {
         if !self.call_stack.is_empty() {
             let context = self.call_stack.current()?;
 
-            if let Some(stacked) = context.locals.get(id) {
-                self.stack.push_stacked(stacked.clone());
+            if let Some(value) = context.locals.get(id) {
+                self.stack.push(value.clone());
 
                 return Ok(());
             }
@@ -1132,7 +1056,7 @@ impl VM {
             let context = self.call_stack.current()?;
 
             if let Some(this) = &context.this {
-                self.stack.push_ref(Rc::clone(this));
+                self.stack.push(this.clone());
 
                 return Ok(());
             }
@@ -1147,8 +1071,8 @@ impl VM {
         if !self.call_stack.is_empty() {
             let context = self.call_stack.current()?;
 
-            if let Some(stacked) = context.named_locals.get(name) {
-                self.stack.push_stacked(stacked.clone());
+            if let Some(value) = context.named_locals.get(name) {
+                self.stack.push(value.clone());
 
                 return Ok(());
             }
@@ -1188,13 +1112,13 @@ impl VM {
         true_label: &'s Label,
         false_label: &'s Label,
     ) -> Result<&'s Label> {
-        let value = self.stack.pop().and_then(|s| to_bool(s.into_value()))?;
+        let value = self.stack.pop().and_then(to_bool)?;
 
         Ok(if value { true_label } else { false_label })
     }
 
     fn eval_jump_if_true<'i>(&mut self, label: &'i Label) -> Result<Flow<'i>> {
-        let value = self.stack.pop().and_then(|s| to_bool(s.into_value()))?;
+        let value = self.stack.pop().and_then(to_bool)?;
 
         if value {
             self.stack.push(Value::Bool(value));
@@ -1206,7 +1130,7 @@ impl VM {
     }
 
     fn eval_raise(&mut self) -> Result<()> {
-        let value = self.stack.pop()?.into_value();
+        let value = self.stack.pop()?;
 
         Err(RuntimeError::new(self.fmt_value(&value)))
     }
@@ -1246,11 +1170,11 @@ impl VM {
                 None => "std.core.Option(None)".to_string(),
                 Some(val) => format!("std.core.Option({})", self.fmt_value(val)),
             },
-            Value::Ref(value_ref) => {
-                format!("*{}", self.fmt_value(&value_ref.borrow()))
+            Value::Ref(value) => {
+                format!("*{}", self.fmt_value(value.as_ref()))
             }
             Value::Range(val) => format!("{}..{}", val.start, val.end),
-            Value::String(val) => val.to_string(),
+            Value::String(val) => val.as_ref().clone(),
             Value::Type(id) => self.module_cache.fmt_type(*id),
             Value::Method(method) => {
                 if let Ok(class) = self
@@ -1270,16 +1194,17 @@ impl VM {
                 "!".to_string()
             }
             Value::Object(object) => {
+                let class_id = object.as_ref().class;
                 let class_desc = self
                     .module_cache
-                    .lookup_type_by_id(object.class)
+                    .lookup_type_by_id(class_id)
                     .unwrap()
                     .try_as_class()
                     .unwrap();
 
                 format!(
                     "{}({})",
-                    self.module_cache.fmt_type(object.class),
+                    self.module_cache.fmt_type(class_id),
                     class_desc
                         .fields
                         .iter()
@@ -1287,7 +1212,7 @@ impl VM {
                             "{}{}: {}",
                             if field_desc.public { "*" } else { "" },
                             key,
-                            self.fmt_value(object.get_field(field_desc.id).unwrap())
+                            self.fmt_value(object.as_ref().get_field(field_desc.id).unwrap())
                         ))
                         .collect::<Vec<String>>()
                         .join(", ")
@@ -1296,6 +1221,7 @@ impl VM {
             Value::Array(array) => format!(
                 "[{}]",
                 array
+                    .as_ref()
                     .iter()
                     .map(|item| self.fmt_value(item))
                     .collect::<Vec<String>>()
@@ -1303,7 +1229,8 @@ impl VM {
             ),
             Value::Map(map) => format!(
                 "{{{}}}",
-                map.iter()
+                map.as_ref()
+                    .iter()
                     .map(|(key, value)| format!(
                         "{}: {}",
                         self.fmt_value(key),
@@ -1409,11 +1336,6 @@ impl VM {
     }
 
     pub fn result(&mut self) -> Option<Value> {
-        self.stack.pop().ok().and_then(|stacked| match stacked {
-            Stacked::ByValue(value) => Some(value),
-            Stacked::ByRef(value_ref) => Rc::try_unwrap(value_ref)
-                .ok()
-                .map(|value| value.into_inner()),
-        })
+        self.stack.pop().ok()
     }
 }

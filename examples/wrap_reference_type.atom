@@ -1,0 +1,15 @@
+class TestMap {
+    let data;
+
+    fn set() {
+        this.data.set("key", "value");
+    }
+}
+
+fn main() {
+    let test = TestMap(data: {});
+
+    test.set();
+
+    return test.data.get("key").isSome();
+}

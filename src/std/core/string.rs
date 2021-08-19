@@ -1,24 +1,22 @@
-use std::ops::DerefMut;
-
 use crate::parse_args;
-use crate::runtime::{Result, RuntimeError, Value};
+use crate::runtime::{AtomRef, Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_string(vm: &mut VM, handler: impl Fn(&String) -> Value) -> Result<Option<Value>> {
-    let value = vm.get_fn_self().unwrap();
+    let value = vm.get_fn_self()?;
 
-    if let Value::String(s) = value.borrow_mut().deref_mut() {
-        return Ok(Some(handler(s)));
+    if let Value::String(s) = value {
+        return Ok(Some(handler(s.as_ref())));
     }
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected String",
-        value.borrow().get_type().name()
+        value.get_type().name()
     )))
 }
 
 fn use_into_string(vm: &mut VM, handler: impl Fn(&String) -> String) -> Result<Option<Value>> {
-    use_string(vm, |s| Value::String(handler(s)))
+    use_string(vm, |s| Value::String(AtomRef::new(handler(s))))
 }
 
 pub fn register(module: &mut Module) -> Result<()> {
@@ -38,32 +36,32 @@ pub fn register(module: &mut Module) -> Result<()> {
 
             use_string(vm, |s| {
                 let components = if let Some(count) = count {
-                    s.splitn(count as usize, &split)
-                        .map(|component| Value::String(component.to_string()))
+                    s.splitn(count as usize, split.as_ref())
+                        .map(|component| Value::String(AtomRef::new(component.to_string())))
                         .collect::<Vec<_>>()
                 } else {
-                    s.split(&split)
-                        .map(|component| Value::String(component.to_string()))
+                    s.split(split.as_ref())
+                        .map(|component| Value::String(AtomRef::new(component.to_string())))
                         .collect::<Vec<_>>()
                 };
 
-                Value::Array(components)
+                Value::Array(AtomRef::new(components))
             })
         }),
         ("startsWith", |vm, mut values| {
             let search = parse_args!(values => String);
 
-            use_string(vm, |s| Value::Bool(s.starts_with(&search)))
+            use_string(vm, |s| Value::Bool(s.starts_with(search.as_ref())))
         }),
         ("endsWith", |vm, mut values| {
             let search = parse_args!(values => String);
 
-            use_string(vm, |s| Value::Bool(s.ends_with(&search)))
+            use_string(vm, |s| Value::Bool(s.ends_with(search.as_ref())))
         }),
         ("contains", |vm, mut values| {
             let search = parse_args!(values => String);
 
-            use_string(vm, |s| Value::Bool(s.contains(&search)))
+            use_string(vm, |s| Value::Bool(s.contains(search.as_ref())))
         }),
         ("chars", |vm, values| {
             parse_args!(values);
@@ -71,7 +69,7 @@ pub fn register(module: &mut Module) -> Result<()> {
             use_string(vm, |s| {
                 let items = s.chars().map(Value::Char).collect::<Vec<_>>();
 
-                Value::Array(items)
+                Value::Array(AtomRef::new(items))
             })
         }),
         ("repeat", |vm, mut values| {

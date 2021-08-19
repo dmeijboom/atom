@@ -1,13 +1,8 @@
-use std::cell::RefCell;
-use std::rc::Rc;
-
 use crate::runtime::Value;
 use crate::runtime::{Result, RuntimeError};
 
-use super::stacked::Stacked;
-
 pub struct Stack {
-    data: Vec<Stacked>,
+    data: Vec<Value>,
 }
 
 impl Stack {
@@ -15,16 +10,8 @@ impl Stack {
         Self { data: vec![] }
     }
 
-    pub fn push_stacked(&mut self, stacked: Stacked) {
-        self.data.push(stacked);
-    }
-
     pub fn push(&mut self, value: Value) {
-        self.data.push(Stacked::ByValue(value));
-    }
-
-    pub fn push_ref(&mut self, value: Rc<RefCell<Value>>) {
-        self.data.push(Stacked::ByRef(value));
+        self.data.push(value);
     }
 
     pub fn delete(&mut self) -> Result<()> {
@@ -35,7 +22,7 @@ impl Stack {
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<Stacked> {
+    pub fn pop(&mut self) -> Result<Value> {
         if let Some(value) = self.data.pop() {
             return Ok(value);
         }
@@ -57,7 +44,7 @@ impl Stack {
             .data
             .drain((data_len - len)..)
             .into_iter()
-            .map(|stacked| map(stacked.into_value()))
+            .map(|vm_value| map(vm_value))
             .collect())
     }
 
@@ -76,11 +63,11 @@ mod tests {
     fn test_pop_many() {
         let mut stack = Stack::new();
 
-        stack.push(Value::Int(10));
-        stack.push(Value::Int(20));
-        stack.push(Value::Int(30));
-        stack.push(Value::Int(40));
-        stack.push(Value::Int(50));
+        stack.push(Value::Int(10).into());
+        stack.push(Value::Int(20).into());
+        stack.push(Value::Int(30).into());
+        stack.push(Value::Int(40).into());
+        stack.push(Value::Int(50).into());
 
         assert_eq!(
             stack.pop_many(3),

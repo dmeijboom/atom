@@ -1,19 +1,19 @@
-use std::ops::{DerefMut, Range};
+use std::ops::Range;
 
 use crate::parse_args;
 use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_range<T>(vm: &mut VM, handler: impl FnOnce(&mut Range<i64>) -> Result<T>) -> Result<T> {
-    let value = vm.get_fn_self().unwrap();
+    let value = vm.get_fn_self()?;
 
-    if let Value::Range(range) = value.borrow_mut().deref_mut() {
+    if let Value::Range(range) = value {
         return handler(range);
     }
 
     Err(RuntimeError::new(format!(
         "invalid type '{}', expected Range",
-        value.borrow().get_type().name()
+        value.get_type().name()
     )))
 }
 

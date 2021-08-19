@@ -3,6 +3,7 @@ mod tests {
     use test_case::test_case;
 
     use crate::compiler::{Code, IR};
+    use crate::runtime::AtomRef;
     use crate::runtime::Value;
     use crate::utils::{parse_and_compile, Error};
     use crate::vm::VM;
@@ -34,11 +35,12 @@ mod tests {
     #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
     #[test_case(include_str!("../examples/call_arg_order.atom"), Value::Bool(true); "call arg order")]
     #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(17); "operator precedence")]
-    #[test_case(include_str!("../examples/map_basics.atom"), Value::String("atom".to_string()); "map basics")]
+    #[test_case(include_str!("../examples/map_basics.atom"), Value::String(AtomRef::new("atom".to_string())); "map basics")]
     #[test_case(include_str!("../examples/map_value_arithmetic.atom"), Value::Int(20); "map value arithmetic")]
-    #[test_case(include_str!("../examples/class_fields.atom"), Value::String("hello world".to_string()); "class fields")]
-    #[test_case(include_str!("../examples/template_string.atom"), Value::String("Hello { World 120".to_string()); "template string")]
-    #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(vec![Value::Int(20), Value::Int(30), Value::Int(40)]); "heap copy")]
+    #[test_case(include_str!("../examples/wrap_reference_type.atom"), Value::Bool(true); "wrap reference type")]
+    #[test_case(include_str!("../examples/template_string.atom"), Value::String(AtomRef::new("Hello { World 120".to_string())); "template string")]
+    #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(AtomRef::new(vec![Value::Int(20), Value::Int(30), Value::Int(40)])); "heap copy")]
+    #[test_case(include_str!("../examples/class_fields.atom"), Value::String(AtomRef::new("hello world".to_string())); "class fields")]
     fn code_success(source: &str, value: Value) {
         let result = run_code(source);
 

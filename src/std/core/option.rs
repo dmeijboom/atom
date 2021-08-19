@@ -1,28 +1,21 @@
-use std::ops::DerefMut;
-
 use crate::parse_args;
-use crate::runtime::{with_auto_deref_mut, Result, RuntimeError, Value};
+use crate::runtime::{Result, RuntimeError, Value};
 use crate::vm::{ExternalFn, Module, VM};
 
 fn use_option<T>(
     vm: &mut VM,
     handler: impl FnOnce(&mut Option<Box<Value>>) -> Result<T>,
 ) -> Result<T> {
-    let value = vm.get_fn_self().unwrap();
-    let result = with_auto_deref_mut(value.borrow_mut().deref_mut(), |value| {
-        let type_val = value.get_type();
+    let value = vm.get_fn_self()?;
 
-        if let Value::Option(val) = value {
-            return handler(val);
-        }
+    if let Value::Option(val) = value {
+        return handler(val);
+    }
 
-        Err(RuntimeError::new(format!(
-            "invalid type '{}', expected Option",
-            type_val.name()
-        )))
-    });
-
-    result
+    Err(RuntimeError::new(format!(
+        "invalid type '{}', expected Option",
+        value.get_type().name()
+    )))
 }
 
 pub fn register(module: &mut Module) -> Result<()> {

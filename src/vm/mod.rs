@@ -1,12 +1,12 @@
-pub use call_stack::CallContext;
+pub use call_context::CallContext;
 pub use module_cache::{
     ClassDesc, ExternalFn, FuncDesc, FuncSource, MethodDesc, Middleware, Module, ModuleCache,
 };
-pub use stacked::Stacked;
+//pub use value::VmValue;
 pub use vm::VM;
 
-mod call_stack;
+mod call_context;
 mod module_cache;
 mod stack;
-mod stacked;
+//mod value;
 mod vm;

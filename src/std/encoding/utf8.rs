@@ -1,7 +1,7 @@
 use std::str;
 
 use crate::parse_args;
-use crate::runtime::{convert, Result, RuntimeError, Value};
+use crate::runtime::{convert, AtomRef, Result, RuntimeError, Value};
 use crate::vm::Module;
 
 pub fn register(module: &mut Module) -> Result<()> {
@@ -16,7 +16,7 @@ pub fn register(module: &mut Module) -> Result<()> {
         let text =
             str::from_utf8(&bytes).map_err(|e| RuntimeError::new(format!("DecodeError: {}", e)))?;
 
-        Ok(Some(Value::String(text.to_string())))
+        Ok(Some(Value::String(AtomRef::new(text.to_string()))))
     });
 
     Ok(())

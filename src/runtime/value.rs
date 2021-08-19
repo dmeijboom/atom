@@ -6,6 +6,7 @@ use std::ops::Range;
 use std::rc::Rc;
 
 use crate::compiler::IR;
+use crate::runtime::atom_ref::AtomRef;
 
 #[derive(Debug)]
 pub struct Func {
@@ -73,22 +74,23 @@ impl ValueType {
             ValueType::Ref => "Ref",
         }
     }
-
-    pub fn is_primitive(&self) -> bool {
-        !matches!(
-            self,
-            ValueType::Map | ValueType::String | ValueType::Object | ValueType::Array
-        )
-    }
 }
 
 pub type TypeId = usize;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone)]
 pub struct Method {
     pub id: usize,
+    pub value: Value,
     pub class_id: TypeId,
-    pub object: Rc<RefCell<Value>>,
+}
+
+impl Eq for Method {}
+
+impl PartialEq for Method {
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id && self.class_id == other.class_id
+    }
 }
 
 impl Hash for Method {
@@ -175,7 +177,7 @@ impl Object {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug)]
 pub enum Value {
     Void,
     Int(i64),
@@ -183,15 +185,54 @@ pub enum Value {
     Char(char),
     Byte(u8),
     Bool(bool),
-    Option(Option<Box<Value>>),
-    Ref(Rc<RefCell<Value>>),
+    Ref(AtomRef<Value>),
     Range(Range<i64>),
-    String(String),
     Type(TypeId),
-    Object(Object),
+    Option(Option<Box<Value>>),
     Method(Box<Method>),
-    Array(Vec<Value>),
-    Map(HashMap<Value, Value>),
+    String(AtomRef<String>),
+    Object(AtomRef<Object>),
+    Array(AtomRef<Vec<Value>>),
+    Map(AtomRef<HashMap<Value, Value>>),
+}
+
+macro_rules! eq {
+    (deref: $name:ident, $left:expr, $right:expr) => {
+        if let Value::$name(left) = $left {
+            if let Value::$name(right) = $right {
+                return left.as_ref().eq(right.as_ref());
+            }
+        }
+    };
+
+    ($name:ident, $left:expr, $right:expr) => {
+        if let Value::$name(left) = $left {
+            if let Value::$name(right) = $right {
+                return left.eq(right);
+            }
+        }
+    };
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        eq!(Int, self, other);
+        eq!(Float, self, other);
+        eq!(Char, self, other);
+        eq!(Byte, self, other);
+        eq!(Bool, self, other);
+        eq!(Option, self, other);
+        eq!(deref: Ref, self, other);
+        eq!(Range, self, other);
+        eq!(deref: String, self, other);
+        eq!(Type, self, other);
+        eq!(Method, self, other);
+        eq!(deref: Object, self, other);
+        eq!(deref: Array, self, other);
+        eq!(deref: Map, self, other);
+
+        false
+    }
 }
 
 impl Hash for Value {
@@ -204,15 +245,15 @@ impl Hash for Value {
             Value::Byte(val) => val.hash(state),
             Value::Bool(val) => val.hash(state),
             Value::Option(val) => val.hash(state),
-            Value::Ref(val) => val.borrow().hash(state),
+            Value::Ref(val) => val.as_ref().hash(state),
             Value::Range(val) => val.hash(state),
-            Value::String(val) => val.hash(state),
+            Value::String(val) => val.as_ref().hash(state),
             Value::Type(type_id) => type_id.hash(state),
             Value::Method(method) => method.hash(state),
-            Value::Object(object) => object.hash(state),
-            Value::Array(val) => val.hash(state),
+            Value::Object(object) => object.as_ref().hash(state),
+            Value::Array(val) => val.as_ref().hash(state),
             Value::Map(map) => {
-                for (key, value) in map.iter() {
+                for (key, value) in map.as_ref().iter() {
                     key.hash(state);
                     value.hash(state);
                 }
@@ -240,14 +281,14 @@ impl Clone for Value {
             Value::Byte(val) => Value::Byte(*val),
             Value::Bool(val) => Value::Bool(*val),
             Value::Option(val) => Value::Option(val.clone()),
-            Value::Ref(val) => Value::Ref(Rc::clone(val)),
+            Value::Ref(val) => Value::Ref(AtomRef::clone(val)),
             Value::Range(val) => Value::Range(val.clone()),
-            Value::String(val) => Value::String(val.clone()),
+            Value::String(val) => Value::String(AtomRef::clone(val)),
             Value::Type(type_id) => Value::Type(*type_id),
             Value::Method(id) => Value::Method(id.clone()),
-            Value::Object(object) => Value::Object(object.clone()),
-            Value::Array(array) => Value::Array(array.clone()),
-            Value::Map(map) => Value::Map(map.clone()),
+            Value::Object(val) => Value::Object(AtomRef::clone(val)),
+            Value::Array(val) => Value::Array(AtomRef::clone(val)),
+            Value::Map(val) => Value::Map(AtomRef::clone(val)),
         }
     }
 
@@ -279,23 +320,3 @@ impl Value {
 }
 
 impl Eq for Value {}
-
-pub fn with_auto_deref<T>(value: &Value, handler: impl FnOnce(&Value) -> T) -> T {
-    if let Value::Ref(value_ref) = value {
-        let value = value_ref.borrow();
-
-        return handler(&value);
-    }
-
-    handler(value)
-}
-
-pub fn with_auto_deref_mut<T>(value: &mut Value, handler: impl FnOnce(&mut Value) -> T) -> T {
-    if let Value::Ref(value_ref) = value {
-        let mut value = value_ref.borrow_mut();
-
-        return handler(&mut value);
-    }
-
-    handler(value)
-}
