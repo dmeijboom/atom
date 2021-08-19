@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
+use wyhash2::WyHash;
 
 use crate::ast::Pos;
 use crate::compiler::{self, Func, IR};
@@ -71,8 +72,8 @@ pub struct InterfaceDesc {
 
 pub struct ClassDesc {
     pub public: bool,
-    pub methods: IndexMap<String, MethodDesc>,
-    pub fields: IndexMap<String, FieldDesc>,
+    pub methods: IndexMap<String, MethodDesc, WyHash>,
+    pub fields: IndexMap<String, FieldDesc, WyHash>,
 }
 
 impl ClassDesc {
@@ -162,8 +163,8 @@ impl Module {
         }
 
         for (name, class) in module.classes {
-            let mut fields = IndexMap::new();
-            let mut methods = IndexMap::new();
+            let mut fields = IndexMap::with_hasher(WyHash::with_seed(4));
+            let mut methods = IndexMap::with_hasher(WyHash::with_seed(5));
 
             for (name, field) in class.fields.into_iter() {
                 fields.insert(

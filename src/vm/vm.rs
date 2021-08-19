@@ -1052,18 +1052,18 @@ impl VM {
     }
 
     fn eval_load_self(&mut self) -> Result<()> {
-        if !self.call_stack.is_empty() {
-            let context = self.call_stack.current()?;
+        let context = self.call_stack.current().map_err(|_| {
+            RuntimeError::new("unable to load 'this' outside of a function".to_string())
+        })?;
 
-            if let Some(this) = &context.this {
-                self.stack.push(this.clone());
+        if let Some(this) = &context.this {
+            self.stack.push(this.clone());
 
-                return Ok(());
-            }
+            return Ok(());
         }
 
         Err(RuntimeError::new(
-            "unable to load 'this' outside of Fn scope".to_string(),
+            "unable to load 'this' outside of a method".to_string(),
         ))
     }
 
