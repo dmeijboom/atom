@@ -163,6 +163,7 @@ impl AtomEngine {
                 pos: expr.pos(),
                 expr,
             })],
+            comments: vec![],
         }))?;
 
         let mut vm = self.create_vm()?;

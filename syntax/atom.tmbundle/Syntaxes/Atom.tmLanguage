@@ -220,26 +220,26 @@
                 <array>
                     <dict>
                         <key>begin</key>
-                        <string>//</string>
+                        <string>#</string>
                         <key>beginCaptures</key>
                         <dict>
                             <key>0</key>
                             <dict>
                                 <key>name</key>
-                                <string>punctuation.definition.comment.c</string>
+                                <string>punctuation.definition.comment.atom</string>
                             </dict>
                         </dict>
                         <key>end</key>
                         <string>$\n?</string>
                         <key>name</key>
-                        <string>comment.line.double-slash.c++</string>
+                        <string>comment.line.double-slash.atom</string>
                         <key>patterns</key>
                         <array>
                             <dict>
                                 <key>match</key>
                                 <string>(?&gt;\\\s*\n)</string>
                                 <key>name</key>
-                                <string>punctuation.separator.continuation.c++</string>
+                                <string>punctuation.separator.continuation.atom</string>
                             </dict>
                         </array>
                     </dict>

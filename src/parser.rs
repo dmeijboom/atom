@@ -187,6 +187,9 @@ peg::parser! {
         rule raise_stmt() -> Stmt
             = start:pos() "raise" __ expr:expr() _ ";" end:pos() { Stmt::Raise(RaiseStmt { expr, pos: (start..end) }) }
 
+        rule comment() -> Comment
+            = start:pos() "#" content:$([^ '\n']+) "\n"? end:pos() { Comment { content: content.trim().to_string(), pos: (start..end) } }
+
         rule stmt() -> Stmt
             = unsafe_stmt() / raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
 
@@ -194,7 +197,7 @@ peg::parser! {
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
         rule fn_decl() -> FnDeclStmt
-            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), pos: (start..end) } }
+            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), comments: vec![], pos: (start..end) } }
 
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
@@ -203,14 +206,14 @@ peg::parser! {
             = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
 
         rule interface_decl_stmt() -> Stmt
-            = start:pos() public:$("pub")? _ "interface" __ name:ident() _ "{" _ functions:interface_fn() ** (_) _ "}" end:pos() { Stmt::InterfaceDecl(InterfaceDeclStmt { name, public: public.is_some(), functions, pos: (start..end) }) }
+            = start:pos() public:$("pub")? _ "interface" __ name:ident() _ "{" _ functions:interface_fn() ** (_) _ "}" end:pos() { Stmt::InterfaceDecl(InterfaceDeclStmt { name, public: public.is_some(), functions, comments: vec![], pos: (start..end) }) }
 
         rule field() -> Field
             = start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: Some(value), pos: (start..end) } }
                 / start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: None, pos: (start..end) } }
 
         rule class_decl_stmt() -> Stmt
-            = start:pos() public:$("pub")? _ "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), fields, methods, pos: (start..end) }) }
+            = start:pos() public:$("pub")? _ "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), fields, methods, comments: vec![], pos: (start..end) }) }
 
         rule module_stmt() -> Stmt
             = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
@@ -219,10 +222,10 @@ peg::parser! {
             = start:pos() "import" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Import(ImportStmt { name: path.join("."), pos: (start..end)} ) }
 
         rule top_level_stmt() -> Stmt
-            = fn_decl_stmt() / class_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()
+            = comments:comment()* stmt:(fn_decl_stmt() / class_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
 
         rule stmt_list() -> Vec<Stmt>
-            = stmt() ** _
+            = comment()* stmt:stmt() ** _ { stmt }
 
         rule top_level_stmt_list() -> Vec<Stmt>
             = (top_level_stmt() / stmt()) ** _
@@ -825,6 +828,7 @@ mod tests {
                     },
                 ],
                 methods: vec![],
+                comments: vec![],
                 pos: (0..41),
             })),
         );
@@ -1080,6 +1084,26 @@ mod tests {
                     pos: 0..3
                 }),
                 pos: 0..4,
+            }))
+        )
+    }
+
+    #[test]
+    fn comments() {
+        let source = "# test\nclass Test{}";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::ClassDecl(ClassDeclStmt {
+                name: "Test".to_string(),
+                public: false,
+                fields: vec![],
+                methods: vec![],
+                comments: vec![Comment {
+                    content: "test".to_string(),
+                    pos: 0..7,
+                },],
+                pos: 7..19,
             }))
         )
     }

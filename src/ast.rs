@@ -3,6 +3,12 @@ use std::ops::Range;
 pub type Pos = Range<usize>;
 
 #[derive(Debug, PartialEq)]
+pub struct Comment {
+    pub content: String,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ComparisonOp {
     Lt,
     Lte,
@@ -259,6 +265,7 @@ pub struct FnDeclStmt {
     pub public: bool,
     pub args: Vec<FnArg>,
     pub body: Vec<Stmt>,
+    pub comments: Vec<Comment>,
     pub pos: Pos,
 }
 
@@ -298,6 +305,7 @@ pub struct ClassDeclStmt {
     pub public: bool,
     pub fields: Vec<Field>,
     pub methods: Vec<FnDeclStmt>,
+    pub comments: Vec<Comment>,
     pub pos: Pos,
 }
 
@@ -312,6 +320,7 @@ pub struct InterfaceDeclStmt {
     pub name: String,
     pub public: bool,
     pub functions: Vec<InterfaceFn>,
+    pub comments: Vec<Comment>,
     pub pos: Pos,
 }
 
@@ -385,5 +394,23 @@ impl Stmt {
             Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
             Stmt::InterfaceDecl(interface_decl_stmt) => interface_decl_stmt.pos.clone(),
         }
+    }
+
+    // Note that not all statements support storing comments in their type
+    pub fn with_comments(mut self, comments: Vec<Comment>) -> Self {
+        match &mut self {
+            Self::FnDecl(fn_decl_stmt) => {
+                fn_decl_stmt.comments = comments;
+            }
+            Self::InterfaceDecl(interface_decl_stmt) => {
+                interface_decl_stmt.comments = comments;
+            }
+            Self::ClassDecl(class_decl_stmt) => {
+                class_decl_stmt.comments = comments;
+            }
+            _ => {}
+        }
+
+        self
     }
 }
