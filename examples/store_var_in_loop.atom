@@ -1,0 +1,7 @@
+fn main() {
+    for {
+        let total = 28;
+
+        return total;
+    }
+}

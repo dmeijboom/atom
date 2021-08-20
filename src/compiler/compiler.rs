@@ -569,9 +569,9 @@ impl Compiler {
                     let body_label = self.make_label("for_body");
                     let cont_label = self.make_label("for_cont");
 
-                    let iter = self.set_local("__iter__".to_string(), false)?;
-
                     if let Some(expr) = &for_stmt.expr {
+                        let iter = self.set_local("__iter__".to_string(), false)?;
+
                         ir.push(self.compile_expr(expr)?);
 
                         self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
