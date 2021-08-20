@@ -36,6 +36,13 @@ pub enum LogicalOp {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct TypeAssertExpr {
+    pub left: Expr,
+    pub right: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct ComparisonExpr {
     pub left: Expr,
     pub right: Expr,
@@ -200,6 +207,7 @@ pub enum Expr {
     Index(Box<IndexExpr>),
     Range(Box<RangeExpr>),
     Template(TemplateExpr),
+    TypeAssert(Box<TypeAssertExpr>),
 }
 
 impl Expr {
@@ -222,6 +230,7 @@ impl Expr {
             Self::Range(range_expr) => range_expr.pos.clone(),
             Self::Cast(cast_expr) => cast_expr.pos.clone(),
             Self::Template(template_expr) => template_expr.pos.clone(),
+            Self::TypeAssert(type_assert_expr) => type_assert_expr.pos.clone(),
         }
     }
 }
