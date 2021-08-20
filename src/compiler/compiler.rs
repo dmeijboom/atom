@@ -340,6 +340,14 @@ impl Compiler {
                     arithmetic_expr.pos.clone(),
                 )]);
             }
+            Expr::TypeAssert(type_assert_expr) => {
+                ir.push(self.compile_expr(&type_assert_expr.left)?);
+                ir.push(self.compile_expr(&type_assert_expr.right)?);
+                ir.push(vec![IR::new(
+                    Code::AssertIsType,
+                    type_assert_expr.pos.clone(),
+                )]);
+            }
             Expr::Comparison(comparison_expr) => {
                 ir.push(self.compile_expr(&comparison_expr.left)?);
                 ir.push(self.compile_expr(&comparison_expr.right)?);

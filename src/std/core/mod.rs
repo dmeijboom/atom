@@ -32,11 +32,21 @@ pub fn register(module: &mut Module) -> Result<()> {
     Ok(())
 }
 
-pub const DEFAULT_IMPORTS: &[&str; 6] = &[
+pub const DEFAULT_IMPORTS: &[&str; 15] = &[
     "std.core.println",
     "std.core.some",
     "std.core.RangeIter",
     "std.core.ArrayIter",
     "std.core.KeyValue",
     "std.core.Iterable",
+    // Also all basic types (for type assertions for example)
+    "std.core.String",
+    "std.core.Int",
+    "std.core.Float",
+    "std.core.Char",
+    "std.core.Byte",
+    "std.core.Bool",
+    "std.core.Range",
+    "std.core.Array",
+    "std.core.Map",
 ];

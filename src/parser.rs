@@ -120,6 +120,8 @@ peg::parser! {
             left:(@) _ "<" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Lt, right }.into()) }
             left:(@) _ "<=" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Lte, right }.into()) }
             --
+            left:(@) _ "is" _ right:@ { Expr::TypeAssert(TypeAssertExpr{ pos: (start..right.pos().end), left, right }.into()) }
+            --
             "&" _ expr:(@) { Expr::MakeRef(MakeRefExpr { pos: (start..expr.pos().end), expr }.into()) }
             "*" _ expr:(@) { Expr::Deref(DerefExpr { pos: (start..expr.pos().end), expr }.into()) }
             --
@@ -1106,5 +1108,31 @@ mod tests {
                 pos: 7..19,
             }))
         )
+    }
+
+    #[test]
+    fn type_assert() {
+        let source = "1 is 2;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::TypeAssert(
+                    TypeAssertExpr {
+                        left: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(1),
+                            pos: 0..1,
+                        }),
+                        right: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(2),
+                            pos: 5..6,
+                        }),
+                        pos: 0..6,
+                    }
+                    .into()
+                ),
+                pos: 0..7,
+            }))
+        );
     }
 }

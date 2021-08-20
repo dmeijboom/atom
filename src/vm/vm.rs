@@ -566,6 +566,7 @@ impl VM {
             Code::ComparisonGte => self.eval_comparison_gte()?,
             Code::ComparisonLt => self.eval_comparison_lt()?,
             Code::ComparisonLte => self.eval_comparison_lte()?,
+            Code::AssertIsType => self.eval_assert_is_type()?,
             Code::Not => self.eval_not()?,
             Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
@@ -757,6 +758,28 @@ impl VM {
 
     fn eval_comparison_lte(&mut self) -> Result<()> {
         impl_op!(self, compare: le)
+    }
+
+    fn eval_assert_is_type(&mut self) -> Result<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        if let Value::Type(id) = right {
+            let type_val = self.module_cache.lookup_type_by_id(id)?;
+
+            if let TypeDesc::Class(_) = type_val.desc {
+                let type_id = self.get_class_type_id(&left)?;
+
+                self.stack.push(Value::Bool(id == type_id));
+
+                return Ok(());
+            }
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to assert type with: {}",
+            self.fmt_value(&right),
+        )))
     }
 
     fn eval_not(&mut self) -> Result<()> {
