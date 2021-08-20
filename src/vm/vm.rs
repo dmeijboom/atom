@@ -55,7 +55,7 @@ macro_rules! impl_op {
                     "invalid type '{}' and '{}' in {}",
                     left.get_type().name(),
                     right.get_type().name(),
-                    stringify!($ident)
+                    stringify!($opname)
                 )));
             }
         });
@@ -75,7 +75,7 @@ macro_rules! impl_op {
                     "invalid type '{}' and '{}' in {}",
                     left.get_type().name(),
                     right.get_type().name(),
-                    stringify!($ident)
+                    stringify!($opname)
                 )));
             }
         });
