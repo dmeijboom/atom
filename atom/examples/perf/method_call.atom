@@ -1,0 +1,78 @@
+class Toggle {
+    let bool;
+
+    fn value() {
+        return this.bool;
+    }
+
+    fn activate() {
+        this.bool != this.bool;
+
+        return this;
+    }
+}
+
+class NthToggle {
+    let toggle;
+    let countMax;
+    let mut counter;
+
+    fn activate() {
+        this.counter = this.counter + 1;
+
+        if this.counter >= this.countMax {
+            this.toggle.activate();
+            this.counter = 0;
+        }
+
+        return this;
+    }
+}
+
+fn main() {
+    let NUM = 100000;
+    let mut val = 1;
+    let toggle = Toggle(bool: val);
+
+    for 0..NUM {
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+        val = toggle.activate().value();
+    }
+
+    if val == 1 {
+        println("true");
+    } else {
+        println("false");
+    }
+
+    val = 1;
+
+    let ntoggle = NthToggle(toggle: Toggle(bool: 3), countMax: 3, counter: 0);
+
+    for 0..NUM {
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+        val = ntoggle.activate().toggle.value();
+    }
+
+    if val == 1 {
+        println("true");
+    } else {
+        println("false");
+    }
+}

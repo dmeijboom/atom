@@ -1,0 +1,204 @@
+module std.core;
+
+pub interface Iterable {
+    fn iter();
+}
+
+pub class Option {}
+
+pub class String {
+    pub let length;
+}
+
+pub class Int {}
+
+pub class Float {}
+
+pub class Char {}
+
+pub class Byte {}
+
+pub class Bool {}
+
+pub class RangeIter {
+    let start;
+    let end;
+    let step;
+    let mut index;
+
+    pub fn next() {
+        let index = this.start + this.index;
+
+        if index >= this.end {
+            return nil;
+        }
+
+        let value = some(index);
+
+        this.index = this.index + this.step;
+
+        return value;
+    }
+}
+
+pub class RangeStep {
+    let range;
+    let step;
+
+    pub fn iter() {
+        return RangeIter(start: this.range.start(), end: this.range.end(), step: this.step, index: 0);
+    }
+
+    pub fn collect() {
+        let mut output = [];
+
+        for i in this {
+            output.push(i);
+        }
+
+        return output;
+    }
+}
+
+pub class Range {
+    pub fn iter() {
+        return RangeIter(start: this.start(), end: this.end(), step: 1, index: 0);
+    }
+
+    pub fn step(n) {
+        return RangeStep(range: this, step: n);
+    }
+
+    pub fn collect() {
+        let mut output = [];
+
+        for i in this {
+            output.push(i);
+        }
+
+        return output;
+    }
+}
+
+pub class ArrayIter {
+    let array;
+    let mut index;
+
+    pub fn next() {
+        if this.index >= this.array.len() {
+            return nil;
+        }
+
+        let value = this.array.nth(this.index);
+
+        this.index = this.index + 1;
+
+        return value;
+    }
+}
+
+pub class Array {
+    pub fn nth(index) {
+        if index < 0 || this.len() <= index {
+            return nil;
+        }
+
+        unsafe {
+            return some(this[index]);
+        }
+    }
+
+    pub fn first() {
+        return this.nth(0);
+    }
+
+    pub fn last() {
+        return this.nth(this.len()-1);
+    }
+
+    pub fn iter() {
+        return ArrayIter(array: this, index: 0);
+    }
+
+    pub fn append(other) {
+        for {
+            let item = other.remove(0);
+
+            if !item.isSome() {
+                break;
+            }
+
+            this.push(item.value());
+        }
+    }
+
+    pub fn slice(range) {
+        let mut output = [];
+
+        for item in range {
+            unsafe {
+                output.push(this[item]);
+            }
+        }
+
+        return output;
+    }
+
+    pub fn contains(value) {
+        for item in this {
+            if item == value {
+                return true;
+            }
+        }
+
+        return false;
+    }
+}
+
+pub class KeyValue {
+    pub let key;
+    pub let value;
+}
+
+pub class MapIter {
+    let data;
+    let keys;
+    let mut index;
+
+    pub fn next() {
+        if this.index >= this.keys.len() {
+            return nil;
+        }
+
+        unsafe {
+            let key = this.keys[this.index];
+            let key_value = KeyValue(key: key, value: this.data[key]);
+
+            this.index = this.index + 1;
+
+            return some(key_value);
+        }
+    }
+}
+
+pub class Map {
+    pub fn iter() {
+        return MapIter(data: this, keys: this.keys(), index: 0);
+    }
+
+    pub fn get(key) {
+        if !this.keys().contains(key) {
+            return nil;
+        }
+
+        unsafe {
+            return some(this[key]);
+        }
+    }
+
+    pub fn set(key, value) {
+        unsafe {
+            this[key] = value;
+        }
+    }
+}
