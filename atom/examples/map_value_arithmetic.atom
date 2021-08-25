@@ -3,5 +3,5 @@ fn main() {
 
     map.set(0, 10);
 
-    return 10 + map.get(0).value();
+    return 10 + map.get(0)!;
 }

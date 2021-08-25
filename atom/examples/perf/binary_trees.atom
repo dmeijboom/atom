@@ -23,7 +23,7 @@ fn checkTree(node) {
         return node.value;
     }
 
-    return node.value + checkTree(node.left.value()) - checkTree(node.right.value());
+    return node.value + checkTree(node.left!) - checkTree(node.right!);
 }
 
 fn main() {

@@ -128,7 +128,7 @@ pub class Array {
                 break;
             }
 
-            this.push(item.value());
+            this.push(item!);
         }
     }
 

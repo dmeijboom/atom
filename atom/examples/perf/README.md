@@ -31,7 +31,7 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | python | 0.37s |
 | python3 | 0.38s |
 | lua | 0.52s |
-| **atom** | 1.14s |
+| **atom** | 1.00s |
 
 ## Method Call
 

@@ -122,11 +122,7 @@ impl Compiler {
                 member_cond_expr.pos.clone(),
             ),
             IR::new(Code::SetLabel(label_some), member_cond_expr.pos.clone()),
-            IR::new(
-                Code::LoadMember("value".to_string()),
-                member_cond_expr.pos.clone(),
-            ),
-            IR::new(Code::Call(0), member_cond_expr.pos.clone()),
+            IR::new(Code::Unwrap, member_cond_expr.pos.clone()),
             IR::new(
                 Code::LoadMember(member_cond_expr.member.to_string()),
                 member_cond_expr.pos.clone(),
@@ -295,6 +291,10 @@ impl Compiler {
 
                     ir.push(instructions);
                 }
+            }
+            Expr::Unwrap(unwrap_expr) => {
+                ir.push(self.compile_expr(&unwrap_expr.expr)?);
+                ir.push(vec![IR::new(Code::Unwrap, unwrap_expr.pos.clone())]);
             }
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
@@ -647,8 +647,7 @@ impl Compiler {
                         if for_stmt.alias.is_some() {
                             ir.push(vec![
                                 IR::new(Code::Load(local.id), self.pos.clone()),
-                                IR::new(Code::LoadMember("value".to_string()), self.pos.clone()),
-                                IR::new(Code::Call(0), self.pos.clone()),
+                                IR::new(Code::Unwrap, self.pos.clone()),
                                 IR::new(Code::Store(local.id), self.pos.clone()),
                             ]);
                         }

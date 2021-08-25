@@ -88,6 +88,12 @@ pub struct IdentExpr {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct UnwrapExpr {
+    pub expr: Box<Expr>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, PartialEq)]
 pub struct NotExpr {
     pub expr: Box<Expr>,
     pub pos: Pos,
@@ -195,6 +201,7 @@ pub enum Expr {
     Call(Box<CallExpr>),
     Cast(Box<CastExpr>),
     Not(NotExpr),
+    Unwrap(UnwrapExpr),
     Array(ArrayExpr),
     Map(MapExpr),
     Member(Box<MemberExpr>),
@@ -217,6 +224,7 @@ impl Expr {
             Self::Ident(ident_expr) => ident_expr.pos.clone(),
             Self::Call(call_expr) => call_expr.pos.clone(),
             Self::Not(not_expr) => not_expr.pos.clone(),
+            Self::Unwrap(unwrap_expr) => unwrap_expr.pos.clone(),
             Self::Array(array_expr) => array_expr.pos.clone(),
             Self::Map(map_expr) => map_expr.pos.clone(),
             Self::Member(member_expr) => member_expr.pos.clone(),

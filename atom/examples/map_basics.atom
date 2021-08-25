@@ -3,5 +3,5 @@ fn main() {
 
     map.set("name", "atom");
 
-    return map.get("name").value();
+    return map.get("name")!;
 }

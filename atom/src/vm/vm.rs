@@ -548,6 +548,7 @@ impl VM {
             Code::ComparisonLte => self.eval_comparison_lte()?,
             Code::AssertIsType => self.eval_assert_is_type()?,
             Code::Not => self.eval_not()?,
+            Code::Unwrap => self.eval_unwrap()?,
             Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
             Code::Call(arg_count) => self.eval_call(&[], *arg_count, true)?,
@@ -767,6 +768,18 @@ impl VM {
             "unable to assert type with: {}",
             right,
         )))
+    }
+
+    fn eval_unwrap(&mut self) -> Result<()> {
+        let value: Option<Box<Value>> = self.stack.pop()?.try_into()?;
+
+        if let Some(value) = value {
+            self.stack.push(*value);
+
+            return Ok(());
+        }
+
+        Err(RuntimeError::new("unable to unwrap nil value".to_string()))
     }
 
     fn eval_not(&mut self) -> Result<()> {
