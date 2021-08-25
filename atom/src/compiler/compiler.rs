@@ -9,8 +9,8 @@ use indexmap::map::IndexMap;
 use atom_ir::{Code, Label, IR};
 
 use crate::ast::{
-    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, InterfaceDeclStmt, Literal,
-    LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
+    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt,
+    InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
 };
 use crate::compiler::module::{Class, Field, Interface};
 use crate::compiler::optimizers::{
@@ -589,7 +589,29 @@ impl Compiler {
                     ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
                 }
                 Stmt::Assign(assign_stmt) => {
-                    ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
+                    if let Some(op) = &assign_stmt.op {
+                        ir.push(
+                            self.compile_assign(
+                                &assign_stmt.left,
+                                &Expr::Arithmetic(
+                                    ArithmeticExpr {
+                                        left: assign_stmt.left.clone(),
+                                        right: assign_stmt.right.clone(),
+                                        op: match op {
+                                            AssignOp::Mul => ArithmeticOp::Mul,
+                                            AssignOp::Div => ArithmeticOp::Div,
+                                            AssignOp::Add => ArithmeticOp::Add,
+                                            AssignOp::Sub => ArithmeticOp::Sub,
+                                        },
+                                        pos: assign_stmt.pos.clone(),
+                                    }
+                                    .into(),
+                                ),
+                            )?,
+                        );
+                    } else {
+                        ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
+                    }
                 }
                 Stmt::For(for_stmt) => {
                     let for_label = self.make_label("for");

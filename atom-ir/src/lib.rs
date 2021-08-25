@@ -57,9 +57,9 @@ pub enum Code {
     ArithmeticBitAnd,
     ArithmeticAdd,
     ArithmeticSub,
-    ArithmeticExp,
     ArithmeticMul,
     ArithmeticDiv,
+    ArithmeticExp,
     ComparisonEq,
     ComparisonNeq,
     ComparisonGt,
@@ -95,7 +95,7 @@ pub enum Code {
 impl Code {
     fn description(&self) -> String {
         match self {
-            Code::ConstNil => "constNil".to_string(),
+            Code::ConstNil => "  constNil".to_string(),
             Code::ConstInt(val) => format!("  constInt({})", val),
             Code::ConstBool(val) => format!("  constBool({})", val),
             Code::ConstFloat(val) => format!("  constFloat({})", val),
@@ -119,9 +119,9 @@ impl Code {
             Code::ArithmeticBitAnd => "  bin_and".to_string(),
             Code::ArithmeticAdd => "  add".to_string(),
             Code::ArithmeticSub => "  sub".to_string(),
-            Code::ArithmeticExp => "  exp".to_string(),
             Code::ArithmeticMul => "  mul".to_string(),
             Code::ArithmeticDiv => "  div".to_string(),
+            Code::ArithmeticExp => "  exp".to_string(),
             Code::ComparisonEq => "  eq".to_string(),
             Code::ComparisonNeq => "  neq".to_string(),
             Code::ComparisonGt => "  gt".to_string(),
@@ -184,6 +184,6 @@ impl IR {
 
 impl Debug for IR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}..{}:\t {:?}", self.pos.start, self.pos.end, self.code)
+        write!(f, "{:?}", self.code)
     }
 }

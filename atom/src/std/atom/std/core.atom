@@ -35,7 +35,7 @@ pub class RangeIter {
 
         let value = some(index);
 
-        this.index = this.index + this.step;
+        this.index += this.step;
 
         return value;
     }
@@ -91,7 +91,7 @@ pub class ArrayIter {
 
         let value = this.array.nth(this.index);
 
-        this.index = this.index + 1;
+        this.index += 1;
 
         return value;
     }
@@ -174,7 +174,7 @@ pub class MapIter {
             let key = this.keys[this.index];
             let key_value = KeyValue(key: key, value: this.data[key]);
 
-            this.index = this.index + 1;
+            this.index += 1;
 
             return some(key_value);
         }

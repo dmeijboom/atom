@@ -2,7 +2,7 @@ class Test {
     let mut num;
 
     fn example() {
-        this.num = this.num + 10;
+        this.num += 10;
 
         return this.num;
     }

@@ -18,7 +18,7 @@ class NthToggle {
     let mut counter;
 
     fn activate() {
-        this.counter = this.counter + 1;
+        this.counter += 1;
 
         if this.counter >= this.countMax {
             this.toggle.activate();

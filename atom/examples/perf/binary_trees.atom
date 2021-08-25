@@ -40,7 +40,7 @@ fn main() {
         let mut check = 0;
 
         for i in 1..(iterations + 1) {
-            check = check + checkTree(makeTree(i, depth)) + checkTree(makeTree(0 - i, depth));
+            check += checkTree(makeTree(i, depth)) + checkTree(makeTree(0 - i, depth));
         }
 
         println(f"{iterations * 2} trees of depth {depth} check: {check}");

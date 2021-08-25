@@ -162,8 +162,15 @@ peg::parser! {
         rule let_stmt() -> Stmt
             = start:pos() "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Let(LetStmt { mutable: mutable.is_some(), name, value, pos: (start..end) }) }
 
+        rule assign_op() -> Option<AssignOp>
+            = "/=" { Some(AssignOp::Div) }
+                / "*=" { Some(AssignOp::Mul) }
+                / "+=" { Some(AssignOp::Add) }
+                / "-=" { Some(AssignOp::Sub) }
+                / "=" { None }
+
         rule assign_stmt() -> Stmt
-            = start:pos() left:expr() _ "=" _ right:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { left, right, pos: (start..end) }) }
+            = start:pos() left:expr() _ op:assign_op() _ right:expr() _ ";" end:pos() { Stmt::Assign(AssignStmt { left, right, op, pos: (start..end) }) }
 
         rule return_stmt() -> Stmt
             = start:pos() "return" __ expr:expr() _ ";" end:pos() { Stmt::Return(ReturnStmt { expr, pos: (start..end) }) }
@@ -650,6 +657,7 @@ mod tests {
                     literal: Literal::Int(100),
                     pos: (15..18),
                 }),
+                op: None,
                 pos: (0..19),
             }))
         );

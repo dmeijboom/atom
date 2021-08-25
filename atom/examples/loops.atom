@@ -3,7 +3,7 @@ fn main() {
 
     for 0..2 {
         for 0..3 {
-            output = output + 25;
+            output += 25;
         }
 
         break;

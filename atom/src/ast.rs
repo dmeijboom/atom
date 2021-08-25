@@ -2,13 +2,21 @@ use std::ops::Range;
 
 pub type Pos = Range<usize>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Comment {
     pub content: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
+pub enum AssignOp {
+    Add,
+    Sub,
+    Mul,
+    Div,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum ComparisonOp {
     Lt,
     Lte,
@@ -18,7 +26,7 @@ pub enum ComparisonOp {
     Neq,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ArithmeticOp {
     Mul,
     Div,
@@ -29,20 +37,20 @@ pub enum ArithmeticOp {
     BitOr,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LogicalOp {
     And,
     Or,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TypeAssertExpr {
     pub left: Expr,
     pub right: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ComparisonExpr {
     pub left: Expr,
     pub right: Expr,
@@ -50,7 +58,7 @@ pub struct ComparisonExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CallExpr {
     pub callee: Expr,
     pub args: Vec<Expr>,
@@ -58,14 +66,14 @@ pub struct CallExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct CastExpr {
     pub type_name: String,
     pub expr: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArithmeticExpr {
     pub left: Expr,
     pub right: Expr,
@@ -73,7 +81,7 @@ pub struct ArithmeticExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LogicalExpr {
     pub left: Expr,
     pub right: Expr,
@@ -81,51 +89,51 @@ pub struct LogicalExpr {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IdentExpr {
     pub name: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnwrapExpr {
     pub expr: Box<Expr>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NotExpr {
     pub expr: Box<Expr>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ArrayExpr {
     pub items: Vec<Expr>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeywordArg {
     pub name: String,
     pub value: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeyValue {
     pub key: Expr,
     pub value: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MapExpr {
     pub key_values: Vec<KeyValue>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
     Nil,
     Int(i64),
@@ -136,65 +144,65 @@ pub enum Literal {
     String(String),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LiteralExpr {
     pub literal: Literal,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MemberCondExpr {
     pub object: Expr,
     pub member: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MemberExpr {
     pub object: Expr,
     pub member: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IndexExpr {
     pub object: Expr,
     pub index: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RangeExpr {
     pub from: Expr,
     pub to: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct MakeRefExpr {
     pub expr: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct DerefExpr {
     pub expr: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum TemplateComponent {
     String(String),
     Expr(Expr),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TemplateExpr {
     pub components: Vec<TemplateComponent>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -243,19 +251,19 @@ impl Expr {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExprStmt {
     pub expr: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct RaiseStmt {
     pub expr: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetStmt {
     pub name: String,
     pub value: Expr,
@@ -263,20 +271,20 @@ pub struct LetStmt {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct LetDeclStmt {
     pub name: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FnArg {
     pub name: String,
     pub mutable: bool,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct FnDeclStmt {
     pub name: String,
     pub public: bool,
@@ -286,20 +294,21 @@ pub struct FnDeclStmt {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AssignStmt {
     pub left: Expr,
     pub right: Expr,
+    pub op: Option<AssignOp>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt {
     pub expr: Expr,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct IfStmt {
     pub cond: Expr,
     pub pos: Pos,
@@ -307,7 +316,7 @@ pub struct IfStmt {
     pub body: Vec<Stmt>,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub name: String,
     pub mutable: bool,
@@ -316,7 +325,7 @@ pub struct Field {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ClassDeclStmt {
     pub name: String,
     pub public: bool,
@@ -326,13 +335,13 @@ pub struct ClassDeclStmt {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InterfaceFn {
     pub name: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InterfaceDeclStmt {
     pub name: String,
     pub public: bool,
@@ -341,19 +350,19 @@ pub struct InterfaceDeclStmt {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ImportStmt {
     pub name: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ModuleStmt {
     pub name: String,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ForStmt {
     pub expr: Option<Expr>,
     pub alias: Option<String>,
@@ -361,19 +370,19 @@ pub struct ForStmt {
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct BreakStmt {
     pub label: Option<String>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnsafeStmt {
     pub body: Vec<Stmt>,
     pub pos: Pos,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     If(IfStmt),
     For(ForStmt),
