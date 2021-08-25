@@ -1,13 +1,12 @@
-use std::path::PathBuf;
-
 use peg::error::ParseError;
 use peg::str::LineCol;
+
+use atom_runtime::RuntimeError;
 
 use crate::ast::Pos;
 use crate::compiler::{CompileError, Compiler};
 use crate::parser;
 use crate::vm::Module;
-use atom_runtime::RuntimeError;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -34,12 +33,15 @@ impl From<ParseError<LineCol>> for Error {
     }
 }
 
-pub fn parse_and_compile(source: &str, filename: Option<PathBuf>) -> Result<Module, Error> {
+pub fn parse_and_compile(source: &str, location: Option<String>) -> Result<Module, Error> {
     let tree = parser::parse(source)?;
     let compiler = Compiler::new(tree, true);
     let module = compiler.compile()?;
 
-    Ok(Module::new(module, filename))
+    Ok(Module::new(
+        module,
+        location.unwrap_or("unknown".to_string()),
+    ))
 }
 
 pub fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {
@@ -134,13 +136,13 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
         if !trace.target.starts_with(main_module) {
             message.push_str(&format!(
                 "  > in {}(..) at {}..{}\n",
-                trace.target, trace.pos.start, trace.pos.end,
+                trace.target, trace.origin.pos.start, trace.origin.pos.end,
             ));
 
             continue;
         }
 
-        let (line, column) = parse_line_column(contents, &trace.pos);
+        let (line, column) = parse_line_column(contents, &trace.origin.pos);
 
         message.push_str(&format!(
             "  > in {}(..) on line {} at column {}\n",

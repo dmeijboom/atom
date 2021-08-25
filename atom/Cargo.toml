@@ -7,11 +7,13 @@ edition = "2018"
 
 [dependencies]
 peg = "0.7.0"
+strum = "0.21.0"
 wyhash2 = "0.2.1"
 indexmap = "1.7.0"
-snmalloc-rs = "0.2"
 test-case = "1.1.0"
 rustyline = "8.2.0"
 clap = "3.0.0-beta.2"
+snmalloc-rs = "0.2.27"
+atom-ir = { path = "../atom-ir" }
 atom-runtime = { path = "../atom-runtime" }
 atom-macros = { path = "../atom-macros" }

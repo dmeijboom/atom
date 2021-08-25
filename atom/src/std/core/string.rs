@@ -1,8 +1,8 @@
 use atom_macros::export;
-use atom_runtime::{Result, Value};
+use atom_runtime::{ExternalFn, Result, Value};
 
 use crate::std::core::array::Array;
-use crate::vm::{ExternalFn, Module};
+use crate::vm::Module;
 
 #[export]
 fn string_upper(this: &String) -> Result<String> {

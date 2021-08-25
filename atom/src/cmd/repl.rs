@@ -1,16 +1,17 @@
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::rc::Rc;
 
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
+use atom_ir::{Code, IR};
+use atom_runtime::{RuntimeError, Value};
+
 use crate::ast::{ClassDeclStmt, Expr, ExprStmt, FnDeclStmt, ModuleStmt, ReturnStmt, Stmt};
-use crate::compiler::{Code, Compiler, IR};
+use crate::compiler::Compiler;
 use crate::parser;
 use crate::utils::{display_error, Error};
-use crate::vm::{ClassDesc, FuncDesc, FuncSource, MethodDesc, Module, VM};
-use atom_runtime::{RuntimeError, Value};
+use crate::vm::{Module, VM};
 
 enum Action {
     Evaluate(Expr),
@@ -59,8 +60,8 @@ struct AtomEngine {
     imports: Vec<String>,
     module_paths: Vec<PathBuf>,
     vars: HashMap<String, Value>,
-    classes: HashMap<String, ClassDesc>,
-    functions: HashMap<String, FuncDesc>,
+    //classes: HashMap<String, ClassDesc>,
+    //functions: HashMap<String, FuncDesc>,
 }
 
 impl AtomEngine {
@@ -69,67 +70,67 @@ impl AtomEngine {
             imports: vec![],
             module_paths,
             vars: HashMap::new(),
-            classes: HashMap::new(),
-            functions: HashMap::new(),
+            //classes: HashMap::new(),
+            //functions: HashMap::new(),
         }
     }
 
     fn setup(&self, module: &mut Module) {
-        for (key, value) in self.vars.iter() {
-            module.globals.insert(key.clone(), value.clone());
-        }
+        //for (key, value) in self.vars.iter() {
+        //    module.globals.insert(key.clone(), value.clone());
+        //}
 
-        for (name, func) in self.functions.iter() {
-            module.func_map.insert(
-                name.clone(),
-                FuncDesc {
-                    public: func.public,
-                    source: match &func.source {
-                        FuncSource::Native(instructions) => {
-                            FuncSource::Native(Rc::clone(instructions))
-                        }
-                        FuncSource::External(external_fn) => FuncSource::External(*external_fn),
-                    },
-                    args: func.args.clone(),
-                    pos: func.pos.clone(),
-                },
-            );
-        }
+        //for (name, func) in self.functions.iter() {
+        //    module.func_map.insert(
+        //        name.clone(),
+        //        FuncDesc {
+        //            public: func.public,
+        //            source: match &func.source {
+        //                FuncSource::Native(instructions) => {
+        //                    FuncSource::Native(Rc::clone(instructions))
+        //                }
+        //                FuncSource::External(external_fn) => FuncSource::External(*external_fn),
+        //            },
+        //            args: func.args.clone(),
+        //            pos: func.pos.clone(),
+        //        },
+        //    );
+        //}
 
-        for (name, class) in self.classes.iter() {
-            module.class_map.insert(
-                name.clone(),
-                ClassDesc {
-                    public: class.public,
-                    methods: class
-                        .methods
-                        .iter()
-                        .map(|(key, method)| {
-                            (
-                                key.clone(),
-                                MethodDesc {
-                                    func: FuncDesc {
-                                        pos: method.func.pos.clone(),
-                                        public: method.func.public,
-                                        source: match &method.func.source {
-                                            FuncSource::Native(instructions) => {
-                                                FuncSource::Native(Rc::clone(instructions))
-                                            }
-                                            FuncSource::External(external_fn) => {
-                                                FuncSource::External(*external_fn)
-                                            }
-                                        },
-                                        args: method.func.args.clone(),
-                                    },
-                                    class_name: name.clone(),
-                                },
-                            )
-                        })
-                        .collect(),
-                    fields: class.fields.clone(),
-                },
-            );
-        }
+        //for (name, class) in self.classes.iter() {
+        //    module.class_map.insert(
+        //        name.clone(),
+        //        ClassDesc {
+        //            public: class.public,
+        //            methods: class
+        //                .methods
+        //                .iter()
+        //                .map(|(key, method)| {
+        //                    (
+        //                        key.clone(),
+        //                        MethodDesc {
+        //                            func: FuncDesc {
+        //                                pos: method.func.pos.clone(),
+        //                                public: method.func.public,
+        //                                source: match &method.func.source {
+        //                                    FuncSource::Native(instructions) => {
+        //                                        FuncSource::Native(Rc::clone(instructions))
+        //                                    }
+        //                                    FuncSource::External(external_fn) => {
+        //                                        FuncSource::External(*external_fn)
+        //                                    }
+        //                                },
+        //                                args: method.func.args.clone(),
+        //                            },
+        //                            class_name: name.clone(),
+        //                        },
+        //                    )
+        //                })
+        //                .collect(),
+        //            fields: class.fields.clone(),
+        //        },
+        //    );
+        //}
     }
 
     fn create_vm(&self) -> Result<VM, RuntimeError> {
@@ -146,7 +147,7 @@ impl AtomEngine {
         let compiler = Compiler::new(vec![stmt], true);
         let compiled_module = compiler.compile()?;
 
-        let mut module = Module::new(compiled_module, Some("stdin".into()));
+        let mut module = Module::new(compiled_module, "stdin".to_string());
 
         self.setup(&mut module);
 
@@ -186,11 +187,11 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
         Action::Evaluate(expr) => {
             let mut vm = engine.eval(expr)?;
 
-            if let Some(value) = vm.result() {
-                println!("{}", vm.fmt_value(&value));
-            } else {
-                println!("nil");
-            }
+            //if let Some(value) = vm.result() {
+            //    println!("{}", vm.fmt_value(&value));
+            //} else {
+            //    println!("nil");
+            //}
 
             Ok(())
         }
@@ -228,10 +229,10 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
             let class_name = class_decl_stmt.name.clone();
             let mut module = engine.create_module(Stmt::ClassDecl(class_decl_stmt))?;
 
-            engine.classes.insert(
-                class_name.clone(),
-                module.class_map.remove(&class_name).unwrap(),
-            );
+            //engine.classes.insert(
+            //    class_name.clone(),
+            //    module.class_map.remove(&class_name).unwrap(),
+            //);
 
             Ok(())
         }
@@ -239,10 +240,10 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
             let function_name = fn_decl_stmt.name.clone();
             let mut module = engine.create_module(Stmt::FnDecl(fn_decl_stmt))?;
 
-            engine.functions.insert(
-                function_name.clone(),
-                module.func_map.remove(&function_name).unwrap(),
-            );
+            //engine.functions.insert(
+            //    function_name.clone(),
+            //    module.func_map.remove(&function_name).unwrap(),
+            //);
 
             Ok(())
         }

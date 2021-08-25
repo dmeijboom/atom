@@ -1,6 +1,7 @@
 use std::fmt::{Debug, Display, Formatter};
+use std::ops::Range;
 
-use crate::ast::Pos;
+pub type Pos = Range<usize>;
 
 #[derive(Clone, PartialEq)]
 pub struct Label {

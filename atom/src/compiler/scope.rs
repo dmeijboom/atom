@@ -22,7 +22,7 @@ pub enum ScopeContext {
     IfElse,
     Unsafe,
     ForLoop(ForLoopMeta),
-    Function(Option<String>),
+    Function((String, bool)),
 }
 
 pub struct Scope {
@@ -156,10 +156,10 @@ impl Scope {
         None
     }
 
-    pub fn get_target(scope: &Rc<RefCell<Scope>>) -> Option<String> {
+    pub fn get_function_target(scope: &Rc<RefCell<Scope>>) -> Option<(String, bool)> {
         walk(scope, |scope| {
-            if let ScopeContext::Function(target) = &scope.context {
-                return target.clone();
+            if let ScopeContext::Function((target, is_method)) = &scope.context {
+                return Some((target.clone(), *is_method));
             }
 
             None

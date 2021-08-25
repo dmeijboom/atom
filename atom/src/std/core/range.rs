@@ -1,9 +1,9 @@
 use std::ops::Range;
 
 use atom_macros::export;
-use atom_runtime::Result;
+use atom_runtime::{ExternalFn, Result};
 
-use crate::vm::{ExternalFn, Module};
+use crate::vm::Module;
 
 #[export]
 fn range_start(this: &Range<i64>) -> Result<i64> {

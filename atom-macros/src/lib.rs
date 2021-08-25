@@ -113,9 +113,7 @@ fn parse_type_info(typedef: &Type) -> TypeInfo {
 
             TypeInfo::unknown()
         }
-        Type::Group(type_group) => {
-            panic!("GROUP={:?}", type_group);
-        }
+        Type::Group(_) => TypeInfo::unknown(),
         _ => TypeInfo::unknown(),
     }
 }
@@ -157,9 +155,9 @@ pub fn export(_: TokenStream, input: TokenStream) -> TokenStream {
                         // We don't support methods (yet?) so using 'this' as the name of an argument results in binding the receiver
                         let parse_arg = if arg_name.to_string() == "this" {
                             if type_info.kind == TypeKind::MutRef {
-                                quote! { let this = vm.get_fn_self_mut()?.try_into()?; }
+                                quote! { let this = __receiver.as_mut().unwrap().try_into()?; }
                             } else {
-                                quote! { let this = vm.get_fn_self()?.try_into()?; }
+                                quote! { let this = __receiver.as_ref().unwrap().try_into()?; }
                             }
                         } else {
                             arg_len += 1;
@@ -213,7 +211,7 @@ pub fn export(_: TokenStream, input: TokenStream) -> TokenStream {
                     #(#statements)*
                 }
 
-                fn #name(vm: &mut crate::vm::VM, mut __values: Vec<atom_runtime::Value>) -> atom_runtime::Result<Option<atom_runtime::Value>> {
+                fn #name(mut __receiver: Option<atom_runtime::Value>, mut __values: Vec<atom_runtime::Value>) -> atom_runtime::Result<Option<atom_runtime::Value>> {
                     use std::convert::TryInto;
 
                     if __values.len() != #arg_len {

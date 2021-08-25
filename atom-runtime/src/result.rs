@@ -2,9 +2,11 @@ use std::error::Error;
 use std::fmt;
 use std::ops::Range;
 
+use super::origin::Origin;
+
 #[derive(Debug, PartialEq)]
 pub struct Trace {
-    pub pos: Range<usize>,
+    pub origin: Origin,
     pub target: String,
 }
 

@@ -6,14 +6,15 @@ use std::rc::Rc;
 
 use indexmap::map::IndexMap;
 
+use atom_ir::{Code, Label, IR};
+
 use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt, InterfaceDeclStmt, Literal,
     LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
 };
-use crate::compiler::ir::Code;
 use crate::compiler::module::{Class, Field, Interface};
 use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
-use crate::compiler::{Func, FuncArg, Label, Module, IR};
+use crate::compiler::{Func, FuncArg, Module};
 
 #[derive(Debug, PartialEq)]
 pub struct CompileError {
@@ -251,9 +252,21 @@ impl Compiler {
                     ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
                 } else {
                     let is_target = || {
-                        if let Expr::Ident(ident_expr) = &call_expr.callee {
-                            if let Some(target) = Scope::get_target(&self.scope) {
-                                return target == ident_expr.name;
+                        if let Some((target, is_method)) = Scope::get_function_target(&self.scope) {
+                            if !is_method {
+                                if let Expr::Ident(ident_expr) = &call_expr.callee {
+                                    return ident_expr.name == target;
+                                }
+
+                                // @TODO: Support tail calls for methods
+                                //if is_method {
+                                //    if let Expr::Member(member_expr) = &call_expr.callee {
+                                //        if let Expr::Ident(ident_expr) = &member_expr.object {
+                                //            return ident_expr.name == "this"
+                                //                && member_expr.member == target;
+                                //        }
+                                //    }
+                                //}
                             }
                         }
 
@@ -774,11 +787,7 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
-        self.enter_scope(ScopeContext::Function(if is_method {
-            None
-        } else {
-            Some(fn_decl.name.clone())
-        }));
+        self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
             self.set_local(arg.name.clone(), false)?;

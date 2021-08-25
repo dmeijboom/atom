@@ -1,7 +1,7 @@
 use atom_macros::export;
-use atom_runtime::Result;
+use atom_runtime::{ExternalFn, Result};
 
-use crate::vm::{ExternalFn, Module};
+use crate::vm::Module;
 
 #[export]
 fn float_floor(this: &f64) -> Result<f64> {

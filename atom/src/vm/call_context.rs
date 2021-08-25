@@ -1,34 +1,56 @@
 use std::collections::HashMap;
+use std::fmt::{Display, Formatter};
 
 use wyhash2::WyHash;
 
-use crate::ast::Pos;
-use crate::vm::ModuleCache;
-use atom_runtime::{Result, RuntimeError, Trace, TypeId, Value};
+use atom_runtime::{AtomRef, Fn, Method, Origin, Result, RuntimeError, Trace, Value};
 
-#[derive(Clone)]
-pub struct Target {
-    pub type_id: TypeId,
-    pub module_id: usize,
-    pub method_id: Option<usize>,
+pub enum Target {
+    Fn(AtomRef<Fn>),
+    Method(AtomRef<Method>),
+}
+
+impl Target {
+    pub fn origin(&self) -> &Origin {
+        match self {
+            Target::Fn(func) => &func.origin,
+            Target::Method(method) => &method.func.origin,
+        }
+    }
+}
+
+impl Display for Target {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Target::Fn(func) => write!(f, "{}", func.as_ref()),
+            Target::Method(method) => write!(f, "{}", method.as_ref()),
+        }
+    }
+}
+
+impl Clone for Target {
+    fn clone(&self) -> Self {
+        match self {
+            Target::Fn(func) => Target::Fn(AtomRef::clone(func)),
+            Target::Method(method) => Target::Method(AtomRef::clone(method)),
+        }
+    }
 }
 
 pub struct CallContext {
-    pub pos: Pos,
     pub target: Target,
+    pub receiver: Option<Value>,
     pub locals: Vec<Value>,
-    pub this: Option<Value>,
     pub named_locals: HashMap<String, Value, WyHash>,
 }
 
 impl CallContext {
-    pub fn new(pos: Pos, target: Target, this: Option<Value>) -> Self {
+    pub fn new(target: Target, receiver: Option<Value>, locals: Vec<Value>) -> Self {
         Self {
-            pos,
-            this,
             target,
+            receiver,
+            locals,
             named_locals: HashMap::with_hasher(WyHash::with_seed(0)),
-            locals: vec![],
         }
     }
 }
@@ -70,35 +92,15 @@ impl CallStack {
         self.data.last()
     }
 
-    pub fn rewind(&mut self, module_cache: &ModuleCache) -> Vec<Trace> {
+    pub fn rewind(&mut self) -> Vec<Trace> {
         let mut stack_trace = vec![];
 
         while !self.data.is_empty() {
             let call_context = self.data.remove(0);
 
             stack_trace.push(Trace {
-                pos: call_context.pos.clone(),
-                target: match call_context.target.method_id {
-                    Some(id) => {
-                        if let Ok(class) = module_cache
-                            .lookup_type_by_id(call_context.target.type_id)
-                            .and_then(|t| t.try_as_class())
-                        {
-                            if let Some((method_name, _)) = class.methods.get_index(id) {
-                                format!(
-                                    "{}.{}",
-                                    module_cache.fmt_type(call_context.target.type_id),
-                                    method_name
-                                )
-                            } else {
-                                "!".to_string()
-                            }
-                        } else {
-                            "!".to_string()
-                        }
-                    }
-                    None => module_cache.fmt_type(call_context.target.type_id),
-                },
+                origin: call_context.target.origin().clone(),
+                target: format!("{}", call_context.target),
             });
         }
 

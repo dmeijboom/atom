@@ -1,12 +1,14 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
 use std::convert::TryInto;
-use std::fs;
+use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::ops::Range;
-use std::rc::Rc;
 
-use crate::RuntimeError;
+use strum_macros::EnumIter;
+
+use crate::class::Class;
+use crate::r#fn::Fn;
+use crate::{Interface, Method, Object, RuntimeError};
 
 use super::atom_ref::AtomRef;
 
@@ -21,6 +23,18 @@ macro_rules! map_ref {
         $value.$method()
     };
     (Object, $value:expr, $method:ident) => {
+        $value.$method()
+    };
+    (Fn, $value:expr, $method:ident) => {
+        $value.$method()
+    };
+    (Class, $value:expr, $method:ident) => {
+        $value.$method()
+    };
+    (Interface, $value:expr, $method:ident) => {
+        $value.$method()
+    };
+    (Method, $value:expr, $method:ident) => {
         $value.$method()
     };
     (String, $value:expr, $method:ident) => {
@@ -115,6 +129,18 @@ macro_rules! make {
     (Object, $value:expr) => {
         AtomRef::new($value)
     };
+    (Interface, $value:expr) => {
+        AtomRef::new($value)
+    };
+    (Fn, $value:expr) => {
+        AtomRef::new($value)
+    };
+    (Class, $value:expr) => {
+        AtomRef::new($value)
+    };
+    (Method, $value:expr) => {
+        AtomRef::new($value)
+    };
     (String, $value:expr) => {
         AtomRef::new($value)
     };
@@ -134,20 +160,29 @@ macro_rules! impl_from {
     };
 }
 
-macro_rules! impl_all {
-    ($(($atom_type:ident, $rust_type:ty)),+) => {
-        $(impl_all!($atom_type, $rust_type);)*
+macro_rules! impl_type {
+    ($atom_type:ident, $rust_type:ty, from) => {
+        impl_from!($atom_type, $rust_type);
     };
 
-    ($atom_type:ident, $rust_type:ty) => {
-        impl_from!($atom_type, $rust_type);
+    ($atom_type:ident, $rust_type:ty, try_into) => {
         impl_try_into!($atom_type, $rust_type);
+    };
+
+    ($atom_type:ident, $rust_type:ty, try_into_ref) => {
         impl_try_into!(& $atom_type, $rust_type);
+    };
+
+    ($atom_type:ident, $rust_type:ty, try_into_mut) => {
         impl_try_into!(&mut $atom_type, $rust_type);
+    };
+
+    ($atom_type:ident, $rust_type:ty, [$($op:ident) +]) => {
+        $(impl_type!($atom_type, $rust_type, $op);)*
     };
 }
 
-#[derive(Clone, Copy, PartialEq)]
+#[derive(Clone, Copy, PartialEq, Eq, EnumIter)]
 pub enum ValueType {
     Int,
     Float,
@@ -157,133 +192,80 @@ pub enum ValueType {
     Option,
     Range,
     String,
-    Type,
+    Fn,
+    Class,
     Method,
+    Interface,
     Object,
     Array,
     Map,
     Ref,
 }
 
+impl Hash for ValueType {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        state.write_u8(match self {
+            ValueType::Int => 0,
+            ValueType::Float => 1,
+            ValueType::Char => 2,
+            ValueType::Byte => 3,
+            ValueType::Bool => 4,
+            ValueType::Option => 5,
+            ValueType::Range => 6,
+            ValueType::String => 7,
+            ValueType::Fn => 8,
+            ValueType::Class => 9,
+            ValueType::Method => 10,
+            ValueType::Interface => 11,
+            ValueType::Object => 12,
+            ValueType::Array => 13,
+            ValueType::Map => 14,
+            ValueType::Ref => 15,
+        });
+    }
+}
+
 impl ValueType {
+    pub fn index(&self) -> usize {
+        match self {
+            Self::Int => 0,
+            Self::Float => 1,
+            Self::Char => 2,
+            Self::Byte => 3,
+            Self::Bool => 4,
+            Self::Option => 5,
+            Self::Range => 6,
+            Self::String => 7,
+            Self::Fn => 8,
+            Self::Class => 9,
+            Self::Method => 10,
+            Self::Interface => 11,
+            Self::Object => 12,
+            Self::Array => 13,
+            Self::Map => 14,
+            Self::Ref => 15,
+        }
+    }
+
     pub fn name(&self) -> &str {
         match self {
-            ValueType::Int => "Int",
-            ValueType::Float => "Float",
-            ValueType::Char => "Char",
-            ValueType::Byte => "Byte",
-            ValueType::Bool => "Bool",
-            ValueType::Option => "Option",
-            ValueType::Range => "Range",
-            ValueType::String => "String",
-            ValueType::Type => "Type",
-            ValueType::Method => "Method",
-            ValueType::Object => "Object",
-            ValueType::Map => "Map",
-            ValueType::Array => "Array",
-            ValueType::Ref => "Ref",
+            Self::Int => "Int",
+            Self::Float => "Float",
+            Self::Char => "Char",
+            Self::Byte => "Byte",
+            Self::Bool => "Bool",
+            Self::Option => "Option",
+            Self::Range => "Range",
+            Self::String => "String",
+            Self::Fn => "Fn",
+            Self::Class => "Class",
+            Self::Method => "Method",
+            Self::Object => "Object",
+            Self::Interface => "Interface",
+            Self::Map => "Map",
+            Self::Array => "Array",
+            Self::Ref => "Ref",
         }
-    }
-}
-
-pub type TypeId = usize;
-
-#[derive(Debug, Clone)]
-pub struct Method {
-    pub id: usize,
-    pub value: Value,
-    pub class_id: TypeId,
-}
-
-impl Eq for Method {}
-
-impl PartialEq for Method {
-    fn eq(&self, other: &Self) -> bool {
-        self.id == other.id && self.class_id == other.class_id
-    }
-}
-
-impl Hash for Method {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.id.hash(state);
-        self.class_id.hash(state);
-    }
-
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
-    {
-        for item in data {
-            item.hash(state);
-        }
-    }
-}
-
-#[derive(Debug, Clone, PartialEq, Hash, Eq)]
-pub struct FieldDesc {
-    pub mutable: bool,
-}
-
-#[derive(Debug, Clone)]
-pub enum Data {
-    File(Rc<RefCell<fs::File>>),
-}
-
-impl Hash for Data {
-    fn hash<H: Hasher>(&self, _: &mut H) {}
-    fn hash_slice<H: Hasher>(_: &[Self], _: &mut H)
-    where
-        Self: Sized,
-    {
-    }
-}
-
-impl PartialEq<Self> for Data {
-    fn eq(&self, _: &Self) -> bool {
-        true
-    }
-}
-
-impl Eq for Data {}
-
-#[derive(Clone, Debug, PartialEq, Hash, Eq)]
-pub struct Object {
-    pub class: TypeId,
-    pub data: Option<Data>,
-    fields: Vec<Value>,
-}
-
-impl Object {
-    pub fn new(class: TypeId, fields: Vec<Value>) -> Self {
-        Self {
-            class,
-            fields,
-            data: None,
-        }
-    }
-
-    pub fn with_data(mut self, data: Data) -> Self {
-        self.data = Some(data);
-
-        self
-    }
-
-    pub fn get_field(&self, index: usize) -> Option<&Value> {
-        self.fields.get(index)
-    }
-
-    pub fn get_field_mut(&mut self, index: usize) -> Option<&mut Value> {
-        self.fields.get_mut(index)
-    }
-
-    pub fn set_field_value(&mut self, index: usize, value: Value) -> bool {
-        if let Some(field) = self.get_field_mut(index) {
-            *field = value;
-
-            return true;
-        }
-
-        false
     }
 }
 
@@ -295,31 +277,33 @@ pub enum Value {
     Char(char),
     Byte(u8),
     Bool(bool),
-    Type(TypeId),
     Ref(AtomRef<Value>),
     Range(Range<i64>),
-    Option(Option<Box<Value>>),
-    Method(Box<Method>),
+    Fn(AtomRef<Fn>),
+    Class(AtomRef<Class>),
+    Interface(AtomRef<Interface>),
+    Method(AtomRef<Method>),
     String(AtomRef<String>),
     Object(AtomRef<Object>),
     Array(AtomRef<Vec<Value>>),
+    Option(Option<Box<Value>>),
     Map(AtomRef<HashMap<Value, Value>>),
 }
 
-impl_all!(
-    (Char, char),
-    (Byte, u8),
-    (Bool, bool),
-    (Type, TypeId),
-    (Range, Range<i64>),
-    (String, String),
-    (Array, Vec<Value>),
-    (Map, HashMap<Value, Value>)
-);
-
-impl_from!(Int, i64);
-impl_try_into!(&Int, i64);
-impl_try_into!(&mut Int, i64);
+impl_type!(Fn, Fn, [from try_into_ref try_into_mut]);
+impl_type!(Class, Class, [from try_into_ref try_into_mut]);
+impl_type!(Method, Method, [from try_into_ref try_into_mut]);
+impl_type!(Interface, Interface, [from try_into_ref try_into_mut]);
+impl_type!(Int, i64, [from try_into_ref try_into_mut]);
+impl_type!(Float, f64, [from try_into_ref try_into_mut]);
+impl_type!(Char, char, [from try_into try_into_ref try_into_mut]);
+impl_type!(Byte, u8, [from try_into try_into_ref try_into_mut]);
+impl_type!(Bool, bool, [from try_into try_into_ref try_into_mut]);
+impl_type!(Range, Range<i64>, [from try_into try_into_ref try_into_mut]);
+impl_type!(String, String, [from try_into try_into_ref try_into_mut]);
+impl_type!(Array, Vec<Value>, [from try_into try_into_ref try_into_mut]);
+impl_type!(Map, HashMap<Value, Value>, [from try_into try_into_ref try_into_mut]);
+impl_type!(Option, Option<Box<Value>>, [try_into try_into_ref try_into_mut]);
 
 impl TryInto<i64> for Value {
     type Error = RuntimeError;
@@ -338,10 +322,6 @@ impl TryInto<i64> for Value {
         }
     }
 }
-
-impl_from!(Float, f64);
-impl_try_into!(&Float, f64);
-impl_try_into!(&mut Float, f64);
 
 impl TryInto<f64> for Value {
     type Error = RuntimeError;
@@ -367,31 +347,6 @@ where
     }
 }
 
-impl_try_into!(Option, Option<Box<Value>>);
-impl_try_into!(&Option, Option<Box<Value>>);
-impl_try_into!(&mut Option, Option<Box<Value>>);
-
-impl From<Method> for Value {
-    fn from(method: Method) -> Self {
-        Value::Method(Box::new(method))
-    }
-}
-
-impl TryInto<Method> for Value {
-    type Error = RuntimeError;
-
-    fn try_into(self) -> Result<Method, Self::Error> {
-        if let Value::Method(method) = self {
-            return Ok(*method);
-        }
-
-        Err(RuntimeError::new(format!(
-            "TypeError: invalid type '{}', expected: Method",
-            self.get_type().name()
-        )))
-    }
-}
-
 impl PartialEq for Value {
     fn eq(&self, other: &Self) -> bool {
         eq!(Int, self, other);
@@ -403,8 +358,10 @@ impl PartialEq for Value {
         eq!(Ref, self, other);
         eq!(Range, self, other);
         eq!(String, self, other);
-        eq!(Type, self, other);
+        eq!(Fn, self, other);
+        eq!(Class, self, other);
         eq!(Method, self, other);
+        eq!(Interface, self, other);
         eq!(Object, self, other);
         eq!(Array, self, other);
         eq!(Map, self, other);
@@ -426,8 +383,10 @@ impl Hash for Value {
             Value::Ref(val) => val.as_ref().hash(state),
             Value::Range(val) => val.hash(state),
             Value::String(val) => val.as_ref().hash(state),
-            Value::Type(type_id) => type_id.hash(state),
-            Value::Method(method) => method.hash(state),
+            Value::Fn(atom_fn) => atom_fn.as_ref().hash(state),
+            Value::Class(class) => class.as_ref().hash(state),
+            Value::Method(method) => method.as_ref().hash(state),
+            Value::Interface(iface) => iface.as_ref().hash(state),
             Value::Object(object) => object.as_ref().hash(state),
             Value::Array(val) => val.as_ref().hash(state),
             Value::Map(map) => {
@@ -436,15 +395,6 @@ impl Hash for Value {
                     value.hash(state);
                 }
             }
-        }
-    }
-
-    fn hash_slice<H: Hasher>(data: &[Self], state: &mut H)
-    where
-        Self: Sized,
-    {
-        for item in data {
-            item.hash(state);
         }
     }
 }
@@ -461,9 +411,11 @@ impl Clone for Value {
             Value::Option(val) => Value::Option(val.clone()),
             Value::Ref(val) => Value::Ref(AtomRef::clone(val)),
             Value::Range(val) => Value::Range(val.clone()),
+            Value::Fn(atom_fn) => Value::Fn(atom_fn.clone()),
+            Value::Class(class) => Value::Class(class.clone()),
+            Value::Interface(iface) => Value::Interface(iface.clone()),
+            Value::Method(method) => Value::Method(method.clone()),
             Value::String(val) => Value::String(AtomRef::clone(val)),
-            Value::Type(type_id) => Value::Type(*type_id),
-            Value::Method(id) => Value::Method(id.clone()),
             Value::Object(val) => Value::Object(AtomRef::clone(val)),
             Value::Array(val) => Value::Array(AtomRef::clone(val)),
             Value::Map(val) => Value::Map(AtomRef::clone(val)),
@@ -488,7 +440,9 @@ impl Value {
             Value::Ref(_) => ValueType::Ref,
             Value::Range(_) => ValueType::Range,
             Value::String(_) => ValueType::String,
-            Value::Type(_) => ValueType::Type,
+            Value::Fn(_) => ValueType::Fn,
+            Value::Class(_) => ValueType::Class,
+            Value::Interface(_) => ValueType::Interface,
             Value::Method(_) => ValueType::Method,
             Value::Object(_) => ValueType::Object,
             Value::Array(_) => ValueType::Array,
@@ -498,3 +452,69 @@ impl Value {
 }
 
 impl Eq for Value {}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Void => write!(f, "{}", "!"),
+            Self::Int(val) => write!(f, "{}", val),
+            Self::Float(val) => write!(f, "{}", val),
+            Self::Char(val) => write!(f, "{}", val),
+            Self::Byte(val) => write!(f, "{}", val),
+            Self::Bool(val) => write!(f, "{}", val),
+            Self::Option(val) => match val {
+                None => write!(f, "std.core.Option(None)"),
+                Some(val) => write!(f, "std.core.Option({})", val),
+            },
+            Self::Ref(value) => {
+                write!(f, "*{}", value.as_ref())
+            }
+            Self::Range(val) => write!(f, "{}..{}", val.start, val.end),
+            Self::String(val) => write!(f, "{}", val.as_ref()),
+            Self::Fn(func) => write!(f, "{}(...)", func.as_ref()),
+            Self::Interface(interface) => write!(f, "{}", interface.as_ref()),
+            Self::Class(class) => write!(f, "{}", class.as_ref()),
+            Self::Method(method) => write!(f, "{}(...)", method.as_ref()),
+            Self::Object(object) => {
+                let class = object.as_ref().class.as_ref();
+
+                write!(
+                    f,
+                    "{}({})",
+                    class,
+                    class
+                        .fields
+                        .iter()
+                        .enumerate()
+                        .map(|(i, (key, field))| format!(
+                            "{}{}: {}",
+                            if field.public { "*" } else { "" },
+                            key,
+                            object.as_ref().get_field(i).unwrap(),
+                        ))
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                )
+            }
+            Self::Array(array) => write!(
+                f,
+                "[{}]",
+                array
+                    .as_ref()
+                    .iter()
+                    .map(|item| format!("{}", item))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+            Self::Map(map) => write!(
+                f,
+                "{{{}}}",
+                map.as_ref()
+                    .iter()
+                    .map(|(key, value)| format!("{}: {}", key, value))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
+        }
+    }
+}

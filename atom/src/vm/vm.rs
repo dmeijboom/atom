@@ -7,21 +7,24 @@ use std::path::Path;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
+use strum::IntoEnumIterator;
+use wyhash2::WyHash;
 
-use atom_runtime::{AtomRef, Method, Object, Result, RuntimeError, TypeId, Value};
+use atom_ir::{Code, Label, IR};
+use atom_runtime::{
+    AtomRef, Class, Fn, FnArg, FnPtr, Interface, Method, Object, Result, RuntimeError, Value,
+    ValueType,
+};
 
-use crate::compiler::{Code, Label, IR};
 use crate::std::core::DEFAULT_IMPORTS;
 use crate::std::get_middleware;
 use crate::utils;
 use crate::utils::Error;
-use crate::vm::call_context::{CallContext, Target};
-use crate::vm::module_cache::{
-    ArgumentDesc, FuncSource, InterfaceDesc, Module, ModuleCache, ModuleId, TypeDesc,
-};
-use crate::vm::ClassDesc;
+use crate::vm::module::ModuleId;
 
-use super::call_context::CallStack;
+use super::call_context::{CallContext, CallStack, Target};
+use super::module::Module;
+use super::module_cache::ModuleCache;
 use super::stack::Stack;
 
 macro_rules! impl_op {
@@ -115,6 +118,12 @@ fn setup_std(vm: &mut VM) -> Result<()> {
 
     vm.register_module(module)?;
 
+    for value_type in ValueType::iter() {
+        if let Ok(class) = vm.module_cache.get_class("std.core", value_type.name()) {
+            vm.type_classes.insert(value_type, class);
+        }
+    }
+
     Ok(())
 }
 
@@ -122,6 +131,7 @@ pub struct VM {
     stack: Stack,
     call_stack: CallStack,
     module_cache: ModuleCache,
+    type_classes: HashMap<ValueType, AtomRef<Class>, WyHash>,
 }
 
 impl VM {
@@ -130,6 +140,7 @@ impl VM {
             stack: Stack::new(),
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
+            type_classes: HashMap::with_capacity_and_hasher(16, WyHash::with_seed(1)),
         };
 
         setup_std(&mut vm)?;
@@ -163,39 +174,21 @@ impl VM {
         Ok(())
     }
 
-    fn get_class_type_id(&self, value: &Value) -> Result<TypeId> {
-        match &value {
-            Value::Object(object) => Ok(object.as_ref().class),
-            _ => self
-                .module_cache
-                .lookup_type("std.core", value.get_type().name())
-                .map(|type_val| type_val.id),
-        }
+    fn get_class(&self, value: &Value) -> Result<AtomRef<Class>> {
+        Ok(match &value {
+            Value::Object(object) => AtomRef::clone(&object.class),
+            _ => {
+                if let Some(class) = self.type_classes.get(&value.get_type()) {
+                    return Ok(AtomRef::clone(class));
+                }
+
+                self.module_cache
+                    .get_class("std.core", value.get_type().name())?
+            }
+        })
     }
 
-    pub fn get_type_id(&self, module: &str, name: &str) -> Result<TypeId> {
-        Ok(self.module_cache.lookup_type(module, name)?.id)
-    }
-
-    pub fn get_fn_self(&mut self) -> Result<&Value> {
-        if let Ok(context) = self.call_stack.current() {
-            context.this.as_ref()
-        } else {
-            None
-        }
-        .ok_or_else(|| RuntimeError::new("unable to get 'this' outside method call".to_string()))
-    }
-
-    pub fn get_fn_self_mut(&mut self) -> Result<&mut Value> {
-        if let Ok(context) = self.call_stack.current_mut() {
-            context.this.as_mut()
-        } else {
-            None
-        }
-        .ok_or_else(|| RuntimeError::new("unable to get 'this' outside method call".to_string()))
-    }
-
-    fn validate_class(&self, class: &ClassDesc, interface: &InterfaceDesc) -> bool {
+    fn validate_class(&self, class: &Class, interface: &Interface) -> bool {
         for name in interface.functions.iter() {
             if !class.methods.contains_key(name) {
                 return false;
@@ -228,12 +221,14 @@ impl VM {
                     RuntimeError::new(format!("failed to import module '{}': {}", module_name, e))
                 })?;
 
-                let module = utils::parse_and_compile(&source, Some(path)).map_err(|e| {
-                    RuntimeError::new(format!(
-                        "failed to import module '{}': {:?}",
-                        module_name, e
-                    ))
-                })?;
+                let module =
+                    utils::parse_and_compile(&source, path.to_str().map(|s| s.to_string()))
+                        .map_err(|e| {
+                            RuntimeError::new(format!(
+                                "failed to import module '{}': {:?}",
+                                module_name, e
+                            ))
+                        })?;
 
                 self.register_module(module)?;
             } else {
@@ -244,29 +239,31 @@ impl VM {
             }
         }
 
-        if let Ok(type_val) = self.module_cache.lookup_type(&module_name, name) {
-            let (type_name, is_public) = match &type_val.desc {
-                TypeDesc::Class(class_desc) => ("Class", class_desc.public),
-                TypeDesc::Interface(interface_desc) => ("Interface", interface_desc.public),
-                TypeDesc::Function(fn_desc) => ("Fn", fn_desc.public),
-            };
+        let current_module = self.module_cache.get_module(&module_name)?;
+        let (type_name, is_public, value) = if let Some(func) = current_module.funcs.get(name) {
+            ("Fn", func.public, Value::Fn(AtomRef::clone(func)))
+        } else if let Some(interface) = current_module.interfaces.get(name) {
+            (
+                "interface",
+                interface.public,
+                Value::Interface(AtomRef::clone(interface)),
+            )
+        } else if let Some(class) = current_module.classes.get(name) {
+            ("class", class.public, Value::Class(AtomRef::clone(class)))
+        } else {
+            return Err(RuntimeError::new(format!("unable to import: {}", path)));
+        };
 
-            if !is_public {
-                return Err(RuntimeError::new(format!(
-                    "unable to import private {}: {}'",
-                    type_name,
-                    self.module_cache.fmt_type(type_val.id),
-                )));
-            }
-
-            module
-                .globals
-                .insert(name.to_string(), Value::Type(type_val.id));
-
-            return Ok(());
+        if !is_public {
+            return Err(RuntimeError::new(format!(
+                "unable to import private {}: {}",
+                type_name, name,
+            )));
         }
 
-        Err(RuntimeError::new(format!("unable to import: {}", path)))
+        module.globals.insert(name.to_string(), value);
+
+        Ok(())
     }
 
     fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
@@ -298,70 +295,49 @@ impl VM {
             .pop()
             .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
-        if let Value::Type(id) = value {
-            let type_val = self.module_cache.lookup_type_by_id(id)?;
-
-            if let TypeDesc::Function(_) = &type_val.desc {
-                return self.eval_function_call(id, keywords, arg_count);
-            }
-
-            if let TypeDesc::Class(_) = &type_val.desc {
-                return self.eval_class_init(id, keywords, arg_count);
-            }
+        match value {
+            Value::Fn(func) => self.eval_function_call(func, keywords, arg_count),
+            Value::Class(class) => self.eval_class_init(class, keywords, arg_count),
+            Value::Method(method) => self.eval_method_call(method, keywords, arg_count),
+            _ => Err(RuntimeError::new(format!(
+                "type '{}' is not callable",
+                value.get_type().name()
+            ))),
         }
-
-        if let Value::Method(method) = value {
-            return self.eval_method_call(&method, keywords, arg_count);
-        }
-
-        Err(RuntimeError::new(format!(
-            "type '{}' is not callable",
-            value.get_type().name()
-        )))
     }
 
     fn eval_function_call(
         &mut self,
-        id: TypeId,
+        func: AtomRef<Fn>,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let type_val = self.module_cache.lookup_type_by_id(id)?;
-        let func = type_val.try_as_func()?;
-        let target = Target {
-            type_id: type_val.id,
-            module_id: type_val.module_id,
-            method_id: None,
-        };
+        let return_value = self.eval_func(Target::Fn(func), keywords, arg_count)?;
 
-        self.call_stack
-            .push(CallContext::new(func.pos.clone(), target.clone(), None));
-
-        let return_value = self.eval_func(&target, keywords, arg_count)?;
-
-        self.call_stack.pop();
         self.stack.push(return_value);
 
         Ok(())
     }
 
-    fn eval_class_init(&mut self, id: TypeId, keywords: &[String], arg_count: usize) -> Result<()> {
-        let type_val = self.module_cache.lookup_type_by_id(id)?;
-        let class_desc = type_val.try_as_class()?;
-
+    fn eval_class_init(
+        &mut self,
+        class: AtomRef<Class>,
+        keywords: &[String],
+        arg_count: usize,
+    ) -> Result<()> {
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(format!(
                 "unable to initialize '{}' with non-keyword arguments",
-                self.module_cache.fmt_type(type_val.id),
+                class.as_ref()
             )));
         }
 
         // Verify if there aren't any unknown field names
         for keyword in keywords {
-            if !class_desc.fields.contains_key(keyword) {
+            if !class.fields.contains_key(keyword) {
                 return Err(RuntimeError::new(format!(
                     "unable to initialize '{}' with unknown field: {}",
-                    self.module_cache.fmt_type(type_val.id),
+                    class.as_ref(),
                     keyword
                 )));
             }
@@ -370,11 +346,11 @@ impl VM {
         let mut is_sorted = true;
 
         // Verify if all fields are initialized
-        for (i, (field_name, _)) in class_desc.fields.iter().enumerate() {
+        for (i, (field_name, _)) in class.fields.iter().enumerate() {
             if !keywords.contains(field_name) {
                 return Err(RuntimeError::new(format!(
                     "unable to initialize '{}' without field: {}",
-                    self.module_cache.fmt_type(type_val.id),
+                    class.as_ref(),
                     field_name,
                 )));
             }
@@ -388,8 +364,8 @@ impl VM {
             self.stack.pop_many(arg_count)?
         } else {
             let mut i = 0;
-            let mut fields = self.stack.pop_many_t(class_desc.fields.len(), |value| {
-                let index = class_desc.fields.get_index_of(&keywords[i]).unwrap();
+            let mut fields = self.stack.pop_many_t(class.fields.len(), |value| {
+                let index = class.fields.get_index_of(&keywords[i]).unwrap();
 
                 i += 1;
 
@@ -400,38 +376,20 @@ impl VM {
             fields.into_iter().map(|(_, value)| value).collect()
         };
 
-        self.stack.push(Value::Object(AtomRef::new(Object::new(
-            type_val.id,
-            fields,
-        ))));
+        self.stack
+            .push(Value::Object(AtomRef::new(Object::new(class, fields))));
 
         Ok(())
     }
 
     fn eval_method_call(
         &mut self,
-        method: &Method,
+        method: AtomRef<Method>,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<()> {
-        let type_val = self.module_cache.lookup_type_by_id(method.class_id)?;
-        let class_desc = type_val.try_as_class()?;
-        let method_desc = class_desc.get_method(method.id)?;
-        let target = Target {
-            type_id: method.class_id,
-            module_id: type_val.module_id,
-            method_id: Some(method.id),
-        };
+        let return_value = self.eval_func(Target::Method(method), keywords, arg_count)?;
 
-        self.call_stack.push(CallContext::new(
-            method_desc.func.pos.clone(),
-            target.clone(),
-            Some(method.value.clone()),
-        ));
-
-        let return_value = self.eval_func(&target, keywords, arg_count)?;
-
-        self.call_stack.pop();
         self.stack.push(return_value);
 
         Ok(())
@@ -441,7 +399,7 @@ impl VM {
         &self,
         mut values: Vec<Value>,
         keywords: &[String],
-        args: &IndexMap<String, ArgumentDesc>,
+        args: &IndexMap<String, FnArg>,
     ) -> Result<BTreeMap<usize, Value>> {
         let mut ordered_values = BTreeMap::new();
 
@@ -467,77 +425,76 @@ impl VM {
 
     fn eval_func(
         &mut self,
-        target: &Target,
+        target: Target,
         keywords: &[String],
         arg_count: usize,
     ) -> Result<Value> {
-        let func = match target.method_id {
-            Some(id) => {
-                let class_desc = self
-                    .module_cache
-                    .lookup_type_by_id(target.type_id)?
-                    .try_as_class()?;
-
-                &class_desc.get_method(id)?.func
-            }
-            None => self
-                .module_cache
-                .lookup_type_by_id(target.type_id)?
-                .try_as_func()?,
+        let (func, receiver) = match target {
+            Target::Fn(ref func) => (func.as_ref(), None),
+            Target::Method(ref method) => (method.func.as_ref(), Some(method.receiver.clone())),
         };
 
-        match &func.source {
-            FuncSource::Native(source) => {
+        match &func.ptr {
+            FnPtr::Native(source) => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(format!(
                         "invalid argument count for target: {}(...) (expected {}, not {})",
-                        self.fmt_target(target),
+                        target,
                         func.args.len(),
                         arg_count,
                     )));
                 }
 
-                if keywords.is_empty() {
-                    self.call_stack.current_mut()?.locals = self.stack.pop_many(arg_count)?;
+                let locals = if keywords.is_empty() {
+                    self.stack.pop_many(arg_count)?
                 } else {
                     let unordered_values = self.stack.pop_many(arg_count)?;
-                    let values = self
-                        .prepare_args(unordered_values, keywords, &func.args)
+
+                    self.prepare_args(unordered_values, keywords, &func.args)
                         .map_err(|e| {
                             let message = e.message.clone();
-                            e.with_message(format!(
-                                "{} in target {}(...)",
-                                message,
-                                self.fmt_target(target),
-                            ))
+                            e.with_message(format!("{} in target {}(...)", message, target,))
                         })?
                         .into_values()
-                        .collect();
+                        .collect()
+                };
 
-                    self.call_stack.current_mut()?.locals = values;
-                }
+                self.call_stack
+                    .push(CallContext::new(target.clone(), receiver, locals));
 
                 let source = Rc::clone(source);
+                let module_id = self
+                    .module_cache
+                    .get_module_id(&target.origin().module_name)?;
 
-                if let Some(result) = self._eval(target.module_id, source)? {
+                if let Some(result) = self._eval(module_id, source)? {
+                    self.call_stack.pop();
+
                     return Ok(result);
                 }
             }
-            FuncSource::External(closure) => {
+            FnPtr::External(closure) => {
                 if !keywords.is_empty() {
                     return Err(RuntimeError::new(format!(
                         "unable to use keyword arguments in external target: {}(..)",
-                        self.fmt_target(target),
+                        target,
                     )));
                 }
 
+                self.call_stack
+                    .push(CallContext::new(target.clone(), None, vec![]));
+
                 let values = self.stack.pop_many(arg_count)?;
 
-                if let Some(return_value) = closure(self, values)? {
+                if let Some(return_value) = closure(receiver, values)? {
+                    self.call_stack.pop();
+
                     return Ok(return_value);
                 }
             }
         };
+
+        self.call_stack.pop();
 
         Ok(Value::Void)
     }
@@ -641,7 +598,7 @@ impl VM {
             .stack
             .pop_many(len)?
             .into_iter()
-            .map(|value| self.fmt_value(&value))
+            .map(|value| format!("{}", value))
             .collect::<String>();
 
         self.stack.push(Value::String(AtomRef::new(s)));
@@ -775,21 +732,18 @@ impl VM {
         let right = self.stack.pop()?;
         let left = self.stack.pop()?;
 
-        if let Value::Type(id) = right {
-            let type_val = self.module_cache.lookup_type_by_id(id)?;
+        if let Value::Class(right_class) = right {
+            let left_class = self.get_class(&left)?;
 
-            if let TypeDesc::Class(_) = type_val.desc {
-                let type_id = self.get_class_type_id(&left)?;
+            self.stack
+                .push(Value::Bool(left_class.as_ref() == right_class.as_ref()));
 
-                self.stack.push(Value::Bool(id == type_id));
-
-                return Ok(());
-            }
+            return Ok(());
         }
 
         Err(RuntimeError::new(format!(
             "unable to assert type with: {}",
-            self.fmt_value(&right),
+            right,
         )))
     }
 
@@ -802,36 +756,28 @@ impl VM {
     }
 
     fn eval_validate(&mut self) -> Result<()> {
-        let value = self.stack.pop()?;
+        let interface_value = self.stack.pop()?;
 
-        if let Value::Type(id) = &value {
-            let type_val = self.module_cache.lookup_type_by_id(*id)?;
+        if let Value::Interface(interface) = interface_value {
+            let value = self.stack.pop()?;
+            let class = self.get_class(&value)?;
 
-            if let Ok(interface) = type_val.try_as_interface() {
-                let value = self.stack.pop()?;
-                let class_id = self.get_class_type_id(&value)?;
-                let class = self
-                    .module_cache
-                    .lookup_type_by_id(class_id)?
-                    .try_as_class()?;
-
-                if !self.validate_class(class, interface) {
-                    return Err(RuntimeError::new(format!(
-                        "validation failed, class '{}' doesn't implement interface: {}",
-                        self.module_cache.fmt_type(class_id),
-                        self.module_cache.fmt_type(type_val.id),
-                    )));
-                }
-
-                self.stack.push(value);
-
-                return Ok(());
+            if !self.validate_class(&class, &interface) {
+                return Err(RuntimeError::new(format!(
+                    "validation failed, class '{}' doesn't implement interface: {}",
+                    class.as_ref(),
+                    interface.as_ref(),
+                )));
             }
+
+            self.stack.push(value);
+
+            return Ok(());
         }
 
         Err(RuntimeError::new(format!(
             "unable to validate non-interface: {}",
-            value.get_type().name()
+            interface_value.get_type().name()
         )))
     }
 
@@ -883,7 +829,7 @@ impl VM {
                     .try_into()
                     .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
 
-                if let Some(item) = array.as_ref().get(index as usize) {
+                if let Some(item) = array.get(index as usize) {
                     self.stack.push(item.clone());
 
                     return Ok(());
@@ -894,16 +840,15 @@ impl VM {
                 ))
             }
             Value::Map(map) => {
-                if let Some(item) = map.as_ref().get(&index) {
+                if let Some(item) = map.get(&index) {
                     self.stack.push(item.clone());
 
                     return Ok(());
                 }
 
-                Err(RuntimeError::new(format!(
-                    "index out of bounds: {}",
-                    self.fmt_value(&index)
-                )))
+                Err(RuntimeError::new(
+                    format!("index out of bounds: {}", index,),
+                ))
             }
             _ => Err(RuntimeError::new(format!(
                 "unable to index type: {}",
@@ -954,26 +899,26 @@ impl VM {
         member: &str,
         push_back: bool,
     ) -> Result<()> {
-        let value = self.stack.pop()?;
-        let class_id = self.get_class_type_id(&value)?;
-        let type_val = self.module_cache.lookup_type_by_id(class_id)?;
-        let desc = type_val.try_as_class()?;
+        let receiver = self.stack.pop()?;
+        let class = self.get_class(&receiver)?;
 
-        if let Some((index, _, field)) = desc.fields.get_full(member) {
-            if let Value::Object(object) = value {
-                if !field.public && module_id != type_val.module_id {
+        if let Some((index, _, field)) = class.fields.get_full(member) {
+            if let Value::Object(object) = receiver {
+                if !field.public
+                    && self.module_cache.get_module_name(module_id)? != &class.origin.module_name
+                {
                     return Err(RuntimeError::new(format!(
                         "unable to access private field '{}' of class: {}",
                         member,
-                        self.module_cache.fmt_type(class_id),
+                        class.as_ref()
                     )));
                 }
 
-                let field = object.as_ref().get_field(index).cloned().ok_or_else(|| {
+                let field = object.get_field(index).cloned().ok_or_else(|| {
                     RuntimeError::new(format!(
                         "unable to get unknown field '{}' of class: {}",
                         member,
-                        self.module_cache.fmt_type(class_id),
+                        class.as_ref()
                     ))
                 })?;
 
@@ -988,56 +933,53 @@ impl VM {
 
             return Err(RuntimeError::new(format!(
                 "unable to lookup field of type: {}",
-                value.get_type().name(),
+                receiver.get_type().name(),
             )));
         }
 
-        if let Some((method_id, _, method)) = desc.methods.get_full(member) {
-            if !method.func.public && module_id != type_val.module_id {
+        if let Some(func) = class.methods.get(member) {
+            if !func.public
+                && self.module_cache.get_module_name(module_id)? != &func.origin.module_name
+            {
                 return Err(RuntimeError::new(format!(
                     "unable to access private method '{}(...)' of class: {}",
                     member,
-                    self.module_cache.fmt_type(class_id),
+                    class.as_ref()
                 )));
             }
 
             if push_back {
-                self.stack.push(value.clone());
+                self.stack.push(receiver.clone());
             }
 
-            self.stack.push(Value::Method(
-                Method {
-                    value,
-                    id: method_id,
-                    class_id: type_val.id,
-                }
-                .into(),
-            ));
+            self.stack.push(Value::Method(AtomRef::new(Method {
+                receiver,
+                func: AtomRef::clone(func),
+                class,
+            })));
 
             return Ok(());
         }
 
         Err(RuntimeError::new(format!(
             "no such field or method '{}' for: {}",
-            member,
-            self.fmt_value(&value),
+            member, receiver,
         )))
     }
 
     fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
         let object = self.stack.pop()?;
-        let class_id = self.get_class_type_id(&object)?;
-
+        let class = self.get_class(&object)?;
         let value = self.stack.pop()?;
-        let type_val = self.module_cache.lookup_type_by_id(class_id)?;
-        let class_desc = type_val.try_as_class()?;
 
-        if let Some((index, _, field)) = class_desc.fields.get_full(member) {
-            if !field.public && module_id != type_val.module_id {
+        if let Some((index, _, field)) = class.fields.get_full(member) {
+            if !field.public
+                && self.module_cache.get_module_name(module_id)? != &class.origin.module_name
+            {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
                     member,
-                    self.module_cache.fmt_type(class_id)
+                    class.as_ref()
                 )));
             }
 
@@ -1045,7 +987,7 @@ impl VM {
                 return Err(RuntimeError::new(format!(
                     "unable to assign to immutable field '{}' of class: {}",
                     member,
-                    self.module_cache.fmt_type(class_id)
+                    class.as_ref()
                 )));
             }
 
@@ -1064,7 +1006,7 @@ impl VM {
         Err(RuntimeError::new(format!(
             "no such field '{}' for class: {}",
             member,
-            self.module_cache.fmt_type(class_id),
+            class.as_ref(),
         )))
     }
 
@@ -1090,7 +1032,7 @@ impl VM {
             RuntimeError::new("unable to load 'this' outside of a function".to_string())
         })?;
 
-        if let Some(this) = &context.this {
+        if let Some(this) = &context.receiver {
             self.stack.push(this.clone());
 
             return Ok(());
@@ -1112,7 +1054,7 @@ impl VM {
             }
         }
 
-        let current_module = self.module_cache.lookup_module_by_id(module_id)?;
+        let current_module = self.module_cache.get_module_by_id(module_id)?;
 
         if let Some(value) = current_module.globals.get(name).cloned() {
             self.stack.push(value);
@@ -1120,18 +1062,25 @@ impl VM {
             return Ok(());
         }
 
-        if let Some(typedef) = self.module_cache.lookup_module_type_id(module_id, name) {
-            self.stack.push(Value::Type(typedef));
-
-            return Ok(());
+        if let Some(func) = current_module.funcs.get(name) {
+            self.stack.push(Value::Fn(AtomRef::clone(func)));
+        } else if let Some(interface) = current_module.interfaces.get(name) {
+            self.stack.push(Value::Interface(AtomRef::clone(interface)));
+        } else if let Some(class) = current_module.classes.get(name) {
+            self.stack.push(Value::Class(AtomRef::clone(class)));
+        } else {
+            return Err(RuntimeError::new(format!("no such name: {}", name)));
         }
 
-        Err(RuntimeError::new(format!("no such name: {}", name)))
+        Ok(())
     }
 
     fn eval_load_target(&mut self) -> Result<()> {
         if let Some(context) = self.call_stack.last() {
-            self.stack.push(Value::Type(context.target.type_id));
+            self.stack.push(match &context.target {
+                Target::Fn(func) => Value::Fn(AtomRef::clone(func)),
+                Target::Method(method) => Value::Method(AtomRef::clone(&method)),
+            });
 
             return Ok(());
         }
@@ -1166,114 +1115,7 @@ impl VM {
     fn eval_raise(&mut self) -> Result<()> {
         let value = self.stack.pop()?;
 
-        Err(RuntimeError::new(self.fmt_value(&value)))
-    }
-
-    pub fn fmt_target(&self, target: &Target) -> String {
-        match target.method_id {
-            Some(id) => {
-                if let Ok(class) = self
-                    .module_cache
-                    .lookup_type_by_id(target.type_id)
-                    .and_then(|t| t.try_as_class())
-                {
-                    if let Some((method_name, _)) = class.methods.get_index(id) {
-                        return format!(
-                            "{}.{}",
-                            self.module_cache.fmt_type(target.type_id),
-                            method_name
-                        );
-                    }
-                }
-
-                "!".to_string()
-            }
-            None => self.module_cache.fmt_type(target.type_id),
-        }
-    }
-
-    pub fn fmt_value(&self, value: &Value) -> String {
-        match value {
-            Value::Void => "!".to_string(),
-            Value::Int(val) => format!("{}", val),
-            Value::Float(val) => format!("{}", val),
-            Value::Char(val) => format!("{}", val),
-            Value::Byte(val) => format!("{}", val),
-            Value::Bool(val) => format!("{}", val),
-            Value::Option(val) => match val {
-                None => "std.core.Option(None)".to_string(),
-                Some(val) => format!("std.core.Option({})", self.fmt_value(val)),
-            },
-            Value::Ref(value) => {
-                format!("*{}", self.fmt_value(value.as_ref()))
-            }
-            Value::Range(val) => format!("{}..{}", val.start, val.end),
-            Value::String(val) => val.as_ref().clone(),
-            Value::Type(id) => self.module_cache.fmt_type(*id),
-            Value::Method(method) => {
-                if let Ok(class) = self
-                    .module_cache
-                    .lookup_type_by_id(method.class_id)
-                    .and_then(|t| t.try_as_class())
-                {
-                    if let Some((method_name, _)) = class.methods.get_index(method.id) {
-                        return format!(
-                            "{}.{}(...)",
-                            self.module_cache.fmt_type(method.class_id),
-                            method_name,
-                        );
-                    }
-                }
-
-                "!".to_string()
-            }
-            Value::Object(object) => {
-                let class_id = object.as_ref().class;
-                let class_desc = self
-                    .module_cache
-                    .lookup_type_by_id(class_id)
-                    .unwrap()
-                    .try_as_class()
-                    .unwrap();
-
-                format!(
-                    "{}({})",
-                    self.module_cache.fmt_type(class_id),
-                    class_desc
-                        .fields
-                        .iter()
-                        .map(|(key, field_desc)| format!(
-                            "{}{}: {}",
-                            if field_desc.public { "*" } else { "" },
-                            key,
-                            self.fmt_value(object.as_ref().get_field(field_desc.id).unwrap())
-                        ))
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                )
-            }
-            Value::Array(array) => format!(
-                "[{}]",
-                array
-                    .as_ref()
-                    .iter()
-                    .map(|item| self.fmt_value(item))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            Value::Map(map) => format!(
-                "{{{}}}",
-                map.as_ref()
-                    .iter()
-                    .map(|(key, value)| format!(
-                        "{}: {}",
-                        self.fmt_value(key),
-                        self.fmt_value(value)
-                    ))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-        }
+        Err(RuntimeError::new(format!("{}", value)))
     }
 
     fn find_label(&self, instructions: &[IR], search: &str) -> Result<usize> {
@@ -1334,14 +1176,15 @@ impl VM {
                         }
                     },
                     Err(e) => {
-                        let module = self.module_cache.lookup_module_by_id(module_id)?;
+                        let module = self.module_cache.get_module_by_id(module_id)?;
 
                         if e.pos.is_none() {
                             let e = e.with_pos(ir.pos.clone()).with_module(&module.name);
 
-                            if let Some(filename) = &module.filename {
-                                return Err(e.with_filename(&filename.display().to_string()));
-                            }
+                            // @TODO: Fix this
+                            //if let Some(filename) = &module.filename {
+                            //    return Err(e.with_filename(&filename.display().to_string()));
+                            //}
 
                             return Err(e);
                         };
@@ -1367,10 +1210,10 @@ impl VM {
     }
 
     pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
-        let module_id = self.module_cache.lookup_module(module)?.id;
+        let module_id = self.module_cache.get_module(module)?.id;
 
         self._eval(module_id, Rc::new(instructions))
-            .map_err(|e| e.with_stack_trace(self.call_stack.rewind(&self.module_cache)))?;
+            .map_err(|e| e.with_stack_trace(self.call_stack.rewind()))?;
 
         Ok(())
     }

@@ -3,8 +3,9 @@ use std::fmt::{Debug, Formatter};
 
 use indexmap::map::IndexMap;
 
+use atom_ir::IR;
+
 use crate::ast::Pos;
-use crate::compiler::IR;
 
 #[derive(Debug, Clone)]
 pub struct FuncArg {

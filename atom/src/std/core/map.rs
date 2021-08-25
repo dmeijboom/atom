@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use atom_macros::export;
-use atom_runtime::{Result, Value};
+use atom_runtime::{ExternalFn, Result, Value};
 
-use crate::vm::{ExternalFn, Module};
+use crate::vm::Module;
 
 pub type Map = HashMap<Value, Value>;
 

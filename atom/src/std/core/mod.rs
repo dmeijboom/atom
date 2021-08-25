@@ -1,5 +1,6 @@
-use crate::vm::Module;
 use atom_runtime::Result;
+
+use crate::vm::Module;
 
 pub mod array;
 pub mod float;
@@ -9,12 +10,12 @@ pub mod range;
 pub mod string;
 
 pub fn register(module: &mut Module) -> Result<()> {
-    module.register_external_fn("println", |vm, values| {
+    module.register_external_fn("println", |_, values| {
         println!(
             "{}",
             values
                 .into_iter()
-                .map(|value| vm.fmt_value(&value))
+                .map(|value| format!("{}", value))
                 .collect::<Vec<_>>()
                 .join(", "),
         );

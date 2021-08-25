@@ -1,7 +1,7 @@
 use atom_macros::export;
-use atom_runtime::{Result, RuntimeError, Value};
+use atom_runtime::{ExternalFn, Result, RuntimeError, Value};
 
-use crate::vm::{ExternalFn, Module};
+use crate::vm::Module;
 
 pub type Opt = Option<Box<Value>>;
 

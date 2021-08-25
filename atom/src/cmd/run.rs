@@ -2,7 +2,9 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
-use crate::compiler::{Code, Compiler, IR};
+use atom_ir::{Code, IR};
+
+use crate::compiler::Compiler;
 use crate::parser;
 use crate::utils::Error;
 use crate::vm::{Module, VM};
@@ -39,7 +41,14 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(
         println!("{:#?}", compiled_module.funcs);
     }
 
-    let module = Module::new(compiled_module, Some(opts.filename));
+    let module = Module::new(
+        compiled_module,
+        opts.filename
+            .to_path_buf()
+            .to_str()
+            .map(|s| s.to_string())
+            .unwrap_or("unknown".to_string()),
+    );
     let mut vm = VM::new()?;
 
     for module_path in module_paths {

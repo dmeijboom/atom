@@ -2,16 +2,18 @@
 mod tests {
     use test_case::test_case;
 
-    use crate::compiler::{Code, IR};
-    use crate::utils::{parse_and_compile, Error};
-    use crate::vm::VM;
+    use atom_ir::{Code, IR};
     use atom_runtime::AtomRef;
     use atom_runtime::Value;
+
+    use crate::utils::{parse_and_compile, Error};
+    use crate::vm::VM;
 
     fn run_code(source: &str) -> Result<Option<Value>, Error> {
         let module = parse_and_compile(source, None)?;
         let mut vm = VM::new()?;
 
+        vm.add_module_lookup_path("./examples");
         vm.register_module(module)?;
         vm.eval(
             "main",
@@ -49,8 +51,9 @@ mod tests {
     }
 
     #[test_case(include_str!("../examples/invalid/call_int.atom"), "type 'Int' is not callable"; "function call on an integer")]
-    #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
+    #[test_case(include_str!("../examples/invalid/private_class.atom"), "unable to import private class: exampleClass"; "import and use a private class")]
     #[test_case(include_str!("../examples/invalid/method_not_found.atom"), "no such field or method 'test_example' for: {}"; "method not found on a map type")]
+    #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
     #[test_case(include_str!("../examples/invalid/init_class_with_args.atom"), "unable to initialize 'main.Test' with non-keyword arguments"; "initialize class with non-keyword arguments")]
     #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to initialize 'main.Test' without field: three"; "initialize class with missing fields")]
     fn code_fail(source: &str, message: &str) {

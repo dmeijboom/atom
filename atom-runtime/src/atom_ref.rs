@@ -1,6 +1,7 @@
 use core::mem;
 use std::cell::Cell;
 use std::marker::PhantomData;
+use std::ops::Deref;
 use std::ptr::{self, NonNull};
 
 pub struct AtomRefInner<T> {
@@ -130,5 +131,13 @@ impl<T> AsRef<T> for AtomRef<T> {
 impl<T> AsMut<T> for AtomRef<T> {
     fn as_mut(&mut self) -> &mut T {
         unsafe { &mut (*self.ptr.as_ptr()).data }
+    }
+}
+
+impl<T> Deref for AtomRef<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        self.as_ref()
     }
 }
