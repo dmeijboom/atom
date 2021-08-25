@@ -16,7 +16,7 @@ pub struct ModuleCache {
     module_names: Vec<String>,
     lookup_paths: Vec<PathBuf>,
     modules: IndexMap<String, Module, WyHash>,
-    middleware: HashMap<String, Middleware>,
+    middleware: HashMap<String, Middleware, WyHash>,
 }
 
 impl ModuleCache {
@@ -24,8 +24,8 @@ impl ModuleCache {
         Self {
             module_names: vec![],
             lookup_paths: vec![],
-            modules: IndexMap::with_hasher(WyHash::with_seed(4)),
-            middleware: HashMap::new(),
+            modules: IndexMap::with_hasher(WyHash::default()),
+            middleware: HashMap::with_hasher(WyHash::default()),
         }
     }
 

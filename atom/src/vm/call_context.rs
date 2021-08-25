@@ -50,7 +50,7 @@ impl CallContext {
             target,
             receiver,
             locals,
-            named_locals: HashMap::with_hasher(WyHash::with_seed(0)),
+            named_locals: HashMap::with_hasher(WyHash::default()),
         }
     }
 }

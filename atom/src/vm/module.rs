@@ -56,7 +56,7 @@ pub struct Module {
     pub name: String,
     pub location: String,
     pub imports: Vec<String>,
-    pub globals: HashMap<String, Value>,
+    pub globals: HashMap<String, Value, WyHash>,
     pub funcs: HashMap<String, AtomRef<Fn>, WyHash>,
     pub classes: HashMap<String, AtomRef<Class>, WyHash>,
     pub interfaces: HashMap<String, AtomRef<Interface>, WyHash>,
@@ -69,19 +69,10 @@ impl Module {
             name: compiler_module.name,
             location,
             imports: compiler_module.imports,
-            globals: HashMap::new(),
-            funcs: HashMap::with_capacity_and_hasher(
-                compiler_module.funcs.len(),
-                WyHash::with_seed(1),
-            ),
-            classes: HashMap::with_capacity_and_hasher(
-                compiler_module.classes.len(),
-                WyHash::with_seed(2),
-            ),
-            interfaces: HashMap::with_capacity_and_hasher(
-                compiler_module.interfaces.len(),
-                WyHash::with_seed(3),
-            ),
+            globals: HashMap::with_hasher(WyHash::default()),
+            funcs: HashMap::with_hasher(WyHash::default()),
+            classes: HashMap::with_hasher(WyHash::default()),
+            interfaces: HashMap::with_hasher(WyHash::default()),
         };
 
         module.funcs = compiler_module

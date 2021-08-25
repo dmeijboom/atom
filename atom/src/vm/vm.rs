@@ -140,7 +140,7 @@ impl VM {
             stack: Stack::new(),
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
-            type_classes: HashMap::with_capacity_and_hasher(16, WyHash::with_seed(1)),
+            type_classes: HashMap::with_hasher(WyHash::default()),
         };
 
         setup_std(&mut vm)?;
@@ -1029,12 +1029,9 @@ impl VM {
 
     fn eval_load_receiver(&mut self) -> Result<()> {
         let receiver = self.call_stack.current().and_then(|context| {
-            context
-                .receiver
-                .clone()
-                .ok_or_else(|| {
-                    RuntimeError::new("unable to load 'this' outside of a method".to_string())
-                })
+            context.receiver.clone().ok_or_else(|| {
+                RuntimeError::new("unable to load 'this' outside of a method".to_string())
+            })
         })?;
 
         self.stack.push(receiver);

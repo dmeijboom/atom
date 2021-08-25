@@ -3,5 +3,6 @@ members = ["atom", "atom-runtime", "atom-macros", "atom-ir"]
 
 [profile.release]
 lto = "fat"
+# We will keep this for now
 debug = true
 panic = "abort"
