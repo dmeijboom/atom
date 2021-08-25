@@ -13,6 +13,9 @@ use crate::ast::{
     LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
 };
 use crate::compiler::module::{Class, Field, Interface};
+use crate::compiler::optimizers::{
+    call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, Optimizer,
+};
 use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 use crate::compiler::{Func, FuncArg, Module};
 
@@ -49,6 +52,7 @@ pub struct Compiler {
     tree: Vec<Stmt>,
     labels: Vec<String>,
     scope: Rc<RefCell<Scope>>,
+    optimizers: Vec<Optimizer>,
 }
 
 impl Compiler {
@@ -59,6 +63,16 @@ impl Compiler {
             pos: 0..0,
             scope_id: 0,
             labels: vec![],
+            optimizers: if optimize {
+                vec![
+                    call_void::optimize,
+                    load_local_twice_add::optimize,
+                    remove_core_validations::optimize,
+                    pre_compute_labels::optimize,
+                ]
+            } else {
+                vec![]
+            },
             scope: Rc::new(RefCell::new(Scope::new())),
         }
     }
@@ -701,43 +715,10 @@ impl Compiler {
             }
         }
 
-        if !self.optimize {
-            return Ok(ir.concat());
-        }
+        let mut instructions = ir.concat();
 
-        // Pre-compute label indexes when optimizations were enabled
-        let mut instructions: Vec<IR> = ir.concat();
-        let mut labels = HashMap::new();
-
-        for (i, ir) in instructions.iter().enumerate() {
-            if let Code::SetLabel(name) = &ir.code {
-                labels.insert(name.clone(), i);
-            }
-        }
-
-        for ir in instructions.iter_mut() {
-            match &mut ir.code {
-                Code::Jump(label) => {
-                    if let Some(index) = labels.get(&label.name) {
-                        label.index = Some(*index);
-                    }
-                }
-                Code::JumpIfTrue(label) => {
-                    if let Some(index) = labels.get(&label.name) {
-                        label.index = Some(*index);
-                    }
-                }
-                Code::Branch((true_label, false_label)) => {
-                    if let Some(index) = labels.get(&true_label.name) {
-                        true_label.index = Some(*index);
-                    }
-
-                    if let Some(index) = labels.get(&false_label.name) {
-                        false_label.index = Some(*index);
-                    }
-                }
-                _ => {}
-            }
+        for optimizer in self.optimizers.iter() {
+            optimizer(&mut instructions);
         }
 
         Ok(instructions)

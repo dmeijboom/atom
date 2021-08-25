@@ -74,6 +74,8 @@ pub enum Code {
     Cast(String),
     Call(usize),
     CallKeywords((Vec<String>, usize)),
+    CallVoid(usize),
+    CallKeywordsVoid((Vec<String>, usize)),
     TailCall(usize),
     Store(usize),
     StoreMut(usize),
@@ -134,6 +136,12 @@ impl Code {
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
             Code::CallKeywords((keywords, arg_count)) => format!(
                 "  callKw(keywords: {}, arg_count: {})",
+                format_keywords(keywords),
+                arg_count
+            ),
+            Code::CallVoid(arg_count) => format!("  callVoid(arg_count: {})", arg_count),
+            Code::CallKeywordsVoid((keywords, arg_count)) => format!(
+                "  callKwVoid(keywords: {}, arg_count: {})",
                 format_keywords(keywords),
                 arg_count
             ),

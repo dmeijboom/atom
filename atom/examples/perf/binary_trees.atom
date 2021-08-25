@@ -4,7 +4,7 @@ class Node {
     let right;
 }
 
-fn make_tree(value, depth) {
+fn makeTree(value, depth) {
     if depth == 0 {
         return Node(left: nil, value: value, right: nil);
     }
@@ -12,35 +12,35 @@ fn make_tree(value, depth) {
     let value2 = value + value;
 
     return Node(
-        left: some(make_tree((value + value) - 1, depth - 1)),
+        left: some(makeTree((value + value) - 1, depth - 1)),
         value: value,
-        right: some(make_tree(value + value, depth - 1)),
+        right: some(makeTree(value + value, depth - 1)),
     );
 }
 
-fn check_tree(node) {
+fn checkTree(node) {
     if !node.left.isSome() {
         return node.value;
     }
 
-    return node.value + check_tree(node.left.value()) - check_tree(node.right.value());
+    return node.value + checkTree(node.left.value()) - checkTree(node.right.value());
 }
 
 fn main() {
-    let min_depth = 4;
-    let max_depth = 12;
-    let stretch_depth = max_depth + 1;
+    let minDepth = 4;
+    let maxDepth = 12;
+    let stretchDepth = maxDepth + 1;
 
-    println(f"stretch tree of depth {stretch_depth} check: {check_tree(make_tree(0, stretch_depth))}");
+    println(f"stretch tree of depth {stretchDepth} check: {checkTree(makeTree(0, stretchDepth))}");
 
-    let long_lived_tree = make_tree(0, max_depth);
-    let mut iterations = 2 ** max_depth;
+    let long_livedTree = makeTree(0, maxDepth);
+    let mut iterations = 2 ** maxDepth;
 
-    for depth in (min_depth..stretch_depth).step(2) {
+    for depth in (minDepth..stretchDepth).step(2) {
         let mut check = 0;
 
         for i in 1..(iterations + 1) {
-            check = check + check_tree(make_tree(i, depth)) + check_tree(make_tree(0 - i, depth));
+            check = check + checkTree(makeTree(i, depth)) + checkTree(makeTree(0 - i, depth));
         }
 
         println(f"{iterations * 2} trees of depth {depth} check: {check}");
@@ -48,5 +48,5 @@ fn main() {
         iterations = (Int)(((Float)iterations / 4).floor());
     }
 
-    println(f"long lived tree of depth {max_depth} check: {check_tree(long_lived_tree)}");
+    println(f"long lived tree of depth {maxDepth} check: {checkTree(long_livedTree)}");
 }

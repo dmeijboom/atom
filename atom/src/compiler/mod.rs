@@ -3,4 +3,5 @@ pub use module::{Class, Func, FuncArg, Interface, Module};
 
 mod compiler;
 mod module;
+mod optimizers;
 mod scope;

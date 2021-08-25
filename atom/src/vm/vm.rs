@@ -289,16 +289,23 @@ impl VM {
         Ok(())
     }
 
-    fn eval_call(&mut self, keywords: &[String], arg_count: usize) -> Result<()> {
+    fn eval_call(
+        &mut self,
+        keywords: &[String],
+        arg_count: usize,
+        store_result: bool,
+    ) -> Result<()> {
         let value = self
             .stack
             .pop()
             .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
 
         match value {
-            Value::Fn(func) => self.eval_function_call(func, keywords, arg_count),
-            Value::Class(class) => self.eval_class_init(class, keywords, arg_count),
-            Value::Method(method) => self.eval_method_call(method, keywords, arg_count),
+            Value::Fn(func) => self.eval_function_call(func, keywords, arg_count, store_result),
+            Value::Class(class) => self.eval_class_init(class, keywords, arg_count, store_result),
+            Value::Method(method) => {
+                self.eval_method_call(method, keywords, arg_count, store_result)
+            }
             _ => Err(RuntimeError::new(format!(
                 "type '{}' is not callable",
                 value.get_type().name()
@@ -311,10 +318,13 @@ impl VM {
         func: AtomRef<Fn>,
         keywords: &[String],
         arg_count: usize,
+        store_result: bool,
     ) -> Result<()> {
         let return_value = self.eval_func(Target::Fn(func), keywords, arg_count)?;
 
-        self.stack.push(return_value);
+        if store_result {
+            self.stack.push(return_value);
+        }
 
         Ok(())
     }
@@ -324,6 +334,7 @@ impl VM {
         class: AtomRef<Class>,
         keywords: &[String],
         arg_count: usize,
+        store_result: bool,
     ) -> Result<()> {
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(format!(
@@ -376,8 +387,10 @@ impl VM {
             fields.into_iter().map(|(_, value)| value).collect()
         };
 
-        self.stack
-            .push(Value::Object(AtomRef::new(Object::new(class, fields))));
+        if store_result {
+            self.stack
+                .push(Value::Object(AtomRef::new(Object::new(class, fields))));
+        }
 
         Ok(())
     }
@@ -387,10 +400,13 @@ impl VM {
         method: AtomRef<Method>,
         keywords: &[String],
         arg_count: usize,
+        store_result: bool,
     ) -> Result<()> {
         let return_value = self.eval_func(Target::Method(method), keywords, arg_count)?;
 
-        self.stack.push(return_value);
+        if store_result {
+            self.stack.push(return_value);
+        }
 
         Ok(())
     }
@@ -534,8 +550,14 @@ impl VM {
             Code::Not => self.eval_not()?,
             Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
-            Code::Call(arg_count) => self.eval_call(&[], *arg_count)?,
-            Code::CallKeywords((keywords, arg_count)) => self.eval_call(keywords, *arg_count)?,
+            Code::Call(arg_count) => self.eval_call(&[], *arg_count, true)?,
+            Code::CallKeywords((keywords, arg_count)) => {
+                self.eval_call(keywords, *arg_count, true)?
+            }
+            Code::CallVoid(arg_count) => self.eval_call(&[], *arg_count, false)?,
+            Code::CallKeywordsVoid((keywords, arg_count)) => {
+                self.eval_call(keywords, *arg_count, false)?
+            }
             Code::TailCall(arg_count) => return Ok(Flow::TailCall(*arg_count)),
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,

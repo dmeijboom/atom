@@ -282,8 +282,8 @@ impl_type!(Array, Vec<Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Map, HashMap<Value, Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Option, Option<Box<Value>>, [try_into try_into_ref try_into_mut]);
 
-impl_try_into!(& String, str);
-impl_try_into!(& Array, [Value]);
+impl_try_into!(&String, str);
+impl_try_into!(&Array, [Value]);
 
 impl TryInto<i64> for Value {
     type Error = RuntimeError;
