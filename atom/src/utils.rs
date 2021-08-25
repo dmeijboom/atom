@@ -40,7 +40,7 @@ pub fn parse_and_compile(source: &str, location: Option<String>) -> Result<Modul
 
     Ok(Module::new(
         module,
-        location.unwrap_or("unknown".to_string()),
+        location.unwrap_or_else(|| "unknown".to_string()),
     ))
 }
 

@@ -192,7 +192,7 @@ impl Compiler {
             Expr::Ident(ident) => {
                 ir.push(vec![IR::new(
                     if ident.name == "this" && Scope::in_function_block(&self.scope) {
-                        Code::LoadSelf
+                        Code::LoadReceiver
                     } else if let Some(local) = Scope::get_local(&self.scope, &ident.name, true) {
                         Code::Load(local.id)
                     } else {
@@ -640,12 +640,6 @@ impl Compiler {
                         }
 
                         ir.push(self._compile_stmt_list(&for_stmt.body)?);
-                        ir.push(vec![
-                            IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),
-                            IR::new(Code::SetLabel(cont_label), self.pos.clone()),
-                        ]);
-
-                        self.exit_scope();
                     } else {
                         self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
                             continue_label: cont_label.clone(),
@@ -661,13 +655,14 @@ impl Compiler {
                             }),
                             &for_stmt.body,
                         )?);
-                        ir.push(vec![
-                            IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),
-                            IR::new(Code::SetLabel(cont_label), self.pos.clone()),
-                        ]);
-
-                        self.exit_scope();
                     }
+
+                    ir.push(vec![
+                        IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),
+                        IR::new(Code::SetLabel(cont_label), self.pos.clone()),
+                    ]);
+
+                    self.exit_scope();
                 }
                 Stmt::Break(break_stmt) => {
                     if break_stmt.label.is_some() {

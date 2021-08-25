@@ -61,7 +61,7 @@ impl ToString for TypeInfo {
             TypeKind::Tuple => format!("({})", elem),
             TypeKind::Ref => format!("&{}", elem),
             TypeKind::MutRef => format!("&mut {}", elem),
-            TypeKind::Name(name) => format!("{}", name),
+            TypeKind::Name(name) => name.to_string(),
             TypeKind::Generic(name) => format!("{}<{}>", name, elem),
         }
     }
@@ -88,7 +88,7 @@ fn parse_type_info(typedef: &Type) -> TypeInfo {
                 if let GenericArgument::Type(type_arg) = &path_args.args[0] {
                     return TypeInfo::with_elem(
                         TypeKind::Generic(segment.ident.to_string()),
-                        parse_type_info(&type_arg),
+                        parse_type_info(type_arg),
                     );
                 }
             }
@@ -107,7 +107,7 @@ fn parse_type_info(typedef: &Type) -> TypeInfo {
             TypeInfo::with_elem(TypeKind::Slice, parse_type_info(&type_slice.elem))
         }
         Type::Tuple(tuple) => {
-            if tuple.elems.len() == 0 {
+            if tuple.elems.is_empty() {
                 return TypeInfo::new(TypeKind::Tuple);
             }
 
@@ -153,7 +153,7 @@ pub fn export(_: TokenStream, input: TokenStream) -> TokenStream {
                         arg_names.push(arg_name.clone());
 
                         // We don't support methods (yet?) so using 'this' as the name of an argument results in binding the receiver
-                        let parse_arg = if arg_name.to_string() == "this" {
+                        let parse_arg = if arg_name == "this" {
                             if type_info.kind == TypeKind::MutRef {
                                 quote! { let this = __receiver.as_mut().unwrap().try_into()?; }
                             } else {

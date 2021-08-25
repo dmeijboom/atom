@@ -182,7 +182,7 @@ macro_rules! impl_type {
     };
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, EnumIter)]
+#[derive(Clone, Copy, Hash, PartialEq, Eq, EnumIter)]
 pub enum ValueType {
     Int,
     Float,
@@ -200,29 +200,6 @@ pub enum ValueType {
     Array,
     Map,
     Ref,
-}
-
-impl Hash for ValueType {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        state.write_u8(match self {
-            ValueType::Int => 0,
-            ValueType::Float => 1,
-            ValueType::Char => 2,
-            ValueType::Byte => 3,
-            ValueType::Bool => 4,
-            ValueType::Option => 5,
-            ValueType::Range => 6,
-            ValueType::String => 7,
-            ValueType::Fn => 8,
-            ValueType::Class => 9,
-            ValueType::Method => 10,
-            ValueType::Interface => 11,
-            ValueType::Object => 12,
-            ValueType::Array => 13,
-            ValueType::Map => 14,
-            ValueType::Ref => 15,
-        });
-    }
 }
 
 impl ValueType {
@@ -304,6 +281,9 @@ impl_type!(String, String, [from try_into try_into_ref try_into_mut]);
 impl_type!(Array, Vec<Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Map, HashMap<Value, Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Option, Option<Box<Value>>, [try_into try_into_ref try_into_mut]);
+
+impl_try_into!(& String, str);
+impl_try_into!(& Array, [Value]);
 
 impl TryInto<i64> for Value {
     type Error = RuntimeError;
@@ -456,7 +436,7 @@ impl Eq for Value {}
 impl Display for Value {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::Void => write!(f, "{}", "!"),
+            Self::Void => write!(f, "!"),
             Self::Int(val) => write!(f, "{}", val),
             Self::Float(val) => write!(f, "{}", val),
             Self::Char(val) => write!(f, "{}", val),

@@ -545,7 +545,7 @@ impl VM {
             Code::TeeMember(member) => self.eval_load_member(module_id, member, true)?,
             Code::StoreMember(member) => self.eval_store_member(module_id, member)?,
             Code::Load(id) => self.eval_load(*id)?,
-            Code::LoadSelf => self.eval_load_self()?,
+            Code::LoadReceiver => self.eval_load_receiver()?,
             Code::LoadName(name) => self.eval_load_name(module_id, name)?,
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
@@ -1027,20 +1027,19 @@ impl VM {
         )))
     }
 
-    fn eval_load_self(&mut self) -> Result<()> {
-        let context = self.call_stack.current().map_err(|_| {
-            RuntimeError::new("unable to load 'this' outside of a function".to_string())
+    fn eval_load_receiver(&mut self) -> Result<()> {
+        let receiver = self.call_stack.current().and_then(|context| {
+            context
+                .receiver
+                .clone()
+                .ok_or_else(|| {
+                    RuntimeError::new("unable to load 'this' outside of a method".to_string())
+                })
         })?;
 
-        if let Some(this) = &context.receiver {
-            self.stack.push(this.clone());
+        self.stack.push(receiver);
 
-            return Ok(());
-        }
-
-        Err(RuntimeError::new(
-            "unable to load 'this' outside of a method".to_string(),
-        ))
+        Ok(())
     }
 
     fn eval_load_name(&mut self, module_id: ModuleId, name: &str) -> Result<()> {
@@ -1079,7 +1078,7 @@ impl VM {
         if let Some(context) = self.call_stack.last() {
             self.stack.push(match &context.target {
                 Target::Fn(func) => Value::Fn(AtomRef::clone(func)),
-                Target::Method(method) => Value::Method(AtomRef::clone(&method)),
+                Target::Method(method) => Value::Method(AtomRef::clone(method)),
             });
 
             return Ok(());

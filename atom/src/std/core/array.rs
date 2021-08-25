@@ -3,32 +3,30 @@ use atom_runtime::{ExternalFn, Result, Value};
 
 use crate::vm::Module;
 
-pub type Array = Vec<Value>;
-
 #[export]
-fn array_push(this: &mut Array, value: Value) -> Result<()> {
+fn array_push(this: &mut Vec<Value>, value: Value) -> Result<()> {
     this.push(value);
 
     Ok(())
 }
 
 #[export]
-fn array_pop(this: &mut Array) -> Result<Option<Value>> {
+fn array_pop(this: &mut Vec<Value>) -> Result<Option<Value>> {
     Ok(this.pop())
 }
 
 #[export]
-fn array_remove(this: &mut Array, index: i64) -> Result<Value> {
+fn array_remove(this: &mut Vec<Value>, index: i64) -> Result<Value> {
     Ok(this.remove(index as usize))
 }
 
 #[export]
-fn array_len(this: &Array) -> Result<i64> {
+fn array_len(this: &[Value]) -> Result<i64> {
     Ok(this.len() as i64)
 }
 
 #[export]
-fn array_clear(this: &mut Array) -> Result<()> {
+fn array_clear(this: &mut Vec<Value>) -> Result<()> {
     this.clear();
 
     Ok(())

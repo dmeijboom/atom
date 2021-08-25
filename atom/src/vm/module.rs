@@ -42,7 +42,7 @@ fn parse_class(module: &Module, class: compiler::Class) -> Class {
         methods: class
             .funcs
             .into_iter()
-            .map(|(name, func)| (name.clone(), AtomRef::new(parse_fn(module, func))))
+            .map(|(name, func)| (name, AtomRef::new(parse_fn(module, func))))
             .collect(),
         // @TODO: shouldn't classes also have a position?
         origin: Origin::new(module.name.clone(), module.location.clone(), 0..0),

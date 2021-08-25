@@ -44,10 +44,9 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(
     let module = Module::new(
         compiled_module,
         opts.filename
-            .to_path_buf()
             .to_str()
             .map(|s| s.to_string())
-            .unwrap_or("unknown".to_string()),
+            .unwrap_or_else(|| "unknown".to_string()),
     );
     let mut vm = VM::new()?;
 

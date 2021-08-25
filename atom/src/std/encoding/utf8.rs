@@ -1,20 +1,19 @@
 use std::convert::TryInto;
 
 use atom_macros::export;
-use atom_runtime::{Result, RuntimeError};
+use atom_runtime::{Result, RuntimeError, Value};
 
-use crate::std::core::array::Array;
 use crate::vm::Module;
 
 #[export]
-fn utf8_decode(data: Array) -> Result<String> {
+fn utf8_decode(data: Vec<Value>) -> Result<String> {
     let mut bytes = vec![];
 
     for item in data.into_iter() {
         bytes.push(item.try_into()?);
     }
 
-    Ok(String::from_utf8(bytes).map_err(|e| RuntimeError::new(format!("DecodeError: {}", e)))?)
+    String::from_utf8(bytes).map_err(|e| RuntimeError::new(format!("DecodeError: {}", e)))
 }
 
 pub fn register(module: &mut Module) -> Result<()> {

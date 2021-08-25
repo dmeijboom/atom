@@ -75,7 +75,7 @@ impl AtomEngine {
         }
     }
 
-    fn setup(&self, module: &mut Module) {
+    fn setup(&self, _module: &mut Module) {
         //for (key, value) in self.vars.iter() {
         //    module.globals.insert(key.clone(), value.clone());
         //}
@@ -184,8 +184,8 @@ impl AtomEngine {
 
 fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
     match parse_action(line)? {
-        Action::Evaluate(expr) => {
-            let mut vm = engine.eval(expr)?;
+        Action::Evaluate(_expr) => {
+            //let mut vm = engine.eval(expr)?;
 
             //if let Some(value) = vm.result() {
             //    println!("{}", vm.fmt_value(&value));
@@ -225,9 +225,9 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
                     .into(),
             )
         }
-        Action::CreateClass(class_decl_stmt) => {
-            let class_name = class_decl_stmt.name.clone();
-            let mut module = engine.create_module(Stmt::ClassDecl(class_decl_stmt))?;
+        Action::CreateClass(_class_decl_stmt) => {
+            //let class_name = class_decl_stmt.name.clone();
+            //let mut module = engine.create_module(Stmt::ClassDecl(class_decl_stmt))?;
 
             //engine.classes.insert(
             //    class_name.clone(),
@@ -236,9 +236,9 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
 
             Ok(())
         }
-        Action::CreateFn(fn_decl_stmt) => {
-            let function_name = fn_decl_stmt.name.clone();
-            let mut module = engine.create_module(Stmt::FnDecl(fn_decl_stmt))?;
+        Action::CreateFn(_fn_decl_stmt) => {
+            //let function_name = fn_decl_stmt.name.clone();
+            //let mut module = engine.create_module(Stmt::FnDecl(fn_decl_stmt))?;
 
             //engine.functions.insert(
             //    function_name.clone(),

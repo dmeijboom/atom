@@ -6,12 +6,15 @@ use crate::{AtomRef, Value};
 #[derive(Debug)]
 pub struct Object {
     pub class: AtomRef<Class>,
-    fields: Vec<Value>,
+    fields: Box<[Value]>,
 }
 
 impl Object {
     pub fn new(class: AtomRef<Class>, fields: Vec<Value>) -> Self {
-        Self { class, fields }
+        Self {
+            class,
+            fields: fields.into_boxed_slice(),
+        }
     }
 
     pub fn get_field(&self, index: usize) -> Option<&Value> {
