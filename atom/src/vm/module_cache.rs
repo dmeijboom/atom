@@ -40,6 +40,25 @@ impl ModuleCache {
             }
         }
 
+        // Set the actual module ID
+        for (_, func) in module.funcs.iter_mut() {
+            func.as_mut().origin.module_id = module.id;
+        }
+
+        for (_, class) in module.classes.iter_mut() {
+            let class_ref = class.as_mut();
+
+            class_ref.origin.module_id = module.id;
+
+            for (_, method) in class_ref.methods.iter_mut() {
+                method.as_mut().origin.module_id = module.id;
+            }
+        }
+
+        for (_, interface) in module.interfaces.iter_mut() {
+            interface.as_mut().origin.module_id = module.id;
+        }
+
         self.module_names.push(module.name.clone());
         self.modules.insert(module.name.clone(), module);
 
@@ -80,19 +99,6 @@ impl ModuleCache {
         }
 
         None
-    }
-
-    pub fn get_module_name(&self, id: ModuleId) -> Result<&String> {
-        self.module_names
-            .get(id)
-            .ok_or_else(|| RuntimeError::new(format!("no such module with ID: {}", id)))
-    }
-
-    pub fn get_module_id(&self, name: &str) -> Result<ModuleId> {
-        self.module_names
-            .iter()
-            .position(|module_name| module_name == name)
-            .ok_or_else(|| RuntimeError::new(format!("no such module: {}", name)))
     }
 
     pub fn get_module_by_id(&self, id: ModuleId) -> Result<&Module> {

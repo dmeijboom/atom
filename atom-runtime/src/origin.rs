@@ -4,6 +4,7 @@ use atom_ir::Pos;
 pub struct Origin {
     pub pos: Pos,
     pub location: String,
+    pub module_id: usize,
     pub module_name: String,
 }
 
@@ -12,6 +13,7 @@ impl Origin {
         Self {
             pos,
             location,
+            module_id: 0,
             module_name,
         }
     }

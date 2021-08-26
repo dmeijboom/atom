@@ -479,9 +479,7 @@ impl VM {
                     .push(CallContext::new(target.clone(), receiver, locals));
 
                 let source = Rc::clone(source);
-                let module_id = self
-                    .module_cache
-                    .get_module_id(&target.origin().module_name)?;
+                let module_id = target.origin().module_id;
 
                 if let Some(result) = self._eval(module_id, source)? {
                     self.call_stack.pop();
@@ -939,9 +937,7 @@ impl VM {
 
         if let Some((index, _, field)) = class.fields.get_full(member) {
             if let Value::Object(object) = receiver {
-                if !field.public
-                    && self.module_cache.get_module_name(module_id)? != &class.origin.module_name
-                {
+                if !field.public && module_id != class.origin.module_id {
                     return Err(RuntimeError::new(format!(
                         "unable to access private field '{}' of class: {}",
                         member,
@@ -973,9 +969,7 @@ impl VM {
         }
 
         if let Some(func) = class.methods.get(member) {
-            if !func.public
-                && self.module_cache.get_module_name(module_id)? != &func.origin.module_name
-            {
+            if !func.public && module_id != func.origin.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private method '{}(...)' of class: {}",
                     member,
@@ -1008,9 +1002,7 @@ impl VM {
         let value = self.stack.pop()?;
 
         if let Some((index, _, field)) = class.fields.get_full(member) {
-            if !field.public
-                && self.module_cache.get_module_name(module_id)? != &class.origin.module_name
-            {
+            if !field.public && module_id != class.origin.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
                     member,
