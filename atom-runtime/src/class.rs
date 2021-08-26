@@ -9,7 +9,7 @@ use crate::AtomRef;
 
 use super::r#fn::Fn;
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Field {
     pub id: usize,
     pub name: String,
@@ -28,7 +28,7 @@ impl Field {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Class {
     pub name: String,
     pub public: bool,

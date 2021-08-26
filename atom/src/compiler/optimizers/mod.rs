@@ -26,13 +26,11 @@ pub fn query(when: MatchFn) -> Query {
             when,
             pos: Position::Current,
         }],
-        offset: 0,
     }
 }
 
 pub struct Query {
     clauses: Vec<Match>,
-    offset: i64,
 }
 
 impl Query {
@@ -50,18 +48,6 @@ impl Query {
             when,
             pos: Position::At(self.get_offset() - 1),
         });
-
-        self
-    }
-
-    pub fn next(mut self) -> Self {
-        self.offset += 1;
-
-        self
-    }
-
-    pub fn prev(mut self) -> Self {
-        self.offset -= 1;
 
         self
     }
@@ -105,6 +91,6 @@ impl Query {
             };
         }
 
-        offset + self.offset
+        offset
     }
 }

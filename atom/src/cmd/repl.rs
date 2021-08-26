@@ -5,7 +5,7 @@ use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
 use atom_ir::{Code, IR};
-use atom_runtime::{RuntimeError, Value};
+use atom_runtime::{AtomRef, Class, Fn, RuntimeError, Value};
 
 use crate::ast::{ClassDeclStmt, Expr, ExprStmt, FnDeclStmt, ModuleStmt, ReturnStmt, Stmt};
 use crate::compiler::Compiler;
@@ -17,8 +17,8 @@ enum Action {
     Evaluate(Expr),
     Import(String),
     SetVariable((String, Expr)),
-    CreateClass(ClassDeclStmt),
     CreateFn(FnDeclStmt),
+    CreateClass(ClassDeclStmt),
 }
 
 fn parse_action(input: &str) -> Result<Action, Error> {
@@ -60,8 +60,8 @@ struct AtomEngine {
     imports: Vec<String>,
     module_paths: Vec<PathBuf>,
     vars: HashMap<String, Value>,
-    //classes: HashMap<String, ClassDesc>,
-    //functions: HashMap<String, FuncDesc>,
+    classes: HashMap<String, Class>,
+    functions: HashMap<String, Fn>,
 }
 
 impl AtomEngine {
@@ -70,67 +70,31 @@ impl AtomEngine {
             imports: vec![],
             module_paths,
             vars: HashMap::new(),
-            //classes: HashMap::new(),
-            //functions: HashMap::new(),
+            classes: HashMap::new(),
+            functions: HashMap::new(),
         }
     }
 
-    fn setup(&self, _module: &mut Module) {
-        //for (key, value) in self.vars.iter() {
-        //    module.globals.insert(key.clone(), value.clone());
-        //}
+    fn setup(&self, module: &mut Module) {
+        for (key, value) in self.vars.iter() {
+            module.globals.insert(key.clone(), value.clone());
+        }
 
-        //for (name, func) in self.functions.iter() {
-        //    module.func_map.insert(
-        //        name.clone(),
-        //        FuncDesc {
-        //            public: func.public,
-        //            source: match &func.source {
-        //                FuncSource::Native(instructions) => {
-        //                    FuncSource::Native(Rc::clone(instructions))
-        //                }
-        //                FuncSource::External(external_fn) => FuncSource::External(*external_fn),
-        //            },
-        //            args: func.args.clone(),
-        //            pos: func.pos.clone(),
-        //        },
-        //    );
-        //}
+        for (name, func) in self
+            .functions
+            .iter()
+            .map(|(name, func)| (name.clone(), func.clone()))
+        {
+            module.funcs.insert(name, AtomRef::new(func));
+        }
 
-        //for (name, class) in self.classes.iter() {
-        //    module.class_map.insert(
-        //        name.clone(),
-        //        ClassDesc {
-        //            public: class.public,
-        //            methods: class
-        //                .methods
-        //                .iter()
-        //                .map(|(key, method)| {
-        //                    (
-        //                        key.clone(),
-        //                        MethodDesc {
-        //                            func: FuncDesc {
-        //                                pos: method.func.pos.clone(),
-        //                                public: method.func.public,
-        //                                source: match &method.func.source {
-        //                                    FuncSource::Native(instructions) => {
-        //                                        FuncSource::Native(Rc::clone(instructions))
-        //                                    }
-        //                                    FuncSource::External(external_fn) => {
-        //                                        FuncSource::External(*external_fn)
-        //                                    }
-        //                                },
-        //                                args: method.func.args.clone(),
-        //                            },
-        //                            class_name: name.clone(),
-        //                        },
-        //                    )
-        //                })
-        //                .collect(),
-        //            fields: class.fields.clone(),
-        //        },
-        //    );
-        //}
+        for (name, class) in self
+            .classes
+            .iter()
+            .map(|(name, class)| (name.clone(), class.clone()))
+        {
+            module.classes.insert(name, AtomRef::new(class));
+        }
     }
 
     fn create_vm(&self) -> Result<VM, RuntimeError> {
@@ -184,14 +148,12 @@ impl AtomEngine {
 
 fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
     match parse_action(line)? {
-        Action::Evaluate(_expr) => {
-            //let mut vm = engine.eval(expr)?;
+        Action::Evaluate(expr) => {
+            let mut vm = engine.eval(expr)?;
 
-            //if let Some(value) = vm.result() {
-            //    println!("{}", vm.fmt_value(&value));
-            //} else {
-            //    println!("nil");
-            //}
+            if let Some(value) = vm.result() {
+                println!("({}) {}", value.get_type().name(), value);
+            }
 
             Ok(())
         }
@@ -225,25 +187,33 @@ fn handle_input(engine: &mut AtomEngine, line: &str) -> Result<(), Error> {
                     .into(),
             )
         }
-        Action::CreateClass(_class_decl_stmt) => {
-            //let class_name = class_decl_stmt.name.clone();
-            //let mut module = engine.create_module(Stmt::ClassDecl(class_decl_stmt))?;
+        Action::CreateClass(class_decl_stmt) => {
+            let class_name = class_decl_stmt.name.clone();
+            let mut module = engine.create_module(Stmt::ClassDecl(class_decl_stmt))?;
 
-            //engine.classes.insert(
-            //    class_name.clone(),
-            //    module.class_map.remove(&class_name).unwrap(),
-            //);
+            engine.classes.insert(
+                class_name.clone(),
+                module
+                    .classes
+                    .remove(&class_name)
+                    .unwrap()
+                    .clone_inner_or_unwrap(),
+            );
 
             Ok(())
         }
-        Action::CreateFn(_fn_decl_stmt) => {
-            //let function_name = fn_decl_stmt.name.clone();
-            //let mut module = engine.create_module(Stmt::FnDecl(fn_decl_stmt))?;
+        Action::CreateFn(fn_decl_stmt) => {
+            let function_name = fn_decl_stmt.name.clone();
+            let mut module = engine.create_module(Stmt::FnDecl(fn_decl_stmt))?;
 
-            //engine.functions.insert(
-            //    function_name.clone(),
-            //    module.func_map.remove(&function_name).unwrap(),
-            //);
+            engine.functions.insert(
+                function_name.clone(),
+                module
+                    .funcs
+                    .remove(&function_name)
+                    .unwrap()
+                    .clone_inner_or_unwrap(),
+            );
 
             Ok(())
         }

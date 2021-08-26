@@ -11,13 +11,13 @@ use crate::{Result, Value};
 
 pub type ExternalFn = fn(Option<Value>, Vec<Value>) -> Result<Option<Value>>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum FnPtr {
     External(ExternalFn),
     Native(Rc<Vec<IR>>),
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FnArg {
     pub mutable: bool,
 }
@@ -28,7 +28,7 @@ impl FnArg {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Fn {
     pub name: String,
     pub ptr: FnPtr,
