@@ -513,15 +513,23 @@ impl VM {
         Ok(Value::Void)
     }
 
+    fn eval_const<T: Into<Value>>(&mut self, data: T) {
+        self.stack.push(data.into());
+    }
+
+    fn eval_const_nil(&mut self) {
+        self.stack.push(Value::Option(None));
+    }
+
     fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
-            Code::ConstNil => self.stack.push(Value::Option(None)),
-            Code::ConstInt(val) => self.stack.push(Value::Int(*val)),
-            Code::ConstBool(val) => self.stack.push(Value::Bool(*val)),
-            Code::ConstFloat(val) => self.stack.push(Value::Float(*val)),
-            Code::ConstChar(val) => self.stack.push(Value::Char(*val)),
-            Code::ConstByte(val) => self.stack.push(Value::Byte(*val)),
-            Code::ConstString(val) => self.stack.push(Value::String(AtomRef::new(val.clone()))),
+            Code::ConstNil => self.eval_const_nil(),
+            Code::ConstInt(val) => self.eval_const(*val),
+            Code::ConstBool(val) => self.eval_const(*val),
+            Code::ConstFloat(val) => self.eval_const(*val),
+            Code::ConstChar(val) => self.eval_const(*val),
+            Code::ConstByte(val) => self.eval_const(*val),
+            Code::ConstString(val) => self.eval_const(val.clone()),
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
