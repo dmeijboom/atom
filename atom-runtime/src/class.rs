@@ -2,7 +2,6 @@ use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
 
-use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
 use crate::origin::Origin;
@@ -12,14 +11,16 @@ use super::r#fn::Fn;
 
 #[derive(Debug, PartialEq, Hash)]
 pub struct Field {
+    pub id: usize,
     pub name: String,
     pub mutable: bool,
     pub public: bool,
 }
 
 impl Field {
-    pub fn new(name: String, mutable: bool, public: bool) -> Self {
+    pub fn new(id: usize, name: String, mutable: bool, public: bool) -> Self {
         Self {
+            id,
             name,
             mutable,
             public,
@@ -32,7 +33,7 @@ pub struct Class {
     pub name: String,
     pub public: bool,
     pub origin: Origin,
-    pub fields: IndexMap<String, Field, WyHash>,
+    pub fields: HashMap<String, Field, WyHash>,
     pub methods: HashMap<String, AtomRef<Fn>, WyHash>,
 }
 

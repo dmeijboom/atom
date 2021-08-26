@@ -37,7 +37,13 @@ fn parse_class(module: &Module, class: compiler::Class) -> Class {
         fields: class
             .fields
             .into_iter()
-            .map(|(name, field)| (name.clone(), Field::new(name, field.mutable, field.public)))
+            .enumerate()
+            .map(|(id, (name, field))| {
+                (
+                    name.clone(),
+                    Field::new(id, name, field.mutable, field.public),
+                )
+            })
             .collect(),
         methods: class
             .funcs

@@ -376,7 +376,11 @@ impl VM {
         } else {
             let mut i = 0;
             let mut fields = self.stack.pop_many_t(class.fields.len(), |value| {
-                let index = class.fields.get_index_of(&keywords[i]).unwrap();
+                let index = class
+                    .fields
+                    .get(&keywords[i])
+                    .map(|field| field.id)
+                    .unwrap();
 
                 i += 1;
 
@@ -943,7 +947,7 @@ impl VM {
         let receiver = self.stack.pop()?;
         let class = self.get_class(&receiver)?;
 
-        if let Some((index, _, field)) = class.fields.get_full(member) {
+        if let Some(field) = class.fields.get(member) {
             if let Value::Object(object) = receiver {
                 if !field.public && module_id != class.origin.module_id {
                     return Err(RuntimeError::new(format!(
@@ -953,7 +957,7 @@ impl VM {
                     )));
                 }
 
-                let field = object.get_field(index).cloned().ok_or_else(|| {
+                let field = object.get_field(field.id).cloned().ok_or_else(|| {
                     RuntimeError::new(format!(
                         "unable to get unknown field '{}' of class: {}",
                         member,
@@ -1009,7 +1013,7 @@ impl VM {
         let class = self.get_class(&object)?;
         let value = self.stack.pop()?;
 
-        if let Some((index, _, field)) = class.fields.get_full(member) {
+        if let Some(field) = class.fields.get(member) {
             if !field.public && module_id != class.origin.module_id {
                 return Err(RuntimeError::new(format!(
                     "unable to access private field '{}' of class: {}",
@@ -1027,7 +1031,7 @@ impl VM {
             }
 
             if let Value::Object(mut object) = object {
-                object.as_mut().set_field_value(index, value);
+                object.as_mut().set_field_value(field.id, value);
 
                 return Ok(());
             }
