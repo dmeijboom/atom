@@ -4,7 +4,7 @@ use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
 use atom_runtime::{
-    AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError,
+    AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError, Value,
 };
 
 use crate::compiler::{self, TypeKind};
@@ -174,12 +174,10 @@ impl ModuleCache {
                 ))
             })?;
 
-            match global.kind {
+            let value = match global.kind {
                 TypeKind::Fn => {
                     if let Some(func) = sub_module.funcs.get(&global.name) {
-                        module
-                            .funcs
-                            .insert(global.name.to_string(), AtomRef::clone(func));
+                        Value::Fn(AtomRef::clone(func))
                     } else {
                         return Err(RuntimeError::new(format!(
                             "unable to register function '{}' for module: {}",
@@ -189,9 +187,7 @@ impl ModuleCache {
                 }
                 TypeKind::Class => {
                     if let Some(class) = sub_module.classes.get(&global.name) {
-                        module
-                            .classes
-                            .insert(global.name.to_string(), AtomRef::clone(class));
+                        Value::Class(AtomRef::clone(class))
                     } else {
                         return Err(RuntimeError::new(format!(
                             "unable to register class '{}' for module: {}",
@@ -201,9 +197,7 @@ impl ModuleCache {
                 }
                 TypeKind::Interface => {
                     if let Some(interface) = sub_module.interfaces.get(&global.name) {
-                        module
-                            .interfaces
-                            .insert(global.name.to_string(), AtomRef::clone(interface));
+                        Value::Interface(AtomRef::clone(interface))
                     } else {
                         return Err(RuntimeError::new(format!(
                             "unable to register interface '{}' for module: {}",
@@ -211,7 +205,9 @@ impl ModuleCache {
                         )));
                     }
                 }
-            }
+            };
+
+            module.globals.insert(global.name, value);
         }
 
         self.modules.insert(module.name.clone(), module);
