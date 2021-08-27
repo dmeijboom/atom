@@ -6,7 +6,6 @@ use crate::Origin;
 pub struct Interface {
     pub name: String,
     pub origin: Origin,
-    pub public: bool,
     pub functions: Vec<String>,
 }
 

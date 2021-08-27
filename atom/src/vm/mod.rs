@@ -1,6 +1,6 @@
 pub use call_context::CallContext;
 pub use module::Module;
-pub use module_cache::{Middleware, ModuleCache};
+pub use module_cache::{ExternalHook, ModuleCache};
 pub use vm::VM;
 
 mod call_context;

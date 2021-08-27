@@ -31,7 +31,6 @@ impl Field {
 #[derive(Debug, Clone)]
 pub struct Class {
     pub name: String,
-    pub public: bool,
     pub origin: Origin,
     pub fields: HashMap<String, Field, WyHash>,
     pub methods: HashMap<String, AtomRef<Fn>, WyHash>,

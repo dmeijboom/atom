@@ -1,13 +1,10 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
-use std::fs;
 use std::mem;
 use std::ops::{Add, BitAnd, BitOr, Div, Mul, Sub};
-use std::path::Path;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
-use strum::IntoEnumIterator;
 use wyhash2::WyHash;
 
 use atom_ir::{Code, Label, IR};
@@ -16,14 +13,12 @@ use atom_runtime::{
     ValueType,
 };
 
-use crate::std::core::DEFAULT_IMPORTS;
-use crate::std::get_middleware;
-use crate::utils;
-use crate::utils::Error;
+use crate::compiler;
+use crate::std::get_hooks;
 use crate::vm::module::ModuleId;
+use crate::vm::module_cache::ExternalHook;
 
 use super::call_context::{CallContext, CallStack, Target};
-use super::module::Module;
 use super::module_cache::ModuleCache;
 use super::stack::Stack;
 
@@ -95,38 +90,6 @@ enum Flow<'i> {
     JumpTo(&'i Label),
 }
 
-fn setup_std(vm: &mut VM) -> Result<()> {
-    for (module_name, middleware) in get_middleware() {
-        vm.module_cache.register_middleware(module_name, middleware);
-    }
-
-    let module = utils::parse_and_compile(
-        include_str!("../std/atom/std/core.atom"),
-        Some("std/atom/std/core.atom".into()),
-    )
-    .map_err(|e| match e {
-        Error::Runtime(e) => e,
-        Error::Compile(e) => {
-            RuntimeError::new(format!("failed to compile 'std/atom/core.atom': {}", e))
-                .with_pos(e.pos)
-        }
-        Error::ParseError(e) => {
-            RuntimeError::new(format!("failed to parse 'std/atom/core.atom': {}", e))
-                .with_pos(e.location.offset..e.location.offset + 1)
-        }
-    })?;
-
-    vm.register_module(module)?;
-
-    for value_type in ValueType::iter() {
-        if let Ok(class) = vm.module_cache.get_class("std.core", value_type.name()) {
-            vm.type_classes.insert(value_type, class);
-        }
-    }
-
-    Ok(())
-}
-
 pub struct VM {
     stack: Stack,
     call_stack: CallStack,
@@ -143,33 +106,19 @@ impl VM {
             type_classes: HashMap::with_hasher(WyHash::default()),
         };
 
-        setup_std(&mut vm)?;
+        for hook in get_hooks() {
+            vm.module_cache.add_external_hook(hook);
+        }
 
         Ok(vm)
     }
 
-    pub fn add_module_lookup_path(&mut self, path: impl AsRef<Path>) {
-        self.module_cache
-            .add_lookup_path(path.as_ref().to_path_buf());
+    pub fn add_external_hook(&mut self, hook: ExternalHook) {
+        self.module_cache.add_external_hook(hook);
     }
 
-    pub fn register_module(&mut self, module: Module) -> Result<()> {
-        let mut module = module;
-
-        // Skip default imports for non-core modules
-        if module.name != "std.core" {
-            for name in DEFAULT_IMPORTS {
-                self.import_in_module(&mut module, name)?;
-            }
-        }
-
-        while !module.imports.is_empty() {
-            let path = module.imports.remove(0);
-
-            self.import_in_module(&mut module, &path)?;
-        }
-
-        self.module_cache.add(module)?;
+    pub fn register_module(&mut self, module: compiler::Module, location: String) -> Result<()> {
+        self.module_cache.register(module, location)?;
 
         Ok(())
     }
@@ -196,74 +145,6 @@ impl VM {
         }
 
         true
-    }
-
-    fn import_in_module(&mut self, module: &mut Module, path: &str) -> Result<()> {
-        let mut components = path.split('.').collect::<Vec<_>>();
-
-        if components.len() < 2 {
-            return Err(RuntimeError::new(format!("invalid import path: {}", path)));
-        }
-
-        let name = components.pop().unwrap();
-        let module_name = components.join(".");
-
-        if module.globals.contains_key(name) {
-            return Err(RuntimeError::new(format!(
-                "unable to redefine global: {}",
-                name
-            )));
-        }
-
-        if !self.module_cache.contains_module(&module_name) {
-            if let Some(path) = self.module_cache.find_module_path(&module_name) {
-                let source = fs::read_to_string(&path).map_err(|e| {
-                    RuntimeError::new(format!("failed to import module '{}': {}", module_name, e))
-                })?;
-
-                let module =
-                    utils::parse_and_compile(&source, path.to_str().map(|s| s.to_string()))
-                        .map_err(|e| {
-                            RuntimeError::new(format!(
-                                "failed to import module '{}': {:?}",
-                                module_name, e
-                            ))
-                        })?;
-
-                self.register_module(module)?;
-            } else {
-                return Err(RuntimeError::new(format!(
-                    "unable to import '{}' module '{}' not found",
-                    path, module_name
-                )));
-            }
-        }
-
-        let current_module = self.module_cache.get_module(&module_name)?;
-        let (type_name, is_public, value) = if let Some(func) = current_module.funcs.get(name) {
-            ("Fn", func.public, Value::Fn(AtomRef::clone(func)))
-        } else if let Some(interface) = current_module.interfaces.get(name) {
-            (
-                "interface",
-                interface.public,
-                Value::Interface(AtomRef::clone(interface)),
-            )
-        } else if let Some(class) = current_module.classes.get(name) {
-            ("class", class.public, Value::Class(AtomRef::clone(class)))
-        } else {
-            return Err(RuntimeError::new(format!("unable to import: {}", path)));
-        };
-
-        if !is_public {
-            return Err(RuntimeError::new(format!(
-                "unable to import private {}: {}",
-                type_name, name,
-            )));
-        }
-
-        module.globals.insert(name.to_string(), value);
-
-        Ok(())
     }
 
     fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
@@ -981,14 +862,6 @@ impl VM {
         }
 
         if let Some(func) = class.methods.get(member) {
-            if !func.public && module_id != func.origin.module_id {
-                return Err(RuntimeError::new(format!(
-                    "unable to access private method '{}(...)' of class: {}",
-                    member,
-                    class.as_ref()
-                )));
-            }
-
             if push_back {
                 self.stack.push(receiver.clone());
             }
@@ -1004,7 +877,8 @@ impl VM {
 
         Err(RuntimeError::new(format!(
             "no such field or method '{}' for: {}",
-            member, receiver,
+            member,
+            self.get_class(&receiver).unwrap().as_ref(),
         )))
     }
 

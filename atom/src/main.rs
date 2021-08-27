@@ -35,11 +35,6 @@ fn main() {
                 display_error(&source, e);
             }
         }
-        Cmd::Repl => {
-            if let Err(e) = cmd::repl(opts.module_path) {
-                display_error("", e);
-            }
-        }
         Cmd::Stats => {
             if let Err(e) = cmd::stats() {
                 display_error("", e);

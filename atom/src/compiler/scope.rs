@@ -136,7 +136,7 @@ impl Scope {
         if !parents {
             return scope
                 .last()
-                .and_then(|scope| scope.locals.get(name).map(|local| local.clone()));
+                .and_then(|scope| scope.locals.get(name).cloned());
         }
 
         walk(scope, |scope| {

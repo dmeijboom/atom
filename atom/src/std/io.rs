@@ -1,6 +1,4 @@
-use atom_runtime::Result;
-
-use crate::vm::Module;
+use atom_runtime::ExternalFn;
 
 //fn use_file(
 //    vm: &mut VM,
@@ -20,7 +18,8 @@ use crate::vm::Module;
 //    )))
 //}
 
-pub fn register(_: &mut Module) -> Result<()> {
+pub fn hook(_module_name: &str, _name: &str, _method_name: Option<&str>) -> Option<ExternalFn> {
+    None
     //module.register_external_fn("openFile", |vm, mut values| {
     //    let filename = parse_args!(values => String);
     //    let file = File::open(filename.as_ref())
@@ -52,6 +51,4 @@ pub fn register(_: &mut Module) -> Result<()> {
     //        Ok(Some(Value::Array(AtomRef::new(values))))
     //    })
     //})?;
-
-    Ok(())
 }

@@ -1,19 +1,24 @@
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 
 use indexmap::map::IndexMap;
 
 use atom_ir::{Code, Label, IR};
 
 use crate::ast::{
-    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt,
-    InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
+    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, ExternFnDeclStmt,
+    FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
+    TemplateComponent,
 };
+use crate::parser;
+use crate::std::core::DEFAULT_IMPORTS;
 
-use super::module::{Class, Field, Interface};
-use super::module::{Func, FuncArg, Module};
+use super::module::{Class, Field, Func, FuncArg, Interface, Module, Type, TypeKind};
 use super::optimizers::{
     call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, Optimizer,
 };
+use super::path_finder::PathFinder;
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 
@@ -21,9 +26,11 @@ pub struct Compiler {
     pos: Pos,
     optimize: bool,
     scope_id: usize,
+    module: Module,
     tree: Vec<Stmt>,
     scope: Vec<Scope>,
     labels: Vec<String>,
+    path_finder: PathFinder,
     optimizers: Vec<Optimizer>,
 }
 
@@ -35,6 +42,7 @@ impl Compiler {
             pos: 0..0,
             scope_id: 0,
             labels: vec![],
+            module: Module::new(),
             optimizers: if optimize {
                 vec![
                     call_void::optimize,
@@ -46,7 +54,12 @@ impl Compiler {
                 vec![]
             },
             scope: vec![Scope::new()],
+            path_finder: PathFinder::new(),
         }
+    }
+
+    pub fn add_lookup_path(&mut self, path: impl AsRef<Path>) {
+        self.path_finder.add_path(path.as_ref().to_path_buf());
     }
 
     fn enter_scope(&mut self, context: ScopeContext) {
@@ -68,6 +81,20 @@ impl Compiler {
             e.pos = self.pos.clone();
             e
         })
+    }
+
+    fn fork(&self, module_name: String, tree: Vec<Stmt>) -> Self {
+        Self {
+            pos: 0..0,
+            optimize: self.optimize,
+            scope_id: 0,
+            module: Module::with_name(module_name),
+            tree,
+            scope: vec![],
+            labels: vec![],
+            path_finder: self.path_finder.clone(),
+            optimizers: self.optimizers.clone(),
+        }
     }
 
     fn compile_member_cond(
@@ -701,6 +728,7 @@ impl Compiler {
                 }
                 // ignore top level statements
                 Stmt::FnDecl(_)
+                | Stmt::ExternFnDecl(_)
                 | Stmt::ClassDecl(_)
                 | Stmt::InterfaceDecl(_)
                 | Stmt::Module(_)
@@ -753,6 +781,19 @@ impl Compiler {
                 | Code::ConstNil
                 | Code::Discard
         )
+    }
+
+    fn compile_extern_fn(&mut self, extern_fn_decl: &ExternFnDeclStmt) -> Func {
+        Func {
+            public: extern_fn_decl.public,
+            name: extern_fn_decl.name.clone(),
+            body: vec![],
+            is_void: false,
+            is_extern: true,
+            // @TODO: this can be implemented when varargs are working
+            args: vec![],
+            pos: extern_fn_decl.pos.clone(),
+        }
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
@@ -809,6 +850,7 @@ impl Compiler {
             name: fn_decl.name.clone(),
             public: fn_decl.public,
             is_void: !body.iter().any(|ir| ir.code == Code::Return),
+            is_extern: false,
             body,
             args: fn_decl
                 .args
@@ -848,7 +890,14 @@ impl Compiler {
 
         let mut funcs = HashMap::new();
 
-        for fn_decl in class_decl.methods.iter() {
+        for extern_fn_decl in class_decl.extern_funcs.iter() {
+            funcs.insert(
+                extern_fn_decl.name.clone(),
+                self.compile_extern_fn(extern_fn_decl),
+            );
+        }
+
+        for fn_decl in class_decl.funcs.iter() {
             funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl, true)?);
         }
 
@@ -874,36 +923,139 @@ impl Compiler {
         })
     }
 
+    fn setup_prelude(&mut self) -> Result<()> {
+        for name in DEFAULT_IMPORTS {
+            self.compile_import(ImportStmt {
+                name: name.to_string(),
+                pos: 0..0,
+            })?;
+        }
+
+        Ok(())
+    }
+
+    fn parse_and_compile(&self, filename: PathBuf, name: String) -> Result<Module> {
+        let content = fs::read_to_string(&filename).map_err(|e| {
+            CompileError::new(
+                format!("failed to read '{}': {}", filename.to_str().unwrap(), e),
+                self.pos.clone(),
+            )
+        })?;
+        let tree = parser::parse(&content).map_err(|e| {
+            CompileError::new(
+                format!("failed to parse '{}': {}", filename.to_str().unwrap(), e),
+                self.pos.clone(),
+            )
+        })?;
+
+        self.fork(name, tree).compile()
+    }
+
+    fn compile_import(&mut self, import_stmt: ImportStmt) -> Result<()> {
+        self.pos = import_stmt.pos;
+
+        let mut components = import_stmt.name.split('.').collect::<Vec<_>>();
+
+        if components.len() < 2 {
+            return Err(CompileError::new(
+                format!("invalid import path: {}", import_stmt.name),
+                self.pos.clone(),
+            ));
+        }
+
+        let name = components.pop().unwrap();
+        let module_name = components.join(".");
+
+        if !self.module.modules.contains_key(&module_name) {
+            let filename = self.path_finder.find_path(&components).ok_or_else(|| {
+                CompileError::new(
+                    format!("failed to find module: {}", module_name),
+                    self.pos.clone(),
+                )
+            })?;
+
+            self.module.modules.insert(
+                module_name.clone(),
+                self.parse_and_compile(filename, name.to_string())?,
+            );
+        }
+
+        let module = self.module.modules.get(&module_name).unwrap();
+        let (type_name, type_kind, is_public) = if let Some(func) = module.funcs.get(name) {
+            ("function", TypeKind::Fn, func.public)
+        } else if let Some(class) = module.classes.get(name) {
+            ("class", TypeKind::Class, class.public)
+        } else if let Some(interface) = module.interfaces.get(name) {
+            ("interface", TypeKind::Interface, interface.public)
+        } else {
+            return Err(CompileError::new(
+                format!(
+                    "failed to import unknown name '{}' from: {}",
+                    name, module.name
+                ),
+                self.pos.clone(),
+            ));
+        };
+
+        if !is_public {
+            return Err(CompileError::new(
+                format!("unable to import private {}: {}", type_name, name,),
+                self.pos.clone(),
+            ));
+        }
+
+        if self.module.globals.contains_key(name) {
+            return Err(CompileError::new(
+                format!("unable to redefine global: {}", name),
+                self.pos.clone(),
+            ));
+        }
+
+        self.module.globals.insert(
+            name.to_string(),
+            Type::new(type_kind, module.name.clone(), name.to_string()),
+        );
+
+        Ok(())
+    }
+
     pub fn compile(mut self) -> Result<Module> {
-        let mut module = Module::new(if let Some(Stmt::Module(module_stmt)) = self.tree.get(0) {
-            let name = module_stmt.name.clone();
+        if let Some(Stmt::Module(module_stmt)) = self.tree.get(0) {
+            self.module.name = module_stmt.name.clone();
 
             self.tree.remove(0);
+        }
 
-            name
-        } else {
-            "main".to_string()
-        });
+        // The core module shouldn't include the prelude as that would create an infinite loop
+        if self.module.name != "std.core" {
+            self.setup_prelude()?;
+        }
 
         while !self.tree.is_empty() {
             let stmt = self.tree.remove(0);
 
             match stmt {
                 Stmt::FnDecl(fn_decl) => {
-                    module
-                        .funcs
-                        .insert(fn_decl.name.clone(), self.compile_fn(&fn_decl, false)?);
+                    let func = self.compile_fn(&fn_decl, false)?;
+
+                    self.module.funcs.insert(fn_decl.name, func);
+                }
+                Stmt::ExternFnDecl(extern_fn_decl) => {
+                    let func = self.compile_extern_fn(&extern_fn_decl);
+
+                    self.module.funcs.insert(extern_fn_decl.name.clone(), func);
                 }
                 Stmt::ClassDecl(class_decl) => {
-                    module
-                        .classes
-                        .insert(class_decl.name.clone(), self.compile_class(&class_decl)?);
+                    let class = self.compile_class(&class_decl)?;
+
+                    self.module.classes.insert(class_decl.name, class);
                 }
                 Stmt::InterfaceDecl(interface_decl) => {
-                    module.interfaces.insert(
-                        interface_decl.name.clone(),
-                        self.compile_interface(&interface_decl)?,
-                    );
+                    let interface = self.compile_interface(&interface_decl)?;
+
+                    self.module
+                        .interfaces
+                        .insert(interface_decl.name.clone(), interface);
                 }
                 Stmt::Module(module_stmt) => {
                     return Err(CompileError::new(
@@ -911,20 +1063,11 @@ impl Compiler {
                         module_stmt.pos,
                     ));
                 }
-                Stmt::Import(import_stmt) => {
-                    if module.imports.contains(&import_stmt.name) {
-                        return Err(CompileError::new(
-                            format!("unable to import '{}' more than once", import_stmt.name,),
-                            import_stmt.pos,
-                        ));
-                    }
-
-                    module.imports.push(import_stmt.name.clone());
-                }
+                Stmt::Import(import_stmt) => self.compile_import(import_stmt)?,
                 _ => unreachable!(),
             }
         }
 
-        Ok(module)
+        Ok(self.module)
     }
 }

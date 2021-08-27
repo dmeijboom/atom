@@ -1,104 +1,226 @@
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
-use atom_runtime::{AtomRef, Class, Result, RuntimeError};
+use atom_runtime::{
+    AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError,
+};
 
+use crate::compiler::{self, TypeKind};
 use crate::vm::module::ModuleId;
 
 use super::module::Module;
 
-pub type Middleware = fn(&mut Module) -> Result<()>;
+pub type ExternalHook = fn(&str, &str, Option<&str>) -> Option<ExternalFn>;
 
 pub struct ModuleCache {
-    module_names: Vec<String>,
-    lookup_paths: Vec<PathBuf>,
+    external_hooks: Vec<ExternalHook>,
     modules: IndexMap<String, Module, WyHash>,
-    middleware: HashMap<String, Middleware, WyHash>,
 }
 
 impl ModuleCache {
     pub fn new() -> Self {
         Self {
-            module_names: vec![],
-            lookup_paths: vec![],
+            external_hooks: vec![],
             modules: IndexMap::with_hasher(WyHash::default()),
-            middleware: HashMap::with_hasher(WyHash::default()),
         }
     }
 
-    pub fn add(&mut self, module: Module) -> Result<()> {
-        let mut module = module;
+    pub fn add_external_hook(&mut self, hook: ExternalHook) {
+        self.external_hooks.push(hook);
+    }
 
-        module.id = self.modules.len();
-
-        for (name, middleware) in self.middleware.iter() {
-            if name == &module.name {
-                middleware(&mut module)?;
+    fn call_external_hook(
+        &self,
+        module_name: &str,
+        name: &str,
+        method_name: Option<&str>,
+    ) -> Result<ExternalFn> {
+        for hook in self.external_hooks.iter() {
+            if let Some(external) = hook(module_name, name, method_name) {
+                return Ok(external);
             }
         }
 
-        // Set the actual module ID
-        for (_, func) in module.funcs.iter_mut() {
-            func.as_mut().origin.module_id = module.id;
+        if let Some(method_name) = method_name {
+            return Err(RuntimeError::new(format!(
+                "external '{}.{}.{}(...)' not found",
+                module_name, name, method_name
+            )));
         }
 
-        for (_, class) in module.classes.iter_mut() {
-            let class_ref = class.as_mut();
+        Err(RuntimeError::new(format!(
+            "external '{}.{}(...)' not found",
+            module_name, name
+        )))
+    }
 
-            class_ref.origin.module_id = module.id;
+    fn make_interface(&self, module: &Module, interface: compiler::Interface) -> Interface {
+        Interface {
+            name: interface.name,
+            functions: interface.functions,
+            origin: Origin::new(
+                module.id,
+                module.name.clone(),
+                module.location.clone(),
+                0..0,
+            ),
+        }
+    }
 
-            for (_, method) in class_ref.methods.iter_mut() {
-                method.as_mut().origin.module_id = module.id;
+    fn make_fn(
+        &self,
+        module: &Module,
+        func: compiler::Func,
+        class_name: Option<&str>,
+    ) -> Result<Fn> {
+        let origin = Origin::new(
+            module.id,
+            module.name.clone(),
+            module.location.clone(),
+            func.pos,
+        );
+
+        if func.is_extern {
+            let external_func = match class_name {
+                Some(class_name) => {
+                    self.call_external_hook(&module.name, class_name, Some(&func.name))?
+                }
+                None => self.call_external_hook(&module.name, &func.name, class_name)?,
+            };
+
+            return Ok(Fn::external(func.name, origin, external_func));
+        }
+
+        Ok(Fn::native(
+            func.name,
+            origin,
+            func.args
+                .into_iter()
+                .map(|arg| (arg.name, FnArg::new(arg.mutable)))
+                .collect(),
+            func.body,
+        ))
+    }
+
+    fn make_class(&self, module: &Module, class: compiler::Class) -> Result<Class> {
+        let mut output = Class {
+            name: class.name.clone(),
+            fields: class
+                .fields
+                .into_iter()
+                .enumerate()
+                .map(|(id, (name, field))| {
+                    (
+                        name.clone(),
+                        Field::new(id, name, field.mutable, field.public),
+                    )
+                })
+                .collect(),
+            methods: HashMap::with_hasher(WyHash::default()),
+            // @TODO: shouldn't classes also have a position?
+            origin: Origin::new(
+                module.id,
+                module.name.clone(),
+                module.location.clone(),
+                0..0,
+            ),
+        };
+
+        for (name, func) in class.funcs {
+            output.methods.insert(
+                name,
+                AtomRef::new(self.make_fn(module, func, Some(&class.name))?),
+            );
+        }
+
+        Ok(output)
+    }
+
+    pub fn register(&mut self, compiled_module: compiler::Module, location: String) -> Result<()> {
+        // First, register all module dependencies
+        for (_, sub_module) in compiled_module.modules {
+            self.register(sub_module, location.clone())?;
+        }
+
+        // Then, add the types
+        let mut module = Module::new(self.modules.len(), compiled_module.name, location);
+
+        for (name, func) in compiled_module.funcs {
+            module
+                .funcs
+                .insert(name, AtomRef::new(self.make_fn(&module, func, None)?));
+        }
+
+        for (name, class) in compiled_module.classes {
+            module
+                .classes
+                .insert(name, AtomRef::new(self.make_class(&module, class)?));
+        }
+
+        module.interfaces = compiled_module
+            .interfaces
+            .into_iter()
+            .map(|(name, interface)| (name, AtomRef::new(self.make_interface(&module, interface))))
+            .collect();
+
+        // At last, register the globals
+        for (_, global) in compiled_module.globals {
+            let sub_module = self.modules.get(&global.module_name).ok_or_else(|| {
+                RuntimeError::new(format!(
+                    "unable to register global '{}' for unknown module: {}",
+                    global.name, global.module_name
+                ))
+            })?;
+
+            match global.kind {
+                TypeKind::Fn => {
+                    if let Some(func) = sub_module.funcs.get(&global.name) {
+                        module
+                            .funcs
+                            .insert(global.name.to_string(), AtomRef::clone(func));
+                    } else {
+                        return Err(RuntimeError::new(format!(
+                            "unable to register function '{}' for module: {}",
+                            global.name, global.module_name
+                        )));
+                    }
+                }
+                TypeKind::Class => {
+                    if let Some(class) = sub_module.classes.get(&global.name) {
+                        module
+                            .classes
+                            .insert(global.name.to_string(), AtomRef::clone(class));
+                    } else {
+                        return Err(RuntimeError::new(format!(
+                            "unable to register class '{}' for module: {}",
+                            global.name, global.module_name
+                        )));
+                    }
+                }
+                TypeKind::Interface => {
+                    if let Some(interface) = sub_module.interfaces.get(&global.name) {
+                        module
+                            .interfaces
+                            .insert(global.name.to_string(), AtomRef::clone(interface));
+                    } else {
+                        return Err(RuntimeError::new(format!(
+                            "unable to register interface '{}' for module: {}",
+                            global.name, global.module_name
+                        )));
+                    }
+                }
             }
         }
 
-        for (_, interface) in module.interfaces.iter_mut() {
-            interface.as_mut().origin.module_id = module.id;
-        }
-
-        self.module_names.push(module.name.clone());
         self.modules.insert(module.name.clone(), module);
 
         Ok(())
     }
 
-    pub fn register_middleware(&mut self, name: &str, middleware: Middleware) {
-        self.middleware.insert(name.to_string(), middleware);
-    }
-
     pub fn contains_module(&self, module_name: &str) -> bool {
         self.modules.contains_key(module_name)
-    }
-
-    pub fn add_lookup_path(&mut self, path: PathBuf) {
-        self.lookup_paths.push(path);
-    }
-
-    pub fn find_module_path(&self, name: &str) -> Option<PathBuf> {
-        let components = name.split('.').collect::<Vec<_>>();
-
-        for lookup_path in self.lookup_paths.iter() {
-            let mut path = lookup_path.clone();
-
-            for component in components.iter().take(components.len() - 1) {
-                path.push(component);
-            }
-
-            if let Some(last_component) = components.last() {
-                path.push(format!("{}.atom", last_component));
-            }
-
-            if !path.exists() {
-                continue;
-            }
-
-            return Some(path);
-        }
-
-        None
     }
 
     pub fn get_module_by_id(&self, id: ModuleId) -> Result<&Module> {

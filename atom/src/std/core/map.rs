@@ -3,8 +3,6 @@ use std::collections::HashMap;
 use atom_macros::export;
 use atom_runtime::{ExternalFn, Result, Value};
 
-use crate::vm::Module;
-
 pub type Map = HashMap<Value, Value>;
 
 #[export]
@@ -29,17 +27,18 @@ fn map_clear(this: &mut Map) -> Result<()> {
     Ok(())
 }
 
-pub fn register(module: &mut Module) -> Result<()> {
-    let methods: Vec<(_, ExternalFn)> = vec![
-        ("keys", map_keys),
-        ("len", map_len),
-        ("remove", map_remove),
-        ("clear", map_clear),
-    ];
-
-    for (method_name, closure) in methods {
-        module.register_external_method("Map", method_name, closure)?;
+pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.core" && name == "Map" {
+        if let Some(method_name) = method_name {
+            return Some(match method_name {
+                "keys" => map_keys,
+                "len" => map_len,
+                "remove" => map_remove,
+                "clear" => map_clear,
+                _ => return None,
+            });
+        }
     }
 
-    Ok(())
+    None
 }

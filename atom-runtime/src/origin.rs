@@ -9,11 +9,11 @@ pub struct Origin {
 }
 
 impl Origin {
-    pub fn new(module_name: String, location: String, pos: Pos) -> Self {
+    pub fn new(module_id: usize, module_name: String, location: String, pos: Pos) -> Self {
         Self {
             pos,
             location,
-            module_id: 0,
+            module_id,
             module_name,
         }
     }

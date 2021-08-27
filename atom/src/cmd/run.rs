@@ -7,7 +7,7 @@ use atom_ir::{Code, IR};
 use crate::compiler::Compiler;
 use crate::parser;
 use crate::utils::Error;
-use crate::vm::{Module, VM};
+use crate::vm::VM;
 
 #[derive(Clap)]
 pub struct Opts {
@@ -27,35 +27,33 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(
         println!("{:#?}", tree);
     }
 
-    let compiler = Compiler::new(tree, !opts.no_optimizations);
-    let compiled_module = compiler.compile()?;
+    let mut compiler = Compiler::new(tree, !opts.no_optimizations);
+
+    for path in module_paths {
+        compiler.add_lookup_path(path);
+    }
+
+    let module = compiler.compile()?;
 
     if opts.show_ir {
         println!("Interfaces:");
-        println!("{:#?}", compiled_module.interfaces);
+        println!("{:#?}", module.interfaces);
 
         println!("\nClasses:");
-        println!("{:#?}", compiled_module.classes);
+        println!("{:#?}", module.classes);
 
         println!("\nFunctions:");
-        println!("{:#?}", compiled_module.funcs);
+        println!("{:#?}", module.funcs);
     }
 
-    let module = Module::new(
-        compiled_module,
-        opts.filename
-            .to_str()
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| "unknown".to_string()),
-    );
+    let location = opts
+        .filename
+        .to_str()
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| "unknown".to_string());
     let mut vm = VM::new()?;
 
-    for module_path in module_paths {
-        vm.add_module_lookup_path(module_path);
-    }
-
-    vm.register_module(module)?;
-
+    vm.register_module(module, location)?;
     vm.eval(
         "main",
         vec![

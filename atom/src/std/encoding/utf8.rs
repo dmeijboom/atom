@@ -1,9 +1,7 @@
 use std::convert::TryInto;
 
 use atom_macros::export;
-use atom_runtime::{Result, RuntimeError, Value};
-
-use crate::vm::Module;
+use atom_runtime::{ExternalFn, Result, RuntimeError, Value};
 
 #[export]
 fn utf8_decode(data: Vec<Value>) -> Result<String> {
@@ -16,8 +14,10 @@ fn utf8_decode(data: Vec<Value>) -> Result<String> {
     String::from_utf8(bytes).map_err(|e| RuntimeError::new(format!("DecodeError: {}", e)))
 }
 
-pub fn register(module: &mut Module) -> Result<()> {
-    module.register_external_fn("decode", utf8_decode);
+pub fn hook(module_name: &str, name: &str, _method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.encoding.utf8" && name == "decode" {
+        return Some(utf8_decode);
+    }
 
-    Ok(())
+    None
 }

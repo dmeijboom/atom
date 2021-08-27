@@ -5,8 +5,7 @@ use atom_runtime::RuntimeError;
 
 use crate::ast::Pos;
 use crate::compiler::{CompileError, Compiler};
-use crate::parser;
-use crate::vm::Module;
+use crate::{compiler, parser};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -33,15 +32,18 @@ impl From<ParseError<LineCol>> for Error {
     }
 }
 
-pub fn parse_and_compile(source: &str, location: Option<String>) -> Result<Module, Error> {
+pub fn parse_and_compile(
+    source: &str,
+    lookup_paths: Vec<String>,
+) -> Result<compiler::Module, Error> {
     let tree = parser::parse(source)?;
-    let compiler = Compiler::new(tree, true);
-    let module = compiler.compile()?;
+    let mut compiler = Compiler::new(tree, true);
 
-    Ok(Module::new(
-        module,
-        location.unwrap_or_else(|| "unknown".to_string()),
-    ))
+    for path in lookup_paths {
+        compiler.add_lookup_path(path);
+    }
+
+    Ok(compiler.compile()?)
 }
 
 pub fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {

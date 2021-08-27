@@ -1,8 +1,6 @@
 use atom_macros::export;
 use atom_runtime::{ExternalFn, Result, Value};
 
-use crate::vm::Module;
-
 #[export]
 fn string_upper(this: &str) -> Result<String> {
     Ok(this.to_uppercase())
@@ -59,23 +57,24 @@ fn string_len(this: &str) -> Result<i64> {
     Ok(this.len() as i64)
 }
 
-pub fn register(module: &mut Module) -> Result<()> {
-    let methods: Vec<(_, ExternalFn)> = vec![
-        ("upper", string_upper),
-        ("lower", string_lower),
-        ("split", string_split),
-        ("splitn", string_splitn),
-        ("startsWith", string_starts_with),
-        ("endsWith", string_ends_with),
-        ("contains", string_contains),
-        ("chars", string_chars),
-        ("repeat", string_repeat),
-        ("len", string_len),
-    ];
-
-    for (method_name, closure) in methods {
-        module.register_external_method("String", method_name, closure)?;
+pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.core" && name == "String" {
+        if let Some(method_name) = method_name {
+            return Some(match method_name {
+                "upper" => string_upper,
+                "lower" => string_lower,
+                "split" => string_split,
+                "splitn" => string_splitn,
+                "startsWith" => string_starts_with,
+                "endsWith" => string_ends_with,
+                "contains" => string_contains,
+                "chars" => string_chars,
+                "repeat" => string_repeat,
+                "len" => string_len,
+                _ => return None,
+            });
+        }
     }
 
-    Ok(())
+    None
 }

@@ -1,6 +1,4 @@
-use atom_runtime::Result;
-
-use crate::vm::Module;
+use atom_runtime::ExternalFn;
 
 pub mod array;
 pub mod float;
@@ -9,28 +7,32 @@ pub mod option;
 pub mod range;
 pub mod string;
 
-pub fn register(module: &mut Module) -> Result<()> {
-    module.register_external_fn("println", |_, values| {
-        println!(
-            "{}",
-            values
-                .into_iter()
-                .map(|value| format!("{}", value))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
+pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.core" && name == "println" {
+        return Some(|_, values| {
+            println!(
+                "{}",
+                values
+                    .into_iter()
+                    .map(|value| format!("{}", value))
+                    .collect::<Vec<_>>()
+                    .join(", "),
+            );
 
-        Ok(None)
-    });
+            Ok(None)
+        });
+    }
 
-    option::register(module)?;
-    string::register(module)?;
-    array::register(module)?;
-    map::register(module)?;
-    range::register(module)?;
-    float::register(module)?;
-
-    Ok(())
+    option::hook(module_name, name, method_name).or_else(|| {
+        string::hook(module_name, name, method_name).or_else(|| {
+            array::hook(module_name, name, method_name).or_else(|| {
+                map::hook(module_name, name, method_name).or_else(|| {
+                    range::hook(module_name, name, method_name)
+                        .or_else(|| float::hook(module_name, name, method_name))
+                })
+            })
+        })
+    })
 }
 
 pub const DEFAULT_IMPORTS: &[&str; 15] = &[

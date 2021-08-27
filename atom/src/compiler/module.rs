@@ -20,6 +20,7 @@ pub struct Func {
     pub name: String,
     pub body: Vec<IR>,
     pub is_void: bool,
+    pub is_extern: bool,
     pub args: Vec<FuncArg>,
 }
 
@@ -61,22 +62,52 @@ pub struct Interface {
 }
 
 #[derive(Debug)]
+pub enum TypeKind {
+    Fn,
+    Class,
+    Interface,
+}
+
+#[derive(Debug)]
+pub struct Type {
+    pub name: String,
+    pub kind: TypeKind,
+    pub module_name: String,
+}
+
+impl Type {
+    pub fn new(kind: TypeKind, module_name: String, name: String) -> Self {
+        Self {
+            kind,
+            name,
+            module_name,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Module {
     pub name: String,
-    pub imports: Vec<String>,
     pub funcs: HashMap<String, Func>,
     pub classes: HashMap<String, Class>,
     pub interfaces: HashMap<String, Interface>,
+    pub modules: HashMap<String, Module>,
+    pub globals: HashMap<String, Type>,
 }
 
 impl Module {
-    pub fn new(name: String) -> Self {
+    pub fn new() -> Self {
+        Self::with_name("main".to_string())
+    }
+
+    pub fn with_name(name: String) -> Self {
         Self {
             name,
-            imports: vec![],
             funcs: HashMap::new(),
             classes: HashMap::new(),
             interfaces: HashMap::new(),
+            modules: HashMap::new(),
+            globals: HashMap::new(),
         }
     }
 }

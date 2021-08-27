@@ -3,8 +3,6 @@ use std::ops::Range;
 use atom_macros::export;
 use atom_runtime::{ExternalFn, Result};
 
-use crate::vm::Module;
-
 #[export]
 fn range_start(this: &Range<i64>) -> Result<i64> {
     Ok(this.start)
@@ -15,12 +13,16 @@ fn range_end(this: &Range<i64>) -> Result<i64> {
     Ok(this.end)
 }
 
-pub fn register(module: &mut Module) -> Result<()> {
-    let methods: Vec<(_, ExternalFn)> = vec![("start", range_start), ("end", range_end)];
+pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.core" && name == "Range" {
+        if let Some("start") = method_name {
+            return Some(range_start);
+        }
 
-    for (method_name, closure) in methods {
-        module.register_external_method("Range", method_name, closure)?;
+        if let Some("end") = method_name {
+            return Some(range_end);
+        }
     }
 
-    Ok(())
+    None
 }

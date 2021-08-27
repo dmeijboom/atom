@@ -1,8 +1,6 @@
 use atom_macros::export;
 use atom_runtime::{ExternalFn, Result, Value};
 
-use crate::vm::Module;
-
 #[export]
 fn array_push(this: &mut Vec<Value>, value: Value) -> Result<()> {
     this.push(value);
@@ -32,18 +30,19 @@ fn array_clear(this: &mut Vec<Value>) -> Result<()> {
     Ok(())
 }
 
-pub fn register(module: &mut Module) -> Result<()> {
-    let methods: Vec<(_, ExternalFn)> = vec![
-        ("push", array_push),
-        ("pop", array_pop),
-        ("remove", array_remove),
-        ("len", array_len),
-        ("clear", array_clear),
-    ];
-
-    for (method_name, closure) in methods {
-        module.register_external_method("Array", method_name, closure)?;
+pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.core" && name == "Array" {
+        if let Some(method_name) = method_name {
+            return Some(match method_name {
+                "push" => array_push,
+                "pop" => array_pop,
+                "remove" => array_remove,
+                "len" => array_len,
+                "clear" => array_clear,
+                _ => return None,
+            });
+        }
     }
 
-    Ok(())
+    None
 }

@@ -1,18 +1,37 @@
 module std.core;
 
+pub extern fn println(values);
+pub extern fn some(value);
+
 pub interface Iterable {
     fn iter();
 }
 
-pub class Option {}
+pub class Option {
+    pub extern fn isSome();
+    pub extern fn isNone();
+}
 
 pub class String {
     pub let length;
+
+    pub extern fn upper();
+    pub extern fn lower();
+    pub extern fn split(pattern);
+    pub extern fn splitn(pattern);
+    pub extern fn startsWith(pattern);
+    pub extern fn endsWith(pattern);
+    pub extern fn contains(pattern);
+    pub extern fn chars();
+    pub extern fn repeat(n);
+    pub extern fn len();
 }
 
 pub class Int {}
 
-pub class Float {}
+pub class Float {
+    pub extern fn floor();
+}
 
 pub class Char {}
 
@@ -61,6 +80,9 @@ pub class RangeStep {
 }
 
 pub class Range {
+    pub extern fn start();
+    pub extern fn end();
+
     pub fn iter() {
         return RangeIter(start: this.start(), end: this.end(), step: 1, index: 0);
     }
@@ -98,6 +120,11 @@ pub class ArrayIter {
 }
 
 pub class Array {
+    pub extern fn push(value);
+    pub extern fn pop();
+    pub extern fn len();
+    pub extern fn clear();
+
     pub fn nth(index) {
         if index < 0 || this.len() <= index {
             return nil;
@@ -182,6 +209,11 @@ pub class MapIter {
 }
 
 pub class Map {
+    pub extern fn keys();
+    pub extern fn len();
+    pub extern fn remove(key);
+    pub extern fn clear();
+
     pub fn iter() {
         return MapIter(data: this, keys: this.keys(), index: 0);
     }

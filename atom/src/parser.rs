@@ -212,6 +212,12 @@ peg::parser! {
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
 
+        rule extern_fn_decl_stmt() -> Stmt
+            = extern_fn_decl:extern_fn_decl() { Stmt::ExternFnDecl(extern_fn_decl) }
+
+        rule extern_fn_decl() -> ExternFnDeclStmt
+            = start:pos() public:$("pub")? _ "extern" __ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ");" end:pos() { ExternFnDeclStmt { name, args, public: public.is_some(), comments: vec![], pos: (start..end) } }
+
         rule interface_fn() -> InterfaceFn
             = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
 
@@ -223,7 +229,7 @@ peg::parser! {
                 / start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: None, pos: (start..end) } }
 
         rule class_decl_stmt() -> Stmt
-            = start:pos() public:$("pub")? _ "class" __ name:ident() _ "{" _ fields:field() ** _ _ methods:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), fields, methods, comments: vec![], pos: (start..end) }) }
+            = start:pos() public:$("pub")? _ "class" __ name:ident() _ "{" _ fields:field() ** _ _ extern_funcs:extern_fn_decl() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), fields, extern_funcs, funcs, comments: vec![], pos: (start..end) }) }
 
         rule module_stmt() -> Stmt
             = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
@@ -232,7 +238,7 @@ peg::parser! {
             = start:pos() "import" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Import(ImportStmt { name: path.join("."), pos: (start..end)} ) }
 
         rule top_level_stmt() -> Stmt
-            = comments:comment()* stmt:(fn_decl_stmt() / class_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
+            = comments:comment()* stmt:(extern_fn_decl_stmt() / fn_decl_stmt() / class_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
 
         rule stmt_list() -> Vec<Stmt>
             = comment()* stmt:stmt() ** _ { stmt }
@@ -838,7 +844,8 @@ mod tests {
                         pos: (23..39),
                     },
                 ],
-                methods: vec![],
+                funcs: vec![],
+                extern_funcs: vec![],
                 comments: vec![],
                 pos: (0..41),
             })),
@@ -1109,7 +1116,8 @@ mod tests {
                 name: "Test".to_string(),
                 public: false,
                 fields: vec![],
-                methods: vec![],
+                funcs: vec![],
+                extern_funcs: vec![],
                 comments: vec![Comment {
                     content: "test".to_string(),
                     pos: 0..7,
