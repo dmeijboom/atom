@@ -1,6 +1,4 @@
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::rc::Rc;
 
 use indexmap::map::IndexMap;
 
@@ -24,8 +22,8 @@ pub struct Compiler {
     optimize: bool,
     scope_id: usize,
     tree: Vec<Stmt>,
+    scope: Vec<Scope>,
     labels: Vec<String>,
-    scope: Rc<RefCell<Scope>>,
     optimizers: Vec<Optimizer>,
 }
 
@@ -47,25 +45,24 @@ impl Compiler {
             } else {
                 vec![]
             },
-            scope: Rc::new(RefCell::new(Scope::new())),
+            scope: vec![Scope::new()],
         }
     }
 
     fn enter_scope(&mut self, context: ScopeContext) {
         self.scope_id += 1;
-        let new_scope = Scope::new_with_parent(context, Rc::clone(&self.scope), self.scope_id);
-        self.scope = Rc::new(RefCell::new(new_scope));
+
+        let new_scope = Scope::new_child(context, self.scope_id);
+
+        self.scope.push(new_scope);
     }
 
     fn exit_scope(&mut self) {
-        let parent_scope = Rc::clone(self.scope.borrow().parent.as_ref().unwrap());
-        self.scope = parent_scope;
+        self.scope.pop();
     }
 
     fn set_local(&mut self, name: String, mutable: bool) -> Result<Local> {
-        let mut scope = self.scope.borrow_mut();
-
-        scope.set_local(name, mutable).map_err(|e| {
+        Scope::set_local(self.scope.as_mut(), name, mutable).map_err(|e| {
             let mut e = e;
 
             e.pos = self.pos.clone();
