@@ -1,7 +1,5 @@
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::error::Error;
-use std::fmt;
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
@@ -12,38 +10,14 @@ use crate::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, FnDeclStmt,
     InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt, TemplateComponent,
 };
-use crate::compiler::module::{Class, Field, Interface};
-use crate::compiler::optimizers::{
+
+use super::module::{Class, Field, Interface};
+use super::module::{Func, FuncArg, Module};
+use super::optimizers::{
     call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, Optimizer,
 };
-use crate::compiler::scope::{ForLoopMeta, Local, Scope, ScopeContext};
-use crate::compiler::{Func, FuncArg, Module};
-
-#[derive(Debug, PartialEq)]
-pub struct CompileError {
-    pub pos: Pos,
-    pub message: String,
-}
-
-impl CompileError {
-    pub fn new(message: String, pos: Pos) -> Self {
-        Self { message, pos }
-    }
-}
-
-impl Error for CompileError {}
-
-impl fmt::Display for CompileError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} at {}..{}",
-            self.message, self.pos.start, self.pos.end
-        )
-    }
-}
-
-pub type Result<T> = std::result::Result<T, CompileError>;
+use super::result::{CompileError, Result};
+use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 
 pub struct Compiler {
     pos: Pos,
@@ -93,6 +67,7 @@ impl Compiler {
 
         scope.set_local(name, mutable).map_err(|e| {
             let mut e = e;
+
             e.pos = self.pos.clone();
             e
         })
@@ -903,8 +878,15 @@ impl Compiler {
     }
 
     pub fn compile(mut self) -> Result<Module> {
-        let mut module_is_set = false;
-        let mut module = Module::new("main");
+        let mut module = Module::new(if let Some(Stmt::Module(module_stmt)) = self.tree.get(0) {
+            let name = module_stmt.name.clone();
+
+            self.tree.remove(0);
+
+            name
+        } else {
+            "main".to_string()
+        });
 
         while !self.tree.is_empty() {
             let stmt = self.tree.remove(0);
@@ -927,15 +909,10 @@ impl Compiler {
                     );
                 }
                 Stmt::Module(module_stmt) => {
-                    if module_is_set {
-                        return Err(CompileError::new(
-                            "unable to set module more than once".to_string(),
-                            module_stmt.pos,
-                        ));
-                    }
-
-                    module.name = module_stmt.name.clone();
-                    module_is_set = true;
+                    return Err(CompileError::new(
+                        "module statement must be the first statement in a file".to_string(),
+                        module_stmt.pos,
+                    ));
                 }
                 Stmt::Import(import_stmt) => {
                     if module.imports.contains(&import_stmt.name) {

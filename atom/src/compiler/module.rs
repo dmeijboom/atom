@@ -70,10 +70,10 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn new(name: &str) -> Self {
+    pub fn new(name: String) -> Self {
         Self {
+            name,
             imports: vec![],
-            name: name.to_string(),
             funcs: HashMap::new(),
             classes: HashMap::new(),
             interfaces: HashMap::new(),
