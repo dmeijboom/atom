@@ -1,8 +1,8 @@
 use std::collections::HashMap;
-use std::fs;
 use std::path::{Path, PathBuf};
 
 use indexmap::map::IndexMap;
+use lazy_static::lazy_static;
 
 use atom_ir::{Code, Label, IR};
 
@@ -11,9 +11,11 @@ use crate::ast::{
     FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
     TemplateComponent,
 };
+use crate::compiler::filesystem::ReadFile;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
+use super::filesystem::{Fs, FsWithCache, VirtFs};
 use super::module::{Class, Field, Func, FuncArg, Interface, Module, Type, TypeKind};
 use super::optimizers::{
     call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, Optimizer,
@@ -21,6 +23,27 @@ use super::optimizers::{
 use super::path_finder::PathFinder;
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
+
+lazy_static! {
+    static ref FS: FsWithCache = FsWithCache::new(Fs {}, {
+        let mut cache = VirtFs::new();
+
+        cache.add_file(
+            "std/io.atom",
+            include_str!("../std/atom/std/io.atom").to_string(),
+        );
+        cache.add_file(
+            "std/core.atom",
+            include_str!("../std/atom/std/core.atom").to_string(),
+        );
+        cache.add_file(
+            "std/encoding/utf8.atom",
+            include_str!("../std/atom/std/encoding/utf8.atom").to_string(),
+        );
+
+        cache
+    });
+}
 
 pub struct Compiler {
     pos: Pos,
@@ -935,7 +958,7 @@ impl Compiler {
     }
 
     fn parse_and_compile(&self, filename: PathBuf, name: String) -> Result<Module> {
-        let content = fs::read_to_string(&filename).map_err(|e| {
+        let content = FS.read_file(&filename).map_err(|e| {
             CompileError::new(
                 format!("failed to read '{}': {}", filename.to_str().unwrap(), e),
                 self.pos.clone(),
