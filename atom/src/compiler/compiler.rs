@@ -11,6 +11,7 @@ use crate::ast::{
     TemplateComponent,
 };
 use crate::compiler::filesystem::AbstractFs;
+use crate::compiler::optimizers::remove_core_validations;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
@@ -61,7 +62,7 @@ impl Compiler {
                 vec![
                     call_void::optimize,
                     load_local_twice_add::optimize,
-                    //remove_core_validations::optimize,
+                    remove_core_validations::optimize,
                     pre_compute_labels::optimize,
                 ]
             } else {
@@ -766,7 +767,7 @@ impl Compiler {
         let mut instructions = ir.concat();
 
         for optimizer in self.optimizers.iter() {
-            optimizer(&mut instructions);
+            optimizer(&self.module, &mut instructions);
         }
 
         Ok(instructions)

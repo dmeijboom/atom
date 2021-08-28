@@ -2,8 +2,10 @@ use std::collections::HashMap;
 
 use atom_ir::{Code, IR};
 
+use crate::compiler::Module;
+
 /// Calculate the absolute offset for labels by using their name so that the vm can jump to it directly
-pub fn optimize(instructions: &mut Vec<IR>) {
+pub fn optimize(_module: &Module, instructions: &mut Vec<IR>) {
     let mut labels = HashMap::new();
 
     for (i, ir) in instructions.iter().enumerate() {

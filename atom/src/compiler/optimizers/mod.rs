@@ -1,13 +1,15 @@
 use atom_ir::{Code, IR};
 
+use crate::compiler::Module;
+
 pub mod call_void;
 pub mod load_local_twice_add;
 pub mod pre_compute_labels;
-//pub mod remove_core_validations;
+pub mod remove_core_validations;
 
-pub type Optimizer = fn(&mut Vec<IR>);
+pub type Optimizer = fn(&Module, &mut Vec<IR>);
 
-pub type MatchFn = fn(&Code) -> bool;
+pub type MatchFn = Box<dyn Fn(&Code) -> bool>;
 
 #[derive(Debug)]
 enum Position {
@@ -20,10 +22,10 @@ pub struct Match {
     pos: Position,
 }
 
-pub fn query(when: MatchFn) -> Query {
+pub fn query(when: impl Fn(&Code) -> bool + 'static) -> Query {
     Query {
         clauses: vec![Match {
-            when,
+            when: Box::new(when),
             pos: Position::Current,
         }],
     }
@@ -34,18 +36,18 @@ pub struct Query {
 }
 
 impl Query {
-    pub fn if_next(mut self, when: MatchFn) -> Self {
+    pub fn if_next(mut self, when: impl Fn(&Code) -> bool + 'static) -> Self {
         self.clauses.push(Match {
-            when,
+            when: Box::new(when),
             pos: Position::At(self.get_offset() + 1),
         });
 
         self
     }
 
-    pub fn if_prev(mut self, when: MatchFn) -> Self {
+    pub fn if_prev(mut self, when: impl Fn(&Code) -> bool + 'static) -> Self {
         self.clauses.push(Match {
-            when,
+            when: Box::new(when),
             pos: Position::At(self.get_offset() - 1),
         });
 

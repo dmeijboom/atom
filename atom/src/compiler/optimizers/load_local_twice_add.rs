@@ -1,5 +1,7 @@
 use atom_ir::{Code, IR};
 
+use crate::compiler::Module;
+
 fn get_local_id(ir: &IR) -> Option<usize> {
     if let Code::Load(id) = ir.code {
         return Some(id);
@@ -9,7 +11,7 @@ fn get_local_id(ir: &IR) -> Option<usize> {
 }
 
 /// Instead of adding a local to the same local, multiply it by 2 so that there is no need for a second lookup
-pub fn optimize(instructions: &mut Vec<IR>) {
+pub fn optimize(_module: &Module, instructions: &mut Vec<IR>) {
     let mut i = 0;
     let mut last_local_id = None;
 
