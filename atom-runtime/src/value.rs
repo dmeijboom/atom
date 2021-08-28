@@ -50,7 +50,7 @@ macro_rules! eq {
     ($atom_type:ident, $left:expr, $right:expr) => {
         if let Value::$atom_type(left) = $left {
             if let Value::$atom_type(right) = $right {
-                return map_ref!($atom_type, left, as_ref).eq(map_ref!($atom_type, right, as_ref));
+                return left.eq(right);
             }
         }
     };

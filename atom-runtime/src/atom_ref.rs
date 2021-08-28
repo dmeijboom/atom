@@ -43,6 +43,12 @@ pub struct AtomRef<T: ?Sized> {
     phantom: PhantomData<AtomRefInner<T>>,
 }
 
+impl<T: PartialEq> PartialEq for AtomRef<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_ref().eq(other.as_ref())
+    }
+}
+
 impl<T: ?Sized> AtomRef<T> {
     #[inline(always)]
     fn inner(&self) -> &AtomRefInner<T> {
