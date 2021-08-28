@@ -436,7 +436,7 @@ impl Compiler {
     fn compile_name(&self, name: &str) -> Result<Code> {
         if name == "this" && Scope::in_function_block(&self.scope) {
             Ok(Code::LoadReceiver)
-        } else if let Some(local) = Scope::get_local(&self.scope, &name, true) {
+        } else if let Some(local) = Scope::get_local(&self.scope, name, true) {
             Ok(Code::Load(local.id))
         } else if let Some(id) = self.module.globals.get_index_of(name) {
             Ok(Code::LoadGlobal(id))

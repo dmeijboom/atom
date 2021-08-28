@@ -26,7 +26,7 @@ pub struct Fs {}
 
 impl AbstractFs for Fs {
     fn read_file(&self, path: &Path) -> Result<Content> {
-        fs::read_to_string(path).map(|s| Content::Owned(s))
+        fs::read_to_string(path).map(Content::Owned)
     }
 
     fn file_exist(&self, path: &Path) -> bool {

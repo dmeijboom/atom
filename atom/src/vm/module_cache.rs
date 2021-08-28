@@ -179,8 +179,7 @@ impl ModuleCache {
                     if let Some(func) = sub_module
                         .funcs
                         .iter()
-                        .filter(|func| func.name == global.name)
-                        .next()
+                        .find(|func| func.name == global.name)
                     {
                         Value::Fn(AtomRef::clone(func))
                     } else {
@@ -204,8 +203,7 @@ impl ModuleCache {
                     if let Some(interface) = sub_module
                         .interfaces
                         .iter()
-                        .filter(|iface| iface.name == global.name)
-                        .next()
+                        .find(|iface| iface.name == global.name)
                     {
                         Value::Interface(AtomRef::clone(interface))
                     } else {
