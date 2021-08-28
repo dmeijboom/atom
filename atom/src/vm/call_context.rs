@@ -1,7 +1,4 @@
-use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-
-use wyhash2::WyHash;
 
 use atom_runtime::{AtomRef, Fn, Method, Origin, Result, RuntimeError, Trace, Value};
 
@@ -41,7 +38,6 @@ pub struct CallContext {
     pub target: Target,
     pub receiver: Option<Value>,
     pub locals: Vec<Value>,
-    pub named_locals: HashMap<String, Value, WyHash>,
 }
 
 impl CallContext {
@@ -50,7 +46,6 @@ impl CallContext {
             target,
             receiver,
             locals,
-            named_locals: HashMap::with_hasher(WyHash::default()),
         }
     }
 }

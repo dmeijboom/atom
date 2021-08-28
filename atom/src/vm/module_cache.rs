@@ -147,10 +147,10 @@ impl ModuleCache {
         // Then, add the types
         let mut module = Module::new(self.modules.len(), compiled_module.name, location);
 
-        for (name, func) in compiled_module.funcs {
+        for (_, func) in compiled_module.funcs {
             module
                 .funcs
-                .insert(name, AtomRef::new(self.make_fn(&module, func, None)?));
+                .push(AtomRef::new(self.make_fn(&module, func, None)?));
         }
 
         for (name, class) in compiled_module.classes {
@@ -162,7 +162,7 @@ impl ModuleCache {
         module.interfaces = compiled_module
             .interfaces
             .into_iter()
-            .map(|(name, interface)| (name, AtomRef::new(self.make_interface(&module, interface))))
+            .map(|(_, interface)| AtomRef::new(self.make_interface(&module, interface)))
             .collect();
 
         // At last, register the globals
@@ -176,7 +176,12 @@ impl ModuleCache {
 
             let value = match global.kind {
                 TypeKind::Fn => {
-                    if let Some(func) = sub_module.funcs.get(&global.name) {
+                    if let Some(func) = sub_module
+                        .funcs
+                        .iter()
+                        .filter(|func| func.name == global.name)
+                        .next()
+                    {
                         Value::Fn(AtomRef::clone(func))
                     } else {
                         return Err(RuntimeError::new(format!(
@@ -196,7 +201,12 @@ impl ModuleCache {
                     }
                 }
                 TypeKind::Interface => {
-                    if let Some(interface) = sub_module.interfaces.get(&global.name) {
+                    if let Some(interface) = sub_module
+                        .interfaces
+                        .iter()
+                        .filter(|iface| iface.name == global.name)
+                        .next()
+                    {
                         Value::Interface(AtomRef::clone(interface))
                     } else {
                         return Err(RuntimeError::new(format!(
@@ -207,7 +217,7 @@ impl ModuleCache {
                 }
             };
 
-            module.globals.insert(global.name, value);
+            module.globals.push(value);
         }
 
         self.modules.insert(module.name.clone(), module);

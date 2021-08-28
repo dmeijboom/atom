@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use wyhash2::WyHash;
+use indexmap::map::IndexMap;
 
 use atom_runtime::{AtomRef, Class, Fn, Interface, Value};
 
@@ -10,10 +8,10 @@ pub struct Module {
     pub id: ModuleId,
     pub name: String,
     pub location: String,
-    pub globals: HashMap<String, Value, WyHash>,
-    pub funcs: HashMap<String, AtomRef<Fn>, WyHash>,
-    pub classes: HashMap<String, AtomRef<Class>, WyHash>,
-    pub interfaces: HashMap<String, AtomRef<Interface>, WyHash>,
+    pub globals: Vec<Value>,
+    pub funcs: Vec<AtomRef<Fn>>,
+    pub interfaces: Vec<AtomRef<Interface>>,
+    pub classes: IndexMap<String, AtomRef<Class>>,
 }
 
 impl Module {
@@ -22,10 +20,10 @@ impl Module {
             id,
             name,
             location,
-            globals: HashMap::with_hasher(WyHash::default()),
-            funcs: HashMap::with_hasher(WyHash::default()),
-            classes: HashMap::with_hasher(WyHash::default()),
-            interfaces: HashMap::with_hasher(WyHash::default()),
+            globals: vec![],
+            funcs: vec![],
+            interfaces: vec![],
+            classes: IndexMap::new(),
         }
     }
 }

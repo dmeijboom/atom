@@ -88,11 +88,11 @@ impl Type {
 #[derive(Debug)]
 pub struct Module {
     pub name: String,
-    pub funcs: HashMap<String, Func>,
-    pub classes: HashMap<String, Class>,
-    pub interfaces: HashMap<String, Interface>,
     pub modules: HashMap<String, Module>,
-    pub globals: HashMap<String, Type>,
+    pub funcs: IndexMap<String, Func>,
+    pub classes: IndexMap<String, Class>,
+    pub interfaces: IndexMap<String, Interface>,
+    pub globals: IndexMap<String, Type>,
 }
 
 impl Module {
@@ -103,11 +103,11 @@ impl Module {
     pub fn with_name(name: String) -> Self {
         Self {
             name,
-            funcs: HashMap::new(),
-            classes: HashMap::new(),
-            interfaces: HashMap::new(),
             modules: HashMap::new(),
-            globals: HashMap::new(),
+            funcs: IndexMap::new(),
+            classes: IndexMap::new(),
+            interfaces: IndexMap::new(),
+            globals: IndexMap::new(),
         }
     }
 }

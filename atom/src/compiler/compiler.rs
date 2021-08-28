@@ -16,9 +16,7 @@ use crate::std::core::DEFAULT_IMPORTS;
 
 use super::filesystem::{Fs, FsWithCache, VirtFs};
 use super::module::{Class, Field, Func, FuncArg, Interface, Module, Type, TypeKind};
-use super::optimizers::{
-    call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, Optimizer,
-};
+use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, Optimizer};
 use super::path_finder::PathFinder;
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
@@ -63,7 +61,7 @@ impl Compiler {
                 vec![
                     call_void::optimize,
                     load_local_twice_add::optimize,
-                    remove_core_validations::optimize,
+                    //remove_core_validations::optimize,
                     pre_compute_labels::optimize,
                 ]
             } else {
@@ -146,10 +144,7 @@ impl Compiler {
         ]);
         ir.push(body);
         ir.push(vec![
-            IR::new(
-                Code::LoadName("some".to_string()),
-                member_cond_expr.pos.clone(),
-            ),
+            IR::new(self.compile_name("some")?, member_cond_expr.pos.clone()),
             IR::new(Code::Call(1), member_cond_expr.pos.clone()),
             IR::new(Code::SetLabel(label_none), member_cond_expr.pos.clone()),
         ]);
@@ -217,13 +212,7 @@ impl Compiler {
             }
             Expr::Ident(ident) => {
                 ir.push(vec![IR::new(
-                    if ident.name == "this" && Scope::in_function_block(&self.scope) {
-                        Code::LoadReceiver
-                    } else if let Some(local) = Scope::get_local(&self.scope, &ident.name, true) {
-                        Code::Load(local.id)
-                    } else {
-                        Code::LoadName(ident.name.clone())
-                    },
+                    self.compile_name(&ident.name)?,
                     ident.pos.clone(),
                 )]);
             }
@@ -443,6 +432,27 @@ impl Compiler {
         Ok(ir.concat())
     }
 
+    fn compile_name(&self, name: &str) -> Result<Code> {
+        if name == "this" && Scope::in_function_block(&self.scope) {
+            Ok(Code::LoadReceiver)
+        } else if let Some(local) = Scope::get_local(&self.scope, &name, true) {
+            Ok(Code::Load(local.id))
+        } else if let Some(id) = self.module.globals.get_index_of(name) {
+            Ok(Code::LoadGlobal(id))
+        } else if let Some(id) = self.module.funcs.get_index_of(name) {
+            Ok(Code::LoadFn(id))
+        } else if let Some(id) = self.module.classes.get_index_of(name) {
+            Ok(Code::LoadClass(id))
+        } else if let Some(id) = self.module.interfaces.get_index_of(name) {
+            Ok(Code::LoadInterface(id))
+        } else {
+            Err(CompileError::new(
+                format!("no such name: {}", name),
+                self.pos.clone(),
+            ))
+        }
+    }
+
     fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
         if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
@@ -654,7 +664,7 @@ impl Compiler {
                         ir.push(
                             vec![
                                 // Step 1. Get the iterator from the object
-                                Code::LoadName("Iterable".to_string()),
+                                self.compile_name("Iterable")?,
                                 Code::Validate,
                                 Code::LoadMember("iter".to_string()),
                                 Code::Call(0),

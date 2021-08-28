@@ -3,8 +3,8 @@ mod tests {
     use test_case::test_case;
 
     use atom_ir::{Code, IR};
-    use atom_runtime::AtomRef;
     use atom_runtime::Value;
+    use atom_runtime::{AtomRef, RuntimeError};
 
     use crate::utils::{parse_and_compile, Error};
     use crate::vm::VM;
@@ -16,16 +16,22 @@ mod tests {
         )?;
         let mut vm = VM::new()?;
 
-        vm.register_module(module, "unknown".to_string())?;
-        vm.eval(
-            "main",
-            vec![
-                IR::new(Code::LoadName("main".to_string()), 0..0),
-                IR::new(Code::Call(0), 0..0),
-            ],
-        )?;
+        if let Some(id) = module.funcs.get_index_of("main") {
+            vm.register_module(module, "unknown".to_string())?;
+            vm.eval(
+                "main",
+                vec![
+                    IR::new(Code::LoadFn(id), 0..0),
+                    IR::new(Code::Call(0), 0..0),
+                ],
+            )?;
 
-        Ok(vm.result())
+            return Ok(vm.result());
+        }
+
+        Err(Error::Runtime(RuntimeError::new(
+            "function 'main' was not found in the module".to_string(),
+        )))
     }
 
     #[test_case(include_str!("../examples/calls.atom"), Value::Int(0); "calls")]

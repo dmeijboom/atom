@@ -163,10 +163,6 @@ impl VM {
             context.locals.drain(arg_count..);
         }
 
-        if !context.named_locals.is_empty() {
-            context.named_locals.clear();
-        }
-
         Ok(())
     }
 
@@ -460,7 +456,10 @@ impl VM {
             Code::StoreMember(member) => self.eval_store_member(module_id, member)?,
             Code::Load(id) => self.eval_load(*id)?,
             Code::LoadReceiver => self.eval_load_receiver()?,
-            Code::LoadName(name) => self.eval_load_name(module_id, name)?,
+            Code::LoadGlobal(id) => self.eval_load_global(module_id, *id)?,
+            Code::LoadFn(id) => self.eval_load_fn(module_id, *id)?,
+            Code::LoadClass(id) => self.eval_load_class(module_id, *id)?,
+            Code::LoadInterface(id) => self.eval_load_interface(module_id, *id)?,
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
@@ -952,34 +951,54 @@ impl VM {
         Ok(())
     }
 
-    fn eval_load_name(&mut self, module_id: ModuleId, name: &str) -> Result<()> {
-        if !self.call_stack.is_empty() {
-            let context = self.call_stack.current()?;
-
-            if let Some(value) = context.named_locals.get(name) {
-                self.stack.push(value.clone());
-
-                return Ok(());
-            }
-        }
-
+    fn eval_load_global(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
+        let value = current_module
+            .globals
+            .get(id)
+            .cloned()
+            .ok_or_else(|| RuntimeError::new(format!("global with ID '{}' not found", id)))?;
 
-        if let Some(value) = current_module.globals.get(name).cloned() {
-            self.stack.push(value);
+        self.stack.push(value);
 
-            return Ok(());
-        }
+        Ok(())
+    }
 
-        if let Some(func) = current_module.funcs.get(name) {
-            self.stack.push(Value::Fn(AtomRef::clone(func)));
-        } else if let Some(interface) = current_module.interfaces.get(name) {
-            self.stack.push(Value::Interface(AtomRef::clone(interface)));
-        } else if let Some(class) = current_module.classes.get(name) {
-            self.stack.push(Value::Class(AtomRef::clone(class)));
-        } else {
-            return Err(RuntimeError::new(format!("no such name: {}", name)));
-        }
+    fn eval_load_fn(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+        let current_module = self.module_cache.get_module_by_id(module_id)?;
+        let value = current_module
+            .funcs
+            .get(id)
+            .map(|val| AtomRef::clone(val))
+            .ok_or_else(|| RuntimeError::new(format!("function with ID '{}' not found", id)))?;
+
+        self.stack.push(Value::Fn(value));
+
+        Ok(())
+    }
+
+    fn eval_load_class(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+        let current_module = self.module_cache.get_module_by_id(module_id)?;
+        let value = current_module
+            .classes
+            .get_index(id)
+            .map(|(_, val)| AtomRef::clone(val))
+            .ok_or_else(|| RuntimeError::new(format!("class with ID '{}' not found", id)))?;
+
+        self.stack.push(Value::Class(value));
+
+        Ok(())
+    }
+
+    fn eval_load_interface(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+        let current_module = self.module_cache.get_module_by_id(module_id)?;
+        let value = current_module
+            .interfaces
+            .get(id)
+            .map(|val| AtomRef::clone(val))
+            .ok_or_else(|| RuntimeError::new(format!("interface with ID '{}' not found", id)))?;
+
+        self.stack.push(Value::Interface(value));
 
         Ok(())
     }
