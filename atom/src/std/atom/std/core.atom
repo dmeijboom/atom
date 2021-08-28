@@ -22,9 +22,28 @@ pub class String {
     pub extern fn startsWith(pattern);
     pub extern fn endsWith(pattern);
     pub extern fn contains(pattern);
+    pub extern fn count(pattern);
+    pub extern fn find(pattern);
+    pub extern fn replace(pattern, replacement);
+    pub extern fn append(other);
     pub extern fn chars();
     pub extern fn repeat(n);
+    pub extern fn trim();
     pub extern fn len();
+
+    pub fn containsAny(values) {
+        let chars = this.chars();
+
+        for c2 in values.chars() {
+            for c1 in chars {
+                if c1 == c2 {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
 }
 
 pub class Int {}
@@ -179,6 +198,29 @@ pub class Array {
         }
 
         return false;
+    }
+
+    pub fn join(separator) {
+        let mut output = "";
+        let length = this.len();
+
+        for i in 0..length {
+            unsafe {
+                let value = this[i];
+
+                if value is String {
+                    output.append(value);
+                } else {
+                    output.append(f"{value}");
+                }
+
+                if i < length - 1 {
+                    output.append(separator);
+                }
+            }
+        }
+
+        return output;
     }
 }
 

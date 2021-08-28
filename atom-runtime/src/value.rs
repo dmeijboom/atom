@@ -323,7 +323,7 @@ where
     T: Into<Value>,
 {
     fn from(opt: Option<T>) -> Self {
-        opt.map(|value| value.into()).into()
+        Value::Option(opt.map(|value| Box::new(value.into())))
     }
 }
 

@@ -33,6 +33,11 @@ fn string_starts_with(this: &str, pattern: String) -> Result<bool> {
 }
 
 #[export]
+fn string_count(this: &str, pattern: String) -> Result<i64> {
+    Ok(this.matches(&pattern).count() as i64)
+}
+
+#[export]
 fn string_ends_with(this: &str, pattern: String) -> Result<bool> {
     Ok(this.ends_with(&pattern))
 }
@@ -57,6 +62,28 @@ fn string_len(this: &str) -> Result<i64> {
     Ok(this.len() as i64)
 }
 
+#[export]
+fn string_find(this: &str, pattern: String) -> Result<Option<i64>> {
+    Ok(this.find(&pattern).map(|i| i as i64))
+}
+
+#[export]
+fn string_replace(this: &str, pattern: String, replacement: String) -> Result<String> {
+    Ok(this.replace(&pattern, &replacement))
+}
+
+#[export]
+fn string_trim(this: &str) -> Result<String> {
+    Ok(this.trim().to_string())
+}
+
+#[export]
+fn string_append(this: &mut String, other: String) -> Result<()> {
+    this.push_str(other.as_str());
+
+    Ok(())
+}
+
 pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
     if module_name == "std.core" && name == "String" {
         if let Some(method_name) = method_name {
@@ -70,6 +97,11 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
                 "contains" => string_contains,
                 "chars" => string_chars,
                 "repeat" => string_repeat,
+                "append" => string_append,
+                "count" => string_count,
+                "find" => string_find,
+                "replace" => string_replace,
+                "trim" => string_trim,
                 "len" => string_len,
                 _ => return None,
             });
