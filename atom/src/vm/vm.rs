@@ -223,6 +223,7 @@ impl VM {
         // Verify if there aren't any unknown field names
         for keyword in keywords {
             if !class.fields.contains_key(keyword) {
+
                 return Err(RuntimeError::new(format!(
                     "unable to initialize '{}' with unknown field: {}",
                     class.as_ref(),

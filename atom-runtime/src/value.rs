@@ -1,3 +1,4 @@
+use std::any::Any;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
@@ -6,11 +7,14 @@ use std::ops::Range;
 
 use strum_macros::EnumIter;
 
-use crate::class::Class;
-use crate::r#fn::Fn;
-use crate::{Interface, Method, Object, RuntimeError};
-
 use super::atom_ref::AtomRef;
+use super::class::Class;
+use super::interface::Interface;
+use super::method::Method;
+use super::object::Object;
+use super::r#extern::Extern;
+use super::r#fn::Fn;
+use super::result::RuntimeError;
 
 macro_rules! map_ref {
     (Ref, $value:expr, $method:ident) => {
@@ -200,30 +204,10 @@ pub enum ValueType {
     Array,
     Map,
     Ref,
+    Extern,
 }
 
 impl ValueType {
-    pub fn index(&self) -> usize {
-        match self {
-            Self::Int => 0,
-            Self::Float => 1,
-            Self::Char => 2,
-            Self::Byte => 3,
-            Self::Bool => 4,
-            Self::Option => 5,
-            Self::Range => 6,
-            Self::String => 7,
-            Self::Fn => 8,
-            Self::Class => 9,
-            Self::Method => 10,
-            Self::Interface => 11,
-            Self::Object => 12,
-            Self::Array => 13,
-            Self::Map => 14,
-            Self::Ref => 15,
-        }
-    }
-
     pub fn name(&self) -> &str {
         match self {
             Self::Int => "Int",
@@ -242,6 +226,7 @@ impl ValueType {
             Self::Map => "Map",
             Self::Array => "Array",
             Self::Ref => "Ref",
+            Self::Extern => "Extern",
         }
     }
 }
@@ -265,6 +250,7 @@ pub enum Value {
     Array(AtomRef<Vec<Value>>),
     Option(Option<Box<Value>>),
     Map(AtomRef<HashMap<Value, Value>>),
+    Extern(Extern),
 }
 
 impl_type!(Fn, Fn, [from try_into_ref try_into_mut]);
@@ -278,9 +264,11 @@ impl_type!(Byte, u8, [from try_into try_into_ref try_into_mut]);
 impl_type!(Bool, bool, [from try_into try_into_ref try_into_mut]);
 impl_type!(Range, Range<i64>, [from try_into try_into_ref try_into_mut]);
 impl_type!(String, String, [from try_into try_into_ref try_into_mut]);
+impl_type!(Object, Object, [from try_into_ref try_into_mut]);
 impl_type!(Array, Vec<Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Map, HashMap<Value, Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Option, Option<Box<Value>>, [try_into try_into_ref try_into_mut]);
+impl_type!(Extern, Extern, [from try_into try_into_ref try_into_mut]);
 
 impl_try_into!(&String, str);
 impl_try_into!(&Array, [Value]);
@@ -345,6 +333,7 @@ impl PartialEq for Value {
         eq!(Object, self, other);
         eq!(Array, self, other);
         eq!(Map, self, other);
+        eq!(Extern, self, other);
 
         false
     }
@@ -366,7 +355,7 @@ impl Hash for Value {
             Value::Fn(atom_fn) => atom_fn.as_ref().hash(state),
             Value::Class(class) => class.as_ref().hash(state),
             Value::Method(method) => method.as_ref().hash(state),
-            Value::Interface(iface) => iface.as_ref().hash(state),
+            Value::Interface(interface) => interface.as_ref().hash(state),
             Value::Object(object) => object.as_ref().hash(state),
             Value::Array(val) => val.as_ref().hash(state),
             Value::Map(map) => {
@@ -375,6 +364,7 @@ impl Hash for Value {
                     value.hash(state);
                 }
             }
+            Value::Extern(_) => {}
         }
     }
 }
@@ -399,6 +389,7 @@ impl Clone for Value {
             Value::Object(val) => Value::Object(AtomRef::clone(val)),
             Value::Array(val) => Value::Array(AtomRef::clone(val)),
             Value::Map(val) => Value::Map(AtomRef::clone(val)),
+            Value::Extern(val) => Value::Extern(Extern(AtomRef::clone(&val.0))),
         }
     }
 
@@ -427,6 +418,7 @@ impl Value {
             Value::Object(_) => ValueType::Object,
             Value::Array(_) => ValueType::Array,
             Value::Map(_) => ValueType::Map,
+            Value::Extern(_) => ValueType::Extern,
         }
     }
 }
@@ -455,6 +447,7 @@ impl Display for Value {
             Self::Interface(interface) => write!(f, "{}", interface.as_ref()),
             Self::Class(class) => write!(f, "{}", class.as_ref()),
             Self::Method(method) => write!(f, "{}(...)", method.as_ref()),
+            Self::Extern(external) => write!(f, "<{:?}>", external.type_id()),
             Self::Object(object) => {
                 let class = object.as_ref().class.as_ref();
 

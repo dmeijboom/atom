@@ -22,6 +22,7 @@ pub trait AbstractFs {
     fn file_exist(&self, path: &Path) -> bool;
 }
 
+#[derive(Clone)]
 pub struct Fs {}
 
 impl AbstractFs for Fs {
@@ -34,6 +35,7 @@ impl AbstractFs for Fs {
     }
 }
 
+#[derive(Clone)]
 pub struct VirtFs {
     data: HashMap<PathBuf, &'static str>,
 }
@@ -75,6 +77,7 @@ impl AbstractFs for VirtFs {
     }
 }
 
+#[derive(Clone)]
 pub struct FsWithCache {
     fs: Fs,
     cache: VirtFs,

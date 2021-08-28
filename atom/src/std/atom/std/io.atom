@@ -32,34 +32,6 @@ pub class LinesIter {
     }
 }
 
-pub class LinesReader {
-    let readable;
-
-    pub fn iter() {
-        return LinesIter(readable: this.readable);
-    }
-
-    pub fn collect() {
-        let mut lines = [];
-
-        for this {
-            lines.push(.);
-        }
-
-        return lines;
-    }
-}
-
-pub class File {
-    pub fn reader() {
-        return Reader(readable: this);
-    }
-
-    pub fn lines() {
-        return LinesReader(readable: this);
-    }
-}
-
 pub class Reader {
     let readable;
 
@@ -86,4 +58,42 @@ pub class Reader {
 
         return decode(bytes);
     }
+}
+
+pub class LinesReader {
+    let readable;
+
+    pub fn iter() {
+        return LinesIter(readable: this.readable);
+    }
+
+    pub fn collect() {
+        let mut lines = [];
+
+        for line in this {
+            lines.push(line);
+        }
+
+        return lines;
+    }
+}
+
+pub class File {
+    let fd;
+
+    pub extern fn size();
+
+    pub fn reader() {
+        return Reader(readable: this);
+    }
+
+    pub fn lines() {
+        return LinesReader(readable: this);
+    }
+}
+
+extern fn openFileHandle(filename);
+
+pub fn openFile(filename) {
+    return File(fd: openFileHandle(filename));
 }

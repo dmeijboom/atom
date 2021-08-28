@@ -100,7 +100,7 @@ impl Compiler {
 
     fn fork(&self, module_name: String, tree: Vec<Stmt>) -> Self {
         Self {
-            fs: FsWithCache::new(Fs {}, VirtFs::new()),
+            fs: self.fs.clone(),
             pos: 0..0,
             optimize: self.optimize,
             scope_id: 0,
@@ -1057,7 +1057,7 @@ impl Compiler {
             self.tree.remove(0);
         }
 
-        // The core module shouldn't include the prelude as that would create an infinite loop
+        // The std.core module shouldn't include the prelude as that would create an infinite loop
         if self.module.name != "std.core" {
             self.setup_prelude()?;
         }

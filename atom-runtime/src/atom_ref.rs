@@ -107,7 +107,7 @@ impl<T: Clone> AtomRef<T> {
     }
 }
 
-impl<T> Clone for AtomRef<T> {
+impl<T: ?Sized> Clone for AtomRef<T> {
     fn clone(&self) -> Self {
         self.inner().incr_ref_count();
 

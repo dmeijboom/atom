@@ -1,34 +1,48 @@
-use atom_runtime::ExternalFn;
+use std::fs::File;
 
-//fn use_file(
-//    vm: &mut VM,
-//    handler: impl FnOnce(&mut File) -> Result<Option<Value>>,
-//) -> Result<Option<Value>> {
-//    let value = vm.get_fn_self_mut()?;
-//
-//    if let Value::Object(object) = value {
-//        if let Some(Data::File(file)) = &object.as_ref().data {
-//            return handler(&mut Rc::clone(file).borrow_mut());
-//        }
-//    }
-//
-//    Err(RuntimeError::new(format!(
-//        "invalid type '{}', expected File",
-//        value.get_type().name(),
-//    )))
-//}
+use atom_macros::export;
+use atom_runtime::{AtomRef, Extern, ExternalFn, Object, Result, RuntimeError, Value};
 
-pub fn hook(_module_name: &str, _name: &str, _method_name: Option<&str>) -> Option<ExternalFn> {
+#[export]
+fn file_size(this: &Object) -> Result<i64> {
+    if let Some(Value::Extern(any)) = this.get_field(0) {
+        if let Some(file) = any.0.downcast_ref::<File>() {
+            return file
+                .metadata()
+                .map(|meta| meta.len() as i64)
+                .map_err(|e| RuntimeError::new(format!("IOError: {}", e)));
+        }
+    }
+
+    Err(RuntimeError::new(
+        "invalid type '{}' expected: std.io.File".to_string(),
+    ))
+}
+
+#[export]
+fn open_file_handle(filename: String) -> Result<Extern> {
+    let file = File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
+
+    Ok(Extern(AtomRef::new(Box::new(file))))
+}
+
+pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
+    if module_name == "std.io" {
+        if name == "File" {
+            if let Some(method_name) = method_name {
+                return match method_name {
+                    "size" => Some(file_size),
+                    _ => None,
+                };
+            }
+        }
+
+        if name == "openFileHandle" && method_name.is_none() {
+            return Some(open_file_handle);
+        }
+    }
+
     None
-    //module.register_external_fn("openFile", |vm, mut values| {
-    //    let filename = parse_args!(values => String);
-    //    let file = File::open(filename.as_ref())
-    //        .map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
-    //    let object = Object::new(vm.get_type_id("std.io", "File")?, vec![])
-    //        .with_data(Data::File(Rc::new(RefCell::new(file))));
-
-    //    Ok(Some(Value::Object(AtomRef::new(object))))
-    //});
 
     //module.register_external_method("File", "read", |vm, mut values| {
     //    let max = parse_args!(values => Int);
