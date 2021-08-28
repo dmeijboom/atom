@@ -4,12 +4,12 @@ use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ptr::{self, NonNull};
 
-pub struct AtomRefInner<T> {
+pub struct AtomRefInner<T: ?Sized> {
     ref_count: Cell<usize>,
     data: T,
 }
 
-impl<T> AtomRefInner<T> {
+impl<T: ?Sized> AtomRefInner<T> {
     fn incr_ref_count(&self) -> usize {
         let count = self.ref_count.get();
 
@@ -38,9 +38,23 @@ impl<T> AtomRefInner<T> {
 pub type AtomRefPtr<T> = NonNull<AtomRefInner<T>>;
 
 #[derive(Debug)]
-pub struct AtomRef<T> {
+pub struct AtomRef<T: ?Sized> {
     ptr: AtomRefPtr<T>,
     phantom: PhantomData<AtomRefInner<T>>,
+}
+
+impl<T: ?Sized> AtomRef<T> {
+    #[inline(always)]
+    fn inner(&self) -> &AtomRefInner<T> {
+        unsafe { self.ptr.as_ref() }
+    }
+
+    fn from_inner(ptr: AtomRefPtr<T>) -> Self {
+        Self {
+            ptr,
+            phantom: PhantomData,
+        }
+    }
 }
 
 impl<T> AtomRef<T> {
@@ -69,18 +83,6 @@ impl<T> AtomRef<T> {
         Err(self)
     }
 
-    #[inline(always)]
-    fn inner(&self) -> &AtomRefInner<T> {
-        unsafe { self.ptr.as_ref() }
-    }
-
-    fn from_inner(ptr: AtomRefPtr<T>) -> Self {
-        Self {
-            ptr,
-            phantom: PhantomData,
-        }
-    }
-
     pub fn ref_count(&self) -> usize {
         self.inner().get_ref_count()
     }
@@ -107,7 +109,7 @@ impl<T> Clone for AtomRef<T> {
     }
 }
 
-impl<T> Drop for AtomRef<T> {
+impl<T: ?Sized> Drop for AtomRef<T> {
     fn drop(&mut self) {
         if self.inner().decr_ref_count() > 0 {
             // We shouldn't drop the value here as there are still other references
