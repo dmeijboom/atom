@@ -738,6 +738,13 @@ impl VM {
 
             *item = value;
         } else {
+            let diff = id - context.locals.len();
+
+            // Insert padding if required
+            for _ in 0..diff {
+                context.locals.push(Value::Void);
+            }
+
             context.locals.insert(id, value);
         }
 

@@ -1,0 +1,20 @@
+fn main() {
+    let local1 = "item1";
+    let local2 = "item2";
+    let local3 = "item3";
+
+    if true {
+        let local4 = "item4";
+
+        if false {
+            let local5 = "item5";
+        }
+
+        if true {
+            let local6 = "item6";
+            let local7 = "item7";
+
+            return f"{local3}{local6}";
+        }
+    }
+}
