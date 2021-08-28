@@ -3,9 +3,7 @@ use std::fmt::{Debug, Formatter};
 
 use indexmap::map::IndexMap;
 
-use atom_ir::IR;
-
-use crate::ast::Pos;
+use atom_ir::{Location, IR};
 
 #[derive(Debug, Clone)]
 pub struct FuncArg {
@@ -15,13 +13,13 @@ pub struct FuncArg {
 
 #[derive(Clone)]
 pub struct Func {
-    pub pos: Pos,
     pub public: bool,
     pub name: String,
     pub body: Vec<IR>,
     pub is_void: bool,
     pub is_extern: bool,
     pub args: Vec<FuncArg>,
+    pub location: Location,
 }
 
 impl Debug for Func {

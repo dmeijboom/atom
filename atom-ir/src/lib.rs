@@ -1,7 +1,28 @@
 use std::fmt::{Debug, Display, Formatter};
 use std::ops::Range;
 
-pub type Pos = Range<usize>;
+#[derive(Debug, Clone, PartialEq, Hash, Default)]
+pub struct Location {
+    pub line: usize,
+    pub column: usize,
+    pub offset: Range<usize>,
+}
+
+impl Location {
+    pub fn new(offset: Range<usize>, line: usize, column: usize) -> Self {
+        Self {
+            offset,
+            line,
+            column,
+        }
+    }
+}
+
+impl Display for Location {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "on line {} at column {}", self.line, self.column)
+    }
+}
 
 #[derive(Clone, PartialEq)]
 pub struct Label {
@@ -179,12 +200,12 @@ impl Debug for Code {
 #[derive(Clone, PartialEq)]
 pub struct IR {
     pub code: Code,
-    pub pos: Pos,
+    pub location: Location,
 }
 
 impl IR {
-    pub fn new(code: Code, pos: Pos) -> Self {
-        Self { code, pos }
+    pub fn new(code: Code, location: Location) -> Self {
+        Self { code, location }
     }
 }
 

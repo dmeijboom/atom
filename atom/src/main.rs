@@ -32,12 +32,12 @@ fn main() {
             };
 
             if let Err(e) = cmd::run(&opts.module_path, run_opts, &source) {
-                display_error(&source, e);
+                display_error(e);
             }
         }
         Cmd::Stats => {
             if let Err(e) = cmd::stats() {
-                display_error("", e);
+                display_error(e);
             }
         }
     }

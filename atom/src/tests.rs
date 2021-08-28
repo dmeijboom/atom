@@ -2,7 +2,7 @@
 mod tests {
     use test_case::test_case;
 
-    use atom_ir::{Code, IR};
+    use atom_ir::{Code, Location, IR};
     use atom_runtime::Value;
     use atom_runtime::{AtomRef, RuntimeError};
 
@@ -21,8 +21,8 @@ mod tests {
             vm.eval(
                 "main",
                 vec![
-                    IR::new(Code::LoadFn(id), 0..0),
-                    IR::new(Code::Call(0), 0..0),
+                    IR::new(Code::LoadFn(id), Location::default()),
+                    IR::new(Code::Call(0), Location::default()),
                 ],
             )?;
 

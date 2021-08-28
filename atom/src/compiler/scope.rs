@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use atom_ir::Location;
+
 use crate::compiler::CompileError;
 
 #[derive(Clone)]
@@ -120,7 +122,7 @@ impl Scope {
         .ok_or_else(|| {
             CompileError::new(
                 "unable to set local outside of a function scope".to_string(),
-                0..0,
+                Location::default(),
             )
         })?;
 

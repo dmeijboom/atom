@@ -1,6 +1,7 @@
 use std::error::Error;
 use std::fmt;
-use std::ops::Range;
+
+use atom_ir::Location;
 
 use super::origin::Origin;
 
@@ -13,7 +14,7 @@ pub struct Trace {
 #[derive(Debug, PartialEq)]
 pub struct RuntimeError {
     pub message: String,
-    pub pos: Option<Range<usize>>,
+    pub location: Option<Location>,
     pub module_name: Option<String>,
     pub filename: Option<String>,
     pub stack_trace: Vec<Trace>,
@@ -23,7 +24,7 @@ impl RuntimeError {
     pub fn new(message: String) -> Self {
         Self {
             message,
-            pos: None,
+            location: None,
             module_name: None,
             filename: None,
             stack_trace: vec![],
@@ -36,8 +37,8 @@ impl RuntimeError {
         self
     }
 
-    pub fn with_pos(mut self, pos: Range<usize>) -> Self {
-        self.pos = Some(pos);
+    pub fn with_location(mut self, location: Location) -> Self {
+        self.location = Some(location);
 
         self
     }
@@ -71,8 +72,8 @@ impl fmt::Display for RuntimeError {
             write!(f, " in {}", module_name)?;
         }
 
-        if let Some(pos) = &self.pos {
-            write!(f, " at {}..{}", pos.start, pos.end)?;
+        if let Some(location) = &self.location {
+            write!(f, " {}", location)?;
         }
 
         Ok(())

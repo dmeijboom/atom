@@ -3,8 +3,7 @@ use peg::str::LineCol;
 
 use atom_runtime::RuntimeError;
 
-use crate::ast::Pos;
-use crate::compiler::{CompileError, Compiler};
+use crate::compiler::{parse_line_numbers_offset, CompileError, Compiler};
 use crate::{compiler, parser};
 
 #[derive(Debug, PartialEq)]
@@ -37,31 +36,13 @@ pub fn parse_and_compile(
     lookup_paths: Vec<String>,
 ) -> Result<compiler::Module, Error> {
     let tree = parser::parse(source)?;
-    let mut compiler = Compiler::new(tree, true);
+    let mut compiler = Compiler::new(tree, parse_line_numbers_offset(source), true);
 
     for path in lookup_paths {
         compiler.add_lookup_path(path);
     }
 
     Ok(compiler.compile()?)
-}
-
-pub fn parse_line_column(source: &str, pos: &Pos) -> (usize, usize) {
-    let mut line = 1;
-    let mut column = 1;
-    let mut chars = source.chars();
-
-    for _ in 0..pos.start {
-        match chars.next() {
-            Some('\n') => {
-                line += 1;
-                column = 1;
-            }
-            _ => column += 1,
-        }
-    }
-
-    (line, column)
 }
 
 pub fn display_parse_error(e: ParseError<LineCol>) {
@@ -127,7 +108,7 @@ pub fn display_compile_error(e: CompileError) {
     eprintln!("CompileError: {}", e);
 }
 
-pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError) {
+pub fn display_runtime_error(e: RuntimeError) {
     let mut message = String::new();
 
     if !e.stack_trace.is_empty() {
@@ -135,39 +116,26 @@ pub fn display_runtime_error(main_module: &str, contents: &str, e: RuntimeError)
     }
 
     for trace in e.stack_trace {
-        if !trace.target.starts_with(main_module) {
-            message.push_str(&format!(
-                "  > in {}(..) at {}..{}\n",
-                trace.target, trace.origin.pos.start, trace.origin.pos.end,
-            ));
-
-            continue;
-        }
-
-        let (line, column) = parse_line_column(contents, &trace.origin.pos);
-
         message.push_str(&format!(
-            "  > in {}(..) on line {} at column {}\n",
-            trace.target, line, column,
+            "  > in {}(..) {}\n",
+            trace.target, trace.origin.location,
         ));
     }
 
     message.push_str("RuntimeError: ");
     message.push_str(&e.message);
 
-    if let Some(pos) = e.pos {
-        let (line, column) = parse_line_column(contents, &pos);
-
-        message.push_str(&format!(" on line {} at column {}", line, column));
+    if let Some(location) = e.location {
+        message.push_str(&format!(" {}", location));
     }
 
     eprintln!("{}", message);
 }
 
-pub fn display_error(source: &str, e: Error) {
+pub fn display_error(e: Error) {
     match e {
         Error::Compile(e) => display_compile_error(e),
-        Error::Runtime(e) => display_runtime_error("main", source, e),
+        Error::Runtime(e) => display_runtime_error(e),
         Error::ParseError(e) => display_parse_error(e),
     }
 }

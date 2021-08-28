@@ -1,25 +1,30 @@
-use atom_ir::Pos;
+use atom_ir::Location;
 
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Origin {
-    pub pos: Pos,
-    pub location: String,
+    pub filename: String,
     pub module_id: usize,
     pub module_name: String,
+    pub location: Location,
 }
 
 impl Origin {
-    pub fn new(module_id: usize, module_name: String, location: String, pos: Pos) -> Self {
+    pub fn new(
+        module_id: usize,
+        module_name: String,
+        filename: String,
+        location: Location,
+    ) -> Self {
         Self {
-            pos,
-            location,
+            filename,
             module_id,
             module_name,
+            location,
         }
     }
 
-    pub fn with_location(mut self, location: String) -> Self {
-        self.location = location;
+    pub fn with_filename(mut self, filename: String) -> Self {
+        self.filename = filename;
 
         self
     }

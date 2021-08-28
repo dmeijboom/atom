@@ -1,17 +1,17 @@
 use std::error::Error;
 use std::fmt;
 
-use crate::ast::Pos;
+use atom_ir::Location;
 
 #[derive(Debug, PartialEq)]
 pub struct CompileError {
-    pub pos: Pos,
+    pub location: Location,
     pub message: String,
 }
 
 impl CompileError {
-    pub fn new(message: String, pos: Pos) -> Self {
-        Self { message, pos }
+    pub fn new(message: String, location: Location) -> Self {
+        Self { message, location }
     }
 }
 
@@ -19,11 +19,7 @@ impl Error for CompileError {}
 
 impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "{} at {}..{}",
-            self.message, self.pos.start, self.pos.end
-        )
+        write!(f, "{} {}", self.message, self.location)
     }
 }
 

@@ -3,6 +3,7 @@ use std::collections::HashMap;
 use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
+use atom_ir::Location;
 use atom_runtime::{
     AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError, Value,
 };
@@ -64,7 +65,7 @@ impl ModuleCache {
                 module.id,
                 module.name.clone(),
                 module.location.clone(),
-                0..0,
+                Location::default(),
             ),
         }
     }
@@ -79,7 +80,7 @@ impl ModuleCache {
             module.id,
             module.name.clone(),
             module.location.clone(),
-            func.pos,
+            func.location,
         );
 
         if func.is_extern {
@@ -124,7 +125,7 @@ impl ModuleCache {
                 module.id,
                 module.name.clone(),
                 module.location.clone(),
-                0..0,
+                Location::default(),
             ),
         };
 

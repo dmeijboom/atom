@@ -1114,8 +1114,8 @@ impl VM {
                     Err(e) => {
                         let module = self.module_cache.get_module_by_id(module_id)?;
 
-                        if e.pos.is_none() {
-                            let e = e.with_pos(ir.pos.clone()).with_module(&module.name);
+                        if e.location.is_none() {
+                            let e = e.with_location(ir.location.clone()).with_module(&module.name);
 
                             // @TODO: Fix this
                             //if let Some(filename) = &module.filename {

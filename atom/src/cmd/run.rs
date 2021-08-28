@@ -2,10 +2,10 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
-use atom_ir::{Code, IR};
+use atom_ir::{Code, Location, IR};
 use atom_runtime::RuntimeError;
 
-use crate::compiler::Compiler;
+use crate::compiler::{parse_line_numbers_offset, Compiler};
 use crate::parser;
 use crate::utils::Error;
 use crate::vm::VM;
@@ -21,14 +21,18 @@ pub struct Opts {
     no_optimizations: bool,
 }
 
-pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(), Error> {
-    let tree = parser::parse(contents)?;
+pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(), Error> {
+    let tree = parser::parse(source)?;
 
     if opts.show_ast {
         println!("{:#?}", tree);
     }
 
-    let mut compiler = Compiler::new(tree, !opts.no_optimizations);
+    let mut compiler = Compiler::new(
+        tree,
+        parse_line_numbers_offset(source),
+        !opts.no_optimizations,
+    );
 
     for path in module_paths {
         compiler.add_lookup_path(path);
@@ -59,8 +63,8 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, contents: &str) -> Result<(
         vm.eval(
             "main",
             vec![
-                IR::new(Code::LoadFn(id), 0..0),
-                IR::new(Code::Call(0), 0..0),
+                IR::new(Code::LoadFn(id), Location::default()),
+                IR::new(Code::Call(0), Location::default()),
             ],
         )?;
 

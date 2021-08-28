@@ -1,9 +1,10 @@
 use std::collections::HashMap;
+use std::ops::Range;
 use std::path::{Path, PathBuf};
 
 use indexmap::map::IndexMap;
 
-use atom_ir::{Code, Label, IR};
+use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, ExternFnDeclStmt,
@@ -22,6 +23,25 @@ use super::path_finder::PathFinder;
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 
+pub fn parse_line_numbers_offset(source: &str) -> Vec<usize> {
+    let mut i = 0;
+    let mut line_numbers_offset = vec![];
+
+    while i < source.len() {
+        if let Some(offset) = source[i + 1..].find('\n') {
+            line_numbers_offset.push(offset + i);
+
+            i += offset + 1;
+
+            continue;
+        }
+
+        break;
+    }
+
+    line_numbers_offset
+}
+
 pub struct Compiler {
     pos: Pos,
     fs: FsWithCache,
@@ -33,10 +53,13 @@ pub struct Compiler {
     labels: Vec<String>,
     path_finder: PathFinder,
     optimizers: Vec<Optimizer>,
+    // Unfortunately the parser doesn't expose line or column information so we're using a map of
+    // newline positions to calculate the line number and column instead
+    line_numbers_offset: Vec<usize>,
 }
 
 impl Compiler {
-    pub fn new(tree: Vec<Stmt>, optimize: bool) -> Self {
+    pub fn new(tree: Vec<Stmt>, line_numbers_offset: Vec<usize>, optimize: bool) -> Self {
         let fs = FsWithCache::new(Fs {}, {
             let mut cache = VirtFs::new();
 
@@ -70,11 +93,35 @@ impl Compiler {
             },
             scope: vec![Scope::new()],
             path_finder: PathFinder::new(),
+            line_numbers_offset,
         }
     }
 
     pub fn add_lookup_path(&mut self, path: impl AsRef<Path>) {
         self.path_finder.add_path(path.as_ref().to_path_buf());
+    }
+
+    fn get_location_by_offset(&self, offset: &Range<usize>) -> Location {
+        let index = self
+            .line_numbers_offset
+            .iter()
+            .position(|start| offset.start < *start);
+
+        if let Some(index) = index {
+            let length = self.line_numbers_offset.len();
+
+            if length > 0 && index > 0 {
+                let start = self.line_numbers_offset[index - 1];
+
+                return Location::new(offset.clone(), index + 1, offset.start - start + 1);
+            }
+        }
+
+        Location::new(offset.clone(), 1, offset.start + 1)
+    }
+
+    fn get_location(&self) -> Location {
+        self.get_location_by_offset(&self.pos)
     }
 
     fn enter_scope(&mut self, context: ScopeContext) {
@@ -93,12 +140,12 @@ impl Compiler {
         Scope::set_local(self.scope.as_mut(), name, mutable).map_err(|e| {
             let mut e = e;
 
-            e.pos = self.pos.clone();
+            e.location = self.get_location();
             e
         })
     }
 
-    fn fork(&self, module_name: String, tree: Vec<Stmt>) -> Self {
+    fn fork(&self, module_name: String, tree: Vec<Stmt>, line_numbers_offset: Vec<usize>) -> Self {
         Self {
             fs: self.fs.clone(),
             pos: 0..0,
@@ -108,6 +155,7 @@ impl Compiler {
             tree,
             scope: vec![],
             labels: vec![],
+            line_numbers_offset,
             path_finder: self.path_finder.clone(),
             optimizers: self.optimizers.clone(),
         }
@@ -126,28 +174,46 @@ impl Compiler {
         ir.push(vec![
             IR::new(
                 Code::TeeMember("isSome".to_string()),
-                member_cond_expr.pos.clone(),
+                self.get_location_by_offset(&member_cond_expr.pos),
             ),
-            IR::new(Code::Call(0), member_cond_expr.pos.clone()),
+            IR::new(
+                Code::Call(0),
+                self.get_location_by_offset(&member_cond_expr.pos),
+            ),
             IR::new(
                 Code::Branch((
                     Label::new(label_some.clone()),
                     Label::new(label_none.clone()),
                 )),
-                member_cond_expr.pos.clone(),
+                self.get_location_by_offset(&member_cond_expr.pos),
             ),
-            IR::new(Code::SetLabel(label_some), member_cond_expr.pos.clone()),
-            IR::new(Code::Unwrap, member_cond_expr.pos.clone()),
+            IR::new(
+                Code::SetLabel(label_some),
+                self.get_location_by_offset(&member_cond_expr.pos),
+            ),
+            IR::new(
+                Code::Unwrap,
+                self.get_location_by_offset(&member_cond_expr.pos),
+            ),
             IR::new(
                 Code::LoadMember(member_cond_expr.member.to_string()),
-                member_cond_expr.pos.clone(),
+                self.get_location_by_offset(&member_cond_expr.pos),
             ),
         ]);
         ir.push(body);
         ir.push(vec![
-            IR::new(self.compile_name("some")?, member_cond_expr.pos.clone()),
-            IR::new(Code::Call(1), member_cond_expr.pos.clone()),
-            IR::new(Code::SetLabel(label_none), member_cond_expr.pos.clone()),
+            IR::new(
+                self.compile_name("some")?,
+                self.get_location_by_offset(&member_cond_expr.pos),
+            ),
+            IR::new(
+                Code::Call(1),
+                self.get_location_by_offset(&member_cond_expr.pos),
+            ),
+            IR::new(
+                Code::SetLabel(label_none),
+                self.get_location_by_offset(&member_cond_expr.pos),
+            ),
         ]);
 
         Ok(ir.concat())
@@ -189,13 +255,13 @@ impl Compiler {
                     Literal::Byte(val) => Code::ConstByte(*val),
                     Literal::Nil => Code::ConstNil,
                 },
-                literal_expr.pos.clone(),
+                self.get_location(),
             )]),
             Expr::Template(template_expr) => {
                 for component in template_expr.components.iter() {
                     ir.push(match component {
                         TemplateComponent::String(s) => {
-                            vec![IR::new(Code::ConstString(s.clone()), self.pos.clone())]
+                            vec![IR::new(Code::ConstString(s.clone()), self.get_location())]
                         }
                         TemplateComponent::Expr(expr) => self.compile_expr(expr)?,
                     });
@@ -203,25 +269,25 @@ impl Compiler {
 
                 ir.push(vec![IR::new(
                     Code::MakeTemplate(template_expr.components.len()),
-                    self.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::Range(range_expr) => {
                 ir.push(self.compile_expr(&range_expr.from)?);
                 ir.push(self.compile_expr(&range_expr.to)?);
-                ir.push(vec![IR::new(Code::MakeRange, self.pos.clone())]);
+                ir.push(vec![IR::new(Code::MakeRange, self.get_location())]);
             }
             Expr::Ident(ident) => {
                 ir.push(vec![IR::new(
                     self.compile_name(&ident.name)?,
-                    ident.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::Cast(cast_expr) => {
                 ir.push(self.compile_expr(&cast_expr.expr)?);
                 ir.push(vec![IR::new(
                     Code::Cast(cast_expr.type_name.clone()),
-                    cast_expr.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::Call(call_expr) => {
@@ -237,7 +303,7 @@ impl Compiler {
                 }
 
                 let instructions = vec![if names.is_empty() {
-                    IR::new(Code::Call(call_expr.args.len()), call_expr.pos.clone())
+                    IR::new(Code::Call(call_expr.args.len()), self.get_location())
                 } else {
                     // Make sure each keyword argument is unique
                     if !names.is_empty() {
@@ -247,7 +313,7 @@ impl Compiler {
                             if unique_keys.contains(key) {
                                 return Err(CompileError::new(
                                     format!("duplicate keyword argument: {}", key),
-                                    self.pos.clone(),
+                                    self.get_location(),
                                 ));
                             }
 
@@ -260,7 +326,7 @@ impl Compiler {
                             names,
                             call_expr.keyword_args.len() + call_expr.args.len(),
                         )),
-                        call_expr.pos.clone(),
+                        self.get_location(),
                     )
                 }];
 
@@ -290,7 +356,7 @@ impl Compiler {
                     };
 
                     if self.optimize && is_target() {
-                        ir.push(vec![IR::new(Code::LoadTarget, self.pos.clone())]);
+                        ir.push(vec![IR::new(Code::LoadTarget, self.get_location())]);
                     } else {
                         ir.push(self.compile_expr(&call_expr.callee)?);
                     }
@@ -300,24 +366,24 @@ impl Compiler {
             }
             Expr::Unwrap(unwrap_expr) => {
                 ir.push(self.compile_expr(&unwrap_expr.expr)?);
-                ir.push(vec![IR::new(Code::Unwrap, unwrap_expr.pos.clone())]);
+                ir.push(vec![IR::new(Code::Unwrap, self.get_location())]);
             }
             Expr::Not(not_expr) => {
                 ir.push(self.compile_expr(&not_expr.expr)?);
-                ir.push(vec![IR::new(Code::Not, not_expr.pos.clone())]);
+                ir.push(vec![IR::new(Code::Not, self.get_location())]);
             }
             Expr::Index(index_expr) => {
                 if !Scope::in_unsafe_block(&self.scope) {
                     return Err(CompileError::new(
                         "unable to perform index operation outside of an 'unsafe' block"
                             .to_string(),
-                        self.pos.clone(),
+                        self.get_location(),
                     ));
                 }
 
                 ir.push(self.compile_expr(&index_expr.object)?);
 
-                let instructions = vec![IR::new(Code::LoadIndex, index_expr.pos.clone())];
+                let instructions = vec![IR::new(Code::LoadIndex, self.get_location())];
 
                 if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
                     ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
@@ -333,7 +399,7 @@ impl Compiler {
 
                 ir.push(vec![IR::new(
                     Code::MakeArray(array_expr.items.len()),
-                    array_expr.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::Map(map_expr) => {
@@ -344,7 +410,7 @@ impl Compiler {
 
                 ir.push(vec![IR::new(
                     Code::MakeMap(map_expr.key_values.len()),
-                    map_expr.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::MemberCond(member_cond_expr) => {
@@ -354,7 +420,7 @@ impl Compiler {
                 ir.push(self.compile_expr(&member_expr.object)?);
                 ir.push(vec![IR::new(
                     Code::LoadMember(member_expr.member.to_string()),
-                    member_expr.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::Arithmetic(arithmetic_expr) => {
@@ -370,16 +436,13 @@ impl Compiler {
                         ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
                         ArithmeticOp::BitOr => Code::ArithmeticBitOr,
                     },
-                    arithmetic_expr.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::TypeAssert(type_assert_expr) => {
                 ir.push(self.compile_expr(&type_assert_expr.left)?);
                 ir.push(self.compile_expr(&type_assert_expr.right)?);
-                ir.push(vec![IR::new(
-                    Code::AssertIsType,
-                    type_assert_expr.pos.clone(),
-                )]);
+                ir.push(vec![IR::new(Code::AssertIsType, self.get_location())]);
             }
             Expr::Comparison(comparison_expr) => {
                 ir.push(self.compile_expr(&comparison_expr.left)?);
@@ -393,7 +456,7 @@ impl Compiler {
                         ComparisonOp::Eq => Code::ComparisonEq,
                         ComparisonOp::Neq => Code::ComparisonNeq,
                     },
-                    comparison_expr.pos.clone(),
+                    self.get_location(),
                 )]);
             }
             Expr::Logical(logical_expr) => {
@@ -401,7 +464,7 @@ impl Compiler {
                     LogicalOp::And => {
                         ir.push(self.compile_expr(&logical_expr.left)?);
                         ir.push(self.compile_expr(&logical_expr.right)?);
-                        ir.push(vec![IR::new(Code::LogicalAnd, logical_expr.pos.clone())]);
+                        ir.push(vec![IR::new(Code::LogicalAnd, self.get_location())]);
                     }
                     LogicalOp::Or => {
                         ir.push(self.compile_expr(&logical_expr.left)?);
@@ -410,23 +473,20 @@ impl Compiler {
 
                         ir.push(vec![IR::new(
                             Code::JumpIfTrue(Label::new(label.clone())),
-                            logical_expr.pos.clone(),
+                            self.get_location(),
                         )]);
                         ir.push(self.compile_expr(&logical_expr.right)?);
-                        ir.push(vec![IR::new(
-                            Code::SetLabel(label),
-                            logical_expr.pos.clone(),
-                        )]);
+                        ir.push(vec![IR::new(Code::SetLabel(label), self.get_location())]);
                     }
                 };
             }
             Expr::MakeRef(make_ref_expr) => {
                 ir.push(self.compile_expr(&make_ref_expr.expr)?);
-                ir.push(vec![IR::new(Code::MakeRef, self.pos.clone())]);
+                ir.push(vec![IR::new(Code::MakeRef, self.get_location())]);
             }
             Expr::Deref(deref_expr) => {
                 ir.push(self.compile_expr(&deref_expr.expr)?);
-                ir.push(vec![IR::new(Code::Deref, self.pos.clone())]);
+                ir.push(vec![IR::new(Code::Deref, self.get_location())]);
             }
         };
 
@@ -449,7 +509,7 @@ impl Compiler {
         } else {
             Err(CompileError::new(
                 format!("no such name: {}", name),
-                self.pos.clone(),
+                self.get_location(),
             ))
         }
     }
@@ -459,7 +519,7 @@ impl Compiler {
             if !local.mutable {
                 return Err(CompileError::new(
                     format!("name is not mutable: {}", name),
-                    self.pos.clone(),
+                    self.get_location(),
                 ));
             }
 
@@ -471,7 +531,7 @@ impl Compiler {
                     } else {
                         Code::Store(local.id)
                     },
-                    self.pos.clone(),
+                    self.get_location(),
                 )],
             ]
             .concat());
@@ -479,7 +539,7 @@ impl Compiler {
 
         Err(CompileError::new(
             format!("unable to assign value to unknown name: {}", name),
-            self.pos.clone(),
+            self.get_location(),
         ))
     }
 
@@ -494,7 +554,7 @@ impl Compiler {
             self.compile_expr(object)?,
             vec![IR::new(
                 Code::StoreMember(member.to_string()),
-                self.pos.clone(),
+                self.get_location(),
             )],
         ]
         .concat())
@@ -510,7 +570,7 @@ impl Compiler {
             self.compile_expr(object)?,
             self.compile_expr(index)?,
             self.compile_expr(value)?,
-            vec![IR::new(Code::StoreIndex, self.pos.clone())],
+            vec![IR::new(Code::StoreIndex, self.get_location())],
         ]
         .concat())
     }
@@ -526,7 +586,7 @@ impl Compiler {
             }
             _ => Err(CompileError::new(
                 "invalid left-hand side in assignment".to_string(),
-                self.pos.clone(),
+                self.get_location(),
             )),
         }
     }
@@ -535,7 +595,7 @@ impl Compiler {
         let local = if Scope::get_local(&self.scope, name, false).is_some() {
             return Err(CompileError::new(
                 format!("name already defined: {}", name),
-                self.pos.clone(),
+                self.get_location(),
             ));
         } else {
             self.set_local(name.to_string(), mutable)?
@@ -550,7 +610,7 @@ impl Compiler {
                     } else {
                         Code::Store(local.id)
                     },
-                    self.pos.clone(),
+                    self.get_location(),
                 )],
             ]
             .concat());
@@ -582,30 +642,36 @@ impl Compiler {
                                     else_label.clone()
                                 }),
                             )),
-                            self.pos.clone(),
+                            self.get_location(),
                         ),
-                        IR::new(Code::SetLabel(if_label), self.pos.clone()),
+                        IR::new(Code::SetLabel(if_label), self.get_location()),
                     ]);
                     ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
 
                     if !if_stmt.alt.is_empty() {
                         ir.push(vec![IR::new(
                             Code::Jump(Label::new(cont_label.clone())),
-                            self.pos.clone(),
+                            self.get_location(),
                         )]);
-                        ir.push(vec![IR::new(Code::SetLabel(else_label), self.pos.clone())]);
+                        ir.push(vec![IR::new(
+                            Code::SetLabel(else_label),
+                            self.get_location(),
+                        )]);
                         ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.alt)?);
                         ir.push(vec![IR::new(
                             Code::Jump(Label::new(cont_label.clone())),
-                            self.pos.clone(),
+                            self.get_location(),
                         )]);
                     }
 
-                    ir.push(vec![IR::new(Code::SetLabel(cont_label), self.pos.clone())]);
+                    ir.push(vec![IR::new(
+                        Code::SetLabel(cont_label),
+                        self.get_location(),
+                    )]);
                 }
                 Stmt::Expr(expr_stmt) => {
                     ir.push(self.compile_expr(&expr_stmt.expr)?);
-                    ir.push(vec![IR::new(Code::Discard, self.pos.clone())]);
+                    ir.push(vec![IR::new(Code::Discard, self.get_location())]);
                 }
                 Stmt::Let(let_stmt) => ir.push(self.compile_let(
                     let_stmt.mutable,
@@ -688,16 +754,16 @@ impl Compiler {
                                 Code::SetLabel(body_label.clone()),
                             ]
                             .into_iter()
-                            .map(|code| IR::new(code, self.pos.clone()))
+                            .map(|code| IR::new(code, self.get_location()))
                             .collect::<Vec<_>>(),
                         );
 
                         // Only store the current item when requested
                         if for_stmt.alias.is_some() {
                             ir.push(vec![
-                                IR::new(Code::Load(local.id), self.pos.clone()),
-                                IR::new(Code::Unwrap, self.pos.clone()),
-                                IR::new(Code::Store(local.id), self.pos.clone()),
+                                IR::new(Code::Load(local.id), self.get_location()),
+                                IR::new(Code::Unwrap, self.get_location()),
+                                IR::new(Code::Store(local.id), self.get_location()),
                             ]);
                         }
 
@@ -708,8 +774,8 @@ impl Compiler {
                         }));
 
                         ir.push(vec![
-                            IR::new(Code::SetLabel(for_label.clone()), self.pos.clone()),
-                            IR::new(Code::SetLabel(body_label), self.pos.clone()),
+                            IR::new(Code::SetLabel(for_label.clone()), self.get_location()),
+                            IR::new(Code::SetLabel(body_label), self.get_location()),
                         ]);
                         ir.push(self.compile_stmt_list(
                             ScopeContext::ForLoop(ForLoopMeta {
@@ -720,8 +786,8 @@ impl Compiler {
                     }
 
                     ir.push(vec![
-                        IR::new(Code::Jump(Label::new(for_label)), self.pos.clone()),
-                        IR::new(Code::SetLabel(cont_label), self.pos.clone()),
+                        IR::new(Code::Jump(Label::new(for_label)), self.get_location()),
+                        IR::new(Code::SetLabel(cont_label), self.get_location()),
                     ]);
 
                     self.exit_scope();
@@ -734,22 +800,22 @@ impl Compiler {
                     if let Some(meta) = Scope::get_for_loop(&self.scope) {
                         ir.push(vec![IR::new(
                             Code::Jump(Label::new(meta.continue_label.clone())),
-                            self.pos.clone(),
+                            self.get_location(),
                         )]);
                     } else {
                         return Err(CompileError::new(
                             "unable to break outside of a loop".to_string(),
-                            self.pos.clone(),
+                            self.get_location(),
                         ));
                     }
                 }
                 Stmt::Raise(raise_stmt) => {
                     ir.push(self.compile_expr(&raise_stmt.expr)?);
-                    ir.push(vec![IR::new(Code::Raise, raise_stmt.pos.clone())]);
+                    ir.push(vec![IR::new(Code::Raise, self.get_location())]);
                 }
                 Stmt::Return(return_stmt) => {
                     ir.push(self.compile_expr(&return_stmt.expr)?);
-                    ir.push(vec![IR::new(Code::Return, self.pos.clone())]);
+                    ir.push(vec![IR::new(Code::Return, self.get_location())]);
                 }
                 Stmt::Unsafe(unsafe_stmt) => {
                     ir.push(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
@@ -820,7 +886,7 @@ impl Compiler {
             is_extern: true,
             // @TODO: this can be implemented when varargs are working
             args: vec![],
-            pos: extern_fn_decl.pos.clone(),
+            location: self.get_location_by_offset(&extern_fn_decl.pos),
         }
     }
 
@@ -874,7 +940,7 @@ impl Compiler {
         }
 
         Ok(Func {
-            pos: fn_decl.pos.clone(),
+            location: self.get_location_by_offset(&fn_decl.pos),
             name: fn_decl.name.clone(),
             public: fn_decl.public,
             is_void: !body.iter().any(|ir| ir.code == Code::Return),
@@ -903,7 +969,7 @@ impl Compiler {
                         "unable to redefine field: {}.{}",
                         class_decl.name, field.name
                     ),
-                    self.pos.clone(),
+                    self.get_location(),
                 ));
             }
 
@@ -966,17 +1032,19 @@ impl Compiler {
         let content = self.fs.read_file(&filename).map_err(|e| {
             CompileError::new(
                 format!("failed to read '{}': {}", filename.to_str().unwrap(), e),
-                self.pos.clone(),
+                self.get_location(),
             )
         })?;
-        let tree = parser::parse(content.as_str()).map_err(|e| {
+        let source = content.as_str();
+        let tree = parser::parse(source).map_err(|e| {
             CompileError::new(
                 format!("failed to parse '{}': {}", filename.to_str().unwrap(), e),
-                self.pos.clone(),
+                self.get_location(),
             )
         })?;
 
-        self.fork(name, tree).compile()
+        self.fork(name, tree, parse_line_numbers_offset(source))
+            .compile()
     }
 
     fn compile_import(&mut self, import_stmt: ImportStmt) -> Result<()> {
@@ -987,7 +1055,7 @@ impl Compiler {
         if components.len() < 2 {
             return Err(CompileError::new(
                 format!("invalid import path: {}", import_stmt.name),
-                self.pos.clone(),
+                self.get_location(),
             ));
         }
 
@@ -1001,7 +1069,7 @@ impl Compiler {
                 .ok_or_else(|| {
                     CompileError::new(
                         format!("failed to find module: {}", module_name),
-                        self.pos.clone(),
+                        self.get_location(),
                     )
                 })?;
 
@@ -1024,21 +1092,21 @@ impl Compiler {
                     "failed to import unknown name '{}' from: {}",
                     name, module.name
                 ),
-                self.pos.clone(),
+                self.get_location(),
             ));
         };
 
         if !is_public {
             return Err(CompileError::new(
                 format!("unable to import private {}: {}", type_name, name,),
-                self.pos.clone(),
+                self.get_location(),
             ));
         }
 
         if self.module.globals.contains_key(name) {
             return Err(CompileError::new(
                 format!("unable to redefine global: {}", name),
-                self.pos.clone(),
+                self.get_location(),
             ));
         }
 
@@ -1091,7 +1159,7 @@ impl Compiler {
                 Stmt::Module(module_stmt) => {
                     return Err(CompileError::new(
                         "module statement must be the first statement in a file".to_string(),
-                        module_stmt.pos,
+                        self.get_location_by_offset(&module_stmt.pos),
                     ));
                 }
                 Stmt::Import(import_stmt) => self.compile_import(import_stmt)?,
