@@ -144,6 +144,11 @@ impl ModuleCache {
             self.register(sub_module, location.clone())?;
         }
 
+        // We don't want to re-register the same module
+        if self.modules.contains_key(&compiled_module.name) {
+            return Ok(());
+        }
+
         // Then, add the types
         let mut module = Module::new(self.modules.len(), compiled_module.name, location);
 
@@ -203,7 +208,7 @@ impl ModuleCache {
                     if let Some(interface) = sub_module
                         .interfaces
                         .iter()
-                        .find(|iface| iface.name == global.name)
+                        .find(|interface| interface.name == global.name)
                     {
                         Value::Interface(AtomRef::clone(interface))
                     } else {
