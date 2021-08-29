@@ -51,15 +51,11 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("{:#?}", module.funcs);
     }
 
-    let location = opts
-        .filename
-        .to_str()
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| "unknown".to_string());
+    let filename = opts.filename.to_str().map(|s| s.to_string());
     let mut vm = VM::new()?;
 
     if let Some(id) = module.funcs.get_index_of("main") {
-        vm.register_module(module, location)?;
+        vm.register_module(module, filename)?;
         vm.eval(
             "main",
             vec![

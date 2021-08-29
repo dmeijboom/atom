@@ -86,6 +86,7 @@ impl Type {
 #[derive(Debug)]
 pub struct Module {
     pub name: String,
+    pub filename: Option<String>,
     pub modules: HashMap<String, Module>,
     pub funcs: IndexMap<String, Func>,
     pub classes: IndexMap<String, Class>,
@@ -101,6 +102,7 @@ impl Module {
     pub fn with_name(name: String) -> Self {
         Self {
             name,
+            filename: None,
             modules: HashMap::new(),
             funcs: IndexMap::new(),
             classes: IndexMap::new(),

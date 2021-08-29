@@ -7,7 +7,7 @@ pub type ModuleId = usize;
 pub struct Module {
     pub id: ModuleId,
     pub name: String,
-    pub location: String,
+    pub filename: Option<String>,
     pub globals: Vec<Value>,
     pub funcs: Vec<AtomRef<Fn>>,
     pub interfaces: Vec<AtomRef<Interface>>,
@@ -15,11 +15,11 @@ pub struct Module {
 }
 
 impl Module {
-    pub fn new(id: ModuleId, name: String, location: String) -> Self {
+    pub fn new(id: ModuleId, name: String, filename: Option<String>) -> Self {
         Self {
             id,
             name,
-            location,
+            filename,
             globals: vec![],
             funcs: vec![],
             interfaces: vec![],

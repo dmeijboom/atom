@@ -115,19 +115,18 @@ pub fn display_runtime_error(e: RuntimeError) {
         message.push_str("Stack trace:\n");
     }
 
-    for trace in e.stack_trace {
-        message.push_str(&format!(
-            "  > in {}(..) {}\n",
-            trace.target, trace.origin.location,
-        ));
+    for trace in e.stack_trace.iter() {
+        if let Some(filename) = &trace.origin.filename {
+            message.push_str(&format!(
+                "  > at {}(..) in {}:{}:{}\n",
+                trace.target, filename, trace.origin.location.line, trace.origin.location.column,
+            ));
+        } else {
+            message.push_str(&format!("  > at {}(..)\n", trace.target,));
+        }
     }
 
-    message.push_str("RuntimeError: ");
-    message.push_str(&e.message);
-
-    if let Some(location) = e.location {
-        message.push_str(&format!(" {}", location));
-    }
+    message.push_str(&format!("{}", e));
 
     eprintln!("{}", message);
 }

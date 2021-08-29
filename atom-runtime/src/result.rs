@@ -13,6 +13,7 @@ pub struct Trace {
 
 #[derive(Debug, PartialEq)]
 pub struct RuntimeError {
+    pub kind: Option<String>,
     pub message: String,
     pub location: Option<Location>,
     pub module_name: Option<String>,
@@ -23,6 +24,7 @@ pub struct RuntimeError {
 impl RuntimeError {
     pub fn new(message: String) -> Self {
         Self {
+            kind: None,
             message,
             location: None,
             module_name: None,
@@ -55,8 +57,14 @@ impl RuntimeError {
         self
     }
 
-    pub fn with_filename(mut self, filename: &str) -> Self {
-        self.filename = Some(filename.to_string());
+    pub fn with_filename(mut self, filename: String) -> Self {
+        self.filename = Some(filename);
+
+        self
+    }
+
+    pub fn with_kind(mut self, kind: String) -> Self {
+        self.kind = Some(kind);
 
         self
     }
@@ -66,14 +74,17 @@ impl Error for RuntimeError {}
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            Some(kind) => write!(f, "{}: ", kind),
+            None => write!(f, "RuntimeError: "),
+        }?;
+
         write!(f, "{}", self.message)?;
 
-        if let Some(module_name) = &self.module_name {
-            write!(f, " in {}", module_name)?;
-        }
-
         if let Some(location) = &self.location {
-            write!(f, " {}", location)?;
+            if let Some(filename) = &self.filename {
+                write!(f, " in {}:{}:{}", filename, location.line, location.column)?;
+            }
         }
 
         Ok(())

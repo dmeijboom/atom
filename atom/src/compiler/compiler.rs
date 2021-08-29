@@ -1043,8 +1043,12 @@ impl Compiler {
             )
         })?;
 
-        self.fork(name, tree, parse_line_numbers_offset(source))
-            .compile()
+        let line_numbers_offset = parse_line_numbers_offset(source);
+        let mut module = self.fork(name, tree, line_numbers_offset).compile()?;
+
+        module.filename = filename.to_str().map(|filename| filename.to_string());
+
+        Ok(module)
     }
 
     fn compile_import(&mut self, import_stmt: ImportStmt) -> Result<()> {

@@ -2,7 +2,7 @@ use atom_ir::Location;
 
 #[derive(Debug, Clone, PartialEq, Hash)]
 pub struct Origin {
-    pub filename: String,
+    pub filename: Option<String>,
     pub module_id: usize,
     pub module_name: String,
     pub location: Location,
@@ -12,7 +12,7 @@ impl Origin {
     pub fn new(
         module_id: usize,
         module_name: String,
-        filename: String,
+        filename: Option<String>,
         location: Location,
     ) -> Self {
         Self {
@@ -24,7 +24,7 @@ impl Origin {
     }
 
     pub fn with_filename(mut self, filename: String) -> Self {
-        self.filename = filename;
+        self.filename = Some(filename);
 
         self
     }

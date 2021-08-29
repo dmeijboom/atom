@@ -64,7 +64,7 @@ impl ModuleCache {
             origin: Origin::new(
                 module.id,
                 module.name.clone(),
-                module.location.clone(),
+                module.filename.clone(),
                 Location::default(),
             ),
         }
@@ -79,7 +79,7 @@ impl ModuleCache {
         let origin = Origin::new(
             module.id,
             module.name.clone(),
-            module.location.clone(),
+            module.filename.clone(),
             func.location,
         );
 
@@ -124,7 +124,7 @@ impl ModuleCache {
             origin: Origin::new(
                 module.id,
                 module.name.clone(),
-                module.location.clone(),
+                module.filename.clone(),
                 Location::default(),
             ),
         };
@@ -139,10 +139,16 @@ impl ModuleCache {
         Ok(output)
     }
 
-    pub fn register(&mut self, compiled_module: compiler::Module, location: String) -> Result<()> {
+    pub fn register(
+        &mut self,
+        compiled_module: compiler::Module,
+        filename: Option<String>,
+    ) -> Result<()> {
         // First, register all module dependencies
         for (_, sub_module) in compiled_module.modules {
-            self.register(sub_module, location.clone())?;
+            let filename = sub_module.filename.clone();
+
+            self.register(sub_module, filename)?;
         }
 
         // We don't want to re-register the same module
@@ -151,7 +157,7 @@ impl ModuleCache {
         }
 
         // Then, add the types
-        let mut module = Module::new(self.modules.len(), compiled_module.name, location);
+        let mut module = Module::new(self.modules.len(), compiled_module.name, filename);
 
         for (_, func) in compiled_module.funcs {
             module

@@ -10,7 +10,7 @@ fn file_size(this: &Object) -> Result<i64> {
             return file
                 .metadata()
                 .map(|meta| meta.len() as i64)
-                .map_err(|e| RuntimeError::new(format!("IOError: {}", e)));
+                .map_err(|e| RuntimeError::new(format!("{}", e)).with_kind("IOError".to_string()));
         }
     }
 
@@ -21,7 +21,8 @@ fn file_size(this: &Object) -> Result<i64> {
 
 #[export]
 fn open_file_handle(filename: String) -> Result<Extern> {
-    let file = File::open(filename).map_err(|e| RuntimeError::new(format!("IOError: {}", e)))?;
+    let file = File::open(filename)
+        .map_err(|e| RuntimeError::new(format!("{}", e)).with_kind("IOError".to_string()))?;
 
     Ok(Extern(AtomRef::new(Box::new(file))))
 }

@@ -117,8 +117,12 @@ impl VM {
         self.module_cache.add_external_hook(hook);
     }
 
-    pub fn register_module(&mut self, module: compiler::Module, location: String) -> Result<()> {
-        self.module_cache.register(module, location)?;
+    pub fn register_module(
+        &mut self,
+        module: compiler::Module,
+        filename: Option<String>,
+    ) -> Result<()> {
+        self.module_cache.register(module, filename)?;
 
         Ok(())
     }
@@ -223,7 +227,6 @@ impl VM {
         // Verify if there aren't any unknown field names
         for keyword in keywords {
             if !class.fields.contains_key(keyword) {
-
                 return Err(RuntimeError::new(format!(
                     "unable to initialize '{}' with unknown field: {}",
                     class.as_ref(),
@@ -469,7 +472,7 @@ impl VM {
             }
             Code::Jump(label) => return Ok(Flow::JumpTo(label)),
             Code::JumpIfTrue(label) => return self.eval_jump_if_true(label),
-            Code::Raise => self.eval_raise()?,
+            Code::Raise => self.eval_raise(module_id)?,
         };
 
         Ok(Flow::Continue)
@@ -1049,8 +1052,22 @@ impl VM {
         Ok(Flow::Continue)
     }
 
-    fn eval_raise(&mut self) -> Result<()> {
+    fn eval_raise(&mut self, module_id: ModuleId) -> Result<()> {
         let value = self.stack.pop()?;
+
+        // @TODO: come up with a generic solution for raising errors from atom
+        if let Value::Object(object) = &value {
+            if object.class.fields.contains_key("message") {
+                let kind = object.class.name.clone();
+
+                self.stack.push(value);
+                self.eval_load_member(module_id, "message", false)?;
+
+                let message = self.stack.pop()?;
+
+                return Err(RuntimeError::new(format!("{}", message)).with_kind(kind));
+            }
+        }
 
         Err(RuntimeError::new(format!("{}", value)))
     }
@@ -1117,12 +1134,13 @@ impl VM {
                         let module = self.module_cache.get_module_by_id(module_id)?;
 
                         if e.location.is_none() {
-                            let e = e.with_location(ir.location.clone()).with_module(&module.name);
+                            let e = e
+                                .with_location(ir.location.clone())
+                                .with_module(&module.name);
 
-                            // @TODO: Fix this
-                            //if let Some(filename) = &module.filename {
-                            //    return Err(e.with_filename(&filename.display().to_string()));
-                            //}
+                            if let Some(filename) = &module.filename {
+                                return Err(e.with_filename(filename.clone()));
+                            }
 
                             return Err(e);
                         };
