@@ -370,6 +370,7 @@ impl Hash for Value {
 }
 
 impl Clone for Value {
+    #[inline(always)]
     fn clone(&self) -> Self {
         match self {
             Value::Void => panic!("Void can't be cloned"),

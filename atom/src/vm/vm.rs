@@ -403,6 +403,7 @@ impl VM {
         self.stack.push(Value::Option(None));
     }
 
+    #[inline(always)]
     fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
             Code::ConstNil => self.eval_const_nil(),
@@ -1069,6 +1070,7 @@ impl VM {
         )))
     }
 
+    #[inline(always)]
     fn _eval(&mut self, module_id: ModuleId, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
         let mut i = 0;
         let mut return_addr = vec![];
