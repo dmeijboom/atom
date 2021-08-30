@@ -176,11 +176,15 @@ peg::parser! {
         rule return_stmt() -> Stmt
             = start:pos() "return" __ expr:expr() _ ";" end:pos() { Stmt::Return(ReturnStmt { expr, pos: (start..end) }) }
 
-        rule else_stmt() -> Vec<Stmt>
-            = start:pos() "else" __ "{" _ body:stmt_list() _ "}" end:pos() { body }
+        rule else_stmt() -> Stmt
+            = start:pos() "else" __ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::Else(ElseStmt { body, pos: (start..end) }) }
+
+        rule if_alt_stmt() -> Stmt
+            = start:pos() "else if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:if_alt_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.map(Box::new), pos: (start..end) }) }
+                / else_stmt()
 
         rule if_stmt() -> Stmt
-            = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:else_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.unwrap_or_default(), pos: (start..end) }) }
+            = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:if_alt_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.map(Box::new), pos: (start..end) }) }
 
         rule for_alias() -> String
             = __ name:ident() __ "in" { name }
@@ -775,7 +779,7 @@ mod tests {
                     pos: (3..7),
                 }),
                 pos: (0..15),
-                alt: vec![],
+                alt: None,
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
                         literal: Literal::Int(10),
@@ -806,13 +810,19 @@ mod tests {
                     }),
                     pos: (10..13),
                 })],
-                alt: vec![Stmt::Expr(ExprStmt {
-                    expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(30),
-                        pos: (23..25),
-                    }),
-                    pos: (23..26),
-                })],
+                alt: Some(
+                    Stmt::Else(ElseStmt {
+                        pos: (16..28),
+                        body: vec![Stmt::Expr(ExprStmt {
+                            expr: Expr::Literal(LiteralExpr {
+                                literal: Literal::Int(30),
+                                pos: (23..25),
+                            }),
+                            pos: (23..26),
+                        })]
+                    })
+                    .into()
+                ),
             }))
         );
     }

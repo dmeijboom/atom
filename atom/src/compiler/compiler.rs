@@ -619,215 +619,226 @@ impl Compiler {
         Ok(vec![])
     }
 
+    fn compile_stmt(&mut self, stmt: &Stmt, ir: &mut Vec<Vec<IR>>) -> Result<()> {
+        self.pos = stmt.pos();
+
+        match stmt {
+            Stmt::If(if_stmt) => {
+                let if_label = self.make_label("if");
+                let else_label = self.make_label("else");
+                let cont_label = self.make_label("if_else_cont");
+
+                ir.push(self.compile_expr(&if_stmt.cond)?);
+                ir.push(vec![
+                    IR::new(
+                        Code::Branch((
+                            Label::new(if_label.clone()),
+                            Label::new(if if_stmt.alt.is_none() {
+                                cont_label.clone()
+                            } else {
+                                else_label.clone()
+                            }),
+                        )),
+                        self.get_location(),
+                    ),
+                    IR::new(Code::SetLabel(if_label), self.get_location()),
+                ]);
+                ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
+
+                if let Some(alt) = &if_stmt.alt {
+                    ir.push(vec![IR::new(
+                        Code::Jump(Label::new(cont_label.clone())),
+                        self.get_location(),
+                    )]);
+                    ir.push(vec![IR::new(
+                        Code::SetLabel(else_label),
+                        self.get_location(),
+                    )]);
+
+                    self.enter_scope(ScopeContext::IfElse);
+                    self.compile_stmt(alt, ir)?;
+                    self.exit_scope();
+
+                    ir.push(vec![IR::new(
+                        Code::Jump(Label::new(cont_label.clone())),
+                        self.get_location(),
+                    )]);
+                }
+
+                ir.push(vec![IR::new(
+                    Code::SetLabel(cont_label),
+                    self.get_location(),
+                )]);
+            }
+            Stmt::Else(else_stmt) => ir.push(self._compile_stmt_list(&else_stmt.body)?),
+            Stmt::Expr(expr_stmt) => {
+                ir.push(self.compile_expr(&expr_stmt.expr)?);
+                ir.push(vec![IR::new(Code::Discard, self.get_location())]);
+            }
+            Stmt::Let(let_stmt) => ir.push(self.compile_let(
+                let_stmt.mutable,
+                &let_stmt.name,
+                Some(&let_stmt.value),
+            )?),
+            Stmt::LetDecl(let_decl_stmt) => {
+                ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
+            }
+            Stmt::Assign(assign_stmt) => {
+                if let Some(op) = &assign_stmt.op {
+                    ir.push(
+                        self.compile_assign(
+                            &assign_stmt.left,
+                            &Expr::Arithmetic(
+                                ArithmeticExpr {
+                                    left: assign_stmt.left.clone(),
+                                    right: assign_stmt.right.clone(),
+                                    op: match op {
+                                        AssignOp::Mul => ArithmeticOp::Mul,
+                                        AssignOp::Div => ArithmeticOp::Div,
+                                        AssignOp::Add => ArithmeticOp::Add,
+                                        AssignOp::Sub => ArithmeticOp::Sub,
+                                    },
+                                    pos: assign_stmt.pos.clone(),
+                                }
+                                .into(),
+                            ),
+                        )?,
+                    );
+                } else {
+                    ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
+                }
+            }
+            Stmt::For(for_stmt) => {
+                let for_label = self.make_label("for");
+                let body_label = self.make_label("for_body");
+                let cont_label = self.make_label("for_cont");
+
+                if let Some(expr) = &for_stmt.expr {
+                    let iter = self.set_local("__iter__".to_string(), false)?;
+
+                    ir.push(self.compile_expr(expr)?);
+
+                    self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
+                        continue_label: cont_label.clone(),
+                    }));
+
+                    let local = self.set_local(
+                        match &for_stmt.alias {
+                            None => "__item__".to_string(),
+                            Some(name) => name.clone(),
+                        },
+                        false,
+                    )?;
+
+                    ir.push(
+                        vec![
+                            // Step 1. Get the iterator from the object
+                            self.compile_name("Iterable")?,
+                            Code::Validate,
+                            Code::LoadMember("iter".to_string()),
+                            Code::Call(0),
+                            Code::Store(iter.id),
+                            // Step 2. Now in the loop, get the next value from the iterator
+                            Code::SetLabel(for_label.clone()),
+                            Code::Load(iter.id),
+                            Code::LoadMember("next".to_string()),
+                            Code::Call(0),
+                            Code::Store(local.id),
+                            // Step 3. Check if it has a value and either continue or stop
+                            Code::Load(local.id),
+                            Code::LoadMember("isSome".to_string()),
+                            Code::Call(0),
+                            Code::Branch((
+                                Label::new(body_label.clone()),
+                                Label::new(cont_label.clone()),
+                            )),
+                            // Step 4. Evaluate the body and so on..
+                            Code::SetLabel(body_label),
+                        ]
+                        .into_iter()
+                        .map(|code| IR::new(code, self.get_location()))
+                        .collect::<Vec<_>>(),
+                    );
+
+                    // Only store the current item when requested
+                    if for_stmt.alias.is_some() {
+                        ir.push(vec![
+                            IR::new(Code::Load(local.id), self.get_location()),
+                            IR::new(Code::Unwrap, self.get_location()),
+                            IR::new(Code::Store(local.id), self.get_location()),
+                        ]);
+                    }
+
+                    ir.push(self._compile_stmt_list(&for_stmt.body)?);
+                } else {
+                    self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
+                        continue_label: cont_label.clone(),
+                    }));
+
+                    ir.push(vec![
+                        IR::new(Code::SetLabel(for_label.clone()), self.get_location()),
+                        IR::new(Code::SetLabel(body_label), self.get_location()),
+                    ]);
+                    ir.push(self.compile_stmt_list(
+                        ScopeContext::ForLoop(ForLoopMeta {
+                            continue_label: cont_label.clone(),
+                        }),
+                        &for_stmt.body,
+                    )?);
+                }
+
+                ir.push(vec![
+                    IR::new(Code::Jump(Label::new(for_label)), self.get_location()),
+                    IR::new(Code::SetLabel(cont_label), self.get_location()),
+                ]);
+
+                self.exit_scope();
+            }
+            Stmt::Break(break_stmt) => {
+                if break_stmt.label.is_some() {
+                    unreachable!();
+                }
+
+                if let Some(meta) = Scope::get_for_loop(&self.scope) {
+                    ir.push(vec![IR::new(
+                        Code::Jump(Label::new(meta.continue_label)),
+                        self.get_location(),
+                    )]);
+                } else {
+                    return Err(CompileError::new(
+                        "unable to break outside of a loop".to_string(),
+                        self.get_location(),
+                    ));
+                }
+            }
+            Stmt::Raise(raise_stmt) => {
+                ir.push(self.compile_expr(&raise_stmt.expr)?);
+                ir.push(vec![IR::new(Code::Raise, self.get_location())]);
+            }
+            Stmt::Return(return_stmt) => {
+                ir.push(self.compile_expr(&return_stmt.expr)?);
+                ir.push(vec![IR::new(Code::Return, self.get_location())]);
+            }
+            Stmt::Unsafe(unsafe_stmt) => {
+                ir.push(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
+            }
+            // ignore top level statements
+            Stmt::FnDecl(_)
+            | Stmt::ExternFnDecl(_)
+            | Stmt::ClassDecl(_)
+            | Stmt::InterfaceDecl(_)
+            | Stmt::Module(_)
+            | Stmt::Import(_) => {}
+        }
+
+        Ok(())
+    }
+
     fn _compile_stmt_list(&mut self, tree: &[Stmt]) -> Result<Vec<IR>> {
         let mut ir = vec![];
 
         for stmt in tree.iter() {
-            self.pos = stmt.pos();
-
-            match stmt {
-                Stmt::If(if_stmt) => {
-                    let if_label = self.make_label("if");
-                    let else_label = self.make_label("else");
-                    let cont_label = self.make_label("if_else_cont");
-
-                    ir.push(self.compile_expr(&if_stmt.cond)?);
-                    ir.push(vec![
-                        IR::new(
-                            Code::Branch((
-                                Label::new(if_label.clone()),
-                                Label::new(if if_stmt.alt.is_empty() {
-                                    cont_label.clone()
-                                } else {
-                                    else_label.clone()
-                                }),
-                            )),
-                            self.get_location(),
-                        ),
-                        IR::new(Code::SetLabel(if_label), self.get_location()),
-                    ]);
-                    ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
-
-                    if !if_stmt.alt.is_empty() {
-                        ir.push(vec![IR::new(
-                            Code::Jump(Label::new(cont_label.clone())),
-                            self.get_location(),
-                        )]);
-                        ir.push(vec![IR::new(
-                            Code::SetLabel(else_label),
-                            self.get_location(),
-                        )]);
-                        ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.alt)?);
-                        ir.push(vec![IR::new(
-                            Code::Jump(Label::new(cont_label.clone())),
-                            self.get_location(),
-                        )]);
-                    }
-
-                    ir.push(vec![IR::new(
-                        Code::SetLabel(cont_label),
-                        self.get_location(),
-                    )]);
-                }
-                Stmt::Expr(expr_stmt) => {
-                    ir.push(self.compile_expr(&expr_stmt.expr)?);
-                    ir.push(vec![IR::new(Code::Discard, self.get_location())]);
-                }
-                Stmt::Let(let_stmt) => ir.push(self.compile_let(
-                    let_stmt.mutable,
-                    &let_stmt.name,
-                    Some(&let_stmt.value),
-                )?),
-                Stmt::LetDecl(let_decl_stmt) => {
-                    ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
-                }
-                Stmt::Assign(assign_stmt) => {
-                    if let Some(op) = &assign_stmt.op {
-                        ir.push(
-                            self.compile_assign(
-                                &assign_stmt.left,
-                                &Expr::Arithmetic(
-                                    ArithmeticExpr {
-                                        left: assign_stmt.left.clone(),
-                                        right: assign_stmt.right.clone(),
-                                        op: match op {
-                                            AssignOp::Mul => ArithmeticOp::Mul,
-                                            AssignOp::Div => ArithmeticOp::Div,
-                                            AssignOp::Add => ArithmeticOp::Add,
-                                            AssignOp::Sub => ArithmeticOp::Sub,
-                                        },
-                                        pos: assign_stmt.pos.clone(),
-                                    }
-                                    .into(),
-                                ),
-                            )?,
-                        );
-                    } else {
-                        ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
-                    }
-                }
-                Stmt::For(for_stmt) => {
-                    let for_label = self.make_label("for");
-                    let body_label = self.make_label("for_body");
-                    let cont_label = self.make_label("for_cont");
-
-                    if let Some(expr) = &for_stmt.expr {
-                        let iter = self.set_local("__iter__".to_string(), false)?;
-
-                        ir.push(self.compile_expr(expr)?);
-
-                        self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
-                            continue_label: cont_label.clone(),
-                        }));
-
-                        let local = self.set_local(
-                            match &for_stmt.alias {
-                                None => "__item__".to_string(),
-                                Some(name) => name.clone(),
-                            },
-                            false,
-                        )?;
-
-                        ir.push(
-                            vec![
-                                // Step 1. Get the iterator from the object
-                                self.compile_name("Iterable")?,
-                                Code::Validate,
-                                Code::LoadMember("iter".to_string()),
-                                Code::Call(0),
-                                Code::Store(iter.id),
-                                // Step 2. Now in the loop, get the next value from the iterator
-                                Code::SetLabel(for_label.clone()),
-                                Code::Load(iter.id),
-                                Code::LoadMember("next".to_string()),
-                                Code::Call(0),
-                                Code::Store(local.id),
-                                // Step 3. Check if it has a value and either continue or stop
-                                Code::Load(local.id),
-                                Code::LoadMember("isSome".to_string()),
-                                Code::Call(0),
-                                Code::Branch((
-                                    Label::new(body_label.clone()),
-                                    Label::new(cont_label.clone()),
-                                )),
-                                // Step 4. Evaluate the body and so on..
-                                Code::SetLabel(body_label.clone()),
-                            ]
-                            .into_iter()
-                            .map(|code| IR::new(code, self.get_location()))
-                            .collect::<Vec<_>>(),
-                        );
-
-                        // Only store the current item when requested
-                        if for_stmt.alias.is_some() {
-                            ir.push(vec![
-                                IR::new(Code::Load(local.id), self.get_location()),
-                                IR::new(Code::Unwrap, self.get_location()),
-                                IR::new(Code::Store(local.id), self.get_location()),
-                            ]);
-                        }
-
-                        ir.push(self._compile_stmt_list(&for_stmt.body)?);
-                    } else {
-                        self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
-                            continue_label: cont_label.clone(),
-                        }));
-
-                        ir.push(vec![
-                            IR::new(Code::SetLabel(for_label.clone()), self.get_location()),
-                            IR::new(Code::SetLabel(body_label), self.get_location()),
-                        ]);
-                        ir.push(self.compile_stmt_list(
-                            ScopeContext::ForLoop(ForLoopMeta {
-                                continue_label: cont_label.clone(),
-                            }),
-                            &for_stmt.body,
-                        )?);
-                    }
-
-                    ir.push(vec![
-                        IR::new(Code::Jump(Label::new(for_label)), self.get_location()),
-                        IR::new(Code::SetLabel(cont_label), self.get_location()),
-                    ]);
-
-                    self.exit_scope();
-                }
-                Stmt::Break(break_stmt) => {
-                    if break_stmt.label.is_some() {
-                        unreachable!();
-                    }
-
-                    if let Some(meta) = Scope::get_for_loop(&self.scope) {
-                        ir.push(vec![IR::new(
-                            Code::Jump(Label::new(meta.continue_label.clone())),
-                            self.get_location(),
-                        )]);
-                    } else {
-                        return Err(CompileError::new(
-                            "unable to break outside of a loop".to_string(),
-                            self.get_location(),
-                        ));
-                    }
-                }
-                Stmt::Raise(raise_stmt) => {
-                    ir.push(self.compile_expr(&raise_stmt.expr)?);
-                    ir.push(vec![IR::new(Code::Raise, self.get_location())]);
-                }
-                Stmt::Return(return_stmt) => {
-                    ir.push(self.compile_expr(&return_stmt.expr)?);
-                    ir.push(vec![IR::new(Code::Return, self.get_location())]);
-                }
-                Stmt::Unsafe(unsafe_stmt) => {
-                    ir.push(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
-                }
-                // ignore top level statements
-                Stmt::FnDecl(_)
-                | Stmt::ExternFnDecl(_)
-                | Stmt::ClassDecl(_)
-                | Stmt::InterfaceDecl(_)
-                | Stmt::Module(_)
-                | Stmt::Import(_) => {}
-            }
+            self.compile_stmt(stmt, &mut ir)?;
         }
 
         let mut instructions = ir.concat();

@@ -321,7 +321,13 @@ pub struct ReturnStmt {
 pub struct IfStmt {
     pub cond: Expr,
     pub pos: Pos,
-    pub alt: Vec<Stmt>,
+    pub alt: Option<Box<Stmt>>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct ElseStmt {
+    pub pos: Pos,
     pub body: Vec<Stmt>,
 }
 
@@ -395,6 +401,7 @@ pub struct UnsafeStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     If(IfStmt),
+    Else(ElseStmt),
     For(ForStmt),
     Expr(ExprStmt),
     Let(LetStmt),
@@ -416,6 +423,7 @@ impl Stmt {
     pub fn pos(&self) -> Pos {
         match self {
             Stmt::If(if_stmt) => if_stmt.pos.clone(),
+            Stmt::Else(else_stmt) => else_stmt.pos.clone(),
             Stmt::For(for_stmt) => for_stmt.pos.clone(),
             Stmt::Break(break_stmt) => break_stmt.pos.clone(),
             Stmt::Raise(raise_stmt) => raise_stmt.pos.clone(),
