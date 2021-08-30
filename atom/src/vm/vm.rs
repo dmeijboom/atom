@@ -332,9 +332,9 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<Value> {
-        let (func, receiver) = match target {
-            Target::Fn(ref func) => (func.as_ref(), None),
-            Target::Method(ref method) => (method.func.as_ref(), Some(method.receiver.clone())),
+        let (func, receiver) = match &target {
+            Target::Fn(func) => (AtomRef::clone(func), None),
+            Target::Method(method) => (AtomRef::clone(&method.func), Some(method.receiver.clone())),
         };
 
         match &func.ptr {
@@ -362,11 +362,12 @@ impl VM {
                         .collect()
                 };
 
+                let module_id = target.origin().module_id;
+
                 self.call_stack
-                    .push(CallContext::new(target.clone(), receiver, locals));
+                    .push(CallContext::new(target, receiver, locals));
 
                 let source = Rc::clone(source);
-                let module_id = target.origin().module_id;
 
                 if let Some(result) = self._eval(module_id, source)? {
                     self.call_stack.pop();
@@ -383,7 +384,7 @@ impl VM {
                 }
 
                 self.call_stack
-                    .push(CallContext::new(target.clone(), None, vec![]));
+                    .push(CallContext::new(target, None, vec![]));
 
                 let values = self.stack.pop_many(arg_count)?;
 
