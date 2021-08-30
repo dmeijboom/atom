@@ -170,6 +170,7 @@ impl VM {
         Ok(())
     }
 
+    #[inline(always)]
     fn eval_call(
         &mut self,
         keywords: &[String],
@@ -400,10 +401,12 @@ impl VM {
         Ok(Value::Void)
     }
 
+    #[inline(always)]
     fn eval_const<T: Into<Value>>(&mut self, data: T) {
         self.stack.push(data.into());
     }
 
+    #[inline(always)]
     fn eval_symbol(&mut self, name: &String) {
         self.stack.push(if name == "nil" {
             Value::Option(None)
@@ -1101,7 +1104,7 @@ impl VM {
 
         loop {
             while i < instructions_len {
-                let ir = &instructions[i];
+                let ir = unsafe { instructions.get_unchecked(i) };
 
                 // Evaluates the instruction and optionally returns a label to jump to
                 match self.eval_single(module_id, ir) {
