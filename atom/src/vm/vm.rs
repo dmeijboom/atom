@@ -194,6 +194,7 @@ impl VM {
         }
     }
 
+    #[inline]
     fn eval_function_call(
         &mut self,
         func: AtomRef<Fn>,
@@ -280,6 +281,7 @@ impl VM {
         Ok(())
     }
 
+    #[inline]
     fn eval_method_call(
         &mut self,
         method: AtomRef<Method>,
