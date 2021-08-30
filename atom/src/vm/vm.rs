@@ -407,7 +407,7 @@ impl VM {
     }
 
     #[inline(always)]
-    fn eval_symbol(&mut self, name: &String) {
+    fn eval_symbol(&mut self, name: &str) {
         self.stack.push(if name == "nil" {
             Value::Option(None)
         } else {

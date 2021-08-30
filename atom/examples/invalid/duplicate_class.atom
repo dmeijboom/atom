@@ -1,0 +1,10 @@
+class Test {
+    let value1;
+}
+
+class Test {
+    let value2;
+}
+
+fn main() {
+}

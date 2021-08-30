@@ -891,6 +891,13 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
+        if self.module.funcs.contains_key(&fn_decl.name) {
+            return Err(CompileError::new(
+                format!("unable to redefine function: {}", fn_decl.name),
+                self.get_location(),
+            ));
+        }
+
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
@@ -958,6 +965,13 @@ impl Compiler {
     }
 
     fn compile_class(&mut self, class_decl: &ClassDeclStmt) -> Result<Class> {
+        if self.module.classes.contains_key(&class_decl.name) {
+            return Err(CompileError::new(
+                format!("unable to redefine class: {}", class_decl.name),
+                self.get_location(),
+            ));
+        }
+
         self.enter_scope(ScopeContext::Class);
 
         let mut fields = IndexMap::new();
@@ -1006,6 +1020,13 @@ impl Compiler {
     }
 
     fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
+        if self.module.interfaces.contains_key(&interface_decl.name) {
+            return Err(CompileError::new(
+                format!("unable to redefine interface: {}", interface_decl.name),
+                self.get_location(),
+            ));
+        }
+
         Ok(Interface {
             name: interface_decl.name.clone(),
             public: interface_decl.public,

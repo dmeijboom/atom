@@ -3,7 +3,7 @@ mod tests {
     use test_case::test_case;
 
     use atom_ir::{Code, Location, IR};
-    use atom_runtime::{AtomRef, RuntimeError, Symbol, Value};
+    use atom_runtime::{AtomRef, RuntimeError, Value};
 
     use crate::utils::{parse_and_compile, Error};
     use crate::vm::VM;
@@ -49,9 +49,9 @@ mod tests {
     #[test_case(include_str!("../examples/store_var_in_loop.atom"), Value::Int(28); "store variable in infinite loop")]
     #[test_case(include_str!("../examples/locals.atom"), Value::String(AtomRef::new("item3item6".to_string())); "locals")]
     #[test_case(include_str!("../examples/map_basics.atom"), Value::String(AtomRef::new("atom".to_string())); "map basics")]
+    #[test_case(include_str!("../examples/class_fields.atom"), Value::String(AtomRef::new("hello world".to_string())); "class fields")]
     #[test_case(include_str!("../examples/template_string.atom"), Value::String(AtomRef::new("Hello { World 120".to_string())); "template string")]
     #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(AtomRef::new(vec![Value::Int(20), Value::Int(30), Value::Int(40)])); "heap copy")]
-    #[test_case(include_str!("../examples/class_fields.atom"), Value::String(AtomRef::new("hello world".to_string())); "class fields")]
     fn code_success(source: &str, value: Value) {
         let result = run_code(source);
 
@@ -59,6 +59,7 @@ mod tests {
     }
 
     #[test_case(include_str!("../examples/invalid/call_int.atom"), "type 'Int' is not callable"; "function call on an integer")]
+    #[test_case(include_str!("../examples/invalid/duplicate_class.atom"), "unable to redefine class: Test"; "declaring a class more than once")]
     #[test_case(include_str!("../examples/invalid/private_class.atom"), "unable to import private class: exampleClass"; "import and use a private class")]
     #[test_case(include_str!("../examples/invalid/method_not_found.atom"), "no such field or method 'test_example' for: std.core.Map"; "method not found on a map type")]
     #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
