@@ -10,6 +10,14 @@ pub interface Iterable {
 pub class Option {
     pub extern fn isSome();
     pub extern fn isNone();
+
+    pub fn unwrapOr(alt) {
+        if this.isSome() {
+            return this!;
+        }
+
+        return alt;
+    }
 }
 
 pub class String {
@@ -46,17 +54,37 @@ pub class String {
     }
 }
 
-pub class Int {}
+pub class Int {
+    pub fn toString() {
+        return f"{this}";
+    }
+}
 
 pub class Float {
     pub extern fn floor();
+
+    pub fn toString() {
+        return f"{this}";
+    }
 }
 
-pub class Char {}
+pub class Char {
+    pub fn toString() {
+        return f"{this}";
+    }
+}
 
-pub class Byte {}
+pub class Byte {
+    pub fn toString() {
+        return f"{this}";
+    }
+}
 
-pub class Bool {}
+pub class Bool {
+    pub fn toString() {
+        return f"{this}";
+    }
+}
 
 pub class RangeIter {
     let start;
