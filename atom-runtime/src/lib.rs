@@ -7,6 +7,7 @@ pub use origin::Origin;
 pub use r#extern::Extern;
 pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr};
 pub use result::{Result, RuntimeError, Trace};
+pub use symbol::Symbol;
 pub use value::{Value, ValueType};
 
 mod atom_ref;
@@ -18,4 +19,5 @@ mod method;
 mod object;
 mod origin;
 mod result;
+mod symbol;
 mod value;

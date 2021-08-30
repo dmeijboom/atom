@@ -37,8 +37,9 @@ peg::parser! {
         rule bool_lit() -> Literal
             = value:$("true" / "false") { Literal::Bool(value.parse().unwrap()) }
 
-        rule nil_lit() -> Literal
-            = "nil" { Literal::Nil }
+        rule symbol_lit() -> Literal
+            = ":" name:ident() { Literal::Symbol(name.to_string()) }
+                / "nil" { Literal::Symbol("nil".to_string()) }
 
         rule char() -> char
             = value:$([_]) { value.parse().unwrap() }
@@ -67,7 +68,7 @@ peg::parser! {
                 / !("\"" / "\\" / ("\r"? "\n")) value:char() { value }
 
         rule literal() -> Literal
-            = bool_lit() / nil_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
+            = symbol_lit() / bool_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
 
         rule literal_expr() -> Expr
             = start:pos() literal:literal() end:pos() { Expr::Literal(LiteralExpr { literal, pos: (start..end) }) }
@@ -1098,7 +1099,7 @@ mod tests {
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Literal(LiteralExpr {
-                    literal: Literal::Nil,
+                    literal: Literal::Symbol("nil".to_string()),
                     pos: 0..3
                 }),
                 pos: 0..4,

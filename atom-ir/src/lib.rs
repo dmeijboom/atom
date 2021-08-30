@@ -56,12 +56,12 @@ fn format_keywords(keywords: &[String]) -> String {
 
 #[derive(Clone, PartialEq)]
 pub enum Code {
-    ConstNil,
     ConstInt(i64),
     ConstBool(bool),
     ConstFloat(f64),
     ConstChar(char),
     ConstByte(u8),
+    ConstSymbol(String),
     ConstString(String),
     MakeArray(usize),
     MakeMap(usize),
@@ -119,12 +119,12 @@ pub enum Code {
 impl Code {
     fn description(&self) -> String {
         match self {
-            Code::ConstNil => "  constNil".to_string(),
             Code::ConstInt(val) => format!("  constInt({})", val),
             Code::ConstBool(val) => format!("  constBool({})", val),
             Code::ConstFloat(val) => format!("  constFloat({})", val),
             Code::ConstChar(val) => format!("  constChar({})", val),
             Code::ConstByte(val) => format!("  constByte({})", val),
+            Code::ConstSymbol(name) => format!("  constSymbol({})", name),
             Code::ConstString(val) => format!("  constString({})", val),
             Code::MakeArray(size) => format!("  makeArray(size: {})", size),
             Code::MakeMap(size) => format!("  makeMap(size: {})", size),

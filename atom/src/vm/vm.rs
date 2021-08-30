@@ -9,8 +9,8 @@ use wyhash2::WyHash;
 
 use atom_ir::{Code, Label, IR};
 use atom_runtime::{
-    AtomRef, Class, Fn, FnArg, FnPtr, Interface, Method, Object, Result, RuntimeError, Value,
-    ValueType,
+    AtomRef, Class, Fn, FnArg, FnPtr, Interface, Method, Object, Result, RuntimeError, Symbol,
+    Value, ValueType,
 };
 
 use crate::compiler;
@@ -383,8 +383,7 @@ impl VM {
                     )));
                 }
 
-                self.call_stack
-                    .push(CallContext::new(target, None, vec![]));
+                self.call_stack.push(CallContext::new(target, None, vec![]));
 
                 let values = self.stack.pop_many(arg_count)?;
 
@@ -405,16 +404,20 @@ impl VM {
         self.stack.push(data.into());
     }
 
-    fn eval_const_nil(&mut self) {
-        self.stack.push(Value::Option(None));
+    fn eval_symbol(&mut self, name: &String) {
+        self.stack.push(if name == "nil" {
+            Value::Option(None)
+        } else {
+            Value::Symbol(Symbol::new(&name))
+        });
     }
 
     #[inline(always)]
     fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
         match &ir.code {
-            Code::ConstNil => self.eval_const_nil(),
             Code::ConstInt(val) => self.eval_const(*val),
             Code::ConstBool(val) => self.eval_const(*val),
+            Code::ConstSymbol(name) => self.eval_symbol(name),
             Code::ConstFloat(val) => self.eval_const(*val),
             Code::ConstChar(val) => self.eval_const(*val),
             Code::ConstByte(val) => self.eval_const(*val),

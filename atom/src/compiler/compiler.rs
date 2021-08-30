@@ -247,13 +247,13 @@ impl Compiler {
         match &expr {
             Expr::Literal(literal_expr) => ir.push(vec![IR::new(
                 match &literal_expr.literal {
+                    Literal::Byte(val) => Code::ConstByte(*val),
                     Literal::Int(val) => Code::ConstInt(*val),
                     Literal::Float(val) => Code::ConstFloat(*val),
                     Literal::Bool(val) => Code::ConstBool(*val),
-                    Literal::String(val) => Code::ConstString(val.clone()),
                     Literal::Char(val) => Code::ConstChar(*val),
-                    Literal::Byte(val) => Code::ConstByte(*val),
-                    Literal::Nil => Code::ConstNil,
+                    Literal::Symbol(name) => Code::ConstSymbol(name.clone()),
+                    Literal::String(val) => Code::ConstString(val.clone()),
                 },
                 self.get_location(),
             )]),
@@ -868,11 +868,11 @@ impl Compiler {
                 | Code::ComparisonLte
                 | Code::ConstString(_)
                 | Code::ConstBool(_)
+                | Code::ConstSymbol(_)
                 | Code::ConstByte(_)
                 | Code::ConstChar(_)
                 | Code::ConstFloat(_)
                 | Code::ConstInt(_)
-                | Code::ConstNil
                 | Code::Discard
         )
     }

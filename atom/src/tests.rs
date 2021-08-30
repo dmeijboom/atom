@@ -3,8 +3,7 @@ mod tests {
     use test_case::test_case;
 
     use atom_ir::{Code, Location, IR};
-    use atom_runtime::Value;
-    use atom_runtime::{AtomRef, RuntimeError};
+    use atom_runtime::{AtomRef, RuntimeError, Symbol, Value};
 
     use crate::utils::{parse_and_compile, Error};
     use crate::vm::VM;

@@ -135,12 +135,12 @@ pub struct MapExpr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
-    Nil,
+    Byte(u8),
     Int(i64),
     Float(f64),
     Bool(bool),
     Char(char),
-    Byte(u8),
+    Symbol(String),
     String(String),
 }
 

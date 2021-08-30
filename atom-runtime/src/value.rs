@@ -15,6 +15,7 @@ use super::object::Object;
 use super::r#extern::Extern;
 use super::r#fn::Fn;
 use super::result::RuntimeError;
+use super::symbol::Symbol;
 
 macro_rules! map_ref {
     (Ref, $value:expr, $method:ident) => {
@@ -193,6 +194,7 @@ pub enum ValueType {
     Char,
     Byte,
     Bool,
+    Symbol,
     Option,
     Range,
     String,
@@ -215,6 +217,7 @@ impl ValueType {
             Self::Char => "Char",
             Self::Byte => "Byte",
             Self::Bool => "Bool",
+            Self::Symbol => "Symbol",
             Self::Option => "Option",
             Self::Range => "Range",
             Self::String => "String",
@@ -239,6 +242,8 @@ pub enum Value {
     Char(char),
     Byte(u8),
     Bool(bool),
+    Symbol(Symbol),
+    Extern(Extern),
     Ref(AtomRef<Value>),
     Range(Range<i64>),
     Fn(AtomRef<Fn>),
@@ -250,7 +255,6 @@ pub enum Value {
     Array(AtomRef<Vec<Value>>),
     Option(Option<Box<Value>>),
     Map(AtomRef<HashMap<Value, Value>>),
-    Extern(Extern),
 }
 
 impl_type!(Fn, Fn, [from try_into_ref try_into_mut]);
@@ -262,6 +266,7 @@ impl_type!(Float, f64, [from try_into_ref try_into_mut]);
 impl_type!(Char, char, [from try_into try_into_ref try_into_mut]);
 impl_type!(Byte, u8, [from try_into try_into_ref try_into_mut]);
 impl_type!(Bool, bool, [from try_into try_into_ref try_into_mut]);
+impl_type!(Symbol, Symbol, [from try_into try_into_ref try_into_mut]);
 impl_type!(Range, Range<i64>, [from try_into try_into_ref try_into_mut]);
 impl_type!(String, String, [from try_into try_into_ref try_into_mut]);
 impl_type!(Object, Object, [from try_into_ref try_into_mut]);
@@ -322,6 +327,7 @@ impl PartialEq for Value {
         eq!(Char, self, other);
         eq!(Byte, self, other);
         eq!(Bool, self, other);
+        eq!(Symbol, self, other);
         eq!(Option, self, other);
         eq!(Ref, self, other);
         eq!(Range, self, other);
@@ -348,6 +354,7 @@ impl Hash for Value {
             Value::Char(val) => val.hash(state),
             Value::Byte(val) => val.hash(state),
             Value::Bool(val) => val.hash(state),
+            Value::Symbol(val) => val.hash(state),
             Value::Option(val) => val.hash(state),
             Value::Ref(val) => val.as_ref().hash(state),
             Value::Range(val) => val.hash(state),
@@ -379,6 +386,7 @@ impl Clone for Value {
             Value::Char(val) => Value::Char(*val),
             Value::Byte(val) => Value::Byte(*val),
             Value::Bool(val) => Value::Bool(*val),
+            Value::Symbol(name) => Value::Symbol(name.clone()),
             Value::Option(val) => Value::Option(val.clone()),
             Value::Ref(val) => Value::Ref(AtomRef::clone(val)),
             Value::Range(val) => Value::Range(val.clone()),
@@ -408,6 +416,7 @@ impl Value {
             Value::Char(_) => ValueType::Char,
             Value::Byte(_) => ValueType::Byte,
             Value::Bool(_) => ValueType::Bool,
+            Value::Symbol(_) => ValueType::Symbol,
             Value::Option(_) => ValueType::Option,
             Value::Ref(_) => ValueType::Ref,
             Value::Range(_) => ValueType::Range,
@@ -435,6 +444,7 @@ impl Display for Value {
             Self::Char(val) => write!(f, "{}", val),
             Self::Byte(val) => write!(f, "{}", val),
             Self::Bool(val) => write!(f, "{}", val),
+            Self::Symbol(val) => write!(f, ":{}", val.as_ref()),
             Self::Option(val) => match val {
                 None => write!(f, "std.core.Option(None)"),
                 Some(val) => write!(f, "std.core.Option({})", val),

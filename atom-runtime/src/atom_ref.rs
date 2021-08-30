@@ -116,6 +116,7 @@ impl<T: ?Sized> Clone for AtomRef<T> {
 }
 
 impl<T: ?Sized> Drop for AtomRef<T> {
+    #[inline(always)]
     fn drop(&mut self) {
         if self.inner().decr_ref_count() > 0 {
             // We shouldn't drop the value here as there are still other references
