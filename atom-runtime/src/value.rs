@@ -469,12 +469,11 @@ impl Display for Value {
                     class
                         .fields
                         .iter()
-                        .enumerate()
-                        .map(|(i, (key, field))| format!(
+                        .map(|(key, field)| format!(
                             "{}{}: {}",
                             if field.public { "*" } else { "" },
                             key,
-                            object.as_ref().get_field(i).unwrap(),
+                            object.as_ref().get_field(field.id).unwrap(),
                         ))
                         .collect::<Vec<String>>()
                         .join(", ")
