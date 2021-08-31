@@ -35,7 +35,7 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
     })
 }
 
-pub const DEFAULT_IMPORTS: &[&str; 15] = &[
+pub const DEFAULT_IMPORTS: &[&str; 17] = &[
     "std.core.println",
     "std.core.some",
     "std.core.RangeIter",
@@ -49,7 +49,9 @@ pub const DEFAULT_IMPORTS: &[&str; 15] = &[
     "std.core.Char",
     "std.core.Byte",
     "std.core.Bool",
+    "std.core.Symbol",
     "std.core.Range",
+    "std.core.Option",
     "std.core.Array",
     "std.core.Map",
 ];

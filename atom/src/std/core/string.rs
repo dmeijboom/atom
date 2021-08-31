@@ -73,6 +73,11 @@ fn string_replace(this: &str, pattern: String, replacement: String) -> Result<St
 }
 
 #[export]
+fn string_substr(this: &str, index: i64) -> Result<String> {
+    Ok(this[index as usize..].to_string())
+}
+
+#[export]
 fn string_trim(this: &str) -> Result<String> {
     Ok(this.trim().to_string())
 }
@@ -100,6 +105,7 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
                 "append" => string_append,
                 "count" => string_count,
                 "find" => string_find,
+                "substr" => string_substr,
                 "replace" => string_replace,
                 "trim" => string_trim,
                 "len" => string_len,

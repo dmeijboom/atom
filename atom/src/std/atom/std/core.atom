@@ -7,6 +7,12 @@ pub interface Iterable {
     fn iter();
 }
 
+pub class Symbol {
+    pub fn toString() {
+        return f"{this}".substr(1);
+    }
+}
+
 pub class Option {
     pub extern fn isSome();
     pub extern fn isNone();
@@ -32,6 +38,7 @@ pub class String {
     pub extern fn contains(pattern);
     pub extern fn count(pattern);
     pub extern fn find(pattern);
+    pub extern fn substr(index);
     pub extern fn replace(pattern, replacement);
     pub extern fn append(other);
     pub extern fn chars();

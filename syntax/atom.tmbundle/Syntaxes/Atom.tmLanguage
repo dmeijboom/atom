@@ -210,7 +210,7 @@
             <key>builtin_functions</key>
             <dict>
                 <key>match</key>
-                <string>(?x)\b(println)\b</string>
+                <string>(?x)\b(println|some)\b</string>
                 <key>name</key>
                 <string>support.function.builtin.atom</string>
             </dict>
