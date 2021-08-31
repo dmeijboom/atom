@@ -60,6 +60,7 @@ peg::parser! {
             = "\\n" { '\n' }
                 / "\\r" { '\r' }
                 / "\\t" { '\t' }
+                / "\\\\" { '\\' }
 
         rule string_char() -> char
             = unicode_char()
