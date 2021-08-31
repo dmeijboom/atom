@@ -66,6 +66,10 @@ impl Compiler {
             cache.add_file("std/io.atom", include_str!("../std/atom/std/io.atom"));
             cache.add_file("std/core.atom", include_str!("../std/atom/std/core.atom"));
             cache.add_file(
+                "std/encoding/json.atom",
+                include_str!("../std/atom/std/encoding/json.atom"),
+            );
+            cache.add_file(
                 "std/encoding/utf8.atom",
                 include_str!("../std/atom/std/encoding/utf8.atom"),
             );

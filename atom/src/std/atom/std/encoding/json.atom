@@ -1,0 +1,39 @@
+pub class JSONError {
+    let message;
+}
+
+pub class JSONEncoder {
+    pub fn encode(data) {
+        if data is Bool || data is Int || data is Float || data is Symbol {
+            return data.toString();
+        } else if data is Char {
+            return f"\"{data}\"";
+        } else if data is String {
+            return f"\"{data.replace("\"", "\\\"")}\"";
+        } else if data is Array {
+            let mut items = [];
+
+            for item in data {
+                items.push(this.encode(item));
+            }
+
+            return f"[{items.join(", ")}]";
+        } else if data is Map {
+            let mut items = [];
+
+            for keyValue in data {
+                items.push(f"{this.encode(keyValue.key)}: {this.encode(keyValue.value)}");
+            }
+
+            return f"\{{items.join(", ")}}";
+        } else if data is Option {
+            if data.isNone() {
+                return "null";
+            }
+
+            return this.encode(data!);
+        } else {
+            raise JSONError(message: "unsupported data type");
+        }
+    }
+}
