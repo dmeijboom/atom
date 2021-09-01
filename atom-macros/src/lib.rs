@@ -211,7 +211,7 @@ pub fn export(_: TokenStream, input: TokenStream) -> TokenStream {
                     #(#statements)*
                 }
 
-                fn #name(mut __receiver: Option<atom_runtime::Value>, mut __values: Vec<atom_runtime::Value>) -> atom_runtime::Result<Option<atom_runtime::Value>> {
+                fn #name(_atom_api: &atom_runtime::AtomApi, mut __receiver: Option<atom_runtime::Value>, mut __values: Vec<atom_runtime::Value>) -> atom_runtime::Result<Option<atom_runtime::Value>> {
                     use std::convert::TryInto;
 
                     if __values.len() != #arg_len {

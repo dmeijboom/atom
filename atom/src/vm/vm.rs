@@ -9,16 +9,16 @@ use wyhash2::WyHash;
 
 use atom_ir::{Code, Label, IR};
 use atom_runtime::{
-    AtomRef, Class, Fn, FnArg, FnPtr, Interface, Method, Object, Result, RuntimeError, Symbol,
-    Value, ValueType,
+    AtomApi, AtomRef, Class, Fn, FnArg, FnPtr, Interface, Method, Object, Result, RuntimeError,
+    Symbol, Value, ValueType,
 };
 
 use crate::compiler;
 use crate::std::get_hooks;
-use crate::vm::module::ModuleId;
-use crate::vm::module_cache::ExternalHook;
 
 use super::call_context::{CallContext, CallStack, Target};
+use super::module::ModuleId;
+use super::module_cache::ExternalHook;
 use super::module_cache::ModuleCache;
 use super::stack::Stack;
 
@@ -388,7 +388,7 @@ impl VM {
 
                 let values = self.stack.pop_many(arg_count)?;
 
-                if let Some(return_value) = closure(receiver, values)? {
+                if let Some(return_value) = closure(self, receiver, values)? {
                     self.call_stack.pop();
 
                     return Ok(return_value);
@@ -1185,5 +1185,11 @@ impl VM {
 
     pub fn result(&mut self) -> Option<Value> {
         self.stack.pop().ok()
+    }
+}
+
+impl AtomApi for VM {
+    fn find_class(&self, module_name: &str, class_name: &str) -> Result<AtomRef<Class>> {
+        self.module_cache.get_class(module_name, class_name)
     }
 }

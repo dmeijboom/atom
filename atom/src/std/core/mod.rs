@@ -9,7 +9,7 @@ pub mod string;
 
 pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
     if module_name == "std.core" && name == "println" {
-        return Some(|_, values| {
+        return Some(|_, _, values| {
             println!(
                 "{}",
                 values

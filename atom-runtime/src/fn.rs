@@ -1,4 +1,4 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
@@ -6,15 +6,26 @@ use indexmap::map::IndexMap;
 
 use atom_ir::IR;
 
-use crate::origin::Origin;
-use crate::{Result, Value};
+use super::api::AtomApi;
+use super::origin::Origin;
+use super::result::Result;
+use super::value::Value;
 
-pub type ExternalFn = fn(Option<Value>, Vec<Value>) -> Result<Option<Value>>;
+pub type ExternalFn = fn(&dyn AtomApi, Option<Value>, Vec<Value>) -> Result<Option<Value>>;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub enum FnPtr {
     External(ExternalFn),
     Native(Rc<Vec<IR>>),
+}
+
+impl Debug for FnPtr {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FnPtr::External(_) => write!(f, "*ExternalFn"),
+            FnPtr::Native(_) => write!(f, "*Fn"),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]

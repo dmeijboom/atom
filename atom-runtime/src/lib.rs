@@ -1,3 +1,4 @@
+pub use api::AtomApi;
 pub use atom_ref::AtomRef;
 pub use class::{Class, Field};
 pub use interface::Interface;
@@ -10,6 +11,7 @@ pub use result::{Result, RuntimeError, Trace};
 pub use symbol::Symbol;
 pub use value::{Value, ValueType};
 
+mod api;
 mod atom_ref;
 mod class;
 mod r#extern;
