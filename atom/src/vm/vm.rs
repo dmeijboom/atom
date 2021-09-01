@@ -426,6 +426,7 @@ impl VM {
             Code::ConstByte(val) => self.eval_const(*val),
             Code::ConstString(val) => self.eval_const(val.clone()),
             Code::MakeRange => self.eval_make_range()?,
+            Code::MakeTuple(len) => self.eval_make_tuple(*len)?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
@@ -463,7 +464,8 @@ impl VM {
             Code::TailCall(arg_count) => return Ok(Flow::TailCall(*arg_count)),
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,
-            Code::LoadIndex => self.eval_load_index()?,
+            Code::LoadIndex => self.eval_load_index(false)?,
+            Code::TeeIndex => self.eval_load_index(true)?,
             Code::StoreIndex => self.eval_store_index()?,
             Code::LoadMember(member) => self.eval_load_member(module_id, member, false)?,
             Code::TeeMember(member) => self.eval_load_member(module_id, member, true)?,
@@ -503,6 +505,14 @@ impl VM {
         let object = Object::new(self.find_class("std.core", "Range")?, vec![from, to]);
 
         self.stack.push(Value::Object(AtomRef::new(object)));
+
+        Ok(())
+    }
+
+    fn eval_make_tuple(&mut self, len: usize) -> Result<()> {
+        let values = self.stack.pop_many(len)?;
+
+        self.stack.push(Value::Tuple(values.into()));
 
         Ok(())
     }
@@ -782,42 +792,62 @@ impl VM {
         Ok(())
     }
 
-    fn eval_load_index(&mut self) -> Result<()> {
+    fn eval_load_index(&mut self, push_back: bool) -> Result<()> {
         let index = self.stack.pop()?;
         let value = self.stack.pop()?;
 
-        match value {
-            Value::Array(array) => {
-                let index: usize = index
-                    .try_into()
-                    .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
+        let elems = if let Value::Array(array) = &value {
+            Some(array.as_slice())
+        } else if let Value::Tuple(tuple) = &value {
+            Some(tuple.as_ref())
+        } else {
+            None
+        };
 
-                if let Some(item) = array.get(index) {
-                    self.stack.push(item.clone());
+        if let Some(elems) = elems {
+            let index: usize = index
+                .try_into()
+                .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
 
-                    return Ok(());
+            if let Some(item) = elems.get(index) {
+                let item = item.clone();
+
+                if push_back {
+                    self.stack.push(value);
                 }
 
-                Err(RuntimeError::new(
-                    format!("index out of bounds: {}", index,),
-                ))
-            }
-            Value::Map(map) => {
-                if let Some(item) = map.get(&index) {
-                    self.stack.push(item.clone());
+                self.stack.push(item);
 
-                    return Ok(());
-                }
-
-                Err(RuntimeError::new(
-                    format!("index out of bounds: {}", index,),
-                ))
+                return Ok(());
             }
-            _ => Err(RuntimeError::new(format!(
-                "unable to index type: {}",
-                value.get_type().name()
-            ))),
+
+            return Err(RuntimeError::new(
+                format!("index out of bounds: {}", index,),
+            ));
         }
+
+        if let Value::Map(map) = &value {
+            if let Some(item) = map.get(&index) {
+                let item = item.clone();
+
+                if push_back {
+                    self.stack.push(value);
+                }
+
+                self.stack.push(item);
+
+                return Ok(());
+            }
+
+            return Err(RuntimeError::new(
+                format!("index out of bounds: {}", index,),
+            ));
+        }
+
+        Err(RuntimeError::new(format!(
+            "unable to index type: {}",
+            value.get_type().name()
+        )))
     }
 
     fn eval_store_index(&mut self) -> Result<()> {

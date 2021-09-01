@@ -204,6 +204,7 @@ pub enum ValueType {
     Method,
     Interface,
     Object,
+    Tuple,
     Array,
     Map,
     Ref,
@@ -227,6 +228,7 @@ impl ValueType {
             Self::Object => "Object",
             Self::Interface => "Interface",
             Self::Map => "Map",
+            Self::Tuple => "Tuple",
             Self::Array => "Array",
             Self::Ref => "Ref",
             Self::Extern => "Extern",
@@ -246,6 +248,7 @@ pub enum Value {
     Extern(Extern),
     Ref(AtomRef<Value>),
     Fn(AtomRef<Fn>),
+    Tuple(Box<[Value]>),
     Class(AtomRef<Class>),
     Interface(AtomRef<Interface>),
     Method(AtomRef<Method>),
@@ -268,6 +271,7 @@ impl_type!(Bool, bool, [from try_into try_into_ref try_into_mut]);
 impl_type!(Symbol, Symbol, [from try_into try_into_ref try_into_mut]);
 impl_type!(String, String, [from try_into try_into_ref try_into_mut]);
 impl_type!(Object, Object, [from try_into_ref try_into_mut]);
+impl_type!(Tuple, Box<[Value]>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Array, Vec<Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Map, HashMap<Value, Value>, [from try_into try_into_ref try_into_mut]);
 impl_type!(Option, Option<Box<Value>>, [try_into try_into_ref try_into_mut]);
@@ -302,6 +306,12 @@ impl TryInto<usize> for Value {
         let int: i64 = self.try_into()?;
 
         Ok(int as usize)
+    }
+}
+
+impl From<usize> for Value {
+    fn from(val: usize) -> Self {
+        Value::Int(val as i64)
     }
 }
 
@@ -356,6 +366,8 @@ impl PartialEq for Value {
 
 impl Hash for Value {
     fn hash<H: Hasher>(&self, state: &mut H) {
+        self.get_type().hash(state);
+
         match self {
             Value::Void => panic!("Void can't be hashed"),
             Value::Int(val) => val.hash(state),
@@ -372,6 +384,11 @@ impl Hash for Value {
             Value::Method(method) => method.as_ref().hash(state),
             Value::Interface(interface) => interface.as_ref().hash(state),
             Value::Object(object) => object.as_ref().hash(state),
+            Value::Tuple(val) => {
+                for item in val.iter() {
+                    item.hash(state);
+                }
+            }
             Value::Array(val) => val.as_ref().hash(state),
             Value::Map(map) => {
                 for (key, value) in map.as_ref().iter() {
@@ -399,13 +416,14 @@ impl Clone for Value {
             Value::Ref(val) => Value::Ref(AtomRef::clone(val)),
             Value::Fn(atom_fn) => Value::Fn(atom_fn.clone()),
             Value::Class(class) => Value::Class(class.clone()),
-            Value::Interface(iface) => Value::Interface(iface.clone()),
             Value::Method(method) => Value::Method(method.clone()),
             Value::String(val) => Value::String(AtomRef::clone(val)),
             Value::Object(val) => Value::Object(AtomRef::clone(val)),
+            Value::Tuple(tuple) => Value::Tuple(tuple.clone()),
             Value::Array(val) => Value::Array(AtomRef::clone(val)),
             Value::Map(val) => Value::Map(AtomRef::clone(val)),
             Value::Extern(val) => Value::Extern(Extern(AtomRef::clone(&val.0))),
+            Value::Interface(interface) => Value::Interface(interface.clone()),
         }
     }
 
@@ -432,6 +450,7 @@ impl Value {
             Value::Interface(_) => ValueType::Interface,
             Value::Method(_) => ValueType::Method,
             Value::Object(_) => ValueType::Object,
+            Value::Tuple(_) => ValueType::Tuple,
             Value::Array(_) => ValueType::Array,
             Value::Map(_) => ValueType::Map,
             Value::Extern(_) => ValueType::Extern,
@@ -484,6 +503,16 @@ impl Display for Value {
                         .join(", ")
                 )
             }
+            Self::Tuple(tuple) => write!(
+                f,
+                "({})",
+                tuple
+                    .as_ref()
+                    .iter()
+                    .map(|item| format!("{}", item))
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            ),
             Self::Array(array) => write!(
                 f,
                 "[{}]",

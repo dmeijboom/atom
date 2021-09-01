@@ -7,6 +7,46 @@ pub interface Iterable {
     fn iter();
 }
 
+pub class EnumIter {
+    let iter;
+    let mut index;
+
+    pub fn next() {
+        let index = this.index;
+        let item = this.iter.next();
+
+        if item.isNone() {
+            return nil;
+        }
+
+        this.index += 1;
+
+        return some((index, item!));
+    }
+}
+
+pub class Enum {
+    let iterator;
+
+    pub fn iter() {
+        return EnumIter(iter: this.iterator, index: 0);
+    }
+}
+
+pub class Tuple {
+    pub extern fn len();
+
+    pub fn nth(index) {
+        if index < 0 || this.len() <= index {
+            return nil;
+        }
+
+        unsafe {
+            return some(this[index]);
+        }
+    }
+}
+
 pub class Symbol {
     pub fn toString() {
         return f"{this}".substr(1);
@@ -201,6 +241,10 @@ pub class Array {
         return ArrayIter(array: this, index: 0);
     }
 
+    pub fn enum() {
+        return Enum(iterator: this.iter());
+    }
+
     pub fn append(other) {
         for {
             let item = other.remove(0);
@@ -293,6 +337,10 @@ pub class Map {
 
     pub fn iter() {
         return MapIter(data: this, keys: this.keys(), index: 0);
+    }
+
+    pub fn enum() {
+        return Enum(iterator: this.iter());
     }
 
     pub fn get(key) {

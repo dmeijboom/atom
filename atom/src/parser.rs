@@ -20,6 +20,11 @@ peg::parser! {
             = quiet!{ name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { name.to_string() } }
                 / expected!("identifier")
 
+        rule variable() -> Variable
+            = name:ident() { Variable::Name(name) }
+                / "(" _ names:ident() ** (_ "," _) _ ")" { Variable::Tuple(names) }
+                / "[" _ names:ident() ** (_ "," _) _ ")" { Variable::Array(names) }
+
         rule ident_expr() -> Expr
             = start:pos() name:ident() end:pos() { Expr::Ident(IdentExpr { name, pos: (start..end) }) }
 
@@ -94,12 +99,15 @@ peg::parser! {
         rule array_expr() -> Expr
             = start:pos() "[" _ items:expr() ** (_ "," _) _ "]" end:pos() { Expr::Array(ArrayExpr { items, pos: (start..end) }) }
 
+        rule tuple_expr() -> Expr
+            = start:pos() "(" _ items:expr() ** (_ "," _) _ ")" end:pos() { Expr::Tuple(TupleExpr { items, pos: (start..end) }) }
+
         rule dot_expr() -> Expr
             = start:pos() "." _ member:ident() end:pos() { Expr::Member(MemberExpr { object: Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }), member, pos: (start..end) }.into()) }
                 / start:pos() "." !['0'..='9'] end:pos() { Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }) }
 
         rule prefix() -> Expr
-            = template_expr() / literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr()
+            = template_expr() / literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr() / tuple_expr()
 
         rule keyword_arg() -> KeywordArg
             = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }
@@ -187,8 +195,8 @@ peg::parser! {
         rule if_stmt() -> Stmt
             = start:pos() "if" __ cond:expr() _ "{" _ body:stmt_list() _ "}" _ alt:if_alt_stmt()? end:pos() { Stmt::If(IfStmt { cond, body, alt: alt.map(Box::new), pos: (start..end) }) }
 
-        rule for_alias() -> String
-            = __ name:ident() __ "in" { name }
+        rule for_alias() -> Variable
+            = __ var:variable() __ "in" { var }
 
         rule for_stmt() -> Stmt
             = start:pos() "for" alias:for_alias()? __ expr:expr()? _ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::For(ForStmt { expr, alias, body, pos: (start..end) }) }
@@ -992,7 +1000,7 @@ mod tests {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::For(ForStmt {
-                alias: Some("item".to_string()),
+                alias: Some(Variable::Name("item".to_string())),
                 expr: Some(Expr::Array(ArrayExpr {
                     items: vec![Expr::Literal(LiteralExpr {
                         literal: Literal::Int(1),

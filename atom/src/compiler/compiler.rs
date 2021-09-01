@@ -9,7 +9,7 @@ use atom_ir::{Code, Label, Location, IR};
 use crate::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, ExternFnDeclStmt,
     FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
-    TemplateComponent,
+    TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::AbstractFs;
 use crate::compiler::optimizers::remove_core_validations;
@@ -396,6 +396,16 @@ impl Compiler {
                     ir.push(instructions);
                 }
             }
+            Expr::Tuple(tuple_expr) => {
+                for item in tuple_expr.items.iter() {
+                    ir.push(self.compile_expr(item)?);
+                }
+
+                ir.push(vec![IR::new(
+                    Code::MakeTuple(tuple_expr.items.len()),
+                    self.get_location(),
+                )]);
+            }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
                     ir.push(self.compile_expr(item)?);
@@ -728,8 +738,8 @@ impl Compiler {
 
                     let local = self.set_local(
                         match &for_stmt.alias {
-                            None => "__item__".to_string(),
-                            Some(name) => name.clone(),
+                            Some(Variable::Name(name)) => name.clone(),
+                            _ => "__item__".to_string(),
                         },
                         false,
                     )?;
@@ -765,12 +775,37 @@ impl Compiler {
                     );
 
                     // Only store the current item when requested
-                    if for_stmt.alias.is_some() {
+                    if let Some(var) = &for_stmt.alias {
                         ir.push(vec![
                             IR::new(Code::Load(local.id), self.get_location()),
                             IR::new(Code::Unwrap, self.get_location()),
-                            IR::new(Code::Store(local.id), self.get_location()),
                         ]);
+
+                        match var {
+                            // If it's a name we can re-use the local slot
+                            Variable::Name(_) => {
+                                ir.push(vec![IR::new(Code::Store(local.id), self.get_location())]);
+                            }
+                            Variable::Tuple(names) | Variable::Array(names) => {
+                                for (i, name) in names.iter().enumerate() {
+                                    let local = self.set_local(name.clone(), false)?;
+
+                                    ir.push(vec![
+                                        IR::new(Code::ConstInt(i as i64), self.get_location()),
+                                        // We need to keep the current value until the last item was processed
+                                        IR::new(
+                                            if i == names.len() - 1 {
+                                                Code::LoadIndex
+                                            } else {
+                                                Code::TeeIndex
+                                            },
+                                            self.get_location(),
+                                        ),
+                                        IR::new(Code::Store(local.id), self.get_location()),
+                                    ]);
+                                }
+                            }
+                        };
                     }
 
                     ir.push(self._compile_stmt_list(&for_stmt.body)?);
@@ -1014,6 +1049,13 @@ impl Compiler {
         let mut funcs = HashMap::new();
 
         for extern_fn_decl in class_decl.extern_funcs.iter() {
+            if fields.contains_key(&extern_fn_decl.name) {
+                return Err(CompileError::new(
+                    format!("unable to define extern function '{}.{}(...)' because a field with the same name exists", class_decl.name, extern_fn_decl.name),
+                    self.get_location_by_offset(&extern_fn_decl.pos),
+                ));
+            }
+
             funcs.insert(
                 extern_fn_decl.name.clone(),
                 self.compile_extern_fn(extern_fn_decl),
@@ -1021,6 +1063,13 @@ impl Compiler {
         }
 
         for fn_decl in class_decl.funcs.iter() {
+            if fields.contains_key(&fn_decl.name) {
+                return Err(CompileError::new(
+                    format!("unable to define extern function '{}.{}(...)' because a field with the same name exists", class_decl.name, fn_decl.name),
+                    self.get_location_by_offset(&fn_decl.pos),
+                ));
+            }
+
             funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl, true)?);
         }
 

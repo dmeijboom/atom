@@ -9,6 +9,13 @@ pub struct Comment {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum Variable {
+    Name(String),
+    Tuple(Vec<String>),
+    Array(Vec<String>),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum AssignOp {
     Add,
     Sub,
@@ -114,6 +121,12 @@ pub struct ArrayExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TupleExpr {
+    pub items: Vec<Expr>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct KeywordArg {
     pub name: String,
     pub value: Expr,
@@ -211,6 +224,7 @@ pub enum Expr {
     Not(NotExpr),
     Unwrap(UnwrapExpr),
     Array(ArrayExpr),
+    Tuple(TupleExpr),
     Map(MapExpr),
     Member(Box<MemberExpr>),
     MemberCond(Box<MemberCondExpr>),
@@ -234,6 +248,7 @@ impl Expr {
             Self::Not(not_expr) => not_expr.pos.clone(),
             Self::Unwrap(unwrap_expr) => unwrap_expr.pos.clone(),
             Self::Array(array_expr) => array_expr.pos.clone(),
+            Self::Tuple(tuple_expr) => tuple_expr.pos.clone(),
             Self::Map(map_expr) => map_expr.pos.clone(),
             Self::Member(member_expr) => member_expr.pos.clone(),
             Self::MemberCond(member_cond_expr) => member_cond_expr.pos.clone(),
@@ -381,7 +396,7 @@ pub struct ModuleStmt {
 #[derive(Debug, Clone, PartialEq)]
 pub struct ForStmt {
     pub expr: Option<Expr>,
-    pub alias: Option<String>,
+    pub alias: Option<Variable>,
     pub body: Vec<Stmt>,
     pub pos: Pos,
 }
