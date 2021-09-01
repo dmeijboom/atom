@@ -42,6 +42,7 @@ mod tests {
     #[test_case(include_str!("../examples/references.atom"), Value::Bool(true); "references")]
     #[test_case(include_str!("../examples/simple_return.atom"), Value::Int(10); "simple return")]
     #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
+    #[test_case(include_str!("../examples/type_assertions.atom"), Value::Int(7); "type assertions")]
     #[test_case(include_str!("../examples/call_arg_order.atom"), Value::Bool(true); "call arg order")]
     #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(17); "operator precedence")]
     #[test_case(include_str!("../examples/map_value_arithmetic.atom"), Value::Int(20); "map value arithmetic")]

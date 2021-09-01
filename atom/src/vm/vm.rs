@@ -669,12 +669,18 @@ impl VM {
     fn eval_assert_is_type(&mut self) -> Result<()> {
         let right = self.stack.pop()?;
         let left = self.stack.pop()?;
+        let left_class = self.get_class(&left)?;
 
         if let Value::Class(right_class) = right {
-            let left_class = self.get_class(&left)?;
-
             self.stack
                 .push(Value::Bool(left_class.as_ref() == right_class.as_ref()));
+
+            return Ok(());
+        }
+
+        if let Value::Interface(interface) = right {
+            self.stack
+                .push(Value::Bool(self.validate_class(&left_class, &interface)));
 
             return Ok(());
         }
