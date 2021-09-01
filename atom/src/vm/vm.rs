@@ -488,10 +488,21 @@ impl VM {
     }
 
     fn eval_make_range(&mut self) -> Result<()> {
-        let to = self.stack.pop()?.try_into()?;
-        let from = self.stack.pop()?.try_into()?;
+        let to = self.stack.pop()?;
+        let from = self.stack.pop()?;
 
-        self.stack.push(Value::Range(from..to));
+        if from.get_type() != ValueType::Int || to.get_type() != ValueType::Int {
+            return Err(RuntimeError::new(format!(
+                "unable to construct Range with '{}' and '{}', expected: Int",
+                from.get_type().name(),
+                to.get_type().name()
+            ))
+            .with_kind("TypeError".to_string()));
+        }
+
+        let object = Object::new(self.find_class("std.core", "Range")?, vec![from, to]);
+
+        self.stack.push(Value::Object(AtomRef::new(object)));
 
         Ok(())
     }

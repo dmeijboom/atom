@@ -119,7 +119,7 @@ pub class RangeStep {
     let step;
 
     pub fn iter() {
-        return RangeIter(start: this.range.start(), end: this.range.end(), step: this.step, index: 0);
+        return RangeIter(start: this.range.start, end: this.range.end, step: this.step, index: 0);
     }
 
     pub fn collect() {
@@ -134,11 +134,11 @@ pub class RangeStep {
 }
 
 pub class Range {
-    pub extern fn start();
-    pub extern fn end();
+    pub let start;
+    pub let end;
 
     pub fn iter() {
-        return RangeIter(start: this.start(), end: this.end(), step: 1, index: 0);
+        return RangeIter(start: this.start, end: this.end, step: 1, index: 0);
     }
 
     pub fn step(n) {

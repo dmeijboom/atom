@@ -4,7 +4,6 @@ pub mod array;
 pub mod float;
 pub mod map;
 pub mod option;
-pub mod range;
 pub mod string;
 
 pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<ExternalFn> {
@@ -26,10 +25,8 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
     option::hook(module_name, name, method_name).or_else(|| {
         string::hook(module_name, name, method_name).or_else(|| {
             array::hook(module_name, name, method_name).or_else(|| {
-                map::hook(module_name, name, method_name).or_else(|| {
-                    range::hook(module_name, name, method_name)
-                        .or_else(|| float::hook(module_name, name, method_name))
-                })
+                map::hook(module_name, name, method_name)
+                    .or_else(|| float::hook(module_name, name, method_name))
             })
         })
     })

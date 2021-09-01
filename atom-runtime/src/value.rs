@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
 use std::hash::{Hash, Hasher};
-use std::ops::Range;
 
 use strum_macros::EnumIter;
 
@@ -196,7 +195,6 @@ pub enum ValueType {
     Bool,
     Symbol,
     Option,
-    Range,
     String,
     Fn,
     Class,
@@ -219,7 +217,6 @@ impl ValueType {
             Self::Bool => "Bool",
             Self::Symbol => "Symbol",
             Self::Option => "Option",
-            Self::Range => "Range",
             Self::String => "String",
             Self::Fn => "Fn",
             Self::Class => "Class",
@@ -245,7 +242,6 @@ pub enum Value {
     Symbol(Symbol),
     Extern(Extern),
     Ref(AtomRef<Value>),
-    Range(Range<i64>),
     Fn(AtomRef<Fn>),
     Class(AtomRef<Class>),
     Interface(AtomRef<Interface>),
@@ -267,7 +263,6 @@ impl_type!(Char, char, [from try_into try_into_ref try_into_mut]);
 impl_type!(Byte, u8, [from try_into try_into_ref try_into_mut]);
 impl_type!(Bool, bool, [from try_into try_into_ref try_into_mut]);
 impl_type!(Symbol, Symbol, [from try_into try_into_ref try_into_mut]);
-impl_type!(Range, Range<i64>, [from try_into try_into_ref try_into_mut]);
 impl_type!(String, String, [from try_into try_into_ref try_into_mut]);
 impl_type!(Object, Object, [from try_into_ref try_into_mut]);
 impl_type!(Array, Vec<Value>, [from try_into try_into_ref try_into_mut]);
@@ -330,7 +325,6 @@ impl PartialEq for Value {
         eq!(Symbol, self, other);
         eq!(Option, self, other);
         eq!(Ref, self, other);
-        eq!(Range, self, other);
         eq!(String, self, other);
         eq!(Fn, self, other);
         eq!(Class, self, other);
@@ -357,7 +351,6 @@ impl Hash for Value {
             Value::Symbol(val) => val.hash(state),
             Value::Option(val) => val.hash(state),
             Value::Ref(val) => val.as_ref().hash(state),
-            Value::Range(val) => val.hash(state),
             Value::String(val) => val.as_ref().hash(state),
             Value::Fn(atom_fn) => atom_fn.as_ref().hash(state),
             Value::Class(class) => class.as_ref().hash(state),
@@ -389,7 +382,6 @@ impl Clone for Value {
             Value::Symbol(name) => Value::Symbol(name.clone()),
             Value::Option(val) => Value::Option(val.clone()),
             Value::Ref(val) => Value::Ref(AtomRef::clone(val)),
-            Value::Range(val) => Value::Range(val.clone()),
             Value::Fn(atom_fn) => Value::Fn(atom_fn.clone()),
             Value::Class(class) => Value::Class(class.clone()),
             Value::Interface(iface) => Value::Interface(iface.clone()),
@@ -419,7 +411,6 @@ impl Value {
             Value::Symbol(_) => ValueType::Symbol,
             Value::Option(_) => ValueType::Option,
             Value::Ref(_) => ValueType::Ref,
-            Value::Range(_) => ValueType::Range,
             Value::String(_) => ValueType::String,
             Value::Fn(_) => ValueType::Fn,
             Value::Class(_) => ValueType::Class,
@@ -452,7 +443,6 @@ impl Display for Value {
             Self::Ref(value) => {
                 write!(f, "*{}", value.as_ref())
             }
-            Self::Range(val) => write!(f, "{}..{}", val.start, val.end),
             Self::String(val) => write!(f, "{}", val.as_ref()),
             Self::Fn(func) => write!(f, "{}(...)", func.as_ref()),
             Self::Interface(interface) => write!(f, "{}", interface.as_ref()),
