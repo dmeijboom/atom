@@ -20,9 +20,9 @@ fn string_split(this: &str, pattern: String) -> Result<Vec<Value>> {
 }
 
 #[export]
-fn string_splitn(this: &str, pattern: String, n: i64) -> Result<Vec<Value>> {
+fn string_splitn(this: &str, pattern: String, n: usize) -> Result<Vec<Value>> {
     Ok(this
-        .splitn(n as usize, &pattern)
+        .splitn(n, &pattern)
         .map(|component| component.to_string().into())
         .collect())
 }
@@ -53,8 +53,8 @@ fn string_chars(this: &str) -> Result<Vec<Value>> {
 }
 
 #[export]
-fn string_repeat(this: &str, n: i64) -> Result<String> {
-    Ok(this.repeat(n as usize))
+fn string_repeat(this: &str, n: usize) -> Result<String> {
+    Ok(this.repeat(n))
 }
 
 #[export]
@@ -68,13 +68,18 @@ fn string_find(this: &str, pattern: String) -> Result<Option<i64>> {
 }
 
 #[export]
+fn string_find_last(this: &str, pattern: String) -> Result<Option<i64>> {
+    Ok(this.rfind(&pattern).map(|i| i as i64))
+}
+
+#[export]
 fn string_replace(this: &str, pattern: String, replacement: String) -> Result<String> {
     Ok(this.replace(&pattern, &replacement))
 }
 
 #[export]
-fn string_substr(this: &str, index: i64) -> Result<String> {
-    Ok(this[index as usize..].to_string())
+fn string_substr(this: &str, index: usize) -> Result<String> {
+    Ok(this[index..].to_string())
 }
 
 #[export]

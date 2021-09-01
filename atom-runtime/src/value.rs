@@ -73,10 +73,11 @@ macro_rules! impl_try_into {
                 }
 
                 Err(RuntimeError::new(format!(
-                    "TypeError: invalid type '{}', expected: {}",
+                    "invalid type '{}', expected: {}",
                     type_val.name(),
                     stringify!($atom_type)
-                )))
+                ))
+                .with_kind("TypeError".to_string()))
             }
         }
     };
@@ -93,10 +94,11 @@ macro_rules! impl_try_into {
                 }
 
                 Err(RuntimeError::new(format!(
-                    "TypeError: invalid type '{}', expected: {}",
+                    "invalid type '{}', expected: {}",
                     type_val.name(),
                     stringify!($atom_type)
-                )))
+                ))
+                .with_kind("TypeError".to_string()))
             }
         }
     };
@@ -111,10 +113,11 @@ macro_rules! impl_try_into {
                 }
 
                 Err(RuntimeError::new(format!(
-                    "TypeError: invalid type '{}', expected: {}",
+                    "invalid type '{}', expected: {}",
                     self.get_type().name(),
                     stringify!($atom_type)
-                )))
+                ))
+                .with_kind("TypeError".to_string()))
             }
         }
     };
@@ -284,10 +287,21 @@ impl TryInto<i64> for Value {
                 "unable to safely cast Float with fraction to Int".to_string(),
             )),
             _ => Err(RuntimeError::new(format!(
-                "TypeError: invalid type '{}', expected: Int",
+                "invalid type '{}', expected: Int",
                 self.get_type().name()
-            ))),
+            ))
+            .with_kind("TypeError".to_string())),
         }
+    }
+}
+
+impl TryInto<usize> for Value {
+    type Error = RuntimeError;
+
+    fn try_into(self) -> Result<usize, Self::Error> {
+        let int: i64 = self.try_into()?;
+
+        Ok(int as usize)
     }
 }
 
@@ -299,9 +313,10 @@ impl TryInto<f64> for Value {
             Value::Int(val) => Ok(val as f64),
             Value::Float(val) => Ok(val),
             _ => Err(RuntimeError::new(format!(
-                "TypeError: invalid type '{}', expected: Float",
+                "invalid type '{}', expected: Float",
                 self.get_type().name()
-            ))),
+            ))
+            .with_kind("TypeError".to_string())),
         }
     }
 }

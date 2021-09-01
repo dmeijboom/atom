@@ -14,8 +14,8 @@ fn array_pop(this: &mut Vec<Value>) -> Result<Option<Value>> {
 }
 
 #[export]
-fn array_remove(this: &mut Vec<Value>, index: i64) -> Result<Value> {
-    Ok(this.remove(index as usize))
+fn array_remove(this: &mut Vec<Value>, index: usize) -> Result<Value> {
+    Ok(this.remove(index))
 }
 
 #[export]

@@ -788,11 +788,11 @@ impl VM {
 
         match value {
             Value::Array(array) => {
-                let index: i64 = index
+                let index: usize = index
                     .try_into()
                     .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
 
-                if let Some(item) = array.get(index as usize) {
+                if let Some(item) = array.get(index) {
                     self.stack.push(item.clone());
 
                     return Ok(());
@@ -828,14 +828,14 @@ impl VM {
 
         match data {
             Value::Array(mut array) => {
-                let index: i64 = index
+                let index: usize = index
                     .try_into()
                     .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
 
                 let array = array.as_mut();
 
-                if array.get(index as usize).is_some() {
-                    array[index as usize] = value;
+                if array.get(index).is_some() {
+                    array[index] = value;
 
                     return Ok(());
                 }
