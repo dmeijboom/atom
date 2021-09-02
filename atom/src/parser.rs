@@ -91,7 +91,7 @@ peg::parser! {
             = start:pos() "f" "\"" components:template_component()* "\"" end:pos() { Expr::Template(TemplateExpr { components, pos: (start..end) }) }
 
         rule keyval() -> KeyValue
-            = start:pos() key:expr() _ ":" _ value:expr() end:pos() { KeyValue { key, value, pos: (start..end) } }
+            = start:pos() key:expr() _ "=>" _ value:expr() end:pos() { KeyValue { key, value, pos: (start..end) } }
 
         rule map_expr() -> Expr
             = start:pos() "{" _ key_values:keyval() ** (_ "," _ ) _ "}" end:pos() { Expr::Map(MapExpr { key_values, pos: (start..end) }) }
@@ -723,7 +723,7 @@ mod tests {
 
     #[test]
     fn test_map() {
-        let source = "{\"num\": 2021, \"word\": \"hello\"};";
+        let source = "{\"num\" => 2021, \"word\" => \"hello\"};";
 
         assert_eq!(
             parse_single(source),
@@ -737,25 +737,25 @@ mod tests {
                             }),
                             value: Expr::Literal(LiteralExpr {
                                 literal: Literal::Int(2021),
-                                pos: (8..12),
+                                pos: (10..14),
                             }),
-                            pos: (1..12),
+                            pos: (1..14),
                         },
                         KeyValue {
                             key: Expr::Literal(LiteralExpr {
                                 literal: Literal::String("word".to_string()),
-                                pos: (14..20),
+                                pos: (16..22),
                             }),
                             value: Expr::Literal(LiteralExpr {
                                 literal: Literal::String("hello".to_string()),
-                                pos: (22..29),
+                                pos: (26..33),
                             }),
-                            pos: (14..29),
+                            pos: (16..33),
                         },
                     ],
-                    pos: (0..30),
+                    pos: (0..34),
                 }),
-                pos: (0..31),
+                pos: (0..35),
             }))
         );
     }

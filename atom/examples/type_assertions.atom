@@ -9,7 +9,7 @@ fn main() {
         output += 10;
     }
 
-    if {:key: 10.5} is Map {
+    if {:key => 10.5} is Map {
         output += 2;
     }
 

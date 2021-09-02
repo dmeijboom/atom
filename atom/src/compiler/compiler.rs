@@ -695,7 +695,7 @@ impl Compiler {
             }
             Stmt::Let(let_stmt) => match &let_stmt.var {
                 Variable::Name(name) => {
-                    ir.push(self.compile_let(let_stmt.mutable, &name, Some(&let_stmt.value))?)
+                    ir.push(self.compile_let(let_stmt.mutable, name, Some(&let_stmt.value))?)
                 }
                 Variable::Tuple(names) | Variable::Array(names) => {
                     ir.push(self.compile_expr(&let_stmt.value)?);

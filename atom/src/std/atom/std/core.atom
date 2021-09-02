@@ -303,11 +303,6 @@ pub class Array {
     }
 }
 
-pub class KeyValue {
-    pub let key;
-    pub let value;
-}
-
 pub class MapIter {
     let data;
     let keys;
@@ -320,11 +315,10 @@ pub class MapIter {
 
         unsafe {
             let key = this.keys[this.index];
-            let key_value = KeyValue(key: key, value: this.data[key]);
 
             this.index += 1;
 
-            return some(key_value);
+            return some((key, this.data[key]));
         }
     }
 }
