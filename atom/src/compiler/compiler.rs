@@ -605,15 +605,19 @@ impl Compiler {
         }
     }
 
-    fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
-        let local = if Scope::get_local(&self.scope, name, false).is_some() {
-            return Err(CompileError::new(
+    fn declare_local(&mut self, mutable: bool, name: &str) -> Result<Local> {
+        if Scope::get_local(&self.scope, name, false).is_some() {
+            Err(CompileError::new(
                 format!("name already defined: {}", name),
                 self.get_location(),
-            ));
+            ))
         } else {
-            self.set_local(name.to_string(), mutable)?
-        };
+            Ok(self.set_local(name.to_string(), mutable)?)
+        }
+    }
+
+    fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
+        let local = self.declare_local(mutable, name)?;
 
         if let Some(expr) = value {
             return Ok(vec![
@@ -689,11 +693,39 @@ impl Compiler {
                 ir.push(self.compile_expr(&expr_stmt.expr)?);
                 ir.push(vec![IR::new(Code::Discard, self.get_location())]);
             }
-            Stmt::Let(let_stmt) => ir.push(self.compile_let(
-                let_stmt.mutable,
-                &let_stmt.name,
-                Some(&let_stmt.value),
-            )?),
+            Stmt::Let(let_stmt) => match &let_stmt.var {
+                Variable::Name(name) => {
+                    ir.push(self.compile_let(let_stmt.mutable, &name, Some(&let_stmt.value))?)
+                }
+                Variable::Tuple(names) | Variable::Array(names) => {
+                    ir.push(self.compile_expr(&let_stmt.value)?);
+
+                    for (i, name) in names.iter().enumerate() {
+                        let local = self.declare_local(let_stmt.mutable, name)?;
+
+                        ir.push(vec![
+                            IR::new(Code::ConstInt(i as i64), self.get_location()),
+                            // We need to keep the current value until the last item was processed
+                            IR::new(
+                                if i == names.len() - 1 {
+                                    Code::LoadIndex
+                                } else {
+                                    Code::TeeIndex
+                                },
+                                self.get_location(),
+                            ),
+                            IR::new(
+                                if local.mutable {
+                                    Code::StoreMut(local.id)
+                                } else {
+                                    Code::Store(local.id)
+                                },
+                                self.get_location(),
+                            ),
+                        ]);
+                    }
+                }
+            },
             Stmt::LetDecl(let_decl_stmt) => {
                 ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
             }

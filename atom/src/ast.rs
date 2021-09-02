@@ -280,7 +280,7 @@ pub struct RaiseStmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetStmt {
-    pub name: String,
+    pub var: Variable,
     pub value: Expr,
     pub mutable: bool,
     pub pos: Pos,

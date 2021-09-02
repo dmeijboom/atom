@@ -23,7 +23,7 @@ peg::parser! {
         rule variable() -> Variable
             = name:ident() { Variable::Name(name) }
                 / "(" _ names:ident() ** (_ "," _) _ ")" { Variable::Tuple(names) }
-                / "[" _ names:ident() ** (_ "," _) _ ")" { Variable::Array(names) }
+                / "[" _ names:ident() ** (_ "," _) _ "]" { Variable::Array(names) }
 
         rule ident_expr() -> Expr
             = start:pos() name:ident() end:pos() { Expr::Ident(IdentExpr { name, pos: (start..end) }) }
@@ -170,7 +170,7 @@ peg::parser! {
             = start:pos() "let" __ name:ident() _ ";" end:pos() { Stmt::LetDecl(LetDeclStmt { name, pos: (start..end) }) }
 
         rule let_stmt() -> Stmt
-            = start:pos() "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Let(LetStmt { mutable: mutable.is_some(), name, value, pos: (start..end) }) }
+            = start:pos() "let" __ mutable:("mut" __)? var:variable() _ "=" _ value:expr() _ ";" end:pos() { Stmt::Let(LetStmt { mutable: mutable.is_some(), var, value, pos: (start..end) }) }
 
         rule assign_op() -> Option<AssignOp>
             = "/=" { Some(AssignOp::Div) }
@@ -651,7 +651,7 @@ mod tests {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Let(LetStmt {
-                name: "current_year".to_string(),
+                var: Variable::Name("current_year".to_string()),
                 value: Expr::Literal(LiteralExpr {
                     literal: Literal::Int(2021),
                     pos: pos.0,
