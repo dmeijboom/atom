@@ -47,6 +47,9 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("\nClasses:");
         println!("{:#?}", module.classes);
 
+        println!("\nClosures:");
+        println!("{:#?}", module.closures);
+
         println!("\nFunctions:");
         println!("{:#?}", module.funcs);
     }

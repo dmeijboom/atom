@@ -216,6 +216,13 @@ pub struct TemplateExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct ClosureExpr {
+    pub args: Vec<FnArg>,
+    pub body: Vec<Stmt>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -226,6 +233,7 @@ pub enum Expr {
     Array(ArrayExpr),
     Tuple(TupleExpr),
     Map(MapExpr),
+    Closure(ClosureExpr),
     Member(Box<MemberExpr>),
     MemberCond(Box<MemberCondExpr>),
     Arithmetic(Box<ArithmeticExpr>),
@@ -250,6 +258,7 @@ impl Expr {
             Self::Array(array_expr) => array_expr.pos.clone(),
             Self::Tuple(tuple_expr) => tuple_expr.pos.clone(),
             Self::Map(map_expr) => map_expr.pos.clone(),
+            Self::Closure(closure_expr) => closure_expr.pos.clone(),
             Self::Member(member_expr) => member_expr.pos.clone(),
             Self::MemberCond(member_cond_expr) => member_cond_expr.pos.clone(),
             Self::Arithmetic(arithmetic_expr) => arithmetic_expr.pos.clone(),

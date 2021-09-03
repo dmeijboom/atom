@@ -9,8 +9,8 @@ use wyhash2::WyHash;
 
 use atom_ir::{Code, Label, IR};
 use atom_runtime::{
-    AtomApi, AtomRef, Class, Fn, FnArg, FnPtr, Interface, Method, Object, Result, RuntimeError,
-    Symbol, Value, ValueType,
+    AtomApi, AtomRef, Class, Closure, Fn, FnArg, FnPtr, Interface, Method, Object, Result,
+    RuntimeError, Symbol, Value, ValueType,
 };
 
 use crate::compiler;
@@ -184,6 +184,9 @@ impl VM {
 
         match value {
             Value::Fn(func) => self.eval_function_call(func, keywords, arg_count, store_result),
+            Value::Closure(closure) => {
+                self.eval_closure_call(closure, keywords, arg_count, store_result)
+            }
             Value::Class(class) => self.eval_class_init(class, keywords, arg_count, store_result),
             Value::Method(method) => {
                 self.eval_method_call(method, keywords, arg_count, store_result)
@@ -193,6 +196,23 @@ impl VM {
                 value.get_type().name()
             ))),
         }
+    }
+
+    #[inline]
+    fn eval_closure_call(
+        &mut self,
+        closure: AtomRef<Closure>,
+        keywords: &[String],
+        arg_count: usize,
+        store_result: bool,
+    ) -> Result<()> {
+        let return_value = self.eval_func(Target::Closure(closure), keywords, arg_count)?;
+
+        if store_result {
+            self.stack.push(return_value);
+        }
+
+        Ok(())
     }
 
     #[inline]
@@ -333,9 +353,18 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<Value> {
-        let (func, receiver) = match &target {
-            Target::Fn(func) => (AtomRef::clone(func), None),
-            Target::Method(method) => (AtomRef::clone(&method.func), Some(method.receiver.clone())),
+        let (func, receiver, values) = match &target {
+            Target::Fn(func) => (AtomRef::clone(func), None, None),
+            Target::Method(method) => (
+                AtomRef::clone(&method.func),
+                Some(method.receiver.clone()),
+                None,
+            ),
+            Target::Closure(closure) => (
+                AtomRef::clone(&closure.func),
+                None,
+                Some(closure.values.clone()),
+            ),
         };
 
         match &func.ptr {
@@ -365,8 +394,15 @@ impl VM {
 
                 let module_id = target.origin().module_id;
 
-                self.call_stack
-                    .push(CallContext::new(target, receiver, locals));
+                self.call_stack.push(CallContext::new(
+                    target,
+                    receiver,
+                    if let Some(values) = values {
+                        vec![values, locals].concat()
+                    } else {
+                        locals
+                    },
+                ));
 
                 let source = Rc::clone(source);
 
@@ -474,6 +510,7 @@ impl VM {
             Code::LoadReceiver => self.eval_load_receiver()?,
             Code::LoadGlobal(id) => self.eval_load_global(module_id, *id)?,
             Code::LoadFn(id) => self.eval_load_fn(module_id, *id)?,
+            Code::LoadClosure(id) => self.eval_load_closure(module_id, *id)?,
             Code::LoadClass(id) => self.eval_load_class(module_id, *id)?,
             Code::LoadInterface(id) => self.eval_load_interface(module_id, *id)?,
             Code::LoadTarget => self.eval_load_target()?,
@@ -1045,6 +1082,24 @@ impl VM {
         Ok(())
     }
 
+    fn eval_load_closure(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+        let current_module = self.module_cache.get_module_by_id(module_id)?;
+        let func = current_module
+            .closures
+            .get(id)
+            .map(|val| AtomRef::clone(val))
+            .ok_or_else(|| RuntimeError::new(format!("closure with ID '{}' not found", id)))?;
+
+        let context = self.call_stack.current()?;
+
+        self.stack.push(Value::Closure(AtomRef::new(Closure {
+            func,
+            values: context.locals.clone(),
+        })));
+
+        Ok(())
+    }
+
     fn eval_load_class(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let value = current_module
@@ -1076,6 +1131,7 @@ impl VM {
             self.stack.push(match &context.target {
                 Target::Fn(func) => Value::Fn(AtomRef::clone(func)),
                 Target::Method(method) => Value::Method(AtomRef::clone(method)),
+                Target::Closure(closure) => Value::Closure(AtomRef::clone(closure)),
             });
 
             return Ok(());

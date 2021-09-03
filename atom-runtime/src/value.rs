@@ -8,6 +8,7 @@ use strum_macros::EnumIter;
 
 use super::atom_ref::AtomRef;
 use super::class::Class;
+use super::closure::Closure;
 use super::interface::Interface;
 use super::method::Method;
 use super::object::Object;
@@ -27,6 +28,9 @@ macro_rules! map_ref {
         $value.$method()
     };
     (Object, $value:expr, $method:ident) => {
+        $value.$method()
+    };
+    (Closure, $value:expr, $method:ident) => {
         $value.$method()
     };
     (Fn, $value:expr, $method:ident) => {
@@ -139,6 +143,9 @@ macro_rules! make {
     (Interface, $value:expr) => {
         AtomRef::new($value)
     };
+    (Closure, $value:expr) => {
+        AtomRef::new($value)
+    };
     (Fn, $value:expr) => {
         AtomRef::new($value)
     };
@@ -202,6 +209,7 @@ pub enum ValueType {
     Fn,
     Class,
     Method,
+    Closure,
     Interface,
     Object,
     Tuple,
@@ -225,6 +233,7 @@ impl ValueType {
             Self::Fn => "Fn",
             Self::Class => "Class",
             Self::Method => "Method",
+            Self::Closure => "Closure",
             Self::Object => "Object",
             Self::Interface => "Interface",
             Self::Map => "Map",
@@ -251,6 +260,7 @@ pub enum Value {
     Tuple(Box<[Value]>),
     Class(AtomRef<Class>),
     Interface(AtomRef<Interface>),
+    Closure(AtomRef<Closure>),
     Method(AtomRef<Method>),
     String(AtomRef<String>),
     Object(AtomRef<Object>),
@@ -262,6 +272,7 @@ pub enum Value {
 impl_type!(Fn, Fn, [from try_into_ref try_into_mut]);
 impl_type!(Class, Class, [from try_into_ref try_into_mut]);
 impl_type!(Method, Method, [from try_into_ref try_into_mut]);
+impl_type!(Closure, Closure, [from try_into_ref try_into_mut]);
 impl_type!(Interface, Interface, [from try_into_ref try_into_mut]);
 impl_type!(Int, i64, [from try_into_ref try_into_mut]);
 impl_type!(Float, f64, [from try_into_ref try_into_mut]);
@@ -352,6 +363,7 @@ impl PartialEq for Value {
         eq!(Ref, self, other);
         eq!(String, self, other);
         eq!(Fn, self, other);
+        eq!(Closure, self, other);
         eq!(Class, self, other);
         eq!(Method, self, other);
         eq!(Interface, self, other);
@@ -379,8 +391,9 @@ impl Hash for Value {
             Value::Option(val) => val.hash(state),
             Value::Ref(val) => val.as_ref().hash(state),
             Value::String(val) => val.as_ref().hash(state),
-            Value::Fn(atom_fn) => atom_fn.as_ref().hash(state),
             Value::Class(class) => class.as_ref().hash(state),
+            Value::Closure(closure) => closure.func.as_ref().hash(state),
+            Value::Fn(atom_fn) => atom_fn.as_ref().hash(state),
             Value::Method(method) => method.as_ref().hash(state),
             Value::Interface(interface) => interface.as_ref().hash(state),
             Value::Object(object) => object.as_ref().hash(state),
@@ -405,25 +418,26 @@ impl Clone for Value {
     #[inline(always)]
     fn clone(&self) -> Self {
         match self {
-            Value::Void => panic!("Void can't be cloned"),
-            Value::Int(val) => Value::Int(*val),
-            Value::Float(val) => Value::Float(*val),
-            Value::Char(val) => Value::Char(*val),
-            Value::Byte(val) => Value::Byte(*val),
-            Value::Bool(val) => Value::Bool(*val),
-            Value::Symbol(name) => Value::Symbol(name.clone()),
-            Value::Option(val) => Value::Option(val.clone()),
-            Value::Ref(val) => Value::Ref(AtomRef::clone(val)),
-            Value::Fn(atom_fn) => Value::Fn(atom_fn.clone()),
-            Value::Class(class) => Value::Class(class.clone()),
-            Value::Method(method) => Value::Method(method.clone()),
-            Value::String(val) => Value::String(AtomRef::clone(val)),
-            Value::Object(val) => Value::Object(AtomRef::clone(val)),
-            Value::Tuple(tuple) => Value::Tuple(tuple.clone()),
-            Value::Array(val) => Value::Array(AtomRef::clone(val)),
-            Value::Map(val) => Value::Map(AtomRef::clone(val)),
-            Value::Extern(val) => Value::Extern(Extern(AtomRef::clone(&val.0))),
-            Value::Interface(interface) => Value::Interface(interface.clone()),
+            Self::Void => panic!("Void can't be cloned"),
+            Self::Int(val) => Value::Int(*val),
+            Self::Float(val) => Value::Float(*val),
+            Self::Char(val) => Value::Char(*val),
+            Self::Byte(val) => Value::Byte(*val),
+            Self::Bool(val) => Value::Bool(*val),
+            Self::Symbol(name) => Value::Symbol(name.clone()),
+            Self::Option(val) => Value::Option(val.clone()),
+            Self::Ref(val) => Value::Ref(AtomRef::clone(val)),
+            Self::Fn(atom_fn) => Value::Fn(atom_fn.clone()),
+            Self::Class(class) => Value::Class(class.clone()),
+            Self::Closure(closure) => Value::Closure(AtomRef::clone(closure)),
+            Self::Method(method) => Value::Method(AtomRef::clone(method)),
+            Self::String(val) => Value::String(AtomRef::clone(val)),
+            Self::Object(val) => Value::Object(AtomRef::clone(val)),
+            Self::Tuple(tuple) => Value::Tuple(tuple.clone()),
+            Self::Array(val) => Value::Array(AtomRef::clone(val)),
+            Self::Map(val) => Value::Map(AtomRef::clone(val)),
+            Self::Extern(val) => Value::Extern(Extern(AtomRef::clone(&val.0))),
+            Self::Interface(interface) => Value::Interface(interface.clone()),
         }
     }
 
@@ -435,25 +449,26 @@ impl Clone for Value {
 impl Value {
     pub fn get_type(&self) -> ValueType {
         match self {
-            Value::Void => panic!("Void has no type"),
-            Value::Int(_) => ValueType::Int,
-            Value::Float(_) => ValueType::Float,
-            Value::Char(_) => ValueType::Char,
-            Value::Byte(_) => ValueType::Byte,
-            Value::Bool(_) => ValueType::Bool,
-            Value::Symbol(_) => ValueType::Symbol,
-            Value::Option(_) => ValueType::Option,
-            Value::Ref(_) => ValueType::Ref,
-            Value::String(_) => ValueType::String,
-            Value::Fn(_) => ValueType::Fn,
-            Value::Class(_) => ValueType::Class,
-            Value::Interface(_) => ValueType::Interface,
-            Value::Method(_) => ValueType::Method,
-            Value::Object(_) => ValueType::Object,
-            Value::Tuple(_) => ValueType::Tuple,
-            Value::Array(_) => ValueType::Array,
-            Value::Map(_) => ValueType::Map,
-            Value::Extern(_) => ValueType::Extern,
+            Self::Void => panic!("Void has no type"),
+            Self::Int(_) => ValueType::Int,
+            Self::Float(_) => ValueType::Float,
+            Self::Char(_) => ValueType::Char,
+            Self::Byte(_) => ValueType::Byte,
+            Self::Bool(_) => ValueType::Bool,
+            Self::Symbol(_) => ValueType::Symbol,
+            Self::Option(_) => ValueType::Option,
+            Self::Ref(_) => ValueType::Ref,
+            Self::String(_) => ValueType::String,
+            Self::Fn(_) => ValueType::Fn,
+            Self::Class(_) => ValueType::Class,
+            Self::Interface(_) => ValueType::Interface,
+            Self::Closure(_) => ValueType::Closure,
+            Self::Method(_) => ValueType::Method,
+            Self::Object(_) => ValueType::Object,
+            Self::Tuple(_) => ValueType::Tuple,
+            Self::Array(_) => ValueType::Array,
+            Self::Map(_) => ValueType::Map,
+            Self::Extern(_) => ValueType::Extern,
         }
     }
 }
@@ -481,6 +496,7 @@ impl Display for Value {
             Self::Fn(func) => write!(f, "{}(...)", func.as_ref()),
             Self::Interface(interface) => write!(f, "{}", interface.as_ref()),
             Self::Class(class) => write!(f, "{}", class.as_ref()),
+            Self::Closure(closure) => write!(f, "{}(...)", closure.func.as_ref()),
             Self::Method(method) => write!(f, "{}(...)", method.as_ref()),
             Self::Extern(external) => write!(f, "<{:?}>", external.type_id()),
             Self::Object(object) => {

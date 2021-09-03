@@ -165,6 +165,24 @@ impl ModuleCache {
                 .push(AtomRef::new(self.make_fn(&module, func, None)?));
         }
 
+        for closure in compiled_module.closures {
+            module.closures.push(AtomRef::new(Fn::native(
+                "<closure>".to_string(),
+                Origin::new(
+                    module.id,
+                    module.name.clone(),
+                    module.filename.clone(),
+                    closure.location,
+                ),
+                closure
+                    .args
+                    .into_iter()
+                    .map(|arg| (arg.name, FnArg::new(arg.mutable)))
+                    .collect(),
+                closure.body,
+            )));
+        }
+
         for (name, class) in compiled_module.classes {
             module
                 .classes

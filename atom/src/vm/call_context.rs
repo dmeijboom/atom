@@ -1,17 +1,19 @@
 use std::fmt::{Display, Formatter};
 
-use atom_runtime::{AtomRef, Fn, Method, Origin, Result, RuntimeError, Trace, Value};
+use atom_runtime::{AtomRef, Closure, Fn, Method, Origin, Result, RuntimeError, Trace, Value};
 
 pub enum Target {
     Fn(AtomRef<Fn>),
     Method(AtomRef<Method>),
+    Closure(AtomRef<Closure>),
 }
 
 impl Target {
     pub fn origin(&self) -> &Origin {
         match self {
-            Target::Fn(func) => &func.origin,
-            Target::Method(method) => &method.func.origin,
+            Self::Fn(func) => &func.origin,
+            Self::Closure(closure) => &closure.func.origin,
+            Self::Method(method) => &method.func.origin,
         }
     }
 }
@@ -19,8 +21,9 @@ impl Target {
 impl Display for Target {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Target::Fn(func) => write!(f, "{}", func.as_ref()),
-            Target::Method(method) => write!(f, "{}", method.as_ref()),
+            Self::Fn(func) => write!(f, "{}", func.as_ref()),
+            Self::Closure(closure) => write!(f, "{}", closure.func.as_ref()),
+            Self::Method(method) => write!(f, "{}", method.as_ref()),
         }
     }
 }
@@ -28,8 +31,9 @@ impl Display for Target {
 impl Clone for Target {
     fn clone(&self) -> Self {
         match self {
-            Target::Fn(func) => Target::Fn(AtomRef::clone(func)),
-            Target::Method(method) => Target::Method(AtomRef::clone(method)),
+            Self::Fn(func) => Target::Fn(AtomRef::clone(func)),
+            Self::Closure(closure) => Target::Closure(AtomRef::clone(closure)),
+            Self::Method(method) => Target::Method(AtomRef::clone(method)),
         }
     }
 }

@@ -106,8 +106,11 @@ peg::parser! {
             = start:pos() "." _ member:ident() end:pos() { Expr::Member(MemberExpr { object: Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }), member, pos: (start..end) }.into()) }
                 / start:pos() "." !['0'..='9'] end:pos() { Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }) }
 
+        rule closure_expr() -> Expr
+            = start:pos() "|" _ args:fn_arg() ** (_ "," _) _ "|" _ "{" _ body:stmt_list() _  "}" end:pos() { Expr::Closure(ClosureExpr { args, body, pos: (start..end) }) }
+
         rule prefix() -> Expr
-            = template_expr() / literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr() / tuple_expr()
+            = template_expr() / closure_expr() / literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr() / tuple_expr()
 
         rule keyword_arg() -> KeywordArg
             = start:pos() name:ident() _ ":" _ value:expr() end:pos() { KeywordArg { name, value, pos: (start..end) } }
@@ -221,7 +224,7 @@ peg::parser! {
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
         rule fn_decl() -> FnDeclStmt
-            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), comments: vec![], pos: (start..end) } }
+            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), comments: vec![], pos: (start..end) } }
 
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
@@ -1189,6 +1192,40 @@ mod tests {
                     pos: 0..2,
                 }),
                 pos: 0..4,
+            }))
+        );
+    }
+
+    #[test]
+    fn closure_expr() {
+        let source = "|mut arg1, arg2|{ 10; };";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Closure(ClosureExpr {
+                    args: vec![
+                        FnArg {
+                            name: "arg1".to_string(),
+                            mutable: true,
+                            pos: 1..9,
+                        },
+                        FnArg {
+                            name: "arg2".to_string(),
+                            mutable: false,
+                            pos: 11..15,
+                        },
+                    ],
+                    body: vec![Stmt::Expr(ExprStmt {
+                        expr: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(10),
+                            pos: 18..20,
+                        }),
+                        pos: 18..21,
+                    })],
+                    pos: 0..23,
+                }),
+                pos: 0..24,
             }))
         );
     }

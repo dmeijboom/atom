@@ -38,6 +38,29 @@ impl Debug for Func {
     }
 }
 
+#[derive(Clone)]
+pub struct Closure {
+    pub body: Vec<IR>,
+    pub is_void: bool,
+    pub args: Vec<FuncArg>,
+    pub location: Location,
+}
+
+impl Debug for Closure {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "|| -> {} {{\n{}\n}}",
+            if self.is_void { "Void" } else { "Any" },
+            self.body
+                .iter()
+                .map(|ir| format!("  {:?}", ir))
+                .collect::<Vec<_>>()
+                .join("\n")
+        )
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Field {
     pub mutable: bool,
@@ -88,6 +111,7 @@ pub struct Module {
     pub name: String,
     pub filename: Option<String>,
     pub modules: HashMap<String, Module>,
+    pub closures: Vec<Closure>,
     pub funcs: IndexMap<String, Func>,
     pub classes: IndexMap<String, Class>,
     pub interfaces: IndexMap<String, Interface>,
@@ -103,6 +127,7 @@ impl Module {
         Self {
             name,
             filename: None,
+            closures: vec![],
             modules: HashMap::new(),
             funcs: IndexMap::new(),
             classes: IndexMap::new(),

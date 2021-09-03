@@ -12,6 +12,7 @@ use crate::ast::{
     TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::AbstractFs;
+use crate::compiler::module::Closure;
 use crate::compiler::optimizers::remove_core_validations;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
@@ -427,6 +428,35 @@ impl Compiler {
                     self.get_location(),
                 )]);
             }
+            Expr::Closure(closure_expr) => {
+                let mut args = vec![];
+
+                self.enter_scope(ScopeContext::Closure);
+
+                for arg in closure_expr.args.iter() {
+                    self.set_local(arg.name.clone(), arg.mutable)?;
+
+                    args.push(FuncArg {
+                        mutable: arg.mutable,
+                        name: arg.name.clone(),
+                    });
+                }
+
+                let body = self._compile_stmt_list(&closure_expr.body)?;
+
+                self.exit_scope();
+
+                let id = self.module.closures.len();
+
+                self.module.closures.push(Closure {
+                    is_void: !body.iter().any(|ir| ir.code == Code::Return),
+                    body,
+                    args,
+                    location: self.get_location(),
+                });
+
+                ir.push(vec![IR::new(Code::LoadClosure(id), self.get_location())]);
+            }
             Expr::MemberCond(member_cond_expr) => {
                 ir.push(self.compile_member_cond(member_cond_expr, vec![])?);
             }
@@ -617,11 +647,16 @@ impl Compiler {
     }
 
     fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
+        let ir = if let Some(expr) = value {
+            Some(self.compile_expr(expr)?)
+        } else {
+            None
+        };
         let local = self.declare_local(mutable, name)?;
 
-        if let Some(expr) = value {
+        if let Some(ir) = ir {
             return Ok(vec![
-                self.compile_expr(expr)?,
+                ir,
                 vec![IR::new(
                     if mutable {
                         Code::StoreMut(local.id)

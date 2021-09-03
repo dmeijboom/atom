@@ -10,6 +10,7 @@ pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr};
 pub use result::{Result, RuntimeError, Trace};
 pub use symbol::Symbol;
 pub use value::{Value, ValueType};
+pub use closure::Closure;
 
 mod api;
 mod atom_ref;
@@ -23,3 +24,4 @@ mod origin;
 mod result;
 mod symbol;
 mod value;
+mod closure;
