@@ -106,8 +106,12 @@ peg::parser! {
             = start:pos() "." _ member:ident() end:pos() { Expr::Member(MemberExpr { object: Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }), member, pos: (start..end) }.into()) }
                 / start:pos() "." !['0'..='9'] end:pos() { Expr::Ident(IdentExpr { name: ".".to_string(), pos: (start..end) }) }
 
+        rule closure_body() -> Vec<Stmt>
+            = "{" _ body:stmt_list() _ "}" { body }
+                / start:pos() expr:expr() end:pos() { vec![Stmt::Return(ReturnStmt { expr, pos: (start..end) })] }
+
         rule closure_expr() -> Expr
-            = start:pos() "|" _ args:fn_arg() ** (_ "," _) _ "|" _ "{" _ body:stmt_list() _  "}" end:pos() { Expr::Closure(ClosureExpr { args, body, pos: (start..end) }) }
+            = start:pos() "|" _ args:fn_arg() ** (_ "," _) _ "|" _ body:closure_body() end:pos() { Expr::Closure(ClosureExpr { args, body, pos: (start..end) }) }
 
         rule prefix() -> Expr
             = template_expr() / closure_expr() / literal_expr() / ident_expr() / dot_expr() / array_expr() / map_expr() / tuple_expr()
@@ -223,8 +227,12 @@ peg::parser! {
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
+        rule fn_decl_body() -> Vec<Stmt>
+            = "{" _ body:stmt_list() _ "}" { body }
+                / "->" _ start:pos() expr:expr() end:pos() _ ";" { vec![Stmt::Return(ReturnStmt { expr, pos: (start..end) })] }
+
         rule fn_decl() -> FnDeclStmt
-            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ "{" _ body:stmt_list() _ "}" end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), comments: vec![], pos: (start..end) } }
+            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ body:fn_decl_body() end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), comments: vec![], pos: (start..end) } }
 
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }

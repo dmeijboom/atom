@@ -28,9 +28,7 @@ pub class EnumIter {
 pub class Enum {
     let iterator;
 
-    pub fn iter() {
-        return EnumIter(iter: this.iterator, index: 0);
-    }
+    pub fn iter() -> EnumIter(iter: this.iterator, index: 0);
 }
 
 pub class Tuple {
@@ -48,9 +46,7 @@ pub class Tuple {
 }
 
 pub class Symbol {
-    pub fn toString() {
-        return f"{this}".substr(1);
-    }
+    pub fn toString() -> f"{this}".substr(1);
 }
 
 pub class Option {
@@ -102,35 +98,25 @@ pub class String {
 }
 
 pub class Int {
-    pub fn toString() {
-        return f"{this}";
-    }
+    pub fn toString() -> f"{this}";
 }
 
 pub class Float {
     pub extern fn floor();
 
-    pub fn toString() {
-        return f"{this}";
-    }
+    pub fn toString() -> f"{this}";
 }
 
 pub class Char {
-    pub fn toString() {
-        return f"{this}";
-    }
+    pub fn toString() -> f"{this}";
 }
 
 pub class Byte {
-    pub fn toString() {
-        return f"{this}";
-    }
+    pub fn toString() -> f"{this}";
 }
 
 pub class Bool {
-    pub fn toString() {
-        return f"{this}";
-    }
+    pub fn toString() -> f"{this}";
 }
 
 pub class RangeIter {
@@ -177,13 +163,8 @@ pub class Range {
     pub let start;
     pub let end;
 
-    pub fn iter() {
-        return RangeIter(start: this.start, end: this.end, step: 1, index: 0);
-    }
-
-    pub fn step(n) {
-        return RangeStep(range: this, step: n);
-    }
+    pub fn iter() -> RangeIter(start: this.start, end: this.end, step: 1, index: 0);
+    pub fn step(n) -> RangeStep(range: this, step: n);
 
     pub fn collect() {
         let mut output = [];
@@ -229,21 +210,10 @@ pub class Array {
         }
     }
 
-    pub fn first() {
-        return this.nth(0);
-    }
-
-    pub fn last() {
-        return this.nth(this.len()-1);
-    }
-
-    pub fn iter() {
-        return ArrayIter(array: this, index: 0);
-    }
-
-    pub fn enum() {
-        return Enum(iterator: this.iter());
-    }
+    pub fn first() -> this.nth(0);
+    pub fn last() -> this.nth(this.len()-1);
+    pub fn iter() -> ArrayIter(array: this, index: 0);
+    pub fn enum() -> Enum(iterator: this.iter());
 
     pub fn append(other) {
         for {
@@ -329,13 +299,8 @@ pub class Map {
     pub extern fn remove(key);
     pub extern fn clear();
 
-    pub fn iter() {
-        return MapIter(data: this, keys: this.keys(), index: 0);
-    }
-
-    pub fn enum() {
-        return Enum(iterator: this.iter());
-    }
+    pub fn iter() -> MapIter(data: this, keys: this.keys(), index: 0);
+    pub fn enum() -> Enum(iterator: this.iter());
 
     pub fn get(key) {
         if !this.keys().contains(key) {
