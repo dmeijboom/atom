@@ -5,7 +5,7 @@ use crate::ast::*;
 peg::parser! {
     grammar parser() for str {
         rule whitespace()
-            = quiet!{[' ' | '\n']}
+            = quiet!{[' ' | '\n' | '\r']}
 
         rule _()
             = whitespace()*
