@@ -7,12 +7,11 @@ use indexmap::map::IndexMap;
 use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
-    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ComparisonOp, Expr, ExternFnDeclStmt,
-    FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
-    TemplateComponent, Variable,
+    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr,
+    ExternFnDeclStmt, FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp,
+    MemberCondExpr, Pos, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::AbstractFs;
-use crate::compiler::module::Closure;
 use crate::compiler::optimizers::remove_core_validations;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
@@ -429,33 +428,7 @@ impl Compiler {
                 )]);
             }
             Expr::Closure(closure_expr) => {
-                let mut args = vec![];
-
-                self.enter_scope(ScopeContext::Closure);
-
-                for arg in closure_expr.args.iter() {
-                    self.set_local(arg.name.clone(), arg.mutable)?;
-
-                    args.push(FuncArg {
-                        mutable: arg.mutable,
-                        name: arg.name.clone(),
-                    });
-                }
-
-                let body = self._compile_stmt_list(&closure_expr.body)?;
-
-                self.exit_scope();
-
-                let id = self.module.closures.len();
-
-                self.module.closures.push(Closure {
-                    is_void: !body.iter().any(|ir| ir.code == Code::Return),
-                    body,
-                    args,
-                    location: self.get_location(),
-                });
-
-                ir.push(vec![IR::new(Code::LoadClosure(id), self.get_location())]);
+                ir.push(vec![self.compile_closure(closure_expr, None)?]);
             }
             Expr::MemberCond(member_cond_expr) => {
                 ir.push(self.compile_member_cond(member_cond_expr, vec![])?);
@@ -544,7 +517,7 @@ impl Compiler {
             Ok(Code::Load(local.id))
         } else if let Some(id) = self.module.globals.get_index_of(name) {
             Ok(Code::LoadGlobal(id))
-        } else if let Some(id) = self.module.funcs.get_index_of(name) {
+        } else if let Some(id) = self.module.funcs.iter().position(|func| func.name == name) {
             Ok(Code::LoadFn(id))
         } else if let Some(id) = self.module.classes.get_index_of(name) {
             Ok(Code::LoadClass(id))
@@ -556,6 +529,44 @@ impl Compiler {
                 self.get_location(),
             ))
         }
+    }
+
+    fn compile_closure(
+        &mut self,
+        closure_expr: &ClosureExpr,
+        target: Option<String>,
+    ) -> Result<IR> {
+        let mut args = vec![];
+
+        self.enter_scope(ScopeContext::Closure(target));
+
+        for arg in closure_expr.args.iter() {
+            self.set_local(arg.name.clone(), arg.mutable)?;
+
+            args.push(FuncArg {
+                mutable: arg.mutable,
+                name: arg.name.clone(),
+            });
+        }
+
+        let body = self._compile_stmt_list(&closure_expr.body)?;
+
+        self.exit_scope();
+
+        let id = self.module.funcs.len();
+
+        self.module.funcs.push(Func {
+            public: true,
+            is_void: !body.iter().any(|ir| ir.code == Code::Return),
+            body,
+            args,
+            location: self.get_location(),
+            name: "<closure>".to_string(),
+            is_closure: true,
+            is_extern: false,
+        });
+
+        Ok(IR::new(Code::MakeClosure(id), self.get_location()))
     }
 
     fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
@@ -1001,6 +1012,7 @@ impl Compiler {
             body: vec![],
             is_void: false,
             is_extern: true,
+            is_closure: false,
             // @TODO: this can be implemented when varargs are working
             args: vec![],
             location: self.get_location_by_offset(&extern_fn_decl.pos),
@@ -1008,7 +1020,7 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
-        if self.module.funcs.contains_key(&fn_decl.name) {
+        if self.module.get_fn_by_name(&fn_decl.name).is_some() {
             return Err(CompileError::new(
                 format!("unable to redefine function: {}", fn_decl.name),
                 self.get_location(),
@@ -1069,6 +1081,7 @@ impl Compiler {
             public: fn_decl.public,
             is_void: !body.iter().any(|ir| ir.code == Code::Return),
             is_extern: false,
+            is_closure: false,
             body,
             args: fn_decl
                 .args
@@ -1236,7 +1249,7 @@ impl Compiler {
         }
 
         let module = self.module.modules.get(&module_name).unwrap();
-        let (type_name, type_kind, is_public) = if let Some(func) = module.funcs.get(name) {
+        let (type_name, type_kind, is_public) = if let Some(func) = module.get_fn_by_name(name) {
             ("function", TypeKind::Fn, func.public)
         } else if let Some(class) = module.classes.get(name) {
             ("class", TypeKind::Class, class.public)
@@ -1293,12 +1306,12 @@ impl Compiler {
                 Stmt::FnDecl(fn_decl) => {
                     let func = self.compile_fn(&fn_decl, false)?;
 
-                    self.module.funcs.insert(fn_decl.name, func);
+                    self.module.funcs.push(func);
                 }
                 Stmt::ExternFnDecl(extern_fn_decl) => {
                     let func = self.compile_extern_fn(&extern_fn_decl);
 
-                    self.module.funcs.insert(extern_fn_decl.name.clone(), func);
+                    self.module.funcs.push(func);
                 }
                 Stmt::ClassDecl(class_decl) => {
                     let class = self.compile_class(&class_decl)?;

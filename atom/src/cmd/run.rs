@@ -47,9 +47,6 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("\nClasses:");
         println!("{:#?}", module.classes);
 
-        println!("\nClosures:");
-        println!("{:#?}", module.closures);
-
         println!("\nFunctions:");
         println!("{:#?}", module.funcs);
     }
@@ -57,7 +54,7 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
     let filename = opts.filename.to_str().map(|s| s.to_string());
     let mut vm = VM::new()?;
 
-    if let Some(id) = module.funcs.get_index_of("main") {
+    if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
         vm.register_module(module, filename)?;
         vm.eval(
             "main",

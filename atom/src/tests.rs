@@ -15,7 +15,7 @@ mod tests {
         )?;
         let mut vm = VM::new()?;
 
-        if let Some(id) = module.funcs.get_index_of("main") {
+        if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
             vm.register_module(module, None)?;
             vm.eval(
                 "main",

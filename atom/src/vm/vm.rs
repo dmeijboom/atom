@@ -466,9 +466,10 @@ impl VM {
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
+            Code::MakeRef => self.eval_make_ref()?,
+            Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, *fn_id)?,
             Code::Discard => self.stack.delete()?,
             Code::Return => return Ok(Flow::Return(self.stack.pop()?)),
-            Code::MakeRef => self.eval_make_ref()?,
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
             Code::ArithmeticBitOr => self.eval_arithmetic_bit_or()?,
@@ -510,7 +511,6 @@ impl VM {
             Code::LoadReceiver => self.eval_load_receiver()?,
             Code::LoadGlobal(id) => self.eval_load_global(module_id, *id)?,
             Code::LoadFn(id) => self.eval_load_fn(module_id, *id)?,
-            Code::LoadClosure(id) => self.eval_load_closure(module_id, *id)?,
             Code::LoadClass(id) => self.eval_load_class(module_id, *id)?,
             Code::LoadInterface(id) => self.eval_load_interface(module_id, *id)?,
             Code::LoadTarget => self.eval_load_target()?,
@@ -1082,13 +1082,13 @@ impl VM {
         Ok(())
     }
 
-    fn eval_load_closure(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+    fn eval_make_closure(&mut self, module_id: ModuleId, fn_id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let func = current_module
-            .closures
-            .get(id)
+            .funcs
+            .get(fn_id)
             .map(|val| AtomRef::clone(val))
-            .ok_or_else(|| RuntimeError::new(format!("closure with ID '{}' not found", id)))?;
+            .ok_or_else(|| RuntimeError::new(format!("function with ID '{}' not found", fn_id)))?;
 
         let context = self.call_stack.current()?;
 

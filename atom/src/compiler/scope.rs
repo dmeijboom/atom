@@ -21,7 +21,7 @@ pub enum ScopeContext {
     Class,
     IfElse,
     Unsafe,
-    Closure,
+    Closure(Option<String>),
     ForLoop(ForLoopMeta),
     Function((String, bool)),
 }
