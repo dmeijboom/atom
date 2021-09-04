@@ -1,0 +1,100 @@
+name: release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ${{ matrix.triple.os }}
+    container: ${{ matrix.triple.container }}
+    env:
+      RUST_BACKTRACE: 1
+    strategy:
+      fail-fast: false
+      matrix:
+        triple:
+          - {
+            os: "ubuntu-18.04",
+            target: "x86_64-unknown-linux-gnu",
+            cross: false,
+            features: ["snmalloc"]
+          }
+          - {
+            os: "ubuntu-18.04",
+            target: "x86_64-unknown-linux-musl",
+            cross: false,
+            features: ["snmalloc"]
+          }
+          - {
+            os: "macOS-latest",
+            target: "x86_64-apple-darwin",
+            cross: false,
+            features: []
+          }
+          - {
+            os: "windows-2019",
+            target: "x86_64-pc-windows-msvc",
+            cross: false,
+            features: ["snmalloc"]
+          }
+
+          # aarch64
+          - {
+            os: "macos-11",
+            target: "aarch64-apple-darwin",
+            cross: true,
+            features: []
+          }
+
+          # armv7
+          - {
+            os: "ubuntu-18.04",
+            target: "armv7-unknown-linux-gnueabihf",
+            cross: true,
+            features: ["snmalloc"]
+          }
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 1
+
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          profile: minimal
+          toolchain: 1.54
+          override: true
+          target: ${{ matrix.triple.target }}
+
+      - name: Install musl-tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get install musl-tools
+
+      - uses: Swatinem/rust-cache@v1
+        with:
+          key: ${{ matrix.triple.target }}
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --verbose --target=${{ matrix.triple.target }}
+          use-cross: ${{ matrix.triple.cross }}
+
+      - name: Store artifact (Linux/MacOs)
+        uses: actions/upload-artifact@v2
+        if: matrix.triple.target != 'x86_64-pc-windows-msvc'
+        with:
+          name: atom ${{ matrix.triple.target }}
+          path: ${{ github.workspace }}/target/${{ matrix.triple.target }}/release/atom
+
+      - name: Store artifact (Windows)
+        uses: actions/upload-artifact@v2
+        if: matrix.triple.target == 'x86_64-pc-windows-msvc'
+        with:
+          name: atom ${{ matrix.triple.target }}
+          path: ${{ github.workspace }}\target\${{ matrix.triple.target }}\release\atom.exe

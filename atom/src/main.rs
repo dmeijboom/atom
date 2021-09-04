@@ -6,7 +6,7 @@ use clap::Clap;
 use crate::cmd::{Cmd, Opts};
 use crate::utils::display_error;
 
-#[cfg(target_os = "linux")]
+#[cfg(feature = "snmalloc")]
 #[global_allocator]
 static ALLOC: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
 
