@@ -23,15 +23,27 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(fn|if|for|in|extern|is|module|import|else|class|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
+                <string>\b(if|for|in|extern|is|module|import|else|class|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
                 <key>name</key>
                 <string>keyword.control.atom</string>
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(let|mut|pub)\b</string>
+                <string>\bmut\b</string>
                 <key>name</key>
                 <string>storage.modifier.atom</string>
+            </dict>
+            <dict>
+                <key>match</key>
+                <string>\blet\b</string>
+                <key>name</key>
+                <string>keyword.other.let.atom</string>
+            </dict>
+            <dict>
+                <key>match</key>
+                <string>\bpub\b</string>
+                <key>name</key>
+                <string>storage.modifier.visibility.atom</string>
             </dict>
             <dict>
                 <key>match</key>
@@ -41,7 +53,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(true|false|Int|Bool|Float|Array|Map|String|Byte|Char)\b</string>
+                <string>\b(true|false|Int|Bool|Float|Array|Map|String|Byte|Char|Range)\b</string>
                 <key>name</key>
                 <string>constant.language.atom</string>
             </dict>
@@ -56,6 +68,41 @@
                 <string>\b(this)\b</string>
                 <key>name</key>
                 <string>variable.language.atom</string>
+            </dict>
+            <dict>
+                <key>begin</key>
+                <string>f"</string>
+                <key>beginCaptures</key>
+                <dict>
+                    <key>0</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.string.begin.atom</string>
+                    </dict>
+                </dict>
+                <key>end</key>
+                <string>"</string>
+                <key>endCaptures</key>
+                <dict>
+                    <key>0</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.string.end.atom</string>
+                    </dict>
+                </dict>
+                <key>name</key>
+                <string>string.quoted.double.atom</string>
+                <key>patterns</key>
+                <array>
+                    <dict>
+                        <key>include</key>
+                        <string>#string_escaped_char</string>
+                    </dict>
+                    <dict>
+                        <key>include</key>
+                        <string>#string_placeholder</string>
+                    </dict>
+                </array>
             </dict>
             <dict>
                 <key>begin</key>
@@ -204,6 +251,157 @@
                     </dict>
                 </array>
             </dict>
+            <dict>
+                <key>begin</key>
+                <string>\b(fn)\s*(?:\s+([a-zA-Z_][a-zA-Z0-9_]*(?:([\.:])[a-zA-Z_][a-zA-Z0-9_]*)?)\s*)?(\()</string>
+                <key>beginCaptures</key>
+                <dict>
+                    <key>1</key>
+                    <dict>
+                        <key>name</key>
+                        <string>keyword.control.atom</string>
+                    </dict>
+                    <key>2</key>
+                    <dict>
+                        <key>name</key>
+                        <string>entity.name.function.atom</string>
+                    </dict>
+                    <key>3</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.separator.parameter.atom</string>
+                    </dict>
+                    <key>4</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.parameters.begin.atom</string>
+                    </dict>
+                </dict>
+                <key>end</key>
+                <string>\)</string>
+                <key>endCaptures</key>
+                <dict>
+                    <key>0</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.parameters.end.atom</string>
+                    </dict>
+                </dict>
+                <key>name</key>
+                <string>meta.function.atom</string>
+                <key>patterns</key>
+                <array>
+                    <dict>
+                        <key>match</key>
+                        <string>[a-zA-Z_][a-zA-Z0-9_]*</string>
+                        <key>name</key>
+                        <string>variable.parameter.function.atom</string>
+                    </dict>
+                    <dict>
+                        <key>match</key>
+                        <string>,</string>
+                        <key>name</key>
+                        <string>punctuation.separator.arguments.atom</string>
+                    </dict>
+                </array>
+            </dict>
+            <dict>
+                <key>captures</key>
+                <dict>
+                    <key>1</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.dictionary.begin.atom</string>
+                    </dict>
+                    <key>2</key>
+                    <dict>
+                        <key>name</key>
+                        <string>meta.empty-dictionary.atom</string>
+                    </dict>
+                    <key>3</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.dictionary.end.atom</string>
+                    </dict>
+                </dict>
+                <key>match</key>
+                <string>(\{)(\s*(\}))</string>
+                <key>name</key>
+                <string>meta.structure.dictionary.atom</string>
+            </dict>
+            <dict>
+                <key>begin</key>
+                <string>(\{)</string>
+                <key>beginCaptures</key>
+                <dict>
+                    <key>1</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.dictionary.begin.atom</string>
+                    </dict>
+                </dict>
+                <key>end</key>
+                <string>(\})</string>
+                <key>endCaptures</key>
+                <dict>
+                    <key>1</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.definition.dictionary.end.atom</string>
+                    </dict>
+                </dict>
+                <key>name</key>
+                <string>meta.structure.dictionary.atom</string>
+                <key>patterns</key>
+                <array>
+                    <dict>
+                        <key>begin</key>
+                        <string>(?&lt;=\{|\,|^)\s*(?![\},])</string>
+                        <key>contentName</key>
+                        <string>meta.structure.dictionary.key.atom</string>
+                        <key>end</key>
+                        <string>\s*(?:(?=\})|(\=>))</string>
+                        <key>endCaptures</key>
+                        <dict>
+                            <key>1</key>
+                            <dict>
+                                <key>name</key>
+                                <string>punctuation.separator.valuepair.dictionary.atom</string>
+                            </dict>
+                        </dict>
+                        <key>patterns</key>
+                        <array>
+                            <dict>
+                                <key>include</key>
+                                <string>$self</string>
+                            </dict>
+                        </array>
+                    </dict>
+                    <dict>
+                        <key>begin</key>
+                        <string>(?&lt;=\=>|^)\s*</string>
+                        <key>contentName</key>
+                        <string>meta.structure.dictionary.value.atom</string>
+                        <key>end</key>
+                        <string>\s*(?:(?=\})|(,))</string>
+                        <key>endCaptures</key>
+                        <dict>
+                            <key>1</key>
+                            <dict>
+                                <key>name</key>
+                                <string>punctuation.separator.dictionary.atom</string>
+                            </dict>
+                        </dict>
+                        <key>patterns</key>
+                        <array>
+                            <dict>
+                                <key>include</key>
+                                <string>$self</string>
+                            </dict>
+                        </array>
+                    </dict>
+                </array>
+            </dict>
         </array>
         <key>repository</key>
         <dict>
@@ -216,6 +414,18 @@
             </dict>
             <key>comments</key>
             <dict>
+                <key>begin</key>
+                <string>(^[ \t]+)?(?=#)</string>
+                <key>beginCaptures</key>
+                <dict>
+                    <key>1</key>
+                    <dict>
+                        <key>name</key>
+                        <string>punctuation.whitespace.comment.leading.atom</string>
+                    </dict>
+                </dict>
+                <key>end</key>
+                <string>(?!\G)</string>
                 <key>patterns</key>
                 <array>
                     <dict>
@@ -230,18 +440,9 @@
                             </dict>
                         </dict>
                         <key>end</key>
-                        <string>$\n?</string>
+                        <string>\n</string>
                         <key>name</key>
-                        <string>comment.line.double-slash.atom</string>
-                        <key>patterns</key>
-                        <array>
-                            <dict>
-                                <key>match</key>
-                                <string>(?&gt;\\\s*\n)</string>
-                                <key>name</key>
-                                <string>punctuation.separator.continuation.atom</string>
-                            </dict>
-                        </array>
+                        <string>comment.line.number-sign.atom</string>
                     </dict>
                 </array>
             </dict>
