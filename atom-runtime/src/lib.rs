@@ -1,6 +1,7 @@
 pub use api::AtomApi;
 pub use atom_ref::AtomRef;
 pub use class::{Class, Field};
+pub use closure::Closure;
 pub use interface::Interface;
 pub use method::Method;
 pub use object::Object;
@@ -10,11 +11,11 @@ pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr};
 pub use result::{Result, RuntimeError, Trace};
 pub use symbol::Symbol;
 pub use value::{Value, ValueType};
-pub use closure::Closure;
 
 mod api;
 mod atom_ref;
 mod class;
+mod closure;
 mod r#extern;
 mod r#fn;
 mod interface;
@@ -24,4 +25,3 @@ mod origin;
 mod result;
 mod symbol;
 mod value;
-mod closure;

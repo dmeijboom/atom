@@ -165,6 +165,18 @@ impl Compiler {
         }
     }
 
+    #[inline(always)]
+    fn compile_store(&self, local: &Local) -> IR {
+        IR::new(
+            if local.mutable {
+                Code::StoreMut(local.id)
+            } else {
+                Code::Store(local.id)
+            },
+            self.get_location(),
+        )
+    }
+
     fn compile_member_cond(
         &mut self,
         member_cond_expr: &MemberCondExpr,
@@ -337,11 +349,14 @@ impl Compiler {
                 if let Expr::MemberCond(member_cond_expr) = &call_expr.callee {
                     ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
                 } else {
-                    let is_target = || {
+                    let find_target_match = || {
                         if let Some((target, is_method)) = Scope::get_function_target(&self.scope) {
                             if !is_method {
                                 if let Expr::Ident(ident_expr) = &call_expr.callee {
-                                    return ident_expr.name == target;
+                                    return (
+                                        ident_expr.name == target,
+                                        self.module.get_fn_by_name(&target).is_none(),
+                                    );
                                 }
 
                                 // @TODO: Support tail calls for methods
@@ -356,10 +371,15 @@ impl Compiler {
                             }
                         }
 
-                        false
+                        (false, false)
                     };
 
-                    if self.optimize && is_target() {
+                    let (is_target, force_optimize) = find_target_match();
+
+                    // If the target refers to a closure it can't be referenced by it's name (at least not globally).
+                    // So we have to use the 'LoadTarget' instruction instead even without optimizations enabled.
+                    // Otherwise it won't work
+                    if (self.optimize || force_optimize) && is_target {
                         ir.push(vec![IR::new(Code::LoadTarget, self.get_location())]);
                     } else {
                         ir.push(self.compile_expr(&call_expr.callee)?);
@@ -538,7 +558,13 @@ impl Compiler {
     ) -> Result<IR> {
         let mut args = vec![];
 
-        self.enter_scope(ScopeContext::Closure(target));
+        self.enter_scope(ScopeContext::Function((target.unwrap_or_default(), false)));
+
+        // As the vm will copy all the locals of the parent function we need to pretend like we set the
+        // locals of the parent function
+        if let Some(parent) = self.scope.get(self.scope.len() - 2) {
+            self.scope.last_mut().unwrap().local_id = parent.local_id;
+        }
 
         for arg in closure_expr.args.iter() {
             self.set_local(arg.name.clone(), arg.mutable)?;
@@ -579,15 +605,8 @@ impl Compiler {
             }
 
             return Ok(vec![
-                self.compile_expr(value)?,
-                vec![IR::new(
-                    if local.mutable {
-                        Code::StoreMut(local.id)
-                    } else {
-                        Code::Store(local.id)
-                    },
-                    self.get_location(),
-                )],
+                self.compile_name_value(name, value)?,
+                vec![self.compile_store(&local)],
             ]
             .concat());
         }
@@ -657,30 +676,14 @@ impl Compiler {
         }
     }
 
-    fn compile_let(&mut self, mutable: bool, name: &str, value: Option<&Expr>) -> Result<Vec<IR>> {
-        let ir = if let Some(expr) = value {
-            Some(self.compile_expr(expr)?)
-        } else {
-            None
-        };
-        let local = self.declare_local(mutable, name)?;
-
-        if let Some(ir) = ir {
+    fn compile_name_value(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
+        if let Expr::Closure(closure_expr) = value {
             return Ok(vec![
-                ir,
-                vec![IR::new(
-                    if mutable {
-                        Code::StoreMut(local.id)
-                    } else {
-                        Code::Store(local.id)
-                    },
-                    self.get_location(),
-                )],
-            ]
-            .concat());
+                self.compile_closure(closure_expr, Some(name.to_string()))?
+            ]);
         }
 
-        Ok(vec![])
+        self.compile_expr(value)
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt, ir: &mut Vec<Vec<IR>>) -> Result<()> {
@@ -741,7 +744,11 @@ impl Compiler {
             }
             Stmt::Let(let_stmt) => match &let_stmt.var {
                 Variable::Name(name) => {
-                    ir.push(self.compile_let(let_stmt.mutable, name, Some(&let_stmt.value))?)
+                    ir.push(self.compile_name_value(name, &let_stmt.value)?);
+
+                    let local = self.declare_local(let_stmt.mutable, name)?;
+
+                    ir.push(vec![self.compile_store(&local)]);
                 }
                 Variable::Tuple(names) | Variable::Array(names) => {
                     ir.push(self.compile_expr(&let_stmt.value)?);
@@ -760,20 +767,13 @@ impl Compiler {
                                 },
                                 self.get_location(),
                             ),
-                            IR::new(
-                                if local.mutable {
-                                    Code::StoreMut(local.id)
-                                } else {
-                                    Code::Store(local.id)
-                                },
-                                self.get_location(),
-                            ),
+                            self.compile_store(&local),
                         ]);
                     }
                 }
             },
             Stmt::LetDecl(let_decl_stmt) => {
-                ir.push(self.compile_let(false, &let_decl_stmt.name, None)?)
+                self.declare_local(true, &let_decl_stmt.name)?;
             }
             Stmt::Assign(assign_stmt) => {
                 if let Some(op) = &assign_stmt.op {

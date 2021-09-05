@@ -21,14 +21,13 @@ pub enum ScopeContext {
     Class,
     IfElse,
     Unsafe,
-    Closure(Option<String>),
     ForLoop(ForLoopMeta),
     Function((String, bool)),
 }
 
 pub struct Scope {
-    local_id: usize,
     pub id: usize,
+    pub local_id: usize,
     pub context: ScopeContext,
     pub locals: HashMap<String, Local>,
 }

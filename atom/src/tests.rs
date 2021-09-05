@@ -48,6 +48,7 @@ mod tests {
     #[test_case(include_str!("../examples/map_value_arithmetic.atom"), Value::Int(20); "map value arithmetic")]
     #[test_case(include_str!("../examples/wrap_reference_type.atom"), Value::Bool(true); "wrap reference type")]
     #[test_case(include_str!("../examples/store_var_in_loop.atom"), Value::Int(28); "store variable in infinite loop")]
+    #[test_case(include_str!("../examples/self_referencing_closure.atom"), Value::Bool(true); "self referencing closure")]
     #[test_case(include_str!("../examples/locals.atom"), Value::String(AtomRef::new("item3item6".to_string())); "locals")]
     #[test_case(include_str!("../examples/map_basics.atom"), Value::String(AtomRef::new("atom".to_string())); "map basics")]
     #[test_case(include_str!("../examples/closures.atom"), Value::String(AtomRef::new("hello world!".to_string())); "closures")]

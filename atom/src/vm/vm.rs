@@ -1058,11 +1058,7 @@ impl VM {
 
     fn eval_load_global(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let value = current_module
-            .globals
-            .get(id)
-            .cloned()
-            .ok_or_else(|| RuntimeError::new(format!("global with ID '{}' not found", id)))?;
+        let value = unsafe { current_module.globals.get_unchecked(id) }.clone();
 
         self.stack.push(value);
 
@@ -1071,24 +1067,16 @@ impl VM {
 
     fn eval_load_fn(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let value = current_module
-            .funcs
-            .get(id)
-            .map(|val| AtomRef::clone(val))
-            .ok_or_else(|| RuntimeError::new(format!("function with ID '{}' not found", id)))?;
+        let func = AtomRef::clone(unsafe { current_module.funcs.get_unchecked(id) });
 
-        self.stack.push(Value::Fn(value));
+        self.stack.push(Value::Fn(func));
 
         Ok(())
     }
 
     fn eval_make_closure(&mut self, module_id: ModuleId, fn_id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let func = current_module
-            .funcs
-            .get(fn_id)
-            .map(|val| AtomRef::clone(val))
-            .ok_or_else(|| RuntimeError::new(format!("function with ID '{}' not found", fn_id)))?;
+        let func = AtomRef::clone(unsafe { current_module.funcs.get_unchecked(fn_id) });
 
         let context = self.call_stack.current()?;
 
