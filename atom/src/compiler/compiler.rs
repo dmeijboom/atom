@@ -124,10 +124,12 @@ impl Compiler {
         Location::new(offset.clone(), 1, offset.start + 1)
     }
 
+    #[inline(always)]
     fn get_location(&self) -> Location {
         self.get_location_by_offset(&self.pos)
     }
 
+    #[inline(always)]
     fn enter_scope(&mut self, context: ScopeContext) {
         self.scope_id += 1;
 
@@ -136,10 +138,12 @@ impl Compiler {
         self.scope.push(new_scope);
     }
 
+    #[inline(always)]
     fn exit_scope(&mut self) {
         self.scope.pop();
     }
 
+    #[inline(always)]
     fn set_local(&mut self, name: String, mutable: bool) -> Result<Local> {
         Scope::set_local(self.scope.as_mut(), name, mutable).map_err(|e| {
             let mut e = e;
@@ -530,7 +534,7 @@ impl Compiler {
         Ok(ir.concat())
     }
 
-    fn compile_name(&self, name: &str) -> Result<Code> {
+    fn compile_name(&mut self, name: &str) -> Result<Code> {
         if name == "this" && Scope::in_function_block(&self.scope) {
             Ok(Code::LoadReceiver)
         } else if let Some(local) = Scope::get_local(&self.scope, name, true) {
@@ -544,6 +548,22 @@ impl Compiler {
         } else if let Some(id) = self.module.interfaces.get_index_of(name) {
             Ok(Code::LoadInterface(id))
         } else {
+            let index = self.tree.iter().position(|stmt| match stmt {
+                Stmt::FnDecl(fn_decl_stmt) if fn_decl_stmt.name == name => true,
+                Stmt::ExternFnDecl(extern_fn_decl) if extern_fn_decl.name == name => true,
+                Stmt::ClassDecl(class_decl) if class_decl.name == name => true,
+                Stmt::InterfaceDecl(interface_decl) if interface_decl.name == name => true,
+                _ => false,
+            });
+
+            if let Some(index) = index {
+                let stmt = self.tree.remove(index);
+
+                self.compile_top_level_stmt(stmt)?;
+
+                return self.compile_name(name);
+            }
+
             Err(CompileError::new(
                 format!("no such name: {}", name),
                 self.get_location(),
@@ -1287,6 +1307,43 @@ impl Compiler {
         Ok(())
     }
 
+    fn compile_top_level_stmt(&mut self, stmt: Stmt) -> Result<()> {
+        match stmt {
+            Stmt::FnDecl(fn_decl) => {
+                let func = self.compile_fn(&fn_decl, false)?;
+
+                self.module.funcs.push(func);
+            }
+            Stmt::ExternFnDecl(extern_fn_decl) => {
+                let func = self.compile_extern_fn(&extern_fn_decl);
+
+                self.module.funcs.push(func);
+            }
+            Stmt::ClassDecl(class_decl) => {
+                let class = self.compile_class(&class_decl)?;
+
+                self.module.classes.insert(class_decl.name, class);
+            }
+            Stmt::InterfaceDecl(interface_decl) => {
+                let interface = self.compile_interface(&interface_decl)?;
+
+                self.module
+                    .interfaces
+                    .insert(interface_decl.name, interface);
+            }
+            Stmt::Module(module_stmt) => {
+                return Err(CompileError::new(
+                    "module statement must be the first statement in a file".to_string(),
+                    self.get_location_by_offset(&module_stmt.pos),
+                ));
+            }
+            Stmt::Import(import_stmt) => self.compile_import(import_stmt)?,
+            _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
     pub fn compile(mut self) -> Result<Module> {
         if let Some(Stmt::Module(module_stmt)) = self.tree.get(0) {
             self.module.name = module_stmt.name.clone();
@@ -1302,38 +1359,7 @@ impl Compiler {
         while !self.tree.is_empty() {
             let stmt = self.tree.remove(0);
 
-            match stmt {
-                Stmt::FnDecl(fn_decl) => {
-                    let func = self.compile_fn(&fn_decl, false)?;
-
-                    self.module.funcs.push(func);
-                }
-                Stmt::ExternFnDecl(extern_fn_decl) => {
-                    let func = self.compile_extern_fn(&extern_fn_decl);
-
-                    self.module.funcs.push(func);
-                }
-                Stmt::ClassDecl(class_decl) => {
-                    let class = self.compile_class(&class_decl)?;
-
-                    self.module.classes.insert(class_decl.name, class);
-                }
-                Stmt::InterfaceDecl(interface_decl) => {
-                    let interface = self.compile_interface(&interface_decl)?;
-
-                    self.module
-                        .interfaces
-                        .insert(interface_decl.name.clone(), interface);
-                }
-                Stmt::Module(module_stmt) => {
-                    return Err(CompileError::new(
-                        "module statement must be the first statement in a file".to_string(),
-                        self.get_location_by_offset(&module_stmt.pos),
-                    ));
-                }
-                Stmt::Import(import_stmt) => self.compile_import(import_stmt)?,
-                _ => unreachable!(),
-            }
+            self.compile_top_level_stmt(stmt)?;
         }
 
         Ok(self.module)

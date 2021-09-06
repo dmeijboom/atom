@@ -53,6 +53,7 @@ mod tests {
     #[test_case(include_str!("../examples/map_basics.atom"), Value::String(AtomRef::new("atom".to_string())); "map basics")]
     #[test_case(include_str!("../examples/closures.atom"), Value::String(AtomRef::new("hello world!".to_string())); "closures")]
     #[test_case(include_str!("../examples/class_fields.atom"), Value::String(AtomRef::new("hello world".to_string())); "class fields")]
+    #[test_case(include_str!("../examples/use_class_fn_before_init.atom"), Value::Bool(true); "use classes/functions before initialization")]
     #[test_case(include_str!("../examples/template_string.atom"), Value::String(AtomRef::new("Hello { World 120".to_string())); "template string")]
     #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(AtomRef::new(vec![Value::Int(20), Value::Int(30), Value::Int(40)])); "heap copy")]
     fn code_success(source: &str, value: Value) {
