@@ -9,7 +9,7 @@ use atom_ir::{Code, Label, Location, IR};
 use crate::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr,
     ExternFnDeclStmt, FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp,
-    MemberCondExpr, Pos, Stmt, TemplateComponent, Variable,
+    MemberCondExpr, MixinDeclStmt, Pos, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::AbstractFs;
 use crate::compiler::optimizers::remove_core_validations;
@@ -40,6 +40,11 @@ pub fn parse_line_numbers_offset(source: &str) -> Vec<usize> {
     }
 
     line_numbers_offset
+}
+
+enum Imported {
+    Global(TypeKind),
+    Mixin(MixinDeclStmt),
 }
 
 pub struct Compiler {
@@ -167,6 +172,29 @@ impl Compiler {
             path_finder: self.path_finder.clone(),
             optimizers: self.optimizers.clone(),
         }
+    }
+
+    fn get_mixin(&mut self, name: &str) -> Result<MixinDeclStmt> {
+        if let Some(mixin) = self.module.mixins.get(name) {
+            return Ok(mixin.clone());
+        }
+
+        let index = self.tree.iter().position(
+            |stmt| matches!(stmt, Stmt::MixinDecl(mixin_decl_stmt) if mixin_decl_stmt.name == name),
+        );
+
+        if let Some(index) = index {
+            let stmt = self.tree.remove(index);
+
+            self.compile_top_level_stmt(stmt)?;
+
+            return self.get_mixin(name);
+        }
+
+        Err(CompileError::new(
+            format!("no such mixin: {}", name),
+            self.get_location(),
+        ))
     }
 
     #[inline(always)]
@@ -963,6 +991,7 @@ impl Compiler {
             Stmt::FnDecl(_)
             | Stmt::ExternFnDecl(_)
             | Stmt::ClassDecl(_)
+            | Stmt::MixinDecl(_)
             | Stmt::InterfaceDecl(_)
             | Stmt::Module(_)
             | Stmt::Import(_) => {}
@@ -1114,7 +1143,7 @@ impl Compiler {
         })
     }
 
-    fn compile_class(&mut self, class_decl: &ClassDeclStmt) -> Result<Class> {
+    fn compile_class(&mut self, mut class_decl: ClassDeclStmt) -> Result<()> {
         if self.module.classes.contains_key(&class_decl.name) {
             return Err(CompileError::new(
                 format!("unable to redefine class: {}", class_decl.name),
@@ -1122,7 +1151,25 @@ impl Compiler {
             ));
         }
 
-        self.enter_scope(ScopeContext::Class);
+        // Register class early so that it can be referenced in one of it's methods
+        self.module.classes.insert(
+            class_decl.name.clone(),
+            Class {
+                name: class_decl.name.clone(),
+                public: class_decl.public,
+                funcs: HashMap::new(),
+                fields: IndexMap::new(),
+            },
+        );
+
+        for name in class_decl.extends.iter() {
+            let mut mixin = self.get_mixin(name)?;
+
+            class_decl.funcs.append(&mut mixin.funcs);
+            class_decl.extern_funcs.append(&mut mixin.extern_funcs);
+        }
+
+        self.enter_scope(ScopeContext::Class(class_decl.name.clone()));
 
         let mut fields = IndexMap::new();
 
@@ -1175,12 +1222,13 @@ impl Compiler {
 
         self.exit_scope();
 
-        Ok(Class {
-            name: class_decl.name.clone(),
-            public: class_decl.public,
-            fields,
-            funcs,
-        })
+        // Update the already-registered class with it's fields and methods
+        if let Some(class) = self.module.classes.get_mut(&class_decl.name) {
+            class.fields = fields;
+            class.funcs = funcs;
+        }
+
+        Ok(())
     }
 
     fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
@@ -1269,12 +1317,18 @@ impl Compiler {
         }
 
         let module = self.module.modules.get(&module_name).unwrap();
-        let (type_name, type_kind, is_public) = if let Some(func) = module.get_fn_by_name(name) {
-            ("function", TypeKind::Fn, func.public)
+        let (type_name, imported, is_public) = if let Some(func) = module.get_fn_by_name(name) {
+            ("function", Imported::Global(TypeKind::Fn), func.public)
         } else if let Some(class) = module.classes.get(name) {
-            ("class", TypeKind::Class, class.public)
+            ("class", Imported::Global(TypeKind::Class), class.public)
         } else if let Some(interface) = module.interfaces.get(name) {
-            ("interface", TypeKind::Interface, interface.public)
+            (
+                "interface",
+                Imported::Global(TypeKind::Interface),
+                interface.public,
+            )
+        } else if let Some(mixin) = module.mixins.get(name) {
+            ("mixin", Imported::Mixin(mixin.clone()), mixin.public)
         } else {
             return Err(CompileError::new(
                 format!(
@@ -1299,10 +1353,25 @@ impl Compiler {
             ));
         }
 
-        self.module.globals.insert(
-            name.to_string(),
-            Type::new(type_kind, module.name.clone(), name.to_string()),
-        );
+        match imported {
+            Imported::Global(type_kind) => {
+                self.module.globals.insert(
+                    name.to_string(),
+                    Type::new(type_kind, module.name.clone(), name.to_string()),
+                );
+            }
+            Imported::Mixin(mixin) => {
+                if self.module.mixins.contains_key(&mixin.name) {
+                    return Err(CompileError::new(
+                        format!("unable to redefine mixin: {}", name),
+                        self.get_location(),
+                    ));
+                }
+
+                // As mixins are being used at compile time we need to import them instead of leaving that to the vm
+                self.module.mixins.insert(mixin.name.clone(), mixin);
+            }
+        }
 
         Ok(())
     }
@@ -1319,10 +1388,13 @@ impl Compiler {
 
                 self.module.funcs.push(func);
             }
+            Stmt::MixinDecl(mixin_decl) => {
+                self.module
+                    .mixins
+                    .insert(mixin_decl.name.clone(), mixin_decl);
+            }
             Stmt::ClassDecl(class_decl) => {
-                let class = self.compile_class(&class_decl)?;
-
-                self.module.classes.insert(class_decl.name, class);
+                self.compile_class(class_decl)?;
             }
             Stmt::InterfaceDecl(interface_decl) => {
                 let interface = self.compile_interface(&interface_decl)?;

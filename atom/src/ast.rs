@@ -368,7 +368,18 @@ pub struct Field {
 pub struct ClassDeclStmt {
     pub name: String,
     pub public: bool,
+    pub extends: Vec<String>,
     pub fields: Vec<Field>,
+    pub funcs: Vec<FnDeclStmt>,
+    pub extern_funcs: Vec<ExternFnDeclStmt>,
+    pub comments: Vec<Comment>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MixinDeclStmt {
+    pub name: String,
+    pub public: bool,
     pub funcs: Vec<FnDeclStmt>,
     pub extern_funcs: Vec<ExternFnDeclStmt>,
     pub comments: Vec<Comment>,
@@ -440,6 +451,7 @@ pub enum Stmt {
     Unsafe(UnsafeStmt),
     Module(ModuleStmt),
     ClassDecl(ClassDeclStmt),
+    MixinDecl(MixinDeclStmt),
     InterfaceDecl(InterfaceDeclStmt),
 }
 
@@ -462,6 +474,7 @@ impl Stmt {
             Stmt::Import(import_stmt) => import_stmt.pos.clone(),
             Stmt::Unsafe(unsafe_stmt) => unsafe_stmt.pos.clone(),
             Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
+            Stmt::MixinDecl(mixin_decl_stmt) => mixin_decl_stmt.pos.clone(),
             Stmt::InterfaceDecl(interface_decl_stmt) => interface_decl_stmt.pos.clone(),
         }
     }
@@ -477,6 +490,9 @@ impl Stmt {
             }
             Self::ClassDecl(class_decl_stmt) => {
                 class_decl_stmt.comments = comments;
+            }
+            Self::MixinDecl(mixin_decl_stmt) => {
+                mixin_decl_stmt.comments = comments;
             }
             _ => {}
         }

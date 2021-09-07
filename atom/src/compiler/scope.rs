@@ -18,9 +18,9 @@ pub struct ForLoopMeta {
 
 pub enum ScopeContext {
     Global,
-    Class,
     IfElse,
     Unsafe,
+    Class(String),
     ForLoop(ForLoopMeta),
     Function((String, bool)),
 }

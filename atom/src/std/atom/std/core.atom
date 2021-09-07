@@ -7,13 +7,79 @@ pub interface Iterable {
     fn iter();
 }
 
+pub mixin Iterator {
+    pub fn enum() -> Enum(iterator: this.iter());
+
+    pub fn collect() {
+        let mut output = [];
+
+        for item in this {
+            output.push(item);
+        }
+
+        return output;
+    }
+
+    pub fn nth(index) {
+        let iter = this.iter();
+
+        for i in 0..index {
+            if iter.next().isNone() {
+                return nil;
+            }
+        }
+
+        return iter.next();
+    }
+
+    pub fn first() -> this.nth(0);
+
+    pub fn last() {
+        let mut last = nil;
+
+        for item in this {
+            last = some(item);
+        }
+
+        return last;
+    }
+
+    pub fn filter(filter) -> Filter(iterator: this.iter(), filterFn: filter);
+}
+
+pub class FilterIter extends Iterator {
+    let iterator;
+    let filterFn;
+
+    pub fn next() {
+        for {
+            let item = this.iterator.next();
+
+            if item.isNone() {
+                return nil;
+            }
+
+            if this.filterFn(item!) {
+                return item;
+            }
+        }
+    }
+}
+
+pub class Filter extends Iterator {
+    let iterator;
+    let filterFn;
+
+    pub fn iter() -> FilterIter(iterator: this.iterator, filterFn: this.filterFn);
+}
+
 pub class EnumIter {
-    let iter;
+    let iterator;
     let mut index;
 
     pub fn next() {
         let index = this.index;
-        let item = this.iter.next();
+        let item = this.iterator.next();
 
         if item.isNone() {
             return nil;
@@ -25,10 +91,10 @@ pub class EnumIter {
     }
 }
 
-pub class Enum {
+pub class Enum extends Iterator {
     let iterator;
 
-    pub fn iter() -> EnumIter(iter: this.iterator, index: 0);
+    pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
 }
 
 pub class Tuple {
@@ -140,41 +206,21 @@ pub class RangeIter {
     }
 }
 
-pub class RangeStep {
+pub class RangeStep extends Iterator {
     let range;
     let step;
 
     pub fn iter() {
         return RangeIter(start: this.range.start, end: this.range.end, step: this.step, index: 0);
     }
-
-    pub fn collect() {
-        let mut output = [];
-
-        for i in this {
-            output.push(i);
-        }
-
-        return output;
-    }
 }
 
-pub class Range {
+pub class Range extends Iterator {
     pub let start;
     pub let end;
 
     pub fn iter() -> RangeIter(start: this.start, end: this.end, step: 1, index: 0);
     pub fn step(n) -> RangeStep(range: this, step: n);
-
-    pub fn collect() {
-        let mut output = [];
-
-        for i in this {
-            output.push(i);
-        }
-
-        return output;
-    }
 }
 
 pub class ArrayIter {
@@ -186,34 +232,24 @@ pub class ArrayIter {
             return nil;
         }
 
-        let value = this.array.nth(this.index);
+        unsafe {
+            let value = this.array[this.index];
 
-        this.index += 1;
+            this.index += 1;
 
-        return value;
+            return some(value);
+        }
     }
 }
 
-pub class Array {
+pub class Array extends Iterator {
+    pub extern fn remove(index);
     pub extern fn push(value);
     pub extern fn pop();
     pub extern fn len();
     pub extern fn clear();
 
-    pub fn nth(index) {
-        if index < 0 || this.len() <= index {
-            return nil;
-        }
-
-        unsafe {
-            return some(this[index]);
-        }
-    }
-
-    pub fn first() -> this.nth(0);
-    pub fn last() -> this.nth(this.len()-1);
     pub fn iter() -> ArrayIter(array: this, index: 0);
-    pub fn enum() -> Enum(iterator: this.iter());
 
     pub fn append(other) {
         for {
@@ -293,14 +329,13 @@ pub class MapIter {
     }
 }
 
-pub class Map {
+pub class Map extends Iterator {
     pub extern fn keys();
     pub extern fn len();
     pub extern fn remove(key);
     pub extern fn clear();
 
     pub fn iter() -> MapIter(data: this, keys: this.keys(), index: 0);
-    pub fn enum() -> Enum(iterator: this.iter());
 
     pub fn get(key) {
         if !this.keys().contains(key) {

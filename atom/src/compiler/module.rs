@@ -5,6 +5,8 @@ use indexmap::map::IndexMap;
 
 use atom_ir::{Location, IR};
 
+use crate::ast::MixinDeclStmt;
+
 #[derive(Debug, Clone)]
 pub struct FuncArg {
     pub mutable: bool,
@@ -90,6 +92,7 @@ pub struct Module {
     pub filename: Option<String>,
     pub modules: HashMap<String, Module>,
     pub funcs: Vec<Func>,
+    pub mixins: HashMap<String, MixinDeclStmt>,
     pub classes: IndexMap<String, Class>,
     pub interfaces: IndexMap<String, Interface>,
     pub globals: IndexMap<String, Type>,
@@ -106,6 +109,7 @@ impl Module {
             filename: None,
             modules: HashMap::new(),
             funcs: vec![],
+            mixins: HashMap::new(),
             classes: IndexMap::new(),
             interfaces: IndexMap::new(),
             globals: IndexMap::new(),

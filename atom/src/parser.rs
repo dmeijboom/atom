@@ -247,14 +247,20 @@ peg::parser! {
             = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
 
         rule interface_decl_stmt() -> Stmt
-            = start:pos() public:$("pub")? _ "interface" __ name:ident() _ "{" _ functions:interface_fn() ** (_) _ "}" end:pos() { Stmt::InterfaceDecl(InterfaceDeclStmt { name, public: public.is_some(), functions, comments: vec![], pos: (start..end) }) }
+            = start:pos() public:$("pub" __)? _ "interface" __ name:ident() _ "{" _ functions:interface_fn() ** (_) _ "}" end:pos() { Stmt::InterfaceDecl(InterfaceDeclStmt { name, public: public.is_some(), functions, comments: vec![], pos: (start..end) }) }
 
         rule field() -> Field
-            = start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: Some(value), pos: (start..end) } }
-                / start:pos() public:$("pub")? _ "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: None, pos: (start..end) } }
+            = start:pos() public:$("pub" __)? _ "let" __ mutable:("mut" __)? name:ident() _ "=" _ value:expr() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: Some(value), pos: (start..end) } }
+                / start:pos() public:$("pub" __)? _ "let" __ mutable:("mut" __)? name:ident() _ ";" end:pos() { Field { mutable: mutable.is_some(), public: public.is_some(), name, value: None, pos: (start..end) } }
+
+        rule class_extends() -> Vec<String>
+            = __ "extends" __ names:ident() ** (_ "," _) { names }
 
         rule class_decl_stmt() -> Stmt
-            = start:pos() public:$("pub")? _ "class" __ name:ident() _ "{" _ fields:field() ** _ _ extern_funcs:extern_fn_decl() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), fields, extern_funcs, funcs, comments: vec![], pos: (start..end) }) }
+            = start:pos() public:$("pub" __)? _ "class" __ name:ident() extends:class_extends()? _ "{" _ fields:field() ** _ _ extern_funcs:extern_fn_decl() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), extends: extends.unwrap_or_default(), fields, extern_funcs, funcs, comments: vec![], pos: (start..end) }) }
+
+        rule mixin_decl_stmt() -> Stmt
+            = start:pos() public:$("pub" __)? _ "mixin" __ name:ident() _ "{" _ extern_funcs:extern_fn_decl() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::MixinDecl(MixinDeclStmt { name, public: public.is_some(), extern_funcs, funcs, comments: vec![], pos: (start..end) }) }
 
         rule module_stmt() -> Stmt
             = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
@@ -263,7 +269,7 @@ peg::parser! {
             = start:pos() "import" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Import(ImportStmt { name: path.join("."), pos: (start..end)} ) }
 
         rule top_level_stmt() -> Stmt
-            = comments:comment()* stmt:(extern_fn_decl_stmt() / fn_decl_stmt() / class_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
+            = comments:comment()* stmt:(extern_fn_decl_stmt() / fn_decl_stmt() / class_decl_stmt() / mixin_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
 
         rule stmt_list() -> Vec<Stmt>
             = comment()* stmt:stmt() ** _ { stmt }
@@ -856,6 +862,7 @@ mod tests {
             Ok(Stmt::ClassDecl(ClassDeclStmt {
                 name: "Test".to_string(),
                 public: false,
+                extends: vec![],
                 fields: vec![
                     Field {
                         name: "name".to_string(),
@@ -879,6 +886,30 @@ mod tests {
                 extern_funcs: vec![],
                 comments: vec![],
                 pos: (0..41),
+            })),
+        );
+    }
+
+    #[test]
+    fn mixin_decl_stmt() {
+        let source = "mixin Test { fn example() {} }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::MixinDecl(MixinDeclStmt {
+                name: "Test".to_string(),
+                public: false,
+                funcs: vec![FnDeclStmt {
+                    name: "example".to_string(),
+                    public: false,
+                    args: vec![],
+                    body: vec![],
+                    comments: vec![],
+                    pos: 13..28,
+                },],
+                extern_funcs: vec![],
+                comments: vec![],
+                pos: (0..30),
             })),
         );
     }
@@ -1148,6 +1179,7 @@ mod tests {
                 public: false,
                 fields: vec![],
                 funcs: vec![],
+                extends: vec![],
                 extern_funcs: vec![],
                 comments: vec![Comment {
                     content: "test".to_string(),

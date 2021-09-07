@@ -23,7 +23,7 @@
             </dict>
             <dict>
                 <key>match</key>
-                <string>\b(if|for|in|extern|is|module|import|else|class|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
+                <string>\b(if|for|in|extern|is|module|import|else|class|mixin|extends|unsafe|raise|continue|interface|break|return|when|raise)\b</string>
                 <key>name</key>
                 <string>keyword.control.atom</string>
             </dict>
