@@ -6,14 +6,14 @@ use indexmap::map::IndexMap;
 
 use atom_ir::{Code, Label, Location, IR};
 
-use crate::ast::{
+use crate::compiler::filesystem::AbstractFs;
+use crate::compiler::optimizers::remove_core_validations;
+use crate::parser;
+use crate::parser::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr,
     ExternFnDeclStmt, FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp,
     MemberCondExpr, MixinDeclStmt, Pos, Stmt, TemplateComponent, Variable,
 };
-use crate::compiler::filesystem::AbstractFs;
-use crate::compiler::optimizers::remove_core_validations;
-use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
 use super::filesystem::{Fs, FsWithCache, VirtFs};
@@ -108,25 +108,6 @@ impl Compiler {
 
     pub fn add_lookup_path(&mut self, path: impl AsRef<Path>) {
         self.path_finder.add_path(path.as_ref().to_path_buf());
-    }
-
-    fn get_location_by_offset(&self, offset: &Range<usize>) -> Location {
-        let index = self
-            .line_numbers_offset
-            .iter()
-            .position(|start| offset.start < *start);
-
-        if let Some(index) = index {
-            let length = self.line_numbers_offset.len();
-
-            if length > 0 && index > 0 {
-                let start = self.line_numbers_offset[index - 1];
-
-                return Location::new(offset.clone(), index + 1, offset.start - start + 1);
-            }
-        }
-
-        Location::new(offset.clone(), 1, offset.start + 1)
     }
 
     #[inline(always)]

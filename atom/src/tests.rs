@@ -29,7 +29,7 @@ mod tests {
         }
 
         Err(Error::Runtime(RuntimeError::new(
-            "function 'main' was not found in the module".to_string(),
+            "function 'main' was not found in the main module".to_string(),
         )))
     }
 

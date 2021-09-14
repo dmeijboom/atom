@@ -1,11 +1,13 @@
-pub use compiler::{parse_line_numbers_offset, Compiler};
 pub use module::{Class, Func, FuncArg, Interface, Module, Type, TypeKind};
 pub use result::{CompileError, Result};
+pub use utils::parse_line_numbers_offset;
 
-mod compiler;
-mod filesystem;
+//mod compiler;
+pub mod compiler_v2;
 mod module;
 mod optimizers;
-mod path_finder;
+mod filesystem;
+mod pre_processor;
 mod result;
 mod scope;
+mod utils;

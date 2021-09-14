@@ -5,7 +5,8 @@ use clap::Clap;
 use atom_ir::{Code, Location, IR};
 use atom_runtime::RuntimeError;
 
-use crate::compiler::{parse_line_numbers_offset, Compiler};
+use crate::compiler::compiler_v2::Compiler;
+use crate::compiler::parse_line_numbers_offset;
 use crate::parser;
 use crate::utils::Error;
 use crate::vm::VM;
@@ -28,46 +29,42 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("{:#?}", tree);
     }
 
-    let mut compiler = Compiler::new(
-        tree,
-        parse_line_numbers_offset(source),
-        !opts.no_optimizations,
-    );
+    let mut compiler = Compiler::new(tree, parse_line_numbers_offset(source));
 
-    for path in module_paths {
-        compiler.add_lookup_path(path);
-    }
+    //for path in module_paths {
+    //    compiler.add_lookup_path(path);
+    //}
 
     let module = compiler.compile()?;
 
-    if opts.show_ir {
-        println!("Interfaces:");
-        println!("{:#?}", module.interfaces);
+    //if opts.show_ir {
+    //    println!("Interfaces:");
+    //    println!("{:#?}", module.interfaces);
 
-        println!("\nClasses:");
-        println!("{:#?}", module.classes);
+    //    println!("\nClasses:");
+    //    println!("{:#?}", module.classes);
 
-        println!("\nFunctions:");
-        println!("{:#?}", module.funcs);
-    }
+    //    println!("\nFunctions:");
+    //    println!("{:#?}", module.funcs);
+    //}
 
-    let filename = opts.filename.to_str().map(|s| s.to_string());
-    let mut vm = VM::new()?;
+    //let filename = opts.filename.to_str().map(|s| s.to_string());
+    //let mut vm = VM::new()?;
 
-    if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
-        vm.register_module(module, filename)?;
-        vm.eval(
-            "main",
-            vec![
-                IR::new(Code::LoadFn(id), Location::default()),
-                IR::new(Code::Call(0), Location::default()),
-            ],
-        )?;
+    //if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
+    //    vm.register_module(module, filename)?;
+    //    vm.eval(
+    //        "main",
+    //        vec![
+    //            IR::new(Code::LoadFn(id), Location::default()),
+    //            IR::new(Code::Call(0), Location::default()),
+    //        ],
+    //    )?;
 
-        return Ok(());
-    }
+    //    return Ok(());
+    //}
 
     Err(Error::Runtime(RuntimeError::new(
-        "function 'main' was not found in the module".to_string(),
+        "function 'main' was not found in the main module".to_string(),
     )))
 }

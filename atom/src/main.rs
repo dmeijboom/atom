@@ -10,7 +10,6 @@ use crate::utils::display_error;
 #[global_allocator]
 static ALLOC: snmalloc_rs::SnMalloc = snmalloc_rs::SnMalloc;
 
-mod ast;
 mod cmd;
 mod compiler;
 mod parser;

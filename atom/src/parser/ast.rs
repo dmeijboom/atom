@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use super::visitor::{Visitable, Visitor};
+
 pub type Pos = Range<usize>;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -275,16 +277,34 @@ impl Expr {
     }
 }
 
+impl<E> Visitable<E> for Expr {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        unreachable!()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprStmt {
     pub expr: Expr,
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ExprStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&self.expr)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RaiseStmt {
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for RaiseStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -295,10 +315,25 @@ pub struct LetStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for LetStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_var(&self.var)?;
+        visitor.visit_expr(&self.value)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetDeclStmt {
     pub name: String,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for LetDeclStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -318,6 +353,18 @@ pub struct FnDeclStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for FnDeclStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)?;
+
+        for arg in self.args.iter() {
+            visitor.visit_fn_arg(arg)?;
+        }
+
+        visitor.visit_block(&self.body)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExternFnDeclStmt {
     pub name: String,
@@ -325,6 +372,18 @@ pub struct ExternFnDeclStmt {
     pub args: Vec<FnArg>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for ExternFnDeclStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)?;
+
+        for arg in self.args.iter() {
+            visitor.visit_fn_arg(arg)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -335,10 +394,25 @@ pub struct AssignStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for AssignStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&self.left)?;
+        visitor.visit_expr(&self.right)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt {
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for ReturnStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -349,10 +423,28 @@ pub struct IfStmt {
     pub body: Vec<Stmt>,
 }
 
+impl<E> Visitable<E> for IfStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_block(&self.body)?;
+
+        if let Some(alt) = &self.alt {
+            visitor.visit_stmt(alt)?;
+        }
+
+        visitor.visit_expr(&self.cond)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElseStmt {
     pub pos: Pos,
     pub body: Vec<Stmt>,
+}
+
+impl<E> Visitable<E> for ElseStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_block(&self.body)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -376,6 +468,22 @@ pub struct ClassDeclStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ClassDeclStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)?;
+
+        for func in self.funcs.iter() {
+            visitor.visit_fn_decl_stmt(func)?;
+        }
+
+        for func in self.extern_funcs.iter() {
+            visitor.visit_extern_fn_decl_stmt(func)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinDeclStmt {
     pub name: String,
@@ -384,6 +492,22 @@ pub struct MixinDeclStmt {
     pub extern_funcs: Vec<ExternFnDeclStmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for MixinDeclStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)?;
+
+        for func in self.funcs.iter() {
+            visitor.visit_fn_decl_stmt(func)?;
+        }
+
+        for external_func in self.extern_funcs.iter() {
+            visitor.visit_extern_fn_decl_stmt(external_func)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -401,16 +525,34 @@ pub struct InterfaceDeclStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for InterfaceDeclStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportStmt {
     pub name: String,
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ImportStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleStmt {
     pub name: String,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for ModuleStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&self.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -421,16 +563,42 @@ pub struct ForStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ForStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        if let Some(expr) = &self.expr {
+            visitor.visit_expr(expr)?;
+        }
+
+        if let Some(var) = &self.alias {
+            visitor.visit_var(var)?;
+        }
+
+        visitor.visit_block(&self.body)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BreakStmt {
     pub label: Option<String>,
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for BreakStmt {
+    fn walk(&self, _visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct UnsafeStmt {
     pub body: Vec<Stmt>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for UnsafeStmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_block(&self.body)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -498,5 +666,35 @@ impl Stmt {
         }
 
         self
+    }
+}
+
+impl<E> Visitable<E> for Stmt {
+    fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        match self {
+            Self::If(if_stmt) => visitor.visit_if_stmt(if_stmt),
+            Self::Else(else_stmt) => visitor.visit_else_stmt(else_stmt),
+            Self::For(for_stmt) => visitor.visit_for_stmt(for_stmt),
+            Self::Expr(expr_stmt) => visitor.visit_expr_stmt(expr_stmt),
+            Self::Let(let_stmt) => visitor.visit_let_stmt(let_stmt),
+            Self::Break(break_stmt) => visitor.visit_break_stmt(break_stmt),
+            Self::Raise(raise_stmt) => visitor.visit_raise_stmt(raise_stmt),
+            Self::LetDecl(let_decl_stmt) => visitor.visit_let_decl_stmt(let_decl_stmt),
+            Self::FnDecl(fn_decl_stmt) => visitor.visit_fn_decl_stmt(fn_decl_stmt),
+            Self::ExternFnDecl(extern_fn_decl_stmt) => {
+                visitor.visit_extern_fn_decl_stmt(extern_fn_decl_stmt)
+            }
+            Self::Assign(assign_stmt) => visitor.visit_assign_stmt(assign_stmt),
+            Self::Return(return_stmt) => visitor.visit_return_stmt(return_stmt),
+            Self::Import(import_stmt) => visitor.visit_import_stmt(import_stmt),
+            Self::Unsafe(unsafe_stmt) => visitor.visit_unsafe_stmt(unsafe_stmt),
+            Self::Module(module_stmt) => visitor.visit_module_stmt(module_stmt),
+            Self::ClassDecl(class_decl_stmt) => visitor.visit_class_decl_stmt(class_decl_stmt),
+            Self::MixinDecl(mixin_decl_stmt) => visitor.visit_mixin_decl_stmt(mixin_decl_stmt),
+            Self::InterfaceDecl(interface_decl_stmt) => {
+                visitor.visit_interface_decl_stmt(interface_decl_stmt)
+            }
+            _ => unreachable!(),
+        }
     }
 }

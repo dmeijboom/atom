@@ -16,6 +16,24 @@ impl Location {
             column,
         }
     }
+
+    pub fn from_offset(line_numbers_offset: &Vec<usize>, offset: &Range<usize>) -> Location {
+        let index = line_numbers_offset
+            .iter()
+            .position(|start| offset.start < *start);
+
+        if let Some(index) = index {
+            let length = line_numbers_offset.len();
+
+            if length > 0 && index > 0 {
+                let start = line_numbers_offset[index - 1];
+
+                return Self::new(offset.clone(), index + 1, offset.start - start + 1);
+            }
+        }
+
+        Self::new(offset.clone(), 1, offset.start + 1)
+    }
 }
 
 impl Display for Location {

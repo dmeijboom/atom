@@ -1,6 +1,6 @@
 pub use parser::*;
 
-use crate::ast::*;
+use super::ast::*;
 
 peg::parser! {
     grammar parser() for str {

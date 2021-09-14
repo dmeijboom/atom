@@ -5,7 +5,7 @@ use indexmap::map::IndexMap;
 
 use atom_ir::{Location, IR};
 
-use crate::ast::MixinDeclStmt;
+use crate::parser::ast::MixinDeclStmt;
 
 #[derive(Debug, Clone)]
 pub struct FuncArg {

@@ -10,8 +10,17 @@ pub struct CompileError {
 }
 
 impl CompileError {
-    pub fn new(message: String, location: Location) -> Self {
-        Self { message, location }
+    pub fn new(message: String) -> Self {
+        Self {
+            message,
+            location: Location::default(),
+        }
+    }
+
+    pub fn with_location(mut self, location: Location) -> Self {
+        self.location = location;
+
+        self
     }
 }
 

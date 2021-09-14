@@ -120,10 +120,7 @@ impl Scope {
             None
         })
         .ok_or_else(|| {
-            CompileError::new(
-                "unable to set local outside of a function scope".to_string(),
-                Location::default(),
-            )
+            CompileError::new("unable to set local outside of a function scope".to_string())
         })?;
 
         let scope = scope.last_mut().unwrap();

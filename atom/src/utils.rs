@@ -3,7 +3,7 @@ use peg::str::LineCol;
 
 use atom_runtime::RuntimeError;
 
-use crate::compiler::{parse_line_numbers_offset, CompileError, Compiler};
+use crate::compiler::{parse_line_numbers_offset, CompileError};
 use crate::{compiler, parser};
 
 #[derive(Debug, PartialEq)]
@@ -35,14 +35,15 @@ pub fn parse_and_compile(
     source: &str,
     lookup_paths: Vec<String>,
 ) -> Result<compiler::Module, Error> {
-    let tree = parser::parse(source)?;
-    let mut compiler = Compiler::new(tree, parse_line_numbers_offset(source), true);
+    unreachable!()
+    //let tree = parser::parse(source)?;
+    //let mut compiler = Compiler::new(tree, parse_line_numbers_offset(source), true);
 
-    for path in lookup_paths {
-        compiler.add_lookup_path(path);
-    }
+    //for path in lookup_paths {
+    //    compiler.add_lookup_path(path);
+    //}
 
-    Ok(compiler.compile()?)
+    //Ok(compiler.compile()?)
 }
 
 pub fn display_parse_error(e: ParseError<LineCol>) {

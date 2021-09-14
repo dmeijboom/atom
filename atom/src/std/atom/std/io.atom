@@ -1,46 +1,22 @@
 module std.io;
 
+import std.core.Enum;
+import std.core.Filter;
+import std.core.Iterator;
+import std.core.FilterIter;
 import std.encoding.utf8.decode;
 
 pub interface Readable {
     fn read();
 }
 
-pub class LinesIter {
-    let readable;
-
-    pub fn next() {
-        let mut buff = [];
-
-        for {
-            let bytes = this.readable.read(1);
-
-            if buff.len() == 0 && bytes.len() == 0 {
-                return nil;
-            }
-
-            if bytes.first() == some(b'\n') {
-                break;
-            }
-
-            unsafe {
-                buff.push(bytes[0]);
-            }
-        }
-
-        return some(decode(buff));
-    }
-}
-
-pub class Reader {
-    let readable;
-
+pub mixin Reader {
     pub fn readAll() {
+        let buffSize = 1024;
         let mut output = [];
 
         for {
-            let buffSize = 1024;
-            let buff = this.readable.read(buffSize);
+            let buff = this.read(buffSize);
             let len = buff.len();
 
             if len > 0 {
@@ -60,40 +36,49 @@ pub class Reader {
     }
 }
 
-pub class LinesReader {
-    let readable;
-
-    pub fn iter() {
-        return LinesIter(readable: this.readable);
-    }
-
-    pub fn collect() {
-        let mut lines = [];
-
-        for line in this {
-            lines.push(line);
-        }
-
-        return lines;
-    }
-}
-
-pub class File {
+pub class File extends Reader {
     let fd;
 
     pub extern fn size();
+    pub extern fn read(max);
 
-    pub fn reader() {
-        return Reader(readable: this);
-    }
-
-    pub fn lines() {
-        return LinesReader(readable: this);
-    }
+    pub fn lines() -> LinesReader(reader: this);
 }
 
 extern fn openFileHandle(filename);
 
-pub fn openFile(filename) {
-    return File(fd: openFileHandle(filename));
+pub fn openFile(filename) -> File(fd: openFileHandle(filename));
+
+pub class LinesIter {
+    let reader;
+
+    pub fn next() {
+        let mut buff = [];
+
+        for {
+            let bytes = this.reader.read(1);
+
+            if buff.len() == 0 && bytes.len() == 0 {
+                return nil;
+            }
+
+            if bytes.first() == some(b'\n') {
+                break;
+            } else if bytes.len() == 0 {
+                return some(decode(buff));
+            }
+
+            unsafe {
+                buff.push(bytes[0]);
+            }
+        }
+
+        return some(decode(buff));
+    }
+}
+
+pub class LinesReader extends Iterator {
+    let reader;
+
+    pub fn iter() -> LinesIter(reader: this.reader);
 }

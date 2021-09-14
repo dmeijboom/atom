@@ -1,4 +1,3 @@
-use std::any::Any;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
@@ -498,7 +497,7 @@ impl Display for Value {
             Self::Class(class) => write!(f, "{}", class.as_ref()),
             Self::Closure(closure) => write!(f, "{}(...)", closure.func.as_ref()),
             Self::Method(method) => write!(f, "{}(...)", method.as_ref()),
-            Self::Extern(external) => write!(f, "<{:?}>", external.type_id()),
+            Self::Extern(_) => write!(f, "<external>"),
             Self::Object(object) => {
                 let class = object.as_ref().class.as_ref();
 
