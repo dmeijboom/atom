@@ -472,15 +472,12 @@ impl<E> Visitable<E> for ClassDeclStmt {
     fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
         visitor.visit_name(&self.name)?;
 
-        for func in self.funcs.iter() {
-            visitor.visit_fn_decl_stmt(func)?;
+        for field in self.fields.iter() {
+            visitor.visit_name(&field.name)?;
         }
 
-        for func in self.extern_funcs.iter() {
-            visitor.visit_extern_fn_decl_stmt(func)?;
-        }
-
-        Ok(())
+        visitor.visit_fn_decl_stmt_list(&self.funcs)?;
+        visitor.visit_extern_fn_decl_stmt_list(&self.extern_funcs)
     }
 }
 
@@ -497,16 +494,8 @@ pub struct MixinDeclStmt {
 impl<E> Visitable<E> for MixinDeclStmt {
     fn walk(&self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
         visitor.visit_name(&self.name)?;
-
-        for func in self.funcs.iter() {
-            visitor.visit_fn_decl_stmt(func)?;
-        }
-
-        for external_func in self.extern_funcs.iter() {
-            visitor.visit_extern_fn_decl_stmt(external_func)?;
-        }
-
-        Ok(())
+        visitor.visit_fn_decl_stmt_list(&self.funcs)?;
+        visitor.visit_extern_fn_decl_stmt_list(&self.extern_funcs)
     }
 }
 

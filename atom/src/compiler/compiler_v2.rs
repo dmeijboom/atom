@@ -44,7 +44,7 @@ impl Compiler {
 
         let fs = FileSystem::new(cache);
 
-        PreProcessor::new(fs, self.line_numbers_offset).pass(self.tree)?;
+        PreProcessor::new(fs, self.line_numbers_offset).pass(&self.tree)?;
 
         Ok(())
     }

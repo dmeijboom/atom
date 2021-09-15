@@ -88,6 +88,25 @@ where
         let_decl_stmt.walk(self)
     }
 
+    fn visit_fn_decl_stmt_list(&mut self, fn_decls: &[FnDeclStmt]) -> Result<(), Self::Error> {
+        for fn_decl in fn_decls {
+            self.visit_fn_decl_stmt(fn_decl)?;
+        }
+
+        Ok(())
+    }
+
+    fn visit_extern_fn_decl_stmt_list(
+        &mut self,
+        extern_fn_decls: &[ExternFnDeclStmt],
+    ) -> Result<(), Self::Error> {
+        for extern_fn_decl in extern_fn_decls {
+            self.visit_extern_fn_decl_stmt(extern_fn_decl)?;
+        }
+
+        Ok(())
+    }
+
     fn visit_fn_decl_stmt(&mut self, fn_decl_stmt: &FnDeclStmt) -> Result<(), Self::Error> {
         fn_decl_stmt.walk(self)
     }
