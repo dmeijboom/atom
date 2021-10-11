@@ -38,7 +38,11 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         compiler.add_lookup_path(path);
     }
 
-    let module = compiler.compile()?;
+    let modules = compiler.compile_all()?;
+    let module = modules
+        .iter()
+        .find(|module| module.name == "main")
+        .ok_or_else(|| Error::Runtime(RuntimeError::new("main module not found".to_string())))?;
 
     if opts.show_ir {
         println!("Interfaces:");
@@ -51,11 +55,13 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("{:#?}", module.funcs);
     }
 
-    let filename = opts.filename.to_str().map(|s| s.to_string());
     let mut vm = VM::new()?;
 
     if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
-        vm.register_module(module, filename)?;
+        for module in modules {
+            vm.register_module(module)?;
+        }
+
         vm.eval(
             "main",
             vec![

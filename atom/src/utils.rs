@@ -34,7 +34,7 @@ impl From<ParseError<LineCol>> for Error {
 pub fn parse_and_compile(
     source: &str,
     lookup_paths: Vec<String>,
-) -> Result<compiler::Module, Error> {
+) -> Result<Vec<compiler::Module>, Error> {
     let tree = parser::parse(source)?;
     let mut compiler = Compiler::new(tree, parse_line_numbers_offset(source), true);
 
@@ -42,7 +42,7 @@ pub fn parse_and_compile(
         compiler.add_lookup_path(path);
     }
 
-    Ok(compiler.compile()?)
+    Ok(compiler.compile_all()?)
 }
 
 pub fn display_parse_error(e: ParseError<LineCol>) {

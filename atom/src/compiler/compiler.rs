@@ -1,6 +1,8 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::Path;
+use std::rc::Rc;
+use std::sync::RwLock;
 
 use indexmap::map::IndexMap;
 
@@ -67,6 +69,7 @@ pub struct Compiler {
     tree: Vec<Stmt>,
     scope: Vec<Scope>,
     labels: Vec<String>,
+    modules: Rc<RwLock<HashMap<String, Module>>>,
     optimizers: Vec<Optimizer>,
     // Unfortunately the parser doesn't expose line or column information so we're using a map of
     // newline positions to calculate the line number and column instead
@@ -103,6 +106,7 @@ impl Compiler {
             },
             scope: vec![Scope::new()],
             line_numbers_offset,
+            modules: Rc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -170,6 +174,7 @@ impl Compiler {
             labels: vec![],
             line_numbers_offset,
             optimizers: self.optimizers.clone(),
+            modules: Rc::clone(&self.modules),
         }
     }
 
@@ -1272,15 +1277,21 @@ impl Compiler {
 
         let name = components.pop().unwrap();
         let module_name = components.join(".");
+        let module_exist = { self.modules.read().unwrap().contains_key(&module_name) };
 
-        if !self.module.modules.contains_key(&module_name) {
-            self.module.modules.insert(
-                module_name.clone(),
-                self.parse_and_compile(module_name.to_string())?,
-            );
+        if !module_exist {
+            let module = self.parse_and_compile(module_name.to_string())?;
+
+            {
+                self.modules
+                    .write()
+                    .unwrap()
+                    .insert(module_name.clone(), module);
+            }
         }
 
-        let module = self.module.modules.get(&module_name).unwrap();
+        let guard = self.modules.read().unwrap();
+        let module = guard.get(&module_name).unwrap();
         let (type_name, imported, is_public) = if let Some(func) = module.get_fn_by_name(name) {
             ("function", Imported::Global(TypeKind::Fn), func.public)
         } else if let Some(class) = module.classes.get(name) {
@@ -1379,7 +1390,6 @@ impl Compiler {
     pub fn compile(mut self) -> Result<Module> {
         if let Some(Stmt::Module(module_stmt)) = self.tree.get(0) {
             self.module.name = module_stmt.name.clone();
-
             self.tree.remove(0);
         }
 
@@ -1397,5 +1407,43 @@ impl Compiler {
         }
 
         Ok(self.module)
+    }
+
+    pub fn compile_all(self) -> Result<Vec<Module>> {
+        let modules = Rc::clone(&self.modules);
+        let module = self.compile()?;
+        let mut modules = Rc::try_unwrap(modules)
+            .map_err(|_| {
+                CompileError::new("unable to call compile_all more than once".to_string())
+            })?
+            .into_inner()
+            .unwrap();
+
+        // sort modules based on it's dependencies (@TODO: better error reporting)
+        let mut output = vec![];
+        let mut resolved = vec![];
+
+        while !modules.is_empty() {
+            let name = modules
+                .iter()
+                .find(|(_, module)| {
+                    !module
+                        .globals
+                        .iter()
+                        .any(|(_, global)| !resolved.contains(&global.module_name))
+                })
+                .map(|(name, _)| name)
+                .ok_or_else(|| CompileError::new("circular dependency not allowed".to_string()))?
+                .clone();
+
+            let module = modules.remove(&name).unwrap();
+
+            resolved.push(name);
+            output.push(module);
+        }
+
+        output.push(module);
+
+        Ok(output)
     }
 }

@@ -9,14 +9,24 @@ mod tests {
     use crate::vm::VM;
 
     fn run_code(source: &str) -> Result<Option<Value>, Error> {
-        let module = parse_and_compile(
+        let modules = parse_and_compile(
             source,
             vec!["./src/std/atom".to_string(), "./examples".to_string()],
         )?;
+        let module = modules
+            .iter()
+            .find(|module| module.name == "main")
+            .ok_or_else(|| {
+                Error::Runtime(RuntimeError::new("main module not found".to_string()))
+            })?;
+
         let mut vm = VM::new()?;
 
         if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
-            vm.register_module(module, None)?;
+            for module in modules {
+                vm.register_module(module)?;
+            }
+
             vm.eval(
                 "main",
                 vec![

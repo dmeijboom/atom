@@ -117,12 +117,8 @@ impl VM {
         self.module_cache.add_external_hook(hook);
     }
 
-    pub fn register_module(
-        &mut self,
-        module: compiler::Module,
-        filename: Option<String>,
-    ) -> Result<()> {
-        self.module_cache.register(module, filename)?;
+    pub fn register_module(&mut self, module: compiler::Module) -> Result<()> {
+        self.module_cache.register(module)?;
 
         Ok(())
     }

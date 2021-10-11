@@ -90,7 +90,6 @@ impl Type {
 pub struct Module {
     pub name: String,
     pub filename: Option<String>,
-    pub modules: HashMap<String, Module>,
     pub funcs: Vec<Func>,
     pub mixins: HashMap<String, MixinDeclStmt>,
     pub classes: IndexMap<String, Class>,
@@ -107,7 +106,6 @@ impl Module {
         Self {
             name,
             filename: None,
-            modules: HashMap::new(),
             funcs: vec![],
             mixins: HashMap::new(),
             classes: IndexMap::new(),
