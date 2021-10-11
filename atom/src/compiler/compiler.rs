@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use indexmap::map::IndexMap;
 
@@ -11,15 +11,13 @@ use crate::ast::{
     ExternFnDeclStmt, FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp,
     MemberCondExpr, MixinDeclStmt, Pos, Stmt, TemplateComponent, Variable,
 };
-use crate::compiler::filesystem::AbstractFs;
+use crate::compiler::filesystem::{FileSystem, FileSystemCache};
 use crate::compiler::optimizers::remove_core_validations;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
-use super::filesystem::{Fs, FsWithCache, VirtFs};
 use super::module::{Class, Field, Func, FuncArg, Interface, Module, Type, TypeKind};
 use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, Optimizer};
-use super::path_finder::PathFinder;
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 
@@ -42,6 +40,19 @@ pub fn parse_line_numbers_offset(source: &str) -> Vec<usize> {
     line_numbers_offset
 }
 
+const STD_SOURCES: [(&str, &str); 4] = [
+    ("std.core", include_str!("../std/atom/std/core.atom")),
+    ("std.io", include_str!("../std/atom/std/io.atom")),
+    (
+        "std.encoding.utf8",
+        include_str!("../std/atom/std/encoding/utf8.atom"),
+    ),
+    (
+        "std.encoding.json",
+        include_str!("../std/atom/std/encoding/json.atom"),
+    ),
+];
+
 enum Imported {
     Global(TypeKind),
     Mixin(MixinDeclStmt),
@@ -49,14 +60,13 @@ enum Imported {
 
 pub struct Compiler {
     pos: Pos,
-    fs: FsWithCache,
+    fs: FileSystem,
     optimize: bool,
     scope_id: usize,
     module: Module,
     tree: Vec<Stmt>,
     scope: Vec<Scope>,
     labels: Vec<String>,
-    path_finder: PathFinder,
     optimizers: Vec<Optimizer>,
     // Unfortunately the parser doesn't expose line or column information so we're using a map of
     // newline positions to calculate the line number and column instead
@@ -65,22 +75,13 @@ pub struct Compiler {
 
 impl Compiler {
     pub fn new(tree: Vec<Stmt>, line_numbers_offset: Vec<usize>, optimize: bool) -> Self {
-        let fs = FsWithCache::new(Fs {}, {
-            let mut cache = VirtFs::new();
+        let mut cache = FileSystemCache::new();
 
-            cache.add_file("std/io.atom", include_str!("../std/atom/std/io.atom"));
-            cache.add_file("std/core.atom", include_str!("../std/atom/std/core.atom"));
-            cache.add_file(
-                "std/encoding/json.atom",
-                include_str!("../std/atom/std/encoding/json.atom"),
-            );
-            cache.add_file(
-                "std/encoding/utf8.atom",
-                include_str!("../std/atom/std/encoding/utf8.atom"),
-            );
+        for (module_name, source) in STD_SOURCES {
+            cache.add_module(module_name.to_string(), source);
+        }
 
-            cache
-        });
+        let fs = FileSystem::new(cache);
 
         Self {
             tree,
@@ -101,13 +102,12 @@ impl Compiler {
                 vec![]
             },
             scope: vec![Scope::new()],
-            path_finder: PathFinder::new(),
             line_numbers_offset,
         }
     }
 
     pub fn add_lookup_path(&mut self, path: impl AsRef<Path>) {
-        self.path_finder.add_path(path.as_ref().to_path_buf());
+        self.fs.add_path(path.as_ref().to_path_buf());
     }
 
     fn get_location_by_offset(&self, offset: &Range<usize>) -> Location {
@@ -169,7 +169,6 @@ impl Compiler {
             scope: vec![],
             labels: vec![],
             line_numbers_offset,
-            path_finder: self.path_finder.clone(),
             optimizers: self.optimizers.clone(),
         }
     }
@@ -1261,25 +1260,26 @@ impl Compiler {
         Ok(())
     }
 
-    fn parse_and_compile(&self, filename: PathBuf, name: String) -> Result<Module> {
-        let content = self.fs.read_file(&filename).map_err(|e| {
+    fn parse_and_compile(&self, name: String) -> Result<Module> {
+        let file = self.fs.read_file(&name).map_err(|e| {
             CompileError::new(
-                format!("failed to read '{}': {}", filename.to_str().unwrap(), e),
+                format!("failed to read '{}': {}", name, e),
                 self.get_location(),
             )
         })?;
-        let source = content.as_str();
-        let tree = parser::parse(source).map_err(|e| {
+        let tree = parser::parse(file.source()).map_err(|e| {
             CompileError::new(
-                format!("failed to parse '{}': {}", filename.to_str().unwrap(), e),
+                format!("failed to parse module '{}': {}", name, e),
                 self.get_location(),
             )
         })?;
 
-        let line_numbers_offset = parse_line_numbers_offset(source);
+        let line_numbers_offset = parse_line_numbers_offset(file.source());
         let mut module = self.fork(name, tree, line_numbers_offset).compile()?;
 
-        module.filename = filename.to_str().map(|filename| filename.to_string());
+        module.filename = file
+            .name()
+            .and_then(|name| name.to_str().map(|filename| filename.to_string()));
 
         Ok(module)
     }
@@ -1300,19 +1300,9 @@ impl Compiler {
         let module_name = components.join(".");
 
         if !self.module.modules.contains_key(&module_name) {
-            let filename = self
-                .path_finder
-                .find_path(&self.fs, &components)
-                .ok_or_else(|| {
-                    CompileError::new(
-                        format!("failed to find module: {}", module_name),
-                        self.get_location(),
-                    )
-                })?;
-
             self.module.modules.insert(
                 module_name.clone(),
-                self.parse_and_compile(filename, name.to_string())?,
+                self.parse_and_compile(module_name.to_string())?,
             );
         }
 

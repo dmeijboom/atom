@@ -6,6 +6,5 @@ mod compiler;
 mod filesystem;
 mod module;
 mod optimizers;
-mod path_finder;
 mod result;
 mod scope;
