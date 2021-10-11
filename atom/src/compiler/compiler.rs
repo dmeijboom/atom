@@ -190,10 +190,7 @@ impl Compiler {
             return self.get_mixin(name);
         }
 
-        Err(CompileError::new(
-            format!("no such mixin: {}", name),
-            self.get_location(),
-        ))
+        Err(CompileError::new(format!("no such mixin: {}", name)))
     }
 
     #[inline(always)]
@@ -358,10 +355,10 @@ impl Compiler {
 
                         for key in names.iter() {
                             if unique_keys.contains(key) {
-                                return Err(CompileError::new(
-                                    format!("duplicate keyword argument: {}", key),
-                                    self.get_location(),
-                                ));
+                                return Err(CompileError::new(format!(
+                                    "duplicate keyword argument: {}",
+                                    key
+                                )));
                             }
 
                             unique_keys.push(key.to_string());
@@ -432,7 +429,6 @@ impl Compiler {
                     return Err(CompileError::new(
                         "unable to perform index operation outside of an 'unsafe' block"
                             .to_string(),
-                        self.get_location(),
                     ));
                 }
 
@@ -591,10 +587,7 @@ impl Compiler {
                 return self.compile_name(name);
             }
 
-            Err(CompileError::new(
-                format!("no such name: {}", name),
-                self.get_location(),
-            ))
+            Err(CompileError::new(format!("no such name: {}", name)))
         }
     }
 
@@ -645,10 +638,7 @@ impl Compiler {
     fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
         if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
-                return Err(CompileError::new(
-                    format!("name is not mutable: {}", name),
-                    self.get_location(),
-                ));
+                return Err(CompileError::new(format!("name is not mutable: {}", name)));
             }
 
             return Ok(vec![
@@ -658,10 +648,10 @@ impl Compiler {
             .concat());
         }
 
-        Err(CompileError::new(
-            format!("unable to assign value to unknown name: {}", name),
-            self.get_location(),
-        ))
+        Err(CompileError::new(format!(
+            "unable to assign value to unknown name: {}",
+            name
+        )))
     }
 
     fn compile_assign_member(
@@ -707,17 +697,13 @@ impl Compiler {
             }
             _ => Err(CompileError::new(
                 "invalid left-hand side in assignment".to_string(),
-                self.get_location(),
             )),
         }
     }
 
     fn declare_local(&mut self, mutable: bool, name: &str) -> Result<Local> {
         if Scope::get_local(&self.scope, name, false).is_some() {
-            Err(CompileError::new(
-                format!("name already defined: {}", name),
-                self.get_location(),
-            ))
+            Err(CompileError::new(format!("name already defined: {}", name)))
         } else {
             Ok(self.set_local(name.to_string(), mutable)?)
         }
@@ -971,7 +957,6 @@ impl Compiler {
                 } else {
                     return Err(CompileError::new(
                         "unable to break outside of a loop".to_string(),
-                        self.get_location(),
                     ));
                 }
             }
@@ -1069,10 +1054,10 @@ impl Compiler {
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
         if self.module.get_fn_by_name(&fn_decl.name).is_some() {
-            return Err(CompileError::new(
-                format!("unable to redefine function: {}", fn_decl.name),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "unable to redefine function: {}",
+                fn_decl.name
+            )));
         }
 
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
@@ -1144,10 +1129,10 @@ impl Compiler {
 
     fn compile_class(&mut self, mut class_decl: ClassDeclStmt) -> Result<()> {
         if self.module.classes.contains_key(&class_decl.name) {
-            return Err(CompileError::new(
-                format!("unable to redefine class: {}", class_decl.name),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "unable to redefine class: {}",
+                class_decl.name
+            )));
         }
 
         // Register class early so that it can be referenced in one of it's methods
@@ -1174,13 +1159,10 @@ impl Compiler {
 
         for field in class_decl.fields.iter() {
             if fields.contains_key(&field.name) {
-                return Err(CompileError::new(
-                    format!(
-                        "unable to redefine field: {}.{}",
-                        class_decl.name, field.name
-                    ),
-                    self.get_location(),
-                ));
+                return Err(CompileError::new(format!(
+                    "unable to redefine field: {}.{}",
+                    class_decl.name, field.name
+                )));
             }
 
             fields.insert(
@@ -1198,7 +1180,6 @@ impl Compiler {
             if fields.contains_key(&extern_fn_decl.name) {
                 return Err(CompileError::new(
                     format!("unable to define extern function '{}.{}(...)' because a field with the same name exists", class_decl.name, extern_fn_decl.name),
-                    self.get_location_by_offset(&extern_fn_decl.pos),
                 ));
             }
 
@@ -1212,7 +1193,6 @@ impl Compiler {
             if fields.contains_key(&fn_decl.name) {
                 return Err(CompileError::new(
                     format!("unable to define extern function '{}.{}(...)' because a field with the same name exists", class_decl.name, fn_decl.name),
-                    self.get_location_by_offset(&fn_decl.pos),
                 ));
             }
 
@@ -1232,10 +1212,10 @@ impl Compiler {
 
     fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
         if self.module.interfaces.contains_key(&interface_decl.name) {
-            return Err(CompileError::new(
-                format!("unable to redefine interface: {}", interface_decl.name),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "unable to redefine interface: {}",
+                interface_decl.name
+            )));
         }
 
         Ok(Interface {
@@ -1261,18 +1241,12 @@ impl Compiler {
     }
 
     fn parse_and_compile(&self, name: String) -> Result<Module> {
-        let file = self.fs.read_file(&name).map_err(|e| {
-            CompileError::new(
-                format!("failed to read '{}': {}", name, e),
-                self.get_location(),
-            )
-        })?;
-        let tree = parser::parse(file.source()).map_err(|e| {
-            CompileError::new(
-                format!("failed to parse module '{}': {}", name, e),
-                self.get_location(),
-            )
-        })?;
+        let file = self
+            .fs
+            .read_file(&name)
+            .map_err(|e| CompileError::new(format!("failed to read '{}': {}", name, e)))?;
+        let tree = parser::parse(file.source())
+            .map_err(|e| CompileError::new(format!("failed to parse module '{}': {}", name, e)))?;
 
         let line_numbers_offset = parse_line_numbers_offset(file.source());
         let mut module = self.fork(name, tree, line_numbers_offset).compile()?;
@@ -1290,10 +1264,10 @@ impl Compiler {
         let mut components = import_stmt.name.split('.').collect::<Vec<_>>();
 
         if components.len() < 2 {
-            return Err(CompileError::new(
-                format!("invalid import path: {}", import_stmt.name),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "invalid import path: {}",
+                import_stmt.name
+            )));
         }
 
         let name = components.pop().unwrap();
@@ -1320,27 +1294,24 @@ impl Compiler {
         } else if let Some(mixin) = module.mixins.get(name) {
             ("mixin", Imported::Mixin(mixin.clone()), mixin.public)
         } else {
-            return Err(CompileError::new(
-                format!(
-                    "failed to import unknown name '{}' from: {}",
-                    name, module.name
-                ),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "failed to import unknown name '{}' from: {}",
+                name, module.name
+            )));
         };
 
         if !is_public {
-            return Err(CompileError::new(
-                format!("unable to import private {}: {}", type_name, name,),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "unable to import private {}: {}",
+                type_name, name,
+            )));
         }
 
         if self.module.globals.contains_key(name) {
-            return Err(CompileError::new(
-                format!("unable to redefine global: {}", name),
-                self.get_location(),
-            ));
+            return Err(CompileError::new(format!(
+                "unable to redefine global: {}",
+                name
+            )));
         }
 
         match imported {
@@ -1352,10 +1323,10 @@ impl Compiler {
             }
             Imported::Mixin(mixin) => {
                 if self.module.mixins.contains_key(&mixin.name) {
-                    return Err(CompileError::new(
-                        format!("unable to redefine mixin: {}", name),
-                        self.get_location(),
-                    ));
+                    return Err(CompileError::new(format!(
+                        "unable to redefine mixin: {}",
+                        name
+                    )));
                 }
 
                 // As mixins are being used at compile time we need to import them instead of leaving that to the vm
@@ -1393,10 +1364,9 @@ impl Compiler {
                     .interfaces
                     .insert(interface_decl.name, interface);
             }
-            Stmt::Module(module_stmt) => {
+            Stmt::Module(_) => {
                 return Err(CompileError::new(
                     "module statement must be the first statement in a file".to_string(),
-                    self.get_location_by_offset(&module_stmt.pos),
                 ));
             }
             Stmt::Import(import_stmt) => self.compile_import(import_stmt)?,
@@ -1415,13 +1385,15 @@ impl Compiler {
 
         // The std.core module shouldn't include the prelude as that would create an infinite loop
         if self.module.name != "std.core" {
-            self.setup_prelude()?;
+            self.setup_prelude()
+                .map_err(|e| e.with_location(self.get_location()))?;
         }
 
         while !self.tree.is_empty() {
             let stmt = self.tree.remove(0);
 
-            self.compile_top_level_stmt(stmt)?;
+            self.compile_top_level_stmt(stmt)
+                .map_err(|e| e.with_location(self.get_location()))?;
         }
 
         Ok(self.module)
