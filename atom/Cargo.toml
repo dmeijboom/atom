@@ -7,17 +7,18 @@ edition = "2018"
 
 [dependencies]
 peg = "0.7.0"
-strum = "0.21.0"
+strum = "0.22.0"
 wyhash2 = "0.2.1"
 indexmap = "1.7.0"
-test-case = "1.1.0"
-rustyline = "8.2.0"
-clap = "3.0.0-beta.2"
+test-case = "1.2.0"
+rustyline = "9.0.0"
+clap = "3.0.0-beta.4"
 lazy_static = "1.4.0"
 atom-ir = { path = "../atom-ir" }
 atom-runtime = { path = "../atom-runtime" }
 atom-macros = { path = "../atom-macros" }
-snmalloc-rs = { version = "0.2.27", optional = true }
+snmalloc-rs = { version = "0.2.28", optional = true }
 
 [features]
+default = ["snmalloc"]
 snmalloc = ["snmalloc-rs"]
