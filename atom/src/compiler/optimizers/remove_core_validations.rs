@@ -4,7 +4,7 @@ use crate::compiler::optimizers::query;
 use crate::compiler::Module;
 
 /// Skip 'Iterable' validations for known core iterators
-pub fn optimize(module: &Module, instructions: &mut Vec<IR>) {
+pub fn optimize(module: &Module, instructions: &mut IR) {
     if let Some((id, _, global)) = module.globals.get_full("Iterable") {
         if global.module_name != "std.core" {
             return;

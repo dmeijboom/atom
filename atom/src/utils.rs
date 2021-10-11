@@ -3,8 +3,12 @@ use peg::str::LineCol;
 
 use atom_runtime::RuntimeError;
 
-use crate::compiler::{parse_line_numbers_offset, CompileError, Compiler};
-use crate::{compiler, parser};
+use crate::compiler::CompileError;
+#[cfg(test)]
+use crate::{
+    compiler::{self, parse_line_numbers_offset, Compiler},
+    parser,
+};
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
@@ -31,6 +35,7 @@ impl From<ParseError<LineCol>> for Error {
     }
 }
 
+#[cfg(test)]
 pub fn parse_and_compile(
     source: &str,
     lookup_paths: Vec<String>,

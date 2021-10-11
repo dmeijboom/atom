@@ -181,42 +181,42 @@ impl ModuleCache {
 
             let value = match global.kind {
                 TypeKind::Fn => {
-                    if let Some(func) = sub_module
+                    let func = sub_module
                         .funcs
                         .iter()
                         .find(|func| func.name == global.name)
-                    {
-                        Value::Fn(AtomRef::clone(func))
-                    } else {
-                        return Err(RuntimeError::new(format!(
-                            "unable to register function '{}' for module: {}",
-                            global.name, global.module_name
-                        )));
-                    }
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!(
+                                "unable to register function '{}' for module: {}",
+                                global.name, global.module_name
+                            ))
+                        })?;
+
+                    Value::Fn(AtomRef::clone(func))
                 }
                 TypeKind::Class => {
-                    if let Some(class) = sub_module.classes.get(&global.name) {
-                        Value::Class(AtomRef::clone(class))
-                    } else {
-                        return Err(RuntimeError::new(format!(
+                    let class = sub_module.classes.get(&global.name).ok_or_else(|| {
+                        RuntimeError::new(format!(
                             "unable to register class '{}' for module: {}",
                             global.name, global.module_name
-                        )));
-                    }
+                        ))
+                    })?;
+
+                    Value::Class(AtomRef::clone(class))
                 }
                 TypeKind::Interface => {
-                    if let Some(interface) = sub_module
+                    let interface = sub_module
                         .interfaces
                         .iter()
                         .find(|interface| interface.name == global.name)
-                    {
-                        Value::Interface(AtomRef::clone(interface))
-                    } else {
-                        return Err(RuntimeError::new(format!(
-                            "unable to register interface '{}' for module: {}",
-                            global.name, global.module_name
-                        )));
-                    }
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!(
+                                "unable to register interface '{}' for module: {}",
+                                global.name, global.module_name
+                            ))
+                        })?;
+
+                    Value::Interface(AtomRef::clone(interface))
                 }
             };
 

@@ -17,7 +17,7 @@ pub struct FuncArg {
 pub struct Func {
     pub public: bool,
     pub name: String,
-    pub body: Vec<IR>,
+    pub body: IR,
     pub is_void: bool,
     pub is_extern: bool,
     pub is_closure: bool,
@@ -34,7 +34,7 @@ impl Debug for Func {
             if self.is_void { "Void" } else { "Any" },
             self.body
                 .iter()
-                .map(|ir| format!("  {:?}", ir))
+                .map(|code| format!("  {:?}", code))
                 .collect::<Vec<_>>()
                 .join("\n")
         )

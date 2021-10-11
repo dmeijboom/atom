@@ -7,7 +7,7 @@ pub mod load_local_twice_add;
 pub mod pre_compute_labels;
 pub mod remove_core_validations;
 
-pub type Optimizer = fn(&Module, &mut Vec<IR>);
+pub type Optimizer = fn(&Module, &mut IR);
 
 pub type MatchFn = Box<dyn Fn(&Code) -> bool>;
 
@@ -54,16 +54,16 @@ impl Query {
         self
     }
 
-    pub fn get(&self, instructions: &[IR]) -> Option<usize> {
+    pub fn get(&self, instructions: &IR) -> Option<usize> {
         let mut i = 0;
 
         'm: while i < instructions.len() {
             for m in self.clauses.iter() {
                 let code = match m.pos {
-                    Position::Current => &instructions[i].code,
+                    Position::Current => &instructions[i],
                     Position::At(n) => {
-                        if let Some(ir) = instructions.get(((i as i64) + n) as usize) {
-                            &ir.code
+                        if let Some(code) = instructions.get(((i as i64) + n) as usize) {
+                            code
                         } else {
                             continue;
                         }

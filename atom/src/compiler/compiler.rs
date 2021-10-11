@@ -9,9 +9,9 @@ use indexmap::map::IndexMap;
 use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
-    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr,
-    ExternFnDeclStmt, FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp,
-    MemberCondExpr, MixinDeclStmt, Pos, Stmt, TemplateComponent, Variable,
+    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, Expr, ExternFnDeclStmt,
+    FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, MixinDeclStmt,
+    Pos, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::{FileSystem, FileSystemCache};
 use crate::compiler::optimizers::remove_core_validations;
@@ -114,6 +114,7 @@ impl Compiler {
         self.fs.add_path(path.as_ref().to_path_buf());
     }
 
+    #[inline(always)]
     fn get_location_by_offset(&self, offset: &Range<usize>) -> Location {
         let index = self
             .line_numbers_offset
@@ -133,7 +134,6 @@ impl Compiler {
         Location::new(offset.clone(), 1, offset.start + 1)
     }
 
-    #[inline(always)]
     fn get_location(&self) -> Location {
         self.get_location_by_offset(&self.pos)
     }
@@ -162,6 +162,7 @@ impl Compiler {
         })
     }
 
+    #[inline(always)]
     fn fork(&self, module_name: String, tree: Vec<Stmt>, line_numbers_offset: Vec<usize>) -> Self {
         Self {
             fs: self.fs.clone(),
@@ -199,73 +200,52 @@ impl Compiler {
     }
 
     #[inline(always)]
-    fn compile_store(&self, local: &Local) -> IR {
-        IR::new(
-            if local.mutable {
-                Code::StoreMut(local.id)
-            } else {
-                Code::Store(local.id)
-            },
-            self.get_location(),
-        )
+    fn compile_store(&self, local: &Local) -> Code {
+        if local.mutable {
+            Code::StoreMut(local.id)
+        } else {
+            Code::Store(local.id)
+        }
     }
 
     fn compile_member_cond(
         &mut self,
         member_cond_expr: &MemberCondExpr,
-        body: Vec<IR>,
-    ) -> Result<Vec<IR>> {
-        let mut ir = vec![];
+        body: Option<Code>,
+    ) -> Result<IR> {
+        let mut ir = IR::new();
         let label_some = self.make_label("cond_some");
         let label_none = self.make_label("cond_none");
 
-        ir.push(self.compile_expr(&member_cond_expr.object)?);
-        ir.push(vec![
-            IR::new(
-                Code::TeeMember("isSome".to_string()),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::Call(0),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::Branch((
-                    Label::new(label_some.clone()),
-                    Label::new(label_none.clone()),
-                )),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::SetLabel(label_some),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::Unwrap,
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::LoadMember(member_cond_expr.member.to_string()),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-        ]);
-        ir.push(body);
-        ir.push(vec![
-            IR::new(
-                self.compile_name("some")?,
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::Call(1),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-            IR::new(
-                Code::SetLabel(label_none),
-                self.get_location_by_offset(&member_cond_expr.pos),
-            ),
-        ]);
+        let location = self.get_location_by_offset(&member_cond_expr.pos);
+        let location = Some(&location);
 
-        Ok(ir.concat())
+        ir.append(self.compile_expr(&member_cond_expr.object)?);
+        ir.add(Code::TeeMember("isSome".to_string()), location);
+        ir.add(Code::Call(0), location);
+        ir.add(
+            Code::Branch((
+                Label::new(label_some.clone()),
+                Label::new(label_none.clone()),
+            )),
+            location,
+        );
+        ir.add(Code::SetLabel(label_some), location);
+        ir.add(Code::Unwrap, location);
+        ir.add(
+            Code::LoadMember(member_cond_expr.member.to_string()),
+            location,
+        );
+
+        if let Some(body) = body {
+            ir.add(body, location);
+        }
+
+        ir.add(self.compile_name("some")?, location);
+        ir.add(Code::Call(1), location);
+        ir.add(Code::SetLabel(label_none), location);
+
+        Ok(ir)
     }
 
     fn make_label(&mut self, prefix: &str) -> String {
@@ -288,13 +268,16 @@ impl Compiler {
         }
     }
 
-    fn compile_expr(&mut self, expr: &Expr) -> Result<Vec<IR>> {
-        let mut ir = vec![];
+    fn compile_expr(&mut self, expr: &Expr) -> Result<IR> {
+        let mut ir = IR::new();
 
         self.pos = expr.pos();
 
+        let location = self.get_location();
+        let location = Some(&location);
+
         match &expr {
-            Expr::Literal(literal_expr) => ir.push(vec![IR::new(
+            Expr::Literal(literal_expr) => ir.add(
                 match &literal_expr.literal {
                     Literal::Byte(val) => Code::ConstByte(*val),
                     Literal::Int(val) => Code::ConstInt(*val),
@@ -304,55 +287,46 @@ impl Compiler {
                     Literal::Symbol(name) => Code::ConstSymbol(name.clone()),
                     Literal::String(val) => Code::ConstString(val.clone()),
                 },
-                self.get_location(),
-            )]),
+                location,
+            ),
             Expr::Template(template_expr) => {
                 for component in template_expr.components.iter() {
-                    ir.push(match component {
+                    match component {
                         TemplateComponent::String(s) => {
-                            vec![IR::new(Code::ConstString(s.clone()), self.get_location())]
+                            ir.add(Code::ConstString(s.clone()), location);
                         }
-                        TemplateComponent::Expr(expr) => self.compile_expr(expr)?,
-                    });
+                        TemplateComponent::Expr(expr) => ir.append(self.compile_expr(expr)?),
+                    }
                 }
 
-                ir.push(vec![IR::new(
-                    Code::MakeTemplate(template_expr.components.len()),
-                    self.get_location(),
-                )]);
+                ir.add(Code::MakeTemplate(template_expr.components.len()), location);
             }
             Expr::Range(range_expr) => {
-                ir.push(self.compile_expr(&range_expr.from)?);
-                ir.push(self.compile_expr(&range_expr.to)?);
-                ir.push(vec![IR::new(Code::MakeRange, self.get_location())]);
+                ir.append(self.compile_expr(&range_expr.from)?);
+                ir.append(self.compile_expr(&range_expr.to)?);
+                ir.add(Code::MakeRange, location);
             }
             Expr::Ident(ident) => {
-                ir.push(vec![IR::new(
-                    self.compile_name(&ident.name)?,
-                    self.get_location(),
-                )]);
+                ir.add(self.compile_name(&ident.name)?, location);
             }
             Expr::Cast(cast_expr) => {
-                ir.push(self.compile_expr(&cast_expr.expr)?);
-                ir.push(vec![IR::new(
-                    Code::Cast(cast_expr.type_name.clone()),
-                    self.get_location(),
-                )]);
+                ir.append(self.compile_expr(&cast_expr.expr)?);
+                ir.add(Code::Cast(cast_expr.type_name.clone()), location);
             }
             Expr::Call(call_expr) => {
                 let mut names = vec![];
 
                 for arg in call_expr.keyword_args.iter() {
                     names.push(arg.name.clone());
-                    ir.push(self.compile_expr(&arg.value)?);
+                    ir.append(self.compile_expr(&arg.value)?);
                 }
 
                 for arg in call_expr.args.iter() {
-                    ir.push(self.compile_expr(arg)?);
+                    ir.append(self.compile_expr(arg)?);
                 }
 
-                let instructions = vec![if names.is_empty() {
-                    IR::new(Code::Call(call_expr.args.len()), self.get_location())
+                let instruction = if names.is_empty() {
+                    Code::Call(call_expr.args.len())
                 } else {
                     // Make sure each keyword argument is unique
                     if !names.is_empty() {
@@ -370,17 +344,11 @@ impl Compiler {
                         }
                     }
 
-                    IR::new(
-                        Code::CallKeywords((
-                            names,
-                            call_expr.keyword_args.len() + call_expr.args.len(),
-                        )),
-                        self.get_location(),
-                    )
-                }];
+                    Code::CallKeywords((names, call_expr.keyword_args.len() + call_expr.args.len()))
+                };
 
                 if let Expr::MemberCond(member_cond_expr) = &call_expr.callee {
-                    ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
+                    ir.append(self.compile_member_cond(member_cond_expr, Some(instruction))?);
                 } else {
                     let find_target_match = || {
                         if let Some((target, is_method)) = Scope::get_function_target(&self.scope) {
@@ -413,21 +381,21 @@ impl Compiler {
                     // So we have to use the 'LoadTarget' instruction instead even without optimizations enabled.
                     // Otherwise it won't work
                     if (self.optimize || force_optimize) && is_target {
-                        ir.push(vec![IR::new(Code::LoadTarget, self.get_location())]);
+                        ir.add(Code::LoadTarget, location);
                     } else {
-                        ir.push(self.compile_expr(&call_expr.callee)?);
+                        ir.append(self.compile_expr(&call_expr.callee)?);
                     }
 
-                    ir.push(instructions);
+                    ir.add(instruction, location);
                 }
             }
             Expr::Unwrap(unwrap_expr) => {
-                ir.push(self.compile_expr(&unwrap_expr.expr)?);
-                ir.push(vec![IR::new(Code::Unwrap, self.get_location())]);
+                ir.append(self.compile_expr(&unwrap_expr.expr)?);
+                ir.add(Code::Unwrap, location);
             }
             Expr::Not(not_expr) => {
-                ir.push(self.compile_expr(&not_expr.expr)?);
-                ir.push(vec![IR::new(Code::Not, self.get_location())]);
+                ir.append(self.compile_expr(&not_expr.expr)?);
+                ir.add(Code::Not, location);
             }
             Expr::Index(index_expr) => {
                 if !Scope::in_unsafe_block(&self.scope) {
@@ -437,129 +405,91 @@ impl Compiler {
                     ));
                 }
 
-                ir.push(self.compile_expr(&index_expr.object)?);
-
-                let instructions = vec![IR::new(Code::LoadIndex, self.get_location())];
+                ir.append(self.compile_expr(&index_expr.object)?);
 
                 if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
-                    ir.push(self.compile_member_cond(member_cond_expr, instructions)?);
+                    ir.append(self.compile_member_cond(member_cond_expr, Some(Code::LoadIndex))?);
                 } else {
-                    ir.push(self.compile_expr(&index_expr.index)?);
-                    ir.push(instructions);
+                    ir.append(self.compile_expr(&index_expr.index)?);
+                    ir.add(Code::LoadIndex, location);
                 }
             }
             Expr::Tuple(tuple_expr) => {
                 for item in tuple_expr.items.iter() {
-                    ir.push(self.compile_expr(item)?);
+                    ir.append(self.compile_expr(item)?);
                 }
 
-                ir.push(vec![IR::new(
-                    Code::MakeTuple(tuple_expr.items.len()),
-                    self.get_location(),
-                )]);
+                ir.add(Code::MakeTuple(tuple_expr.items.len()), location);
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
-                    ir.push(self.compile_expr(item)?);
+                    ir.append(self.compile_expr(item)?);
                 }
 
-                ir.push(vec![IR::new(
-                    Code::MakeArray(array_expr.items.len()),
-                    self.get_location(),
-                )]);
+                ir.add(Code::MakeArray(array_expr.items.len()), location);
             }
             Expr::Map(map_expr) => {
                 for key_val in map_expr.key_values.iter() {
-                    ir.push(self.compile_expr(&key_val.key)?);
-                    ir.push(self.compile_expr(&key_val.value)?);
+                    ir.append(self.compile_expr(&key_val.key)?);
+                    ir.append(self.compile_expr(&key_val.value)?);
                 }
 
-                ir.push(vec![IR::new(
-                    Code::MakeMap(map_expr.key_values.len()),
-                    self.get_location(),
-                )]);
+                ir.add(Code::MakeMap(map_expr.key_values.len()), location);
             }
             Expr::Closure(closure_expr) => {
-                ir.push(vec![self.compile_closure(closure_expr, None)?]);
+                ir.add(self.compile_closure(closure_expr, None)?, location);
             }
             Expr::MemberCond(member_cond_expr) => {
-                ir.push(self.compile_member_cond(member_cond_expr, vec![])?);
+                ir.append(self.compile_member_cond(member_cond_expr, None)?);
             }
             Expr::Member(member_expr) => {
-                ir.push(self.compile_expr(&member_expr.object)?);
-                ir.push(vec![IR::new(
-                    Code::LoadMember(member_expr.member.to_string()),
-                    self.get_location(),
-                )]);
+                ir.append(self.compile_expr(&member_expr.object)?);
+                ir.add(Code::LoadMember(member_expr.member.to_string()), location);
             }
             Expr::Arithmetic(arithmetic_expr) => {
-                ir.push(self.compile_expr(&arithmetic_expr.left)?);
-                ir.push(self.compile_expr(&arithmetic_expr.right)?);
-                ir.push(vec![IR::new(
-                    match arithmetic_expr.op {
-                        ArithmeticOp::Mul => Code::ArithmeticMul,
-                        ArithmeticOp::Div => Code::ArithmeticDiv,
-                        ArithmeticOp::Add => Code::ArithmeticAdd,
-                        ArithmeticOp::Sub => Code::ArithmeticSub,
-                        ArithmeticOp::Exp => Code::ArithmeticExp,
-                        ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
-                        ArithmeticOp::BitOr => Code::ArithmeticBitOr,
-                    },
-                    self.get_location(),
-                )]);
+                ir.append(self.compile_expr(&arithmetic_expr.left)?);
+                ir.append(self.compile_expr(&arithmetic_expr.right)?);
+                ir.add(arithmetic_expr.op.into(), location);
             }
             Expr::TypeAssert(type_assert_expr) => {
-                ir.push(self.compile_expr(&type_assert_expr.left)?);
-                ir.push(self.compile_expr(&type_assert_expr.right)?);
-                ir.push(vec![IR::new(Code::AssertIsType, self.get_location())]);
+                ir.append(self.compile_expr(&type_assert_expr.left)?);
+                ir.append(self.compile_expr(&type_assert_expr.right)?);
+                ir.add(Code::AssertIsType, location);
             }
             Expr::Comparison(comparison_expr) => {
-                ir.push(self.compile_expr(&comparison_expr.left)?);
-                ir.push(self.compile_expr(&comparison_expr.right)?);
-                ir.push(vec![IR::new(
-                    match comparison_expr.op {
-                        ComparisonOp::Lt => Code::ComparisonLt,
-                        ComparisonOp::Lte => Code::ComparisonLte,
-                        ComparisonOp::Gt => Code::ComparisonGt,
-                        ComparisonOp::Gte => Code::ComparisonGte,
-                        ComparisonOp::Eq => Code::ComparisonEq,
-                        ComparisonOp::Neq => Code::ComparisonNeq,
-                    },
-                    self.get_location(),
-                )]);
+                ir.append(self.compile_expr(&comparison_expr.left)?);
+                ir.append(self.compile_expr(&comparison_expr.right)?);
+                ir.add(comparison_expr.op.into(), location);
             }
             Expr::Logical(logical_expr) => {
                 match logical_expr.op {
                     LogicalOp::And => {
-                        ir.push(self.compile_expr(&logical_expr.left)?);
-                        ir.push(self.compile_expr(&logical_expr.right)?);
-                        ir.push(vec![IR::new(Code::LogicalAnd, self.get_location())]);
+                        ir.append(self.compile_expr(&logical_expr.left)?);
+                        ir.append(self.compile_expr(&logical_expr.right)?);
+                        ir.add(Code::LogicalAnd, location);
                     }
                     LogicalOp::Or => {
-                        ir.push(self.compile_expr(&logical_expr.left)?);
+                        ir.append(self.compile_expr(&logical_expr.left)?);
 
                         let label = self.make_label("or");
 
-                        ir.push(vec![IR::new(
-                            Code::JumpIfTrue(Label::new(label.clone())),
-                            self.get_location(),
-                        )]);
-                        ir.push(self.compile_expr(&logical_expr.right)?);
-                        ir.push(vec![IR::new(Code::SetLabel(label), self.get_location())]);
+                        ir.add(Code::JumpIfTrue(Label::new(label.clone())), location);
+                        ir.append(self.compile_expr(&logical_expr.right)?);
+                        ir.add(Code::SetLabel(label), location);
                     }
                 };
             }
             Expr::MakeRef(make_ref_expr) => {
-                ir.push(self.compile_expr(&make_ref_expr.expr)?);
-                ir.push(vec![IR::new(Code::MakeRef, self.get_location())]);
+                ir.append(self.compile_expr(&make_ref_expr.expr)?);
+                ir.add(Code::MakeRef, location);
             }
             Expr::Deref(deref_expr) => {
-                ir.push(self.compile_expr(&deref_expr.expr)?);
-                ir.push(vec![IR::new(Code::Deref, self.get_location())]);
+                ir.append(self.compile_expr(&deref_expr.expr)?);
+                ir.add(Code::Deref, location);
             }
         };
 
-        Ok(ir.concat())
+        Ok(ir)
     }
 
     fn compile_name(&mut self, name: &str) -> Result<Code> {
@@ -600,7 +530,7 @@ impl Compiler {
         &mut self,
         closure_expr: &ClosureExpr,
         target: Option<String>,
-    ) -> Result<IR> {
+    ) -> Result<Code> {
         let mut args = vec![];
 
         self.enter_scope(ScopeContext::Function((target.unwrap_or_default(), false)));
@@ -628,7 +558,7 @@ impl Compiler {
 
         self.module.funcs.push(Func {
             public: true,
-            is_void: !body.iter().any(|ir| ir.code == Code::Return),
+            is_void: !body.iter().any(|code| code == &Code::Return),
             body,
             args,
             location: self.get_location(),
@@ -637,20 +567,21 @@ impl Compiler {
             is_extern: false,
         });
 
-        Ok(IR::new(Code::MakeClosure(id), self.get_location()))
+        Ok(Code::MakeClosure(id))
     }
 
-    fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
+    fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<IR> {
         if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(format!("name is not mutable: {}", name)));
             }
 
-            return Ok(vec![
-                self.compile_name_value(name, value)?,
-                vec![self.compile_store(&local)],
-            ]
-            .concat());
+            let mut ir = IR::new();
+
+            ir.append(self.compile_name_value(name, value)?);
+            ir.add(self.compile_store(&local), Some(&self.get_location()));
+
+            return Ok(ir);
         }
 
         Err(CompileError::new(format!(
@@ -659,39 +590,31 @@ impl Compiler {
         )))
     }
 
-    fn compile_assign_member(
-        &mut self,
-        object: &Expr,
-        member: &str,
-        value: &Expr,
-    ) -> Result<Vec<IR>> {
-        Ok(vec![
-            self.compile_expr(value)?,
-            self.compile_expr(object)?,
-            vec![IR::new(
-                Code::StoreMember(member.to_string()),
-                self.get_location(),
-            )],
-        ]
-        .concat())
+    fn compile_assign_member(&mut self, object: &Expr, member: &str, value: &Expr) -> Result<IR> {
+        let mut ir = IR::new();
+
+        ir.append(self.compile_expr(value)?);
+        ir.append(self.compile_expr(object)?);
+        ir.add(
+            Code::StoreMember(member.to_string()),
+            Some(&self.get_location()),
+        );
+
+        Ok(ir)
     }
 
-    fn compile_assign_index(
-        &mut self,
-        object: &Expr,
-        index: &Expr,
-        value: &Expr,
-    ) -> Result<Vec<IR>> {
-        Ok(vec![
-            self.compile_expr(object)?,
-            self.compile_expr(index)?,
-            self.compile_expr(value)?,
-            vec![IR::new(Code::StoreIndex, self.get_location())],
-        ]
-        .concat())
+    fn compile_assign_index(&mut self, object: &Expr, index: &Expr, value: &Expr) -> Result<IR> {
+        let mut ir = IR::new();
+
+        ir.append(self.compile_expr(object)?);
+        ir.append(self.compile_expr(index)?);
+        ir.append(self.compile_expr(value)?);
+        ir.add(Code::StoreIndex, Some(&self.get_location()));
+
+        Ok(ir)
     }
 
-    fn compile_assign(&mut self, left: &Expr, right: &Expr) -> Result<Vec<IR>> {
+    fn compile_assign(&mut self, left: &Expr, right: &Expr) -> Result<IR> {
         match left {
             Expr::Index(index_expr) => {
                 self.compile_assign_index(&index_expr.object, &index_expr.index, right)
@@ -714,18 +637,21 @@ impl Compiler {
         }
     }
 
-    fn compile_name_value(&mut self, name: &str, value: &Expr) -> Result<Vec<IR>> {
+    fn compile_name_value(&mut self, name: &str, value: &Expr) -> Result<IR> {
         if let Expr::Closure(closure_expr) = value {
-            return Ok(vec![
+            return Ok(IR::with_codes(vec![
                 self.compile_closure(closure_expr, Some(name.to_string()))?
-            ]);
+            ]));
         }
 
         self.compile_expr(value)
     }
 
-    fn compile_stmt(&mut self, stmt: &Stmt, ir: &mut Vec<Vec<IR>>) -> Result<()> {
+    fn compile_stmt(&mut self, stmt: &Stmt, ir: &mut IR) -> Result<()> {
         self.pos = stmt.pos();
+
+        let location = self.get_location();
+        let location = Some(&location);
 
         match stmt {
             Stmt::If(if_stmt) => {
@@ -733,80 +659,64 @@ impl Compiler {
                 let else_label = self.make_label("else");
                 let cont_label = self.make_label("if_else_cont");
 
-                ir.push(self.compile_expr(&if_stmt.cond)?);
-                ir.push(vec![
-                    IR::new(
-                        Code::Branch((
-                            Label::new(if_label.clone()),
-                            Label::new(if if_stmt.alt.is_none() {
-                                cont_label.clone()
-                            } else {
-                                else_label.clone()
-                            }),
-                        )),
-                        self.get_location(),
-                    ),
-                    IR::new(Code::SetLabel(if_label), self.get_location()),
-                ]);
-                ir.push(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
+                ir.append(self.compile_expr(&if_stmt.cond)?);
+                ir.add(
+                    Code::Branch((
+                        Label::new(if_label.clone()),
+                        Label::new(if if_stmt.alt.is_none() {
+                            cont_label.clone()
+                        } else {
+                            else_label.clone()
+                        }),
+                    )),
+                    location,
+                );
+                ir.add(Code::SetLabel(if_label), location);
+                ir.append(self.compile_stmt_list(ScopeContext::IfElse, &if_stmt.body)?);
 
                 if let Some(alt) = &if_stmt.alt {
-                    ir.push(vec![IR::new(
-                        Code::Jump(Label::new(cont_label.clone())),
-                        self.get_location(),
-                    )]);
-                    ir.push(vec![IR::new(
-                        Code::SetLabel(else_label),
-                        self.get_location(),
-                    )]);
+                    ir.add(Code::Jump(Label::new(cont_label.clone())), location);
+                    ir.add(Code::SetLabel(else_label), location);
 
                     self.enter_scope(ScopeContext::IfElse);
                     self.compile_stmt(alt, ir)?;
                     self.exit_scope();
 
-                    ir.push(vec![IR::new(
-                        Code::Jump(Label::new(cont_label.clone())),
-                        self.get_location(),
-                    )]);
+                    ir.add(Code::Jump(Label::new(cont_label.clone())), location);
                 }
 
-                ir.push(vec![IR::new(
-                    Code::SetLabel(cont_label),
-                    self.get_location(),
-                )]);
+                ir.add(Code::SetLabel(cont_label), location);
             }
-            Stmt::Else(else_stmt) => ir.push(self._compile_stmt_list(&else_stmt.body)?),
+            Stmt::Else(else_stmt) => ir.append(self._compile_stmt_list(&else_stmt.body)?),
             Stmt::Expr(expr_stmt) => {
-                ir.push(self.compile_expr(&expr_stmt.expr)?);
-                ir.push(vec![IR::new(Code::Discard, self.get_location())]);
+                ir.append(self.compile_expr(&expr_stmt.expr)?);
+                ir.add(Code::Discard, location);
             }
             Stmt::Let(let_stmt) => match &let_stmt.var {
                 Variable::Name(name) => {
-                    ir.push(self.compile_name_value(name, &let_stmt.value)?);
+                    ir.append(self.compile_name_value(name, &let_stmt.value)?);
 
                     let local = self.declare_local(let_stmt.mutable, name)?;
 
-                    ir.push(vec![self.compile_store(&local)]);
+                    ir.add(self.compile_store(&local), location);
                 }
                 Variable::Tuple(names) | Variable::Array(names) => {
-                    ir.push(self.compile_expr(&let_stmt.value)?);
+                    ir.append(self.compile_expr(&let_stmt.value)?);
 
                     for (i, name) in names.iter().enumerate() {
                         let local = self.declare_local(let_stmt.mutable, name)?;
 
-                        ir.push(vec![
-                            IR::new(Code::ConstInt(i as i64), self.get_location()),
-                            // We need to keep the current value until the last item was processed
-                            IR::new(
-                                if i == names.len() - 1 {
-                                    Code::LoadIndex
-                                } else {
-                                    Code::TeeIndex
-                                },
-                                self.get_location(),
-                            ),
-                            self.compile_store(&local),
-                        ]);
+                        ir.add(Code::ConstInt(i as i64), location);
+                        // We need to keep the current value until the last item was processed
+                        ir.add(
+                            if i == names.len() - 1 {
+                                Code::LoadIndex
+                            } else {
+                                Code::TeeIndex
+                            },
+                            location,
+                        );
+                        ir.add(self.compile_store(&local), location);
                     }
                 }
             },
@@ -815,7 +725,7 @@ impl Compiler {
             }
             Stmt::Assign(assign_stmt) => {
                 if let Some(op) = &assign_stmt.op {
-                    ir.push(
+                    ir.append(
                         self.compile_assign(
                             &assign_stmt.left,
                             &Expr::Arithmetic(
@@ -835,7 +745,7 @@ impl Compiler {
                         )?,
                     );
                 } else {
-                    ir.push(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
+                    ir.append(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
                 }
             }
             Stmt::For(for_stmt) => {
@@ -846,7 +756,7 @@ impl Compiler {
                 if let Some(expr) = &for_stmt.expr {
                     let iter = self.set_local("__iter__".to_string(), false)?;
 
-                    ir.push(self.compile_expr(expr)?);
+                    ir.append(self.compile_expr(expr)?);
 
                     self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
                         continue_label: cont_label.clone(),
@@ -860,81 +770,70 @@ impl Compiler {
                         false,
                     )?;
 
-                    ir.push(
-                        vec![
-                            // Step 1. Get the iterator from the object
-                            self.compile_name("Iterable")?,
-                            Code::Validate,
-                            Code::LoadMember("iter".to_string()),
-                            Code::Call(0),
-                            Code::Store(iter.id),
-                            // Step 2. Now in the loop, get the next value from the iterator
-                            Code::SetLabel(for_label.clone()),
-                            Code::Load(iter.id),
-                            Code::LoadMember("next".to_string()),
-                            Code::Call(0),
-                            Code::Store(local.id),
-                            // Step 3. Check if it has a value and either continue or stop
-                            Code::Load(local.id),
-                            Code::LoadMember("isSome".to_string()),
-                            Code::Call(0),
-                            Code::Branch((
-                                Label::new(body_label.clone()),
-                                Label::new(cont_label.clone()),
-                            )),
-                            // Step 4. Evaluate the body and so on..
-                            Code::SetLabel(body_label),
-                        ]
-                        .into_iter()
-                        .map(|code| IR::new(code, self.get_location()))
-                        .collect::<Vec<_>>(),
+                    // Step 1. Get the iterator from the object
+                    ir.add(self.compile_name("Iterable")?, location);
+                    ir.add(Code::Validate, location);
+                    ir.add(Code::LoadMember("iter".to_string()), location);
+                    ir.add(Code::Call(0), location);
+                    ir.add(Code::Store(iter.id), location);
+                    // Step 2. Now in the loop, get the next value from the iterator
+                    ir.add(Code::SetLabel(for_label.clone()), location);
+                    ir.add(Code::Load(iter.id), location);
+                    ir.add(Code::LoadMember("next".to_string()), location);
+                    ir.add(Code::Call(0), location);
+                    ir.add(Code::Store(local.id), location);
+                    // Step 3. Check if it has a value and either continue or stop
+                    ir.add(Code::Load(local.id), location);
+                    ir.add(Code::LoadMember("isSome".to_string()), location);
+                    ir.add(Code::Call(0), location);
+                    ir.add(
+                        Code::Branch((
+                            Label::new(body_label.clone()),
+                            Label::new(cont_label.clone()),
+                        )),
+                        location,
                     );
+                    // Step 4. Evaluate the body and so on..
+                    ir.add(Code::SetLabel(body_label), location);
 
                     // Only store the current item when requested
                     if let Some(var) = &for_stmt.alias {
-                        ir.push(vec![
-                            IR::new(Code::Load(local.id), self.get_location()),
-                            IR::new(Code::Unwrap, self.get_location()),
-                        ]);
+                        ir.add(Code::Load(local.id), location);
+                        ir.add(Code::Unwrap, location);
 
                         match var {
                             // If it's a name we can re-use the local slot
                             Variable::Name(_) => {
-                                ir.push(vec![IR::new(Code::Store(local.id), self.get_location())]);
+                                ir.add(Code::Store(local.id), location);
                             }
                             Variable::Tuple(names) | Variable::Array(names) => {
                                 for (i, name) in names.iter().enumerate() {
                                     let local = self.set_local(name.clone(), false)?;
 
-                                    ir.push(vec![
-                                        IR::new(Code::ConstInt(i as i64), self.get_location()),
-                                        // We need to keep the current value until the last item was processed
-                                        IR::new(
-                                            if i == names.len() - 1 {
-                                                Code::LoadIndex
-                                            } else {
-                                                Code::TeeIndex
-                                            },
-                                            self.get_location(),
-                                        ),
-                                        IR::new(Code::Store(local.id), self.get_location()),
-                                    ]);
+                                    ir.add(Code::ConstInt(i as i64), location);
+                                    ir.add(
+                                        if i == names.len() - 1 {
+                                            Code::LoadIndex
+                                        } else {
+                                            Code::TeeIndex
+                                        },
+                                        location,
+                                    );
+                                    ir.add(Code::Store(local.id), location);
                                 }
                             }
                         };
                     }
 
-                    ir.push(self._compile_stmt_list(&for_stmt.body)?);
+                    ir.append(self._compile_stmt_list(&for_stmt.body)?);
                 } else {
                     self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
                         continue_label: cont_label.clone(),
                     }));
 
-                    ir.push(vec![
-                        IR::new(Code::SetLabel(for_label.clone()), self.get_location()),
-                        IR::new(Code::SetLabel(body_label), self.get_location()),
-                    ]);
-                    ir.push(self.compile_stmt_list(
+                    ir.add(Code::SetLabel(for_label.clone()), location);
+                    ir.add(Code::SetLabel(body_label), location);
+                    ir.append(self.compile_stmt_list(
                         ScopeContext::ForLoop(ForLoopMeta {
                             continue_label: cont_label.clone(),
                         }),
@@ -942,10 +841,8 @@ impl Compiler {
                     )?);
                 }
 
-                ir.push(vec![
-                    IR::new(Code::Jump(Label::new(for_label)), self.get_location()),
-                    IR::new(Code::SetLabel(cont_label), self.get_location()),
-                ]);
+                ir.add(Code::Jump(Label::new(for_label)), location);
+                ir.add(Code::SetLabel(cont_label), location);
 
                 self.exit_scope();
             }
@@ -955,10 +852,7 @@ impl Compiler {
                 }
 
                 if let Some(meta) = Scope::get_for_loop(&self.scope) {
-                    ir.push(vec![IR::new(
-                        Code::Jump(Label::new(meta.continue_label)),
-                        self.get_location(),
-                    )]);
+                    ir.add(Code::Jump(Label::new(meta.continue_label)), location);
                 } else {
                     return Err(CompileError::new(
                         "unable to break outside of a loop".to_string(),
@@ -966,15 +860,15 @@ impl Compiler {
                 }
             }
             Stmt::Raise(raise_stmt) => {
-                ir.push(self.compile_expr(&raise_stmt.expr)?);
-                ir.push(vec![IR::new(Code::Raise, self.get_location())]);
+                ir.append(self.compile_expr(&raise_stmt.expr)?);
+                ir.add(Code::Raise, location);
             }
             Stmt::Return(return_stmt) => {
-                ir.push(self.compile_expr(&return_stmt.expr)?);
-                ir.push(vec![IR::new(Code::Return, self.get_location())]);
+                ir.append(self.compile_expr(&return_stmt.expr)?);
+                ir.add(Code::Return, location);
             }
             Stmt::Unsafe(unsafe_stmt) => {
-                ir.push(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
+                ir.append(self.compile_stmt_list(ScopeContext::Unsafe, &unsafe_stmt.body)?);
             }
             // ignore top level statements
             Stmt::FnDecl(_)
@@ -989,23 +883,21 @@ impl Compiler {
         Ok(())
     }
 
-    fn _compile_stmt_list(&mut self, tree: &[Stmt]) -> Result<Vec<IR>> {
-        let mut ir = vec![];
+    fn _compile_stmt_list(&mut self, tree: &[Stmt]) -> Result<IR> {
+        let mut ir = IR::new();
 
         for stmt in tree.iter() {
             self.compile_stmt(stmt, &mut ir)?;
         }
 
-        let mut instructions = ir.concat();
-
         for optimizer in self.optimizers.iter() {
-            optimizer(&self.module, &mut instructions);
+            optimizer(&self.module, &mut ir);
         }
 
-        Ok(instructions)
+        Ok(ir)
     }
 
-    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &[Stmt]) -> Result<Vec<IR>> {
+    fn compile_stmt_list(&mut self, context: ScopeContext, tree: &[Stmt]) -> Result<IR> {
         self.enter_scope(context);
 
         let instructions = self._compile_stmt_list(tree)?;
@@ -1047,7 +939,7 @@ impl Compiler {
         Func {
             public: extern_fn_decl.public,
             name: extern_fn_decl.name.clone(),
-            body: vec![],
+            body: IR::new(),
             is_void: false,
             is_extern: true,
             is_closure: false,
@@ -1079,15 +971,15 @@ impl Compiler {
         if self.optimize {
             loop {
                 let index = || {
-                    for (i, ir) in body.iter().enumerate() {
-                        if ir.code == Code::LoadTarget {
-                            let next_code = body.get(i + 1).map(|ir| &ir.code);
+                    for (i, code) in body.iter().enumerate() {
+                        if code == &Code::LoadTarget {
+                            let next_code = body.get(i + 1);
 
                             if let Some(Code::Call(arg_count)) = next_code {
                                 if !body
                                     .iter()
                                     .skip(i + 2)
-                                    .any(|ir| !self.has_no_side_effects(&ir.code))
+                                    .any(|code| !self.has_no_side_effects(code))
                                 {
                                     return Some((i, *arg_count));
                                 }
@@ -1104,9 +996,7 @@ impl Compiler {
 
                     // Replace the two instructions with a tail-recursion-call one
                     Some((index, arg_count)) => {
-                        let call = &mut body[index];
-                        call.code = Code::TailCall(arg_count);
-
+                        body[index] = Code::TailCall(arg_count);
                         body.remove(index + 1);
                     }
                 }
@@ -1117,7 +1007,7 @@ impl Compiler {
             location: self.get_location_by_offset(&fn_decl.pos),
             name: fn_decl.name.clone(),
             public: fn_decl.public,
-            is_void: !body.iter().any(|ir| ir.code == Code::Return),
+            is_void: !body.iter().any(|code| code == &Code::Return),
             is_extern: false,
             is_closure: false,
             body,

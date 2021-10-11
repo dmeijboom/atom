@@ -448,8 +448,8 @@ impl VM {
     }
 
     #[inline(always)]
-    fn eval_single<'i>(&mut self, module_id: ModuleId, ir: &'i IR) -> Result<Flow<'i>> {
-        match &ir.code {
+    fn eval_single<'i>(&mut self, module_id: ModuleId, code: &'i Code) -> Result<Flow<'i>> {
+        match code {
             Code::ConstInt(val) => self.eval_const(*val),
             Code::ConstBool(val) => self.eval_const(*val),
             Code::ConstSymbol(name) => self.eval_symbol(name),
@@ -1168,9 +1168,9 @@ impl VM {
         Err(RuntimeError::new(format!("{}", value)))
     }
 
-    fn find_label(&self, instructions: &[IR], search: &str) -> Result<usize> {
-        for (i, ir) in instructions.iter().enumerate() {
-            if let Code::SetLabel(label) = &ir.code {
+    fn find_label(&self, instructions: &IR, search: &str) -> Result<usize> {
+        for (i, code) in instructions.iter().enumerate() {
+            if let Code::SetLabel(label) = code {
                 if label == search {
                     return Ok(i);
                 }
@@ -1184,17 +1184,17 @@ impl VM {
     }
 
     #[inline(always)]
-    fn _eval(&mut self, module_id: ModuleId, instructions: Rc<Vec<IR>>) -> Result<Option<Value>> {
+    fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<Option<Value>> {
         let mut i = 0;
         let mut return_addr = vec![];
         let instructions_len = instructions.len();
 
         loop {
             while i < instructions_len {
-                let ir = unsafe { instructions.get_unchecked(i) };
+                let code = unsafe { instructions.get_unchecked(i) };
 
                 // Evaluates the instruction and optionally returns a label to jump to
-                match self.eval_single(module_id, ir) {
+                match self.eval_single(module_id, code) {
                     Ok(flow) => match flow {
                         Flow::Continue => i += 1,
                         Flow::Return(value) => {
@@ -1230,9 +1230,11 @@ impl VM {
                         let module = self.module_cache.get_module_by_id(module_id)?;
 
                         if e.location.is_none() {
-                            let e = e
-                                .with_location(ir.location.clone())
-                                .with_module(&module.name);
+                            let mut e = e.with_module(&module.name);
+
+                            if let Some(location) = instructions.get_location(i) {
+                                e = e.with_location(location.clone());
+                            }
 
                             if let Some(filename) = &module.filename {
                                 return Err(e.with_filename(filename.clone()));
@@ -1261,7 +1263,7 @@ impl VM {
         Ok(None)
     }
 
-    pub fn eval(&mut self, module: &str, instructions: Vec<IR>) -> Result<()> {
+    pub fn eval(&mut self, module: &str, instructions: IR) -> Result<()> {
         let module_id = self.module_cache.get_module(module)?.id;
 
         self._eval(module_id, Rc::new(instructions))
@@ -1270,6 +1272,7 @@ impl VM {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn result(&mut self) -> Option<Value> {
         self.stack.pop().ok()
     }

@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use clap::Clap;
 
-use atom_ir::{Code, Location, IR};
+use atom_ir::{Code, IR};
 use atom_runtime::RuntimeError;
 
 use crate::compiler::{parse_line_numbers_offset, Compiler};
@@ -38,11 +38,13 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         compiler.add_lookup_path(path);
     }
 
-    let modules = compiler.compile_all()?;
+    let mut modules = compiler.compile_all()?;
     let module = modules
-        .iter()
+        .iter_mut()
         .find(|module| module.name == "main")
         .ok_or_else(|| Error::Runtime(RuntimeError::new("main module not found".to_string())))?;
+
+    module.filename = opts.filename.to_str().map(|s| s.to_string());
 
     if opts.show_ir {
         println!("Interfaces:");
@@ -64,10 +66,7 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
 
         vm.eval(
             "main",
-            vec![
-                IR::new(Code::LoadFn(id), Location::default()),
-                IR::new(Code::Call(0), Location::default()),
-            ],
+            IR::with_codes(vec![Code::LoadFn(id), Code::Call(0)]),
         )?;
 
         return Ok(());

@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use atom_ir::Code;
+
 pub type Pos = Range<usize>;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -23,7 +25,7 @@ pub enum AssignOp {
     Div,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ComparisonOp {
     Lt,
     Lte,
@@ -33,7 +35,20 @@ pub enum ComparisonOp {
     Neq,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+impl Into<Code> for ComparisonOp {
+    fn into(self) -> Code {
+        match self {
+            ComparisonOp::Lt => Code::ComparisonLt,
+            ComparisonOp::Lte => Code::ComparisonLte,
+            ComparisonOp::Gt => Code::ComparisonGt,
+            ComparisonOp::Gte => Code::ComparisonGte,
+            ComparisonOp::Eq => Code::ComparisonEq,
+            ComparisonOp::Neq => Code::ComparisonNeq,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum ArithmeticOp {
     Mul,
     Div,
@@ -42,6 +57,20 @@ pub enum ArithmeticOp {
     Exp,
     BitAnd,
     BitOr,
+}
+
+impl Into<Code> for ArithmeticOp {
+    fn into(self) -> Code {
+        match self {
+            ArithmeticOp::Mul => Code::ArithmeticMul,
+            ArithmeticOp::Div => Code::ArithmeticDiv,
+            ArithmeticOp::Add => Code::ArithmeticAdd,
+            ArithmeticOp::Sub => Code::ArithmeticSub,
+            ArithmeticOp::Exp => Code::ArithmeticExp,
+            ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
+            ArithmeticOp::BitOr => Code::ArithmeticBitOr,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -5,17 +5,17 @@ use atom_ir::{Code, IR};
 use crate::compiler::Module;
 
 /// Calculate the absolute offset for labels by using their name so that the vm can jump to it directly
-pub fn optimize(_module: &Module, instructions: &mut Vec<IR>) {
+pub fn optimize(_module: &Module, instructions: &mut IR) {
     let mut labels = HashMap::new();
 
-    for (i, ir) in instructions.iter().enumerate() {
-        if let Code::SetLabel(name) = &ir.code {
+    for (i, code) in instructions.iter().enumerate() {
+        if let Code::SetLabel(name) = &code {
             labels.insert(name.clone(), i);
         }
     }
 
-    for ir in instructions.iter_mut() {
-        match &mut ir.code {
+    for code in instructions.iter_mut() {
+        match code {
             Code::Jump(label) => {
                 if let Some(index) = labels.get(&label.name) {
                     label.index = Some(*index);

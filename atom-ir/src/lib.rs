@@ -1,5 +1,8 @@
+use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
-use std::ops::Range;
+use std::hash::Hash;
+use std::ops::{Index, IndexMut, Range};
+use std::slice::{Iter, IterMut};
 
 #[derive(Debug, Clone, PartialEq, Hash, Default)]
 pub struct Location {
@@ -203,20 +206,120 @@ impl Debug for Code {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Clone)]
 pub struct IR {
-    pub code: Code,
-    pub location: Location,
+    codes: Vec<Code>,
+    locations: HashMap<usize, Location>,
 }
 
 impl IR {
-    pub fn new(code: Code, location: Location) -> Self {
-        Self { code, location }
+    pub fn new() -> Self {
+        Self {
+            codes: vec![],
+            locations: HashMap::new(),
+        }
+    }
+
+    pub fn with_codes(codes: Vec<Code>) -> Self {
+        Self {
+            codes,
+            locations: HashMap::new(),
+        }
+    }
+
+    pub fn remove(&mut self, index: usize) -> Code {
+        self.codes.remove(index)
+    }
+
+    pub fn len(&self) -> usize {
+        self.codes.len()
+    }
+
+    pub fn get(&self, index: usize) -> Option<&Code> {
+        self.codes.get(index)
+    }
+
+    pub unsafe fn get_unchecked(&self, index: usize) -> &Code {
+        self.codes.get_unchecked(index)
+    }
+
+    pub fn iter(&self) -> Iter<Code> {
+        self.codes.iter()
+    }
+
+    pub fn iter_mut(&mut self) -> IterMut<Code> {
+        self.codes.iter_mut()
+    }
+
+    pub fn add(&mut self, code: Code, location: Option<&Location>) {
+        let id = self.codes.len();
+
+        self.codes.push(code);
+
+        if let Some(location) = location {
+            if id > 0 {
+                if let Some(other) = self.get_location(id - 1) {
+                    if other == location {
+                        return;
+                    }
+                }
+            }
+
+            self.locations.insert(self.codes.len(), location.clone());
+        }
+    }
+
+    pub fn append(&mut self, mut ir: IR) {
+        for (i, location) in ir.locations {
+            self.locations.insert(self.codes.len() + i, location);
+        }
+
+        self.codes.append(&mut ir.codes);
+    }
+
+    pub fn get_location(&self, index: usize) -> Option<&Location> {
+        let mut result = None;
+
+        for (i, location) in self.locations.iter() {
+            if *i < index {
+                continue;
+            }
+
+            if let Some((other_idx, _)) = result {
+                if *i < other_idx {
+                    continue;
+                }
+            }
+
+            result = Some((*i, location));
+        }
+
+        result.map(|(_, location)| location)
+    }
+}
+
+impl Index<usize> for IR {
+    type Output = Code;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.codes[index]
+    }
+}
+
+impl IndexMut<usize> for IR {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.codes[index]
     }
 }
 
 impl Debug for IR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{:?}", self.code)
+        println!("{:#?}", self.locations);
+
+        for code in self.codes.iter() {
+            write!(f, "{:?}", code)?;
+        }
+
+        Ok(())
     }
 }

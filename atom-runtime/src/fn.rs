@@ -16,7 +16,7 @@ pub type ExternalFn = fn(&dyn AtomApi, Option<Value>, Vec<Value>) -> Result<Opti
 #[derive(Clone)]
 pub enum FnPtr {
     External(ExternalFn),
-    Native(Rc<Vec<IR>>),
+    Native(Rc<IR>),
 }
 
 impl Debug for FnPtr {
@@ -48,12 +48,7 @@ pub struct Fn {
 }
 
 impl Fn {
-    pub fn native(
-        name: String,
-        origin: Origin,
-        args: IndexMap<String, FnArg>,
-        ir: Vec<IR>,
-    ) -> Self {
+    pub fn native(name: String, origin: Origin, args: IndexMap<String, FnArg>, ir: IR) -> Self {
         Self {
             name,
             origin,

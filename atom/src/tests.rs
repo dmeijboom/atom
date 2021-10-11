@@ -2,7 +2,7 @@
 mod tests {
     use test_case::test_case;
 
-    use atom_ir::{Code, Location, IR};
+    use atom_ir::{Code, IR};
     use atom_runtime::{AtomRef, RuntimeError, Value};
 
     use crate::utils::{parse_and_compile, Error};
@@ -29,10 +29,7 @@ mod tests {
 
             vm.eval(
                 "main",
-                vec![
-                    IR::new(Code::LoadFn(id), Location::default()),
-                    IR::new(Code::Call(0), Location::default()),
-                ],
+                IR::with_codes(vec![Code::LoadFn(id), Code::Call(0)]),
             )?;
 
             return Ok(vm.result());
