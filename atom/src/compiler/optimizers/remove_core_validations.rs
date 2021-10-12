@@ -1,6 +1,5 @@
 use atom_ir::{Code, IR};
 
-use crate::compiler::optimizers::query;
 use crate::compiler::Module;
 
 /// Skip 'Iterable' validations for known core iterators
@@ -11,11 +10,13 @@ pub fn optimize(module: &Module, instructions: &mut IR) {
         }
 
         loop {
-            let query = query(|c| matches!(c, Code::MakeRange | Code::MakeArray(_)))
-                .if_next(move |c| c == &Code::LoadGlobal(id))
-                .if_next(|c| c == &Code::Validate);
+            let index = instructions.iter().enumerate().position(|(i, code)| {
+                matches!(code, Code::MakeRange | Code::MakeArray(_))
+                    && instructions.get(i + 1) == Some(&Code::LoadGlobal(id))
+                    && instructions.get(i + 2) == Some(&Code::Validate)
+            });
 
-            if let Some(i) = query.get(instructions) {
+            if let Some(i) = index {
                 instructions.remove(i + 1);
                 instructions.remove(i + 1);
 
