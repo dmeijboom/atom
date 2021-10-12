@@ -10,8 +10,8 @@ use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, Expr, ExternFnDeclStmt,
-    FnDeclStmt, ImportStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, MixinDeclStmt,
-    Pos, Stmt, TemplateComponent, Variable,
+    FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, MixinDeclStmt, Pos, Stmt,
+    TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::{FileSystem, FileSystemCache};
 use crate::compiler::optimizers::remove_core_validations;
@@ -1120,11 +1120,13 @@ impl Compiler {
     }
 
     fn setup_prelude(&mut self) -> Result<()> {
+        // The std.core module shouldn't include the prelude as that would create an infinite loop
+        if self.module.name == "std.core" {
+            return Ok(());
+        }
+
         for name in DEFAULT_IMPORTS {
-            self.compile_import(ImportStmt {
-                name: name.to_string(),
-                pos: 0..0,
-            })?;
+            self.import_name(name)?;
         }
 
         Ok(())
@@ -1148,16 +1150,11 @@ impl Compiler {
         Ok(module)
     }
 
-    fn compile_import(&mut self, import_stmt: ImportStmt) -> Result<()> {
-        self.pos = import_stmt.pos;
-
-        let mut components = import_stmt.name.split('.').collect::<Vec<_>>();
+    fn import_name(&mut self, name: &str) -> Result<()> {
+        let mut components = name.split('.').collect::<Vec<_>>();
 
         if components.len() < 2 {
-            return Err(CompileError::new(format!(
-                "invalid import path: {}",
-                import_stmt.name
-            )));
+            return Err(CompileError::new(format!("invalid import path: {}", name,)));
         }
 
         let name = components.pop().unwrap();
@@ -1256,8 +1253,29 @@ impl Compiler {
                     "module statement must be the first statement in a file".to_string(),
                 ));
             }
-            Stmt::Import(import_stmt) => self.compile_import(import_stmt)?,
             _ => unreachable!(),
+        }
+
+        Ok(())
+    }
+
+    fn imports_pass(&mut self) -> Result<()> {
+        loop {
+            let index = self
+                .tree
+                .iter()
+                .position(|stmt| matches!(stmt, Stmt::Import(_)));
+
+            if let Some(index) = index {
+                if let Stmt::Import(import_stmt) = self.tree.remove(index) {
+                    self.pos = import_stmt.pos;
+                    self.import_name(&import_stmt.name)?;
+
+                    continue;
+                }
+            }
+
+            break;
         }
 
         Ok(())
@@ -1269,11 +1287,8 @@ impl Compiler {
             self.tree.remove(0);
         }
 
-        // The std.core module shouldn't include the prelude as that would create an infinite loop
-        if self.module.name != "std.core" {
-            self.setup_prelude()
-                .map_err(|e| e.with_location(self.get_location()))?;
-        }
+        self.setup_prelude()?;
+        self.imports_pass()?;
 
         while !self.tree.is_empty() {
             let stmt = self.tree.remove(0);
