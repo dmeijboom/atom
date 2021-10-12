@@ -55,11 +55,6 @@ const STD_SOURCES: [(&str, &str); 4] = [
     ),
 ];
 
-enum Imported {
-    Global(TypeKind),
-    Mixin(MixinDeclStmt),
-}
-
 pub struct Compiler {
     pos: Pos,
     fs: FileSystem,
@@ -1182,18 +1177,24 @@ impl Compiler {
 
         let guard = self.modules.read().unwrap();
         let module = guard.get(&module_name).unwrap();
-        let (type_name, imported, is_public) = if let Some(func) = module.get_fn_by_name(name) {
-            ("function", Imported::Global(TypeKind::Fn), func.public)
+        let (type_name, type_kind, is_public) = if let Some(func) = module.get_fn_by_name(name) {
+            ("function", TypeKind::Fn, func.public)
         } else if let Some(class) = module.classes.get(name) {
-            ("class", Imported::Global(TypeKind::Class), class.public)
+            ("class", TypeKind::Class, class.public)
         } else if let Some(interface) = module.interfaces.get(name) {
-            (
-                "interface",
-                Imported::Global(TypeKind::Interface),
-                interface.public,
-            )
+            ("interface", TypeKind::Interface, interface.public)
         } else if let Some(mixin) = module.mixins.get(name) {
-            ("mixin", Imported::Mixin(mixin.clone()), mixin.public)
+            if self.module.mixins.contains_key(&mixin.name) {
+                return Err(CompileError::new(format!(
+                    "unable to redefine mixin: {}",
+                    name
+                )));
+            }
+
+            // As mixins are being used at compile time we need to import them instead of delegating that to the vm
+            self.module.mixins.insert(mixin.name.clone(), mixin.clone());
+
+            return Ok(());
         } else {
             return Err(CompileError::new(format!(
                 "failed to import unknown name '{}' from: {}",
@@ -1215,25 +1216,10 @@ impl Compiler {
             )));
         }
 
-        match imported {
-            Imported::Global(type_kind) => {
-                self.module.globals.insert(
-                    name.to_string(),
-                    Type::new(type_kind, module.name.clone(), name.to_string()),
-                );
-            }
-            Imported::Mixin(mixin) => {
-                if self.module.mixins.contains_key(&mixin.name) {
-                    return Err(CompileError::new(format!(
-                        "unable to redefine mixin: {}",
-                        name
-                    )));
-                }
-
-                // As mixins are being used at compile time we need to import them instead of leaving that to the vm
-                self.module.mixins.insert(mixin.name.clone(), mixin);
-            }
-        }
+        self.module.globals.insert(
+            name.to_string(),
+            Type::new(type_kind, module.name.clone(), name.to_string()),
+        );
 
         Ok(())
     }
