@@ -194,6 +194,12 @@ impl Compiler {
         Err(CompileError::new(format!("no such mixin: {}", name)))
     }
 
+    fn add_export(&mut self, kind: TypeKind, name: String) {
+        self.module
+            .exports
+            .insert(name, Type::new(kind, self.module.name.clone()));
+    }
+
     #[inline(always)]
     fn compile_store(&self, local: &Local) -> Code {
         if local.mutable {
@@ -552,7 +558,6 @@ impl Compiler {
         let id = self.module.funcs.len();
 
         self.module.funcs.push(Func {
-            public: true,
             is_void: !body.iter().any(|code| code == &Code::Return),
             body,
             args,
@@ -931,8 +936,11 @@ impl Compiler {
     }
 
     fn compile_extern_fn(&mut self, extern_fn_decl: &ExternFnDeclStmt) -> Func {
+        if extern_fn_decl.public {
+            self.add_export(TypeKind::Fn, extern_fn_decl.name.clone());
+        }
+
         Func {
-            public: extern_fn_decl.public,
             name: extern_fn_decl.name.clone(),
             body: IR::new(),
             is_void: false,
@@ -998,10 +1006,13 @@ impl Compiler {
             }
         }
 
+        if fn_decl.public {
+            self.add_export(TypeKind::Fn, fn_decl.name.clone());
+        }
+
         Ok(Func {
             location: self.get_location_by_offset(&fn_decl.pos),
             name: fn_decl.name.clone(),
-            public: fn_decl.public,
             is_void: !body.iter().any(|code| code == &Code::Return),
             is_extern: false,
             is_closure: false,
@@ -1025,12 +1036,15 @@ impl Compiler {
             )));
         }
 
+        if class_decl.public {
+            self.add_export(TypeKind::Class, class_decl.name.clone());
+        }
+
         // Register class early so that it can be referenced in one of it's methods
         self.module.classes.insert(
             class_decl.name.clone(),
             Class {
                 name: class_decl.name.clone(),
-                public: class_decl.public,
                 funcs: HashMap::new(),
                 fields: IndexMap::new(),
             },
@@ -1108,9 +1122,12 @@ impl Compiler {
             )));
         }
 
+        if interface_decl.public {
+            self.add_export(TypeKind::Interface, interface_decl.name.clone());
+        }
+
         Ok(Interface {
             name: interface_decl.name.clone(),
-            public: interface_decl.public,
             functions: interface_decl
                 .functions
                 .iter()
@@ -1174,12 +1191,15 @@ impl Compiler {
 
         let guard = self.modules.read().unwrap();
         let module = guard.get(&module_name).unwrap();
-        let (type_name, type_kind, is_public) = if let Some(func) = module.get_fn_by_name(name) {
-            ("function", TypeKind::Fn, func.public)
-        } else if let Some(class) = module.classes.get(name) {
-            ("class", TypeKind::Class, class.public)
-        } else if let Some(interface) = module.interfaces.get(name) {
-            ("interface", TypeKind::Interface, interface.public)
+        if let Some(global) = module.exports.get(name) {
+            if self.module.globals.contains_key(name) {
+                return Err(CompileError::new(format!(
+                    "unable to redefine global: {}",
+                    name
+                )));
+            }
+
+            self.module.globals.insert(name.to_string(), global.clone());
         } else if let Some(mixin) = module.mixins.get(name) {
             if self.module.mixins.contains_key(&mixin.name) {
                 return Err(CompileError::new(format!(
@@ -1198,25 +1218,6 @@ impl Compiler {
                 name, module.name
             )));
         };
-
-        if !is_public {
-            return Err(CompileError::new(format!(
-                "unable to import private {}: {}",
-                type_name, name,
-            )));
-        }
-
-        if self.module.globals.contains_key(name) {
-            return Err(CompileError::new(format!(
-                "unable to redefine global: {}",
-                name
-            )));
-        }
-
-        self.module.globals.insert(
-            name.to_string(),
-            Type::new(type_kind, module.name.clone(), name.to_string()),
-        );
 
         Ok(())
     }

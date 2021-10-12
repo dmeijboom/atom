@@ -171,11 +171,11 @@ impl ModuleCache {
             .collect();
 
         // At last, register the globals
-        for (_, global) in compiled_module.globals {
+        for (global_name, global) in compiled_module.globals {
             let sub_module = self.modules.get(&global.module_name).ok_or_else(|| {
                 RuntimeError::new(format!(
                     "unable to register global '{}' for unknown module: {}",
-                    global.name, global.module_name
+                    global_name, global.module_name
                 ))
             })?;
 
@@ -184,21 +184,21 @@ impl ModuleCache {
                     let func = sub_module
                         .funcs
                         .iter()
-                        .find(|func| func.name == global.name)
+                        .find(|func| func.name == global_name)
                         .ok_or_else(|| {
                             RuntimeError::new(format!(
                                 "unable to register function '{}' for module: {}",
-                                global.name, global.module_name
+                                global_name, global.module_name
                             ))
                         })?;
 
                     Value::Fn(AtomRef::clone(func))
                 }
                 TypeKind::Class => {
-                    let class = sub_module.classes.get(&global.name).ok_or_else(|| {
+                    let class = sub_module.classes.get(&global_name).ok_or_else(|| {
                         RuntimeError::new(format!(
                             "unable to register class '{}' for module: {}",
-                            global.name, global.module_name
+                            global_name, global.module_name
                         ))
                     })?;
 
@@ -208,11 +208,11 @@ impl ModuleCache {
                     let interface = sub_module
                         .interfaces
                         .iter()
-                        .find(|interface| interface.name == global.name)
+                        .find(|interface| interface.name == global_name)
                         .ok_or_else(|| {
                             RuntimeError::new(format!(
                                 "unable to register interface '{}' for module: {}",
-                                global.name, global.module_name
+                                global_name, global.module_name
                             ))
                         })?;
 

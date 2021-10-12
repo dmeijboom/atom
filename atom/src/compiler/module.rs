@@ -15,7 +15,6 @@ pub struct FuncArg {
 
 #[derive(Clone)]
 pub struct Func {
-    pub public: bool,
     pub name: String,
     pub body: IR,
     pub is_void: bool,
@@ -50,7 +49,6 @@ pub struct Field {
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
-    pub public: bool,
     pub funcs: HashMap<String, Func>,
     pub fields: IndexMap<String, Field>,
 }
@@ -58,31 +56,25 @@ pub struct Class {
 #[derive(Debug)]
 pub struct Interface {
     pub name: String,
-    pub public: bool,
     pub functions: Vec<String>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum TypeKind {
     Fn,
     Class,
     Interface,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Type {
-    pub name: String,
     pub kind: TypeKind,
     pub module_name: String,
 }
 
 impl Type {
-    pub fn new(kind: TypeKind, module_name: String, name: String) -> Self {
-        Self {
-            kind,
-            name,
-            module_name,
-        }
+    pub fn new(kind: TypeKind, module_name: String) -> Self {
+        Self { kind, module_name }
     }
 }
 
@@ -95,6 +87,7 @@ pub struct Module {
     pub classes: IndexMap<String, Class>,
     pub interfaces: IndexMap<String, Interface>,
     pub globals: IndexMap<String, Type>,
+    pub exports: HashMap<String, Type>,
 }
 
 impl Module {
@@ -111,6 +104,7 @@ impl Module {
             classes: IndexMap::new(),
             interfaces: IndexMap::new(),
             globals: IndexMap::new(),
+            exports: HashMap::new(),
         }
     }
 
