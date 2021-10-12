@@ -49,7 +49,7 @@ pub struct Field {
 #[derive(Debug)]
 pub struct Class {
     pub name: String,
-    pub funcs: HashMap<String, Func>,
+    pub methods: HashMap<String, Func>,
     pub fields: IndexMap<String, Field>,
 }
 
@@ -86,7 +86,7 @@ pub struct Module {
     pub mixins: HashMap<String, MixinDeclStmt>,
     pub classes: IndexMap<String, Class>,
     pub interfaces: IndexMap<String, Interface>,
-    pub globals: IndexMap<String, Type>,
+    pub imports: IndexMap<String, Type>,
     pub exports: HashMap<String, Type>,
 }
 
@@ -103,7 +103,7 @@ impl Module {
             mixins: HashMap::new(),
             classes: IndexMap::new(),
             interfaces: IndexMap::new(),
-            globals: IndexMap::new(),
+            imports: IndexMap::new(),
             exports: HashMap::new(),
         }
     }

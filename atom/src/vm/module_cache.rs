@@ -129,7 +129,7 @@ impl ModuleCache {
             ),
         };
 
-        for (name, func) in class.funcs {
+        for (name, func) in class.methods {
             output.methods.insert(
                 name,
                 AtomRef::new(self.make_fn(module, func, Some(&class.name))?),
@@ -171,7 +171,7 @@ impl ModuleCache {
             .collect();
 
         // At last, register the globals
-        for (global_name, global) in compiled_module.globals {
+        for (global_name, global) in compiled_module.imports {
             let sub_module = self.modules.get(&global.module_name).ok_or_else(|| {
                 RuntimeError::new(format!(
                     "unable to register global '{}' for unknown module: {}",
@@ -226,10 +226,6 @@ impl ModuleCache {
         self.modules.insert(module.name.clone(), module);
 
         Ok(())
-    }
-
-    pub fn contains_module(&self, module_name: &str) -> bool {
-        self.modules.contains_key(module_name)
     }
 
     pub fn get_module_by_id(&self, id: ModuleId) -> Result<&Module> {

@@ -10,7 +10,7 @@ use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
     ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, Expr, ExternFnDeclStmt,
-    FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, MixinDeclStmt, Pos, Stmt,
+    FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
     TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::{FileSystem, FileSystemCache};
@@ -40,6 +40,24 @@ pub fn parse_line_numbers_offset(source: &str) -> Vec<usize> {
     }
 
     line_numbers_offset
+}
+
+fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
+    for (i, (_, name)) in names.iter().enumerate() {
+        let other = names
+            .iter()
+            .enumerate()
+            .find(|(other_index, (_, other_name))| *other_index != i && name == other_name);
+
+        if let Some((_, (typename, name))) = other {
+            return Err(CompileError::new(format!(
+                "unable to redefine {}: {}",
+                typename, name
+            )));
+        }
+    }
+
+    Ok(())
 }
 
 const STD_SOURCES: [(&str, &str); 4] = [
@@ -172,26 +190,6 @@ impl Compiler {
             optimizers: self.optimizers.clone(),
             modules: Rc::clone(&self.modules),
         }
-    }
-
-    fn get_mixin(&mut self, name: &str) -> Result<MixinDeclStmt> {
-        if let Some(mixin) = self.module.mixins.get(name) {
-            return Ok(mixin.clone());
-        }
-
-        let index = self.tree.iter().position(
-            |stmt| matches!(stmt, Stmt::MixinDecl(mixin_decl_stmt) if mixin_decl_stmt.name == name),
-        );
-
-        if let Some(index) = index {
-            let stmt = self.tree.remove(index);
-
-            self.compile_top_level_stmt(stmt)?;
-
-            return self.get_mixin(name);
-        }
-
-        Err(CompileError::new(format!("no such mixin: {}", name)))
     }
 
     fn add_export(&mut self, kind: TypeKind, name: String) {
@@ -498,7 +496,7 @@ impl Compiler {
             Ok(Code::LoadReceiver)
         } else if let Some(local) = Scope::get_local(&self.scope, name, true) {
             Ok(Code::Load(local.id))
-        } else if let Some(id) = self.module.globals.get_index_of(name) {
+        } else if let Some(id) = self.module.imports.get_index_of(name) {
             Ok(Code::LoadGlobal(id))
         } else if let Some(id) = self.module.funcs.iter().position(|func| func.name == name) {
             Ok(Code::LoadFn(id))
@@ -953,13 +951,6 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
-        if self.module.get_fn_by_name(&fn_decl.name).is_some() {
-            return Err(CompileError::new(format!(
-                "unable to redefine function: {}",
-                fn_decl.name
-            )));
-        }
-
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
@@ -1028,14 +1019,7 @@ impl Compiler {
         })
     }
 
-    fn compile_class(&mut self, mut class_decl: ClassDeclStmt) -> Result<()> {
-        if self.module.classes.contains_key(&class_decl.name) {
-            return Err(CompileError::new(format!(
-                "unable to redefine class: {}",
-                class_decl.name
-            )));
-        }
-
+    fn compile_class(&mut self, class_decl: ClassDeclStmt) -> Result<()> {
         if class_decl.public {
             self.add_export(TypeKind::Class, class_decl.name.clone());
         }
@@ -1045,30 +1029,16 @@ impl Compiler {
             class_decl.name.clone(),
             Class {
                 name: class_decl.name.clone(),
-                funcs: HashMap::new(),
+                methods: HashMap::new(),
                 fields: IndexMap::new(),
             },
         );
-
-        for name in class_decl.extends.iter() {
-            let mut mixin = self.get_mixin(name)?;
-
-            class_decl.funcs.append(&mut mixin.funcs);
-            class_decl.extern_funcs.append(&mut mixin.extern_funcs);
-        }
 
         self.enter_scope(ScopeContext::Class(class_decl.name.clone()));
 
         let mut fields = IndexMap::new();
 
         for field in class_decl.fields.iter() {
-            if fields.contains_key(&field.name) {
-                return Err(CompileError::new(format!(
-                    "unable to redefine field: {}.{}",
-                    class_decl.name, field.name
-                )));
-            }
-
             fields.insert(
                 field.name.clone(),
                 Field {
@@ -1078,29 +1048,17 @@ impl Compiler {
             );
         }
 
-        let mut funcs = HashMap::new();
+        let mut methods = HashMap::new();
 
         for extern_fn_decl in class_decl.extern_funcs.iter() {
-            if fields.contains_key(&extern_fn_decl.name) {
-                return Err(CompileError::new(
-                    format!("unable to define extern function '{}.{}(...)' because a field with the same name exists", class_decl.name, extern_fn_decl.name),
-                ));
-            }
-
-            funcs.insert(
+            methods.insert(
                 extern_fn_decl.name.clone(),
                 self.compile_extern_fn(extern_fn_decl),
             );
         }
 
         for fn_decl in class_decl.funcs.iter() {
-            if fields.contains_key(&fn_decl.name) {
-                return Err(CompileError::new(
-                    format!("unable to define extern function '{}.{}(...)' because a field with the same name exists", class_decl.name, fn_decl.name),
-                ));
-            }
-
-            funcs.insert(fn_decl.name.clone(), self.compile_fn(fn_decl, true)?);
+            methods.insert(fn_decl.name.clone(), self.compile_fn(fn_decl, true)?);
         }
 
         self.exit_scope();
@@ -1108,20 +1066,13 @@ impl Compiler {
         // Update the already-registered class with it's fields and methods
         if let Some(class) = self.module.classes.get_mut(&class_decl.name) {
             class.fields = fields;
-            class.funcs = funcs;
+            class.methods = methods;
         }
 
         Ok(())
     }
 
     fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
-        if self.module.interfaces.contains_key(&interface_decl.name) {
-            return Err(CompileError::new(format!(
-                "unable to redefine interface: {}",
-                interface_decl.name
-            )));
-        }
-
         if interface_decl.public {
             self.add_export(TypeKind::Interface, interface_decl.name.clone());
         }
@@ -1192,34 +1143,27 @@ impl Compiler {
         let guard = self.modules.read().unwrap();
         let module = guard.get(&module_name).unwrap();
         if let Some(global) = module.exports.get(name) {
-            if self.module.globals.contains_key(name) {
+            if self.module.imports.contains_key(name) {
                 return Err(CompileError::new(format!(
                     "unable to redefine global: {}",
                     name
                 )));
             }
 
-            self.module.globals.insert(name.to_string(), global.clone());
-        } else if let Some(mixin) = module.mixins.get(name) {
-            if self.module.mixins.contains_key(&mixin.name) {
-                return Err(CompileError::new(format!(
-                    "unable to redefine mixin: {}",
-                    name
-                )));
-            }
+            self.module.imports.insert(name.to_string(), global.clone());
 
+            return Ok(());
+        } else if let Some(mixin) = module.mixins.get(name) {
             // As mixins are being used at compile time we need to import them instead of delegating that to the vm
             self.module.mixins.insert(mixin.name.clone(), mixin.clone());
 
             return Ok(());
-        } else {
-            return Err(CompileError::new(format!(
-                "failed to import unknown name '{}' from: {}",
-                name, module.name
-            )));
-        };
+        }
 
-        Ok(())
+        Err(CompileError::new(format!(
+            "failed to import unknown name '{}' from: {}",
+            name, module.name
+        )))
     }
 
     fn compile_top_level_stmt(&mut self, stmt: Stmt) -> Result<()> {
@@ -1234,11 +1178,6 @@ impl Compiler {
 
                 self.module.funcs.push(func);
             }
-            Stmt::MixinDecl(mixin_decl) => {
-                self.module
-                    .mixins
-                    .insert(mixin_decl.name.clone(), mixin_decl);
-            }
             Stmt::ClassDecl(class_decl) => {
                 self.compile_class(class_decl)?;
             }
@@ -1248,11 +1187,6 @@ impl Compiler {
                 self.module
                     .interfaces
                     .insert(interface_decl.name, interface);
-            }
-            Stmt::Module(_) => {
-                return Err(CompileError::new(
-                    "module statement must be the first statement in a file".to_string(),
-                ));
             }
             _ => unreachable!(),
         }
@@ -1282,21 +1216,139 @@ impl Compiler {
         Ok(())
     }
 
-    pub fn compile(mut self) -> Result<Module> {
-        if let Some(Stmt::Module(module_stmt)) = self.tree.get(0) {
-            self.module.name = module_stmt.name.clone();
-            self.tree.remove(0);
+    fn name_validation_pass(&self) -> Result<()> {
+        let mut names: Vec<(&str, &str)> = vec![];
+
+        for stmt in self.tree.iter() {
+            match stmt {
+                Stmt::FnDecl(fn_decl_stmt) => names.push(("function", &fn_decl_stmt.name)),
+                Stmt::ExternFnDecl(extern_fn_decl) => {
+                    names.push(("external function", &extern_fn_decl.name))
+                }
+                Stmt::Import(import_stmt) => names.push(("import", &import_stmt.name)),
+                Stmt::ClassDecl(class_decl_stmt) => {
+                    let mut class_names: Vec<(&str, &str)> = vec![];
+
+                    for field in class_decl_stmt.fields.iter() {
+                        class_names.push(("field", &field.name));
+                    }
+
+                    for func in class_decl_stmt.funcs.iter() {
+                        class_names.push(("function", &func.name));
+                    }
+
+                    for external_func in class_decl_stmt.extern_funcs.iter() {
+                        class_names.push(("external function", &external_func.name));
+                    }
+
+                    validate_unique(&class_names).map_err(|e| {
+                        CompileError::new(format!(
+                            "{} for class {}",
+                            e.message, class_decl_stmt.name
+                        ))
+                    })?;
+
+                    names.push(("class", &class_decl_stmt.name))
+                }
+                Stmt::InterfaceDecl(interface_decl_stmt) => {
+                    names.push(("interface", &interface_decl_stmt.name))
+                }
+                _ => {}
+            }
         }
 
+        validate_unique(&names)
+    }
+
+    fn mixins_pass(&mut self) -> Result<()> {
+        // Import all local mixins
+        loop {
+            let index = self
+                .tree
+                .iter()
+                .position(|stmt| matches!(stmt, Stmt::MixinDecl(_)));
+
+            if let Some(index) = index {
+                if let Stmt::MixinDecl(mixin_decl_stmt) = self.tree.remove(index) {
+                    self.module
+                        .mixins
+                        .insert(mixin_decl_stmt.name.clone(), mixin_decl_stmt);
+
+                    continue;
+                }
+            }
+
+            break;
+        }
+
+        // Expand AST for classes that extends mixins
+        for stmt in self.tree.iter_mut() {
+            if let Stmt::ClassDecl(class_decl_stmt) = stmt {
+                for name in class_decl_stmt.extends.iter() {
+                    let mixin = self
+                        .module
+                        .mixins
+                        .get(name)
+                        .ok_or_else(|| CompileError::new(format!("no such mixin: {}", name)))?;
+
+                    class_decl_stmt.funcs.append(&mut mixin.funcs.clone());
+                    class_decl_stmt
+                        .extern_funcs
+                        .append(&mut mixin.extern_funcs.clone());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn module_name_pass(&mut self) -> Result<()> {
+        loop {
+            let index = self
+                .tree
+                .iter()
+                .position(|stmt| matches!(stmt, Stmt::Module(_)));
+
+            if let Some(index) = index {
+                if index != 0 {
+                    return Err(CompileError::new(
+                        "module statement must be the first statement in a file and can only exist once".to_string(),
+                    ));
+                }
+
+                if let Stmt::Module(module_stmt) = self.tree.remove(index) {
+                    self.module.name = module_stmt.name;
+                }
+
+                continue;
+            }
+
+            break;
+        }
+
+        Ok(())
+    }
+
+    #[inline(always)]
+    fn _compile(&mut self) -> Result<()> {
+        self.module_name_pass()?;
         self.setup_prelude()?;
+        self.mixins_pass()?;
+        self.name_validation_pass()?;
         self.imports_pass()?;
 
         while !self.tree.is_empty() {
             let stmt = self.tree.remove(0);
 
-            self.compile_top_level_stmt(stmt)
-                .map_err(|e| e.with_location(self.get_location()))?;
+            self.compile_top_level_stmt(stmt)?;
         }
+
+        Ok(())
+    }
+
+    pub fn compile(mut self) -> Result<Module> {
+        self._compile()
+            .map_err(|e| e.with_location(self.get_location()))?;
 
         Ok(self.module)
     }
@@ -1320,7 +1372,7 @@ impl Compiler {
                 .iter()
                 .find(|(_, module)| {
                     !module
-                        .globals
+                        .imports
                         .iter()
                         .any(|(_, global)| !resolved.contains(&global.module_name))
                 })

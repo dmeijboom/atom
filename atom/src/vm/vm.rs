@@ -18,7 +18,6 @@ use crate::std::get_hooks;
 
 use super::call_context::{CallContext, CallStack, Target};
 use super::module::ModuleId;
-use super::module_cache::ExternalHook;
 use super::module_cache::ModuleCache;
 use super::stack::Stack;
 
@@ -111,10 +110,6 @@ impl VM {
         }
 
         Ok(vm)
-    }
-
-    pub fn add_external_hook(&mut self, hook: ExternalHook) {
-        self.module_cache.add_external_hook(hook);
     }
 
     pub fn register_module(&mut self, module: compiler::Module) -> Result<()> {
