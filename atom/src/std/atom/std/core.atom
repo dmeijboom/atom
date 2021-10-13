@@ -97,20 +97,6 @@ pub class Enum extends Iterator {
     pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
 }
 
-pub class Tuple {
-    pub extern fn len();
-
-    pub fn nth(index) {
-        if index < 0 || this.len() <= index {
-            return nil;
-        }
-
-        unsafe {
-            return some(this[index]);
-        }
-    }
-}
-
 pub class Symbol {
     pub fn toString() -> f"{this}".substr(1);
 }
@@ -306,50 +292,5 @@ pub class Array extends Iterator {
         }
 
         return output;
-    }
-}
-
-pub class MapIter {
-    let data;
-    let keys;
-    let mut index;
-
-    pub fn next() {
-        if this.index >= this.keys.len() {
-            return nil;
-        }
-
-        unsafe {
-            let key = this.keys[this.index];
-
-            this.index += 1;
-
-            return some((key, this.data[key]));
-        }
-    }
-}
-
-pub class Map extends Iterator {
-    pub extern fn keys();
-    pub extern fn len();
-    pub extern fn remove(key);
-    pub extern fn clear();
-
-    pub fn iter() -> MapIter(data: this, keys: this.keys(), index: 0);
-
-    pub fn get(key) {
-        if !this.keys().contains(key) {
-            return nil;
-        }
-
-        unsafe {
-            return some(this[key]);
-        }
-    }
-
-    pub fn set(key, value) {
-        unsafe {
-            this[key] = value;
-        }
     }
 }

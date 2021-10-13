@@ -68,7 +68,6 @@ pub enum Code {
     ConstString(String),
     MakeArray(usize),
     MakeTuple(usize),
-    MakeMap(usize),
     MakeTemplate(usize),
     MakeRange,
     SetLabel(String),
@@ -134,7 +133,6 @@ impl Code {
             Code::ConstString(val) => format!("  constString({})", val),
             Code::MakeArray(size) => format!("  makeArray(size: {})", size),
             Code::MakeTuple(size) => format!("  makeTuple(size: {})", size),
-            Code::MakeMap(size) => format!("  makeMap(size: {})", size),
             Code::MakeTemplate(size) => format!("  makeTemplate(size: {})", size),
             Code::MakeRange => "  makeRange".to_string(),
             Code::MakeClosure(id) => format!("  makeClosure(id: {})", id),
@@ -314,8 +312,6 @@ impl IndexMut<usize> for IR {
 
 impl Debug for IR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        println!("{:#?}", self.locations);
-
         for code in self.codes.iter() {
             write!(f, "{:?}", code)?;
         }

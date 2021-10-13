@@ -2,6 +2,7 @@ pub use api::AtomApi;
 pub use atom_ref::AtomRef;
 pub use class::{Class, Field};
 pub use closure::Closure;
+//pub use int::Int;
 pub use interface::Interface;
 pub use method::Method;
 pub use object::Object;

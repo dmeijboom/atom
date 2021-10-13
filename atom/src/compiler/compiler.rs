@@ -60,8 +60,9 @@ fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-const STD_SOURCES: [(&str, &str); 4] = [
+const STD_SOURCES: [(&str, &str); 5] = [
     ("std.core", include_str!("../std/atom/std/core.atom")),
+    ("std.map", include_str!("../std/atom/std/map.atom")),
     ("std.io", include_str!("../std/atom/std/io.atom")),
     (
         "std.encoding.utf8",
@@ -428,12 +429,13 @@ impl Compiler {
                 ir.add(Code::MakeArray(array_expr.items.len()), location);
             }
             Expr::Map(map_expr) => {
-                for key_val in map_expr.key_values.iter() {
-                    ir.append(self.compile_expr(&key_val.key)?);
-                    ir.append(self.compile_expr(&key_val.value)?);
-                }
+                //for key_val in map_expr.key_values.iter() {
+                //    ir.append(self.compile_expr(&key_val.key)?);
+                //    ir.append(self.compile_expr(&key_val.value)?);
+                //}
 
-                ir.add(Code::MakeMap(map_expr.key_values.len()), location);
+                //ir.add(Code::MakeMap(map_expr.key_values.len()), location);
+                unreachable!("not implemented yet")
             }
             Expr::Closure(closure_expr) => {
                 ir.add(self.compile_closure(closure_expr, None)?, location);
@@ -1088,8 +1090,8 @@ impl Compiler {
     }
 
     fn setup_prelude(&mut self) -> Result<()> {
-        // The std.core module shouldn't include the prelude as that would create an infinite loop
-        if self.module.name == "std.core" {
+        // Core module shouldn't include the prelude as that would create an infinite loop
+        if self.module.name == "std.core" || self.module.name == "std.map" {
             return Ok(());
         }
 

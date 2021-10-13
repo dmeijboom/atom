@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 use crate::class::Class;
 use crate::{AtomRef, Value};
 
@@ -39,15 +37,5 @@ impl Object {
 impl PartialEq for Object {
     fn eq(&self, other: &Self) -> bool {
         self.class.as_ref() == other.class.as_ref() && self.fields == other.fields
-    }
-}
-
-impl Hash for Object {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.class.as_ref().hash(state);
-
-        for field in self.fields.iter() {
-            field.hash(state);
-        }
     }
 }

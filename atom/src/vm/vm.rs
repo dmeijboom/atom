@@ -455,7 +455,6 @@ impl VM {
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeTuple(len) => self.eval_make_tuple(*len)?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
-            Code::MakeMap(len) => self.eval_make_map(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
             Code::MakeRef => self.eval_make_ref()?,
             Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, *fn_id)?,
@@ -553,22 +552,6 @@ impl VM {
         Ok(())
     }
 
-    fn eval_make_map(&mut self, len: usize) -> Result<()> {
-        let mut map = HashMap::new();
-        let mut key_values = self.stack.pop_many(len * 2)?;
-
-        for _ in 0..len {
-            let key = key_values.remove(0);
-            let value = key_values.remove(0);
-
-            map.insert(key, value);
-        }
-
-        self.stack.push(Value::Map(AtomRef::new(map)));
-
-        Ok(())
-    }
-
     fn eval_make_template(&mut self, len: usize) -> Result<()> {
         let s = self
             .stack
@@ -594,7 +577,7 @@ impl VM {
         let value = self.stack.pop()?;
 
         if let Value::Ref(value) = value {
-            self.stack.push(value.clone_inner_or_unwrap());
+            self.stack.push(value.unwrap_or_clone_inner());
 
             return Ok(());
         }
@@ -854,24 +837,6 @@ impl VM {
             ));
         }
 
-        if let Value::Map(map) = &value {
-            if let Some(item) = map.get(&index) {
-                let item = item.clone();
-
-                if push_back {
-                    self.stack.push(value);
-                }
-
-                self.stack.push(item);
-
-                return Ok(());
-            }
-
-            return Err(RuntimeError::new(
-                format!("index out of bounds: {}", index,),
-            ));
-        }
-
         Err(RuntimeError::new(format!(
             "unable to index type: {}",
             value.get_type().name()
@@ -902,11 +867,11 @@ impl VM {
                     format!("index out of bounds: {}", index,),
                 ))
             }
-            Value::Map(mut map) => {
-                map.as_mut().insert(index, value);
+            //Value::Map(mut map) => {
+            //    map.as_mut().insert(index, value);
 
-                Ok(())
-            }
+            //    Ok(())
+            //}
             _ => Err(RuntimeError::new(format!(
                 "unable to index type: {}",
                 data.get_type().name()

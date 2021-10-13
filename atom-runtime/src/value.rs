@@ -1,8 +1,7 @@
 use std::any::Any;
-use std::collections::HashMap;
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
+use std::hash::Hash;
 
 use strum_macros::EnumIter;
 
@@ -30,37 +29,12 @@ macro_rules! map_ref {
     (Object, $value:expr, $method:ident) => {
         $value.$method()
     };
-    (Closure, $value:expr, $method:ident) => {
-        $value.$method()
-    };
-    (Fn, $value:expr, $method:ident) => {
-        $value.$method()
-    };
-    (Class, $value:expr, $method:ident) => {
-        $value.$method()
-    };
-    (Interface, $value:expr, $method:ident) => {
-        $value.$method()
-    };
-    (Method, $value:expr, $method:ident) => {
-        $value.$method()
-    };
     (String, $value:expr, $method:ident) => {
         $value.$method()
     };
 
     ($atom_type:ident, $value:expr, $method:ident) => {
         $value
-    };
-}
-
-macro_rules! eq {
-    ($atom_type:ident, $left:expr, $right:expr) => {
-        if let Value::$atom_type(left) = $left {
-            if let Value::$atom_type(right) = $right {
-                return left.eq(right);
-            }
-        }
     };
 }
 
@@ -73,7 +47,7 @@ macro_rules! impl_try_into {
                 let type_val = self.get_type();
 
                 if let Value::$atom_type(val) = self {
-                    return Ok(map_ref!($atom_type, val, as_ref));
+                    return Ok(val);
                 }
 
                 Err(RuntimeError::new(format!(
@@ -113,7 +87,7 @@ macro_rules! impl_try_into {
 
             fn try_into(self) -> Result<$rust_type, Self::Error> {
                 if let Value::$atom_type(val) = self {
-                    return Ok(map_ref!($atom_type, val, clone_inner_or_unwrap));
+                    return Ok(map_ref!($atom_type, val, unwrap_or_clone_inner));
                 }
 
                 Err(RuntimeError::new(format!(
@@ -127,48 +101,11 @@ macro_rules! impl_try_into {
     };
 }
 
-macro_rules! make {
-    (Ref, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Map, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Array, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Object, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Interface, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Closure, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Fn, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Class, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (Method, $value:expr) => {
-        AtomRef::new($value)
-    };
-    (String, $value:expr) => {
-        AtomRef::new($value)
-    };
-
-    ($atom_type:ident, $value:expr) => {
-        $value
-    };
-}
-
 macro_rules! impl_from {
     ($atom_type:ident, $rust_type:ty) => {
         impl From<$rust_type> for Value {
             fn from(val: $rust_type) -> Self {
-                Value::$atom_type(make!($atom_type, val))
+                Value::$atom_type(val.into())
             }
         }
     };
@@ -214,7 +151,6 @@ pub enum ValueType {
     Object,
     Tuple,
     Array,
-    Map,
     Ref,
     Extern,
 }
@@ -236,7 +172,6 @@ impl ValueType {
             Self::Closure => "Closure",
             Self::Object => "Object",
             Self::Interface => "Interface",
-            Self::Map => "Map",
             Self::Tuple => "Tuple",
             Self::Array => "Array",
             Self::Ref => "Ref",
@@ -435,7 +370,6 @@ impl Clone for Value {
             Self::Object(val) => Value::Object(AtomRef::clone(val)),
             Self::Tuple(tuple) => Value::Tuple(tuple.clone()),
             Self::Array(val) => Value::Array(AtomRef::clone(val)),
-            Self::Map(val) => Value::Map(AtomRef::clone(val)),
             Self::Extern(val) => Value::Extern(Extern(AtomRef::clone(&val.0))),
             Self::Interface(interface) => Value::Interface(interface.clone()),
         }
@@ -467,7 +401,6 @@ impl Value {
             Self::Object(_) => ValueType::Object,
             Self::Tuple(_) => ValueType::Tuple,
             Self::Array(_) => ValueType::Array,
-            Self::Map(_) => ValueType::Map,
             Self::Extern(_) => ValueType::Extern,
         }
     }
@@ -480,14 +413,15 @@ impl Display for Value {
         match self {
             Self::Void => write!(f, "!"),
             Self::Int(val) => write!(f, "{}", val),
+            Self::Uint(val) => write!(f, "{}", val),
             Self::Float(val) => write!(f, "{}", val),
             Self::Char(val) => write!(f, "{}", val),
             Self::Byte(val) => write!(f, "{}", val),
             Self::Bool(val) => write!(f, "{}", val),
             Self::Symbol(val) => write!(f, ":{}", val.as_ref()),
             Self::Option(val) => match val {
-                None => write!(f, "std.core.Option(None)"),
-                Some(val) => write!(f, "std.core.Option({})", val),
+                None => write!(f, "Option(None)"),
+                Some(val) => write!(f, "Option({})", val),
             },
             Self::Ref(value) => {
                 write!(f, "*{}", value.as_ref())
@@ -536,15 +470,6 @@ impl Display for Value {
                     .as_ref()
                     .iter()
                     .map(|item| format!("{}", item))
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            ),
-            Self::Map(map) => write!(
-                f,
-                "{{{}}}",
-                map.as_ref()
-                    .iter()
-                    .map(|(key, value)| format!("{}: {}", key, value))
                     .collect::<Vec<String>>()
                     .join(", ")
             ),

@@ -99,7 +99,7 @@ impl<T: Clone> AtomRef<T> {
         self.as_ref().clone()
     }
 
-    pub fn clone_inner_or_unwrap(self) -> T {
+    pub fn unwrap_or_clone_inner(self) -> T {
         match self.try_unwrap() {
             Ok(value) => value,
             Err(value_ref) => value_ref.clone_inner(),
@@ -148,5 +148,11 @@ impl<T> Deref for AtomRef<T> {
 
     fn deref(&self) -> &Self::Target {
         self.as_ref()
+    }
+}
+
+impl<T> From<T> for AtomRef<T> {
+    fn from(inner: T) -> Self {
+        AtomRef::new(inner)
     }
 }
