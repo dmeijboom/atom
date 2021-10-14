@@ -9,7 +9,7 @@ use wyhash2::WyHash;
 
 use atom_ir::{Code, Label, IR};
 use atom_runtime::{
-    AtomApi, AtomRef, Class, Closure, Fn, FnArg, FnPtr, Interface, Method, Object, Result,
+    AtomApi, AtomRef, Class, Closure, Fn, FnArg, FnPtr, Int, Interface, Method, Object, Result,
     RuntimeError, Symbol, Value, ValueType,
 };
 
@@ -27,16 +27,7 @@ macro_rules! impl_op {
         let left = $vm.stack.pop()?;
 
         $vm.stack.push(match left {
-            Value::Int(val) => Value::Int(val.$opname({
-                let other: i64 = right.try_into()?;
-
-                other
-            })),
-            Value::Uint(val) => Value::Uint(val.$opname({
-                let other: u64 = right.try_into()?;
-
-                other
-            })),
+            Value::Int(val) => Value::Int(val.$opname(right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
                     "invalid type '{}' and '{}' in {}",
@@ -56,7 +47,6 @@ macro_rules! impl_op {
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Bool(val.$opname(&right.try_into()?)),
-            Value::Uint(val) => Value::Bool(val.$opname(&right.try_into()?)),
             Value::Float(val) => Value::Bool(val.$opname(&right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
@@ -76,8 +66,7 @@ macro_rules! impl_op {
         let left = $vm.stack.pop()?;
 
         $vm.stack.push(match left {
-            Value::Int(val) => Value::Int(val.$opname(&right.try_into()?)),
-            Value::Uint(val) => Value::Uint(val.$opname(&right.try_into()?)),
+            Value::Int(val) => Value::Int(val.$opname(right.try_into()?)),
             Value::Float(val) => Value::Float(val.$opname(&right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
@@ -445,6 +434,11 @@ impl VM {
     }
 
     #[inline(always)]
+    fn eval_const_byte(&mut self, byte: u8) {
+        self.stack.push(Value::Byte(byte));
+    }
+
+    #[inline(always)]
     fn eval_symbol(&mut self, name: &str) {
         self.stack.push(if name == "nil" {
             Value::Option(None)
@@ -456,13 +450,21 @@ impl VM {
     #[inline(always)]
     fn eval_single<'i>(&mut self, module_id: ModuleId, code: &'i Code) -> Result<Flow<'i>> {
         match code {
-            Code::ConstInt(val) => self.eval_const(*val),
-            Code::ConstUint(val) => self.eval_const(*val),
+            Code::ConstInt128(val) => self.eval_const(Int::Int128(*val)),
+            Code::ConstUint128(val) => self.eval_const(Int::Uint128(*val)),
+            Code::ConstInt64(val) => self.eval_const(Int::Int64(*val)),
+            Code::ConstUint64(val) => self.eval_const(Int::Uint64(*val)),
+            Code::ConstInt32(val) => self.eval_const(Int::Int32(*val)),
+            Code::ConstUint32(val) => self.eval_const(Int::Uint32(*val)),
+            Code::ConstInt16(val) => self.eval_const(Int::Int16(*val)),
+            Code::ConstUint16(val) => self.eval_const(Int::Uint16(*val)),
+            Code::ConstInt8(val) => self.eval_const(Int::Int8(*val)),
+            Code::ConstUint8(val) => self.eval_const(Int::Uint8(*val)),
             Code::ConstBool(val) => self.eval_const(*val),
             Code::ConstSymbol(name) => self.eval_symbol(name),
             Code::ConstFloat(val) => self.eval_const(*val),
             Code::ConstChar(val) => self.eval_const(*val),
-            Code::ConstByte(val) => self.eval_const(*val),
+            Code::ConstByte(val) => self.eval_const_byte(*val),
             Code::ConstString(val) => self.eval_const(val.clone()),
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeTuple(len) => self.eval_make_tuple(*len)?,
@@ -663,9 +665,9 @@ impl VM {
 
         self.stack.push(match left {
             Value::Int(val) => {
-                let right_val: i64 = right.try_into()?;
+                let right_val: Int = right.try_into()?;
 
-                Value::Int(val.pow(right_val as u32))
+                Value::Int(val.pow(right_val))
             }
             Value::Float(val) => Value::Float(val.powf(right.try_into()?)),
             _ => {
@@ -789,13 +791,19 @@ impl VM {
         let value = self.stack.pop()?;
 
         self.stack.push(match value {
-            Value::Int(val) if type_name == "Float" => Value::Float(val as f64),
-            Value::Int(val) if type_name == "Byte" => Value::Byte(val as u8),
-            Value::Float(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Int(val) if type_name == "Float" => Value::Float(val.to_float()),
+            Value::Int(val) if type_name == "Byte" => Value::Byte(val.to_byte()),
+            Value::Float(val) if type_name == "Int" => {
+                if val.is_sign_negative() {
+                    Value::Int(Int::Int64(val as i64))
+                } else {
+                    Value::Int(Int::Uint64(val as u64))
+                }
+            }
             Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
-            Value::Byte(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Byte(val) if type_name == "Int" => Value::Int(Int::Uint8(val)),
             Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
-            Value::Bool(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Bool(val) if type_name == "Int" => Value::Int(Int::Uint8(val as u8)),
             _ => {
                 return Err(RuntimeError::new(format!(
                     "unable to cast to invalid type: {}",

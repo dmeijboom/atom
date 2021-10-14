@@ -3,7 +3,7 @@ mod tests {
     use test_case::test_case;
 
     use atom_ir::{Code, IR};
-    use atom_runtime::{AtomRef, RuntimeError, Value};
+    use atom_runtime::{AtomRef, Int, RuntimeError, Value};
 
     use crate::utils::{parse_and_compile, Error};
     use crate::vm::VM;
@@ -40,21 +40,21 @@ mod tests {
         )))
     }
 
-    #[test_case(include_str!("../examples/calls.atom"), Value::Int(0); "calls")]
-    #[test_case(include_str!("../examples/loops.atom"), Value::Int(75); "loops")]
-    #[test_case(include_str!("../examples/casts.atom"), Value::Int(34); "casts")]
-    #[test_case(include_str!("../examples/if_else.atom"), Value::Int(25); "if else")]
-    #[test_case(include_str!("../examples/range_iter.atom"), Value::Int(100); "range iter")]
-    #[test_case(include_str!("../examples/init_class.atom"), Value::Int(200); "init class")]
+    #[test_case(include_str!("../examples/calls.atom"), Value::Int(Int::Uint8(0)); "calls")]
+    #[test_case(include_str!("../examples/loops.atom"), Value::Int(Int::Uint8(75)); "loops")]
+    #[test_case(include_str!("../examples/casts.atom"), Value::Int(Int::Uint64(34)); "casts")]
+    #[test_case(include_str!("../examples/if_else.atom"), Value::Int(Int::Uint8(25)); "if else")]
+    #[test_case(include_str!("../examples/range_iter.atom"), Value::Int(Int::Uint8(100)); "range iter")]
+    #[test_case(include_str!("../examples/init_class.atom"), Value::Int(Int::Uint8(200)); "init class")]
     #[test_case(include_str!("../examples/references.atom"), Value::Bool(true); "references")]
-    #[test_case(include_str!("../examples/simple_return.atom"), Value::Int(10); "simple return")]
-    #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(100); "class methods")]
-    #[test_case(include_str!("../examples/type_assertions.atom"), Value::Int(7); "type assertions")]
+    #[test_case(include_str!("../examples/simple_return.atom"), Value::Int(Int::Uint8(10)); "simple return")]
+    #[test_case(include_str!("../examples/class_methods.atom"), Value::Int(Int::Uint8(100)); "class methods")]
+    #[test_case(include_str!("../examples/type_assertions.atom"), Value::Int(Int::Uint8(7)); "type assertions")]
     #[test_case(include_str!("../examples/call_arg_order.atom"), Value::Bool(true); "call arg order")]
-    #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(17); "operator precedence")]
-    #[test_case(include_str!("../examples/map_value_arithmetic.atom"), Value::Int(20); "map value arithmetic")]
+    #[test_case(include_str!("../examples/operator_precedence.atom"), Value::Int(Int::Uint8(17)); "operator precedence")]
+    #[test_case(include_str!("../examples/map_value_arithmetic.atom"), Value::Int(Int::Uint8(20)); "map value arithmetic")]
     #[test_case(include_str!("../examples/wrap_reference_type.atom"), Value::Bool(true); "wrap reference type")]
-    #[test_case(include_str!("../examples/store_var_in_loop.atom"), Value::Int(28); "store variable in infinite loop")]
+    #[test_case(include_str!("../examples/store_var_in_loop.atom"), Value::Int(Int::Uint8(28)); "store variable in infinite loop")]
     #[test_case(include_str!("../examples/self_referencing_closure.atom"), Value::Bool(true); "self referencing closure")]
     #[test_case(include_str!("../examples/locals.atom"), Value::String(AtomRef::new("item3item6".to_string())); "locals")]
     #[test_case(include_str!("../examples/map_basics.atom"), Value::String(AtomRef::new("atom".to_string())); "map basics")]
@@ -62,7 +62,7 @@ mod tests {
     #[test_case(include_str!("../examples/class_fields.atom"), Value::String(AtomRef::new("hello world".to_string())); "class fields")]
     #[test_case(include_str!("../examples/use_class_fn_before_init.atom"), Value::Bool(true); "use classes/functions before initialization")]
     #[test_case(include_str!("../examples/template_string.atom"), Value::String(AtomRef::new("Hello { World 120".to_string())); "template string")]
-    #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(AtomRef::new(vec![Value::Int(20), Value::Int(30), Value::Int(40)])); "heap copy")]
+    #[test_case(include_str!("../examples/heap_copy.atom"), Value::Array(AtomRef::new(vec![Value::Int(Int::Uint8(20)), Value::Int(Int::Uint8(30)), Value::Int(Int::Uint8(40))])); "heap copy")]
     fn code_success(source: &str, value: Value) {
         let result = run_code(source);
 

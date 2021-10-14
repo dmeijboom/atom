@@ -1,5 +1,5 @@
 use atom_macros::export;
-use atom_runtime::{ExternalFn, Result, Value};
+use atom_runtime::{ExternalFn, Int, Result, Value};
 
 #[export]
 fn string_upper(this: &str) -> Result<String> {
@@ -33,8 +33,8 @@ fn string_starts_with(this: &str, pattern: String) -> Result<bool> {
 }
 
 #[export]
-fn string_count(this: &str, pattern: String) -> Result<i64> {
-    Ok(this.matches(&pattern).count() as i64)
+fn string_count(this: &str, pattern: String) -> Result<Int> {
+    Ok(this.matches(&pattern).count().into())
 }
 
 #[export]
@@ -63,18 +63,18 @@ fn string_repeat(this: &str, n: usize) -> Result<String> {
 }
 
 #[export]
-fn string_len(this: &str) -> Result<i64> {
-    Ok(this.len() as i64)
+fn string_len(this: &str) -> Result<Int> {
+    Ok(this.len().into())
 }
 
 #[export]
-fn string_find(this: &str, pattern: String) -> Result<Option<i64>> {
-    Ok(this.find(&pattern).map(|i| i as i64))
+fn string_find(this: &str, pattern: String) -> Result<Option<Int>> {
+    Ok(this.find(&pattern).map(|i| i.into()))
 }
 
 #[export]
-fn string_find_last(this: &str, pattern: String) -> Result<Option<i64>> {
-    Ok(this.rfind(&pattern).map(|i| i as i64))
+fn string_find_last(this: &str, pattern: String) -> Result<Option<Int>> {
+    Ok(this.rfind(&pattern).map(|i| i.into()))
 }
 
 #[export]

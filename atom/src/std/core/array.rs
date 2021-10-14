@@ -1,5 +1,5 @@
 use atom_macros::export;
-use atom_runtime::{ExternalFn, Result, Value};
+use atom_runtime::{ExternalFn, Int, Result, Value};
 
 #[export]
 fn array_push(this: &mut Vec<Value>, value: Value) -> Result<()> {
@@ -19,8 +19,8 @@ fn array_remove(this: &mut Vec<Value>, index: usize) -> Result<Value> {
 }
 
 #[export]
-fn array_len(this: &[Value]) -> Result<i64> {
-    Ok(this.len() as i64)
+fn array_len(this: &[Value]) -> Result<Int> {
+    Ok(this.len().into())
 }
 
 #[export]

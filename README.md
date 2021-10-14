@@ -12,6 +12,8 @@ Atom is a general purpose dynamically typed programming language combining featu
 - Dynamically typed
 - No null or uninitialized fields
 - Support for classes as first-class citizens
+- 64-bit floats
+- 8/16/32/64/128-bit signed/unsigned integers
 
 ## Project Status
 

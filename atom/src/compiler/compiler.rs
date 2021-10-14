@@ -278,9 +278,17 @@ impl Compiler {
         match &expr {
             Expr::Literal(literal_expr) => ir.add(
                 match &literal_expr.literal {
+                    Literal::Int128(val) => Code::ConstInt128(*val),
+                    Literal::Uint128(val) => Code::ConstUint128(*val),
+                    Literal::Int64(val) => Code::ConstInt64(*val),
+                    Literal::Uint64(val) => Code::ConstUint64(*val),
+                    Literal::Int32(val) => Code::ConstInt32(*val),
+                    Literal::Uint32(val) => Code::ConstUint32(*val),
+                    Literal::Int16(val) => Code::ConstInt16(*val),
+                    Literal::Uint16(val) => Code::ConstUint16(*val),
+                    Literal::Int8(val) => Code::ConstInt8(*val),
+                    Literal::Uint8(val) => Code::ConstUint8(*val),
                     Literal::Byte(val) => Code::ConstByte(*val),
-                    Literal::Int(val) => Code::ConstInt(*val),
-                    Literal::Uint(val) => Code::ConstUint(*val),
                     Literal::Float(val) => Code::ConstFloat(*val),
                     Literal::Bool(val) => Code::ConstBool(*val),
                     Literal::Char(val) => Code::ConstChar(*val),
@@ -706,7 +714,7 @@ impl Compiler {
                     for (i, name) in names.iter().enumerate() {
                         let local = self.declare_local(let_stmt.mutable, name)?;
 
-                        ir.add(Code::ConstInt(i as i64), location);
+                        ir.add(Code::ConstUint64(i as u64), location);
                         // We need to keep the current value until the last item was processed
                         ir.add(
                             if i == names.len() - 1 {
@@ -810,7 +818,7 @@ impl Compiler {
                                 for (i, name) in names.iter().enumerate() {
                                     let local = self.set_local(name.clone(), false)?;
 
-                                    ir.add(Code::ConstInt(i as i64), location);
+                                    ir.add(Code::ConstUint64(i as u64), location);
                                     ir.add(
                                         if i == names.len() - 1 {
                                             Code::LoadIndex
@@ -930,7 +938,16 @@ impl Compiler {
                 | Code::ConstByte(_)
                 | Code::ConstChar(_)
                 | Code::ConstFloat(_)
-                | Code::ConstInt(_)
+                | Code::ConstInt128(_)
+                | Code::ConstUint128(_)
+                | Code::ConstInt64(_)
+                | Code::ConstUint64(_)
+                | Code::ConstInt32(_)
+                | Code::ConstUint32(_)
+                | Code::ConstInt16(_)
+                | Code::ConstUint16(_)
+                | Code::ConstInt8(_)
+                | Code::ConstUint8(_)
                 | Code::Discard
         )
     }

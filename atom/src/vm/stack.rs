@@ -55,7 +55,7 @@ impl Stack {
 
 #[cfg(test)]
 mod tests {
-    use atom_runtime::Value;
+    use atom_runtime::{Int, Value};
 
     use super::Stack;
 
@@ -63,15 +63,19 @@ mod tests {
     fn test_pop_many() {
         let mut stack = Stack::new();
 
-        stack.push(Value::Int(10).into());
-        stack.push(Value::Int(20).into());
-        stack.push(Value::Int(30).into());
-        stack.push(Value::Int(40).into());
-        stack.push(Value::Int(50).into());
+        stack.push(Value::Int(Int::Uint8(10)).into());
+        stack.push(Value::Int(Int::Uint8(20)).into());
+        stack.push(Value::Int(Int::Uint8(30)).into());
+        stack.push(Value::Int(Int::Uint8(40)).into());
+        stack.push(Value::Int(Int::Uint8(50)).into());
 
         assert_eq!(
             stack.pop_many(3),
-            Ok(vec![Value::Int(30), Value::Int(40), Value::Int(50)])
+            Ok(vec![
+                Value::Int(Int::Uint8(30)),
+                Value::Int(Int::Uint8(40)),
+                Value::Int(Int::Uint8(50))
+            ])
         );
     }
 }

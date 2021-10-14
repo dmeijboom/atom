@@ -33,16 +33,28 @@ peg::parser! {
                 / "0" { "0".to_string() }
 
         rule hex_lit() -> Literal
-            = "0x" value:$(['0'..='9' | 'A'..='F' | 'a'..='f']+) { Literal::Uint(u64::from_str_radix(value, 16).unwrap()) }
+            = "0x" value:$(['0'..='9' | 'A'..='F' | 'a'..='f']+) { Literal::Uint64(u64::from_str_radix(value, 16).unwrap()) }
 
         rule int_lit() -> Literal
             = sign:$("-"?) value:raw_int() {
-                let num = format!("{}{}", sign, value);
-                let int: Result<i64, _> = num.parse();
 
-                match int {
-                    Ok(int) => Literal::Int(int),
-                    Err(_) => Literal::Uint(num.parse().unwrap())
+                if sign.is_empty() {
+                    let max: u128 = value.parse().unwrap();
+
+                    if max >= u8::MIN as u128 && max <= u8::MAX as u128 { Literal::Uint8(max as u8) }
+                    else if max >= u16::MIN as u128 && max <= u16::MAX as u128 { Literal::Uint16(max as u16) }
+                    else if max >= u32::MIN as u128 && max <= u32::MAX as u128 { Literal::Uint32(max as u32) }
+                    else if max >= u64::MIN as u128 && max <= u64::MAX as u128 { Literal::Uint64(max as u64) }
+                    else { Literal::Uint128(max) }
+                } else {
+                    let num = format!("{}{}", sign, value);
+                    let max: i128 = num.parse().unwrap();
+
+                    if max >= i8::MIN as i128 && max <= i8::MAX as i128 { Literal::Int8(max as i8) }
+                    else if max >= i16::MIN as i128 && max <= i16::MAX as i128 { Literal::Int16(max as i16) }
+                    else if max >= i32::MIN as i128 && max <= i32::MAX as i128 { Literal::Int32(max as i32) }
+                    else if max >= i64::MIN as i128 && max <= i64::MAX as i128 { Literal::Int64(max as i64) }
+                    else { Literal::Int128(max) }
                 }
             }
 
@@ -335,17 +347,17 @@ mod tests {
         );
     }
 
-    #[test_case("0;", 0, 0..1; "unsigned int zero value")]
-    #[test_case("102;", 102, 0..3; "unsigned int")]
-    #[test_case("-1029;", - 1029, 0..5; "signed int")]
-    #[test_case("10_000;", 10000, 0..6; "unsigned int with underscore for readability")]
-    #[test_case("-1_000;", - 1000, 0..6; "signed int with underscore for readability")]
-    fn test_int_literals(source: &str, value: i64, pos: Pos) {
+    #[test_case("0;", Literal::Uint8(0), 0..1; "unsigned int zero value")]
+    #[test_case("102;", Literal::Uint8(102), 0..3; "unsigned int")]
+    #[test_case("-1029;", Literal::Int16(-1029), 0..5; "signed int")]
+    #[test_case("10_000;", Literal::Uint16(10000), 0..6; "unsigned int with underscore for readability")]
+    #[test_case("-1_000;", Literal::Int16(-1000), 0..6; "signed int with underscore for readability")]
+    fn test_int_literals(source: &str, literal: Literal, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(value),
+                    literal,
                     pos: pos.clone(),
                 }),
                 pos: (pos.start..pos.end + 1),
@@ -457,7 +469,7 @@ mod tests {
                 expr: Expr::MakeRef(
                     MakeRefExpr {
                         expr: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(100),
+                            literal: Literal::Uint8(100),
                             pos: 1..4,
                         }),
                         pos: 0..4,
@@ -479,7 +491,7 @@ mod tests {
                 expr: Expr::Deref(
                     DerefExpr {
                         expr: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(100),
+                            literal: Literal::Uint8(100),
                             pos: 1..4,
                         }),
                         pos: 0..4,
@@ -530,7 +542,7 @@ mod tests {
                         }),
                         args: vec![
                             Expr::Literal(LiteralExpr {
-                                literal: Literal::Int(10),
+                                literal: Literal::Uint8(10),
                                 pos: (5..7),
                             }),
                             Expr::Ident(IdentExpr {
@@ -558,12 +570,12 @@ mod tests {
                 expr: Expr::Call(
                     CallExpr {
                         callee: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(200),
+                            literal: Literal::Uint8(200),
                             pos: (0..3),
                         }),
                         args: vec![
                             Expr::Literal(LiteralExpr {
-                                literal: Literal::Int(10),
+                                literal: Literal::Uint8(10),
                                 pos: (4..6),
                             }),
                             Expr::Ident(IdentExpr {
@@ -592,11 +604,11 @@ mod tests {
                 expr: Expr::Logical(
                     LogicalExpr {
                         left: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(1),
+                            literal: Literal::Uint8(1),
                             pos: (0..1),
                         }),
                         right: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(2),
+                            literal: Literal::Uint8(2),
                             pos: (5..6),
                         }),
                         op,
@@ -625,11 +637,11 @@ mod tests {
                 expr: Expr::Comparison(
                     ComparisonExpr {
                         left: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(1),
+                            literal: Literal::Uint8(1),
                             pos: (0..1),
                         }),
                         right: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(2),
+                            literal: Literal::Uint8(2),
                             pos: (3 + width..4 + width),
                         }),
                         op,
@@ -659,11 +671,11 @@ mod tests {
                 expr: Expr::Arithmetic(
                     ArithmeticExpr {
                         left: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(1),
+                            literal: Literal::Uint8(1),
                             pos: (0..1),
                         }),
                         right: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(2),
+                            literal: Literal::Uint8(2),
                             pos: (3 + width..4 + width),
                         }),
                         op,
@@ -684,7 +696,7 @@ mod tests {
             Ok(Stmt::Let(LetStmt {
                 var: Variable::Name("current_year".to_string()),
                 value: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(2021),
+                    literal: Literal::Uint16(2021),
                     pos: pos.0,
                 }),
                 mutable,
@@ -705,7 +717,7 @@ mod tests {
                     pos: (0..12),
                 }),
                 right: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(100),
+                    literal: Literal::Uint8(100),
                     pos: (15..18),
                 }),
                 op: None,
@@ -737,7 +749,7 @@ mod tests {
                 expr: Expr::Array(ArrayExpr {
                     items: vec![
                         Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(2021),
+                            literal: Literal::Uint16(2021),
                             pos: (1..5),
                         }),
                         Expr::Literal(LiteralExpr {
@@ -767,7 +779,7 @@ mod tests {
                                 pos: (1..6),
                             }),
                             value: Expr::Literal(LiteralExpr {
-                                literal: Literal::Int(2021),
+                                literal: Literal::Uint16(2021),
                                 pos: (10..14),
                             }),
                             pos: (1..14),
@@ -799,7 +811,7 @@ mod tests {
             parse_single(source),
             Ok(Stmt::Return(ReturnStmt {
                 expr: Expr::Literal(LiteralExpr {
-                    literal: Literal::Int(10),
+                    literal: Literal::Uint8(10),
                     pos: 7..9,
                 }),
                 pos: 0..10,
@@ -822,7 +834,7 @@ mod tests {
                 alt: None,
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(10),
+                        literal: Literal::Uint8(10),
                         pos: (10..12),
                     }),
                     pos: (10..13),
@@ -845,7 +857,7 @@ mod tests {
                 pos: (0..28),
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(20),
+                        literal: Literal::Uint8(20),
                         pos: (10..12),
                     }),
                     pos: (10..13),
@@ -855,7 +867,7 @@ mod tests {
                         pos: (16..28),
                         body: vec![Stmt::Expr(ExprStmt {
                             expr: Expr::Literal(LiteralExpr {
-                                literal: Literal::Int(30),
+                                literal: Literal::Uint8(30),
                                 pos: (23..25),
                             }),
                             pos: (23..26),
@@ -890,7 +902,7 @@ mod tests {
                         mutable: true,
                         public: false,
                         value: Some(Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(1),
+                            literal: Literal::Uint8(1),
                             pos: (37..38),
                         })),
                         pos: (23..39),
@@ -1010,11 +1022,11 @@ mod tests {
                 expr: Expr::Range(
                     RangeExpr {
                         from: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(3),
+                            literal: Literal::Uint8(3),
                             pos: (0..1),
                         }),
                         to: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(10),
+                            literal: Literal::Uint8(10),
                             pos: (3..5),
                         }),
                         pos: (0..5),
@@ -1059,14 +1071,14 @@ mod tests {
                 alias: Some(Variable::Name("item".to_string())),
                 expr: Some(Expr::Array(ArrayExpr {
                     items: vec![Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(1),
+                        literal: Literal::Uint8(1),
                         pos: (13..14),
                     })],
                     pos: (12..15),
                 })),
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(40),
+                        literal: Literal::Uint8(40),
                         pos: (18..20),
                     }),
                     pos: (18..21),
@@ -1086,14 +1098,14 @@ mod tests {
                 alias: None,
                 expr: Some(Expr::Array(ArrayExpr {
                     items: vec![Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(1),
+                        literal: Literal::Uint8(1),
                         pos: (5..6),
                     })],
                     pos: (4..7),
                 })),
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(40),
+                        literal: Literal::Uint8(40),
                         pos: (10..12),
                     }),
                     pos: (10..13),
@@ -1114,7 +1126,7 @@ mod tests {
                 expr: None,
                 body: vec![Stmt::Expr(ExprStmt {
                     expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(40),
+                        literal: Literal::Uint8(40),
                         pos: (6..8),
                     }),
                     pos: (6..9),
@@ -1214,11 +1226,11 @@ mod tests {
                 expr: Expr::TypeAssert(
                     TypeAssertExpr {
                         left: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(1),
+                            literal: Literal::Uint8(1),
                             pos: 0..1,
                         }),
                         right: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(2),
+                            literal: Literal::Uint8(2),
                             pos: 5..6,
                         }),
                         pos: 0..6,
@@ -1239,7 +1251,7 @@ mod tests {
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Unwrap(UnwrapExpr {
                     expr: Expr::Literal(LiteralExpr {
-                        literal: Literal::Int(10),
+                        literal: Literal::Uint8(10),
                         pos: 0..2,
                     })
                     .into(),
@@ -1272,7 +1284,7 @@ mod tests {
                     ],
                     body: vec![Stmt::Expr(ExprStmt {
                         expr: Expr::Literal(LiteralExpr {
-                            literal: Literal::Int(10),
+                            literal: Literal::Uint8(10),
                             pos: 18..20,
                         }),
                         pos: 18..21,

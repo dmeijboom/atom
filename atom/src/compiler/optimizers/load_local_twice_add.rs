@@ -22,7 +22,7 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
             if let Some(last_id) = last_local_id {
                 if last_id == id {
                     if let Some(Code::ArithmeticAdd) = instructions.get(i + 1) {
-                        instructions[i] = Code::ConstInt(2);
+                        instructions[i] = Code::ConstUint8(2);
                         instructions[i + 1] = Code::ArithmeticMul;
 
                         i += 2;

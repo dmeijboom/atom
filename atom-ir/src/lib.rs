@@ -59,12 +59,20 @@ fn format_keywords(keywords: &[String]) -> String {
 
 #[derive(Clone, PartialEq)]
 pub enum Code {
-    ConstInt(i64),
-    ConstUint(u64),
+    ConstInt128(i128),
+    ConstUint128(u128),
+    ConstInt64(i64),
+    ConstUint64(u64),
+    ConstInt32(i32),
+    ConstUint32(u32),
+    ConstInt16(i16),
+    ConstUint16(u16),
+    ConstInt8(i8),
+    ConstUint8(u8),
+    ConstByte(u8),
     ConstBool(bool),
     ConstFloat(f64),
     ConstChar(char),
-    ConstByte(u8),
     ConstSymbol(String),
     ConstString(String),
     MakeArray(usize),
@@ -128,8 +136,16 @@ pub enum Code {
 impl Code {
     fn description(&self) -> String {
         match self {
-            Code::ConstInt(val) => format!("  constInt({})", val),
-            Code::ConstUint(val) => format!("  constUint({})", val),
+            Code::ConstInt128(val) => format!("  constInt128({})", val),
+            Code::ConstUint128(val) => format!("  constUint128({})", val),
+            Code::ConstInt64(val) => format!("  constInt64({})", val),
+            Code::ConstUint64(val) => format!("  constUint64({})", val),
+            Code::ConstInt32(val) => format!("  constInt32({})", val),
+            Code::ConstUint32(val) => format!("  constUint32({})", val),
+            Code::ConstInt16(val) => format!("  constInt16({})", val),
+            Code::ConstUint16(val) => format!("  constUint16({})", val),
+            Code::ConstInt8(val) => format!("  constInt8({})", val),
+            Code::ConstUint8(val) => format!("  constUint8({})", val),
             Code::ConstBool(val) => format!("  constBool({})", val),
             Code::ConstFloat(val) => format!("  constFloat({})", val),
             Code::ConstChar(val) => format!("  constChar({})", val),

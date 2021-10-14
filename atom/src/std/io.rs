@@ -1,16 +1,17 @@
 use std::fs::File;
 
 use atom_macros::export;
-use atom_runtime::{AtomRef, Extern, ExternalFn, Object, Result, RuntimeError, Value};
+use atom_runtime::{AtomRef, Extern, ExternalFn, Int, Object, Result, RuntimeError, Value};
 
 #[export]
-fn file_size(this: &Object) -> Result<i64> {
+fn file_size(this: &Object) -> Result<Int> {
     if let Some(Value::Extern(any)) = this.get_field(0) {
         if let Some(file) = any.0.downcast_ref::<File>() {
             return file
                 .metadata()
-                .map(|meta| meta.len() as i64)
-                .map_err(|e| RuntimeError::new(format!("{}", e)).with_kind("IOError".to_string()));
+                .map(|meta| meta.len())
+                .map_err(|e| RuntimeError::new(format!("{}", e)).with_kind("IOError".to_string()))
+                .map(|val| val.into());
         }
     }
 

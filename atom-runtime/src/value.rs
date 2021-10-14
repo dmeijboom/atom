@@ -8,6 +8,7 @@ use strum_macros::EnumIter;
 use super::atom_ref::AtomRef;
 use super::class::Class;
 use super::closure::Closure;
+use super::int::Int;
 use super::interface::Interface;
 use super::method::Method;
 use super::object::Object;
@@ -136,7 +137,6 @@ macro_rules! impl_type {
 #[derive(Clone, Copy, Hash, PartialEq, Eq, EnumIter)]
 pub enum ValueType {
     Int,
-    Uint,
     Float,
     Char,
     Byte,
@@ -160,7 +160,6 @@ impl ValueType {
     pub fn name(&self) -> &str {
         match self {
             Self::Int => "Int",
-            Self::Uint => "Uint",
             Self::Float => "Float",
             Self::Char => "Char",
             Self::Byte => "Byte",
@@ -185,8 +184,7 @@ impl ValueType {
 #[derive(Debug, PartialEq)]
 pub enum Value {
     Void,
-    Int(i64),
-    Uint(u64),
+    Int(Int),
     Float(f64),
     Char(char),
     Byte(u8),
@@ -208,8 +206,7 @@ pub enum Value {
 
 // Setup base conversions between atom / Rust code
 
-impl_type!(Int, i64, [from]);
-impl_type!(Uint, u64, [from]);
+impl_type!(Int, Int, [from try_into try_into_ref try_into_mut]);
 impl_type!(Float, f64, [from try_into_ref try_into_mut]);
 impl_type!(Char, char, [from try_into try_into_ref try_into_mut]);
 impl_type!(Byte, u8, [from try_into try_into_ref try_into_mut]);
@@ -222,75 +219,21 @@ impl_type!(Extern, Extern, [from try_into try_into_ref try_into_mut]);
 impl_try_into!(&String, str);
 impl_try_into!(&Array, [Value]);
 
-// Conversions for Int / i64 and Uint / u64
-
-impl TryInto<i64> for Value {
-    type Error = RuntimeError;
-
-    fn try_into(self) -> Result<i64, Self::Error> {
-        match self {
-            Value::Int(int) => Ok(int),
-            Value::Uint(uint) => Ok(uint as i64),
-            _ => Err(RuntimeError::new(format!(
-                "invalid type '{}', expected: Int",
-                self.get_type().name()
-            ))
-            .with_kind("TypeError".to_string())),
-        }
-    }
-}
-
-impl TryInto<u64> for Value {
-    type Error = RuntimeError;
-
-    fn try_into(self) -> Result<u64, Self::Error> {
-        match self {
-            Value::Int(int) => Ok(int as u64),
-            Value::Uint(uint) => Ok(uint),
-            _ => Err(RuntimeError::new(format!(
-                "invalid type '{}', expected: Uint",
-                self.get_type().name()
-            ))
-            .with_kind("TypeError".to_string())),
-        }
-    }
-}
-
-impl TryInto<usize> for Value {
-    type Error = RuntimeError;
-
-    fn try_into(self) -> Result<usize, Self::Error> {
-        if let Value::Uint(int) = self {
-            return Ok(int as usize);
-        }
-
-        let int: i64 = self.try_into()?;
-
-        Ok(int as usize)
-    }
-}
-
-impl From<usize> for Value {
-    fn from(val: usize) -> Self {
-        Value::Int(val as i64)
-    }
-}
-
 // Conversions for Float / f64
 
 impl TryInto<f64> for Value {
     type Error = RuntimeError;
 
     fn try_into(self) -> Result<f64, Self::Error> {
-        match self {
-            Value::Int(val) => Ok(val as f64),
-            Value::Float(val) => Ok(val),
-            _ => Err(RuntimeError::new(format!(
-                "invalid type '{}', expected: Float",
-                self.get_type().name()
-            ))
-            .with_kind("TypeError".to_string())),
+        if let Value::Float(val) = self {
+            return Ok(val);
         }
+
+        Err(RuntimeError::new(format!(
+            "invalid type '{}', expected: Float",
+            self.get_type().name()
+        ))
+        .with_kind("TypeError".to_string()))
     }
 }
 
@@ -309,7 +252,6 @@ impl Clone for Value {
         match self {
             Self::Void => panic!("Void can't be cloned"),
             Self::Int(val) => Value::Int(*val),
-            Self::Uint(val) => Value::Uint(*val),
             Self::Float(val) => Value::Float(*val),
             Self::Char(val) => Value::Char(*val),
             Self::Byte(val) => Value::Byte(*val),
@@ -340,7 +282,6 @@ impl Value {
         match self {
             Self::Void => panic!("Void has no type"),
             Self::Int(_) => ValueType::Int,
-            Self::Uint(_) => ValueType::Uint,
             Self::Float(_) => ValueType::Float,
             Self::Char(_) => ValueType::Char,
             Self::Byte(_) => ValueType::Byte,
@@ -369,7 +310,6 @@ impl Display for Value {
         match self {
             Self::Void => write!(f, "!"),
             Self::Int(val) => write!(f, "{}", val),
-            Self::Uint(val) => write!(f, "{}", val),
             Self::Float(val) => write!(f, "{}", val),
             Self::Char(val) => write!(f, "{}", val),
             Self::Byte(val) => write!(f, "{}", val),
