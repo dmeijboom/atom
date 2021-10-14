@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 use std::mem;
-use std::ops::{Add, BitAnd, BitOr, Div, Mul, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub};
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
@@ -27,7 +27,16 @@ macro_rules! impl_op {
         let left = $vm.stack.pop()?;
 
         $vm.stack.push(match left {
-            Value::Int(val) => Value::Int(val.$opname(&right.try_into()?)),
+            Value::Int(val) => Value::Int(val.$opname({
+                let other: i64 = right.try_into()?;
+
+                other
+            })),
+            Value::Uint(val) => Value::Uint(val.$opname({
+                let other: u64 = right.try_into()?;
+
+                other
+            })),
             _ => {
                 return Err(RuntimeError::new(format!(
                     "invalid type '{}' and '{}' in {}",
@@ -47,6 +56,7 @@ macro_rules! impl_op {
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Bool(val.$opname(&right.try_into()?)),
+            Value::Uint(val) => Value::Bool(val.$opname(&right.try_into()?)),
             Value::Float(val) => Value::Bool(val.$opname(&right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
@@ -67,6 +77,7 @@ macro_rules! impl_op {
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Int(val.$opname(&right.try_into()?)),
+            Value::Uint(val) => Value::Uint(val.$opname(&right.try_into()?)),
             Value::Float(val) => Value::Float(val.$opname(&right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
@@ -446,6 +457,7 @@ impl VM {
     fn eval_single<'i>(&mut self, module_id: ModuleId, code: &'i Code) -> Result<Flow<'i>> {
         match code {
             Code::ConstInt(val) => self.eval_const(*val),
+            Code::ConstUint(val) => self.eval_const(*val),
             Code::ConstBool(val) => self.eval_const(*val),
             Code::ConstSymbol(name) => self.eval_symbol(name),
             Code::ConstFloat(val) => self.eval_const(*val),
@@ -462,13 +474,16 @@ impl VM {
             Code::Return => return Ok(Flow::Return(self.stack.pop()?)),
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
-            Code::ArithmeticBitOr => self.eval_arithmetic_bit_or()?,
-            Code::ArithmeticBitAnd => self.eval_arithmetic_bit_and()?,
             Code::ArithmeticAdd => self.eval_arithmetic_add()?,
             Code::ArithmeticSub => self.eval_arithmetic_sub()?,
             Code::ArithmeticMul => self.eval_arithmetic_mul()?,
             Code::ArithmeticDiv => self.eval_arithmetic_div()?,
             Code::ArithmeticExp => self.eval_arithmetic_exp()?,
+            Code::ArithmeticBitOr => self.eval_arithmetic_bit_or()?,
+            Code::ArithmeticBitAnd => self.eval_arithmetic_bit_and()?,
+            Code::ArithmeticBitXor => self.eval_arithmetic_bit_xor()?,
+            Code::ArithmeticBitShiftLeft => self.eval_arithmetic_bit_shift_left()?,
+            Code::ArithmeticBitShiftRight => self.eval_arithmetic_bit_shift_right()?,
             Code::ComparisonEq => self.eval_comparison_eq()?,
             Code::ComparisonNeq => self.eval_comparison_neq()?,
             Code::ComparisonGt => self.eval_comparison_gt()?,
@@ -612,6 +627,18 @@ impl VM {
 
     fn eval_arithmetic_bit_and(&mut self) -> Result<()> {
         impl_op!(self, int_only: bitand)
+    }
+
+    fn eval_arithmetic_bit_xor(&mut self) -> Result<()> {
+        impl_op!(self, int_only: bitxor)
+    }
+
+    fn eval_arithmetic_bit_shift_left(&mut self) -> Result<()> {
+        impl_op!(self, int_only: shl)
+    }
+
+    fn eval_arithmetic_bit_shift_right(&mut self) -> Result<()> {
+        impl_op!(self, int_only: shr)
     }
 
     fn eval_arithmetic_add(&mut self) -> Result<()> {

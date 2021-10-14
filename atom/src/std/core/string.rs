@@ -53,6 +53,11 @@ fn string_chars(this: &str) -> Result<Vec<Value>> {
 }
 
 #[export]
+fn string_bytes(this: &str) -> Result<Vec<Value>> {
+    Ok(this.bytes().map(Value::Byte).collect())
+}
+
+#[export]
 fn string_repeat(this: &str, n: usize) -> Result<String> {
     Ok(this.repeat(n))
 }
@@ -106,6 +111,7 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
                 "endsWith" => string_ends_with,
                 "contains" => string_contains,
                 "chars" => string_chars,
+                "bytes" => string_bytes,
                 "repeat" => string_repeat,
                 "append" => string_append,
                 "count" => string_count,

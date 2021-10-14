@@ -130,6 +130,7 @@ pub class String {
     pub extern fn replace(pattern, replacement);
     pub extern fn append(other);
     pub extern fn chars();
+    pub extern fn bytes();
     pub extern fn repeat(n);
     pub extern fn trim();
     pub extern fn len();

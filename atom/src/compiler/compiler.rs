@@ -60,9 +60,8 @@ fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-const STD_SOURCES: [(&str, &str); 5] = [
+const STD_SOURCES: [(&str, &str); 4] = [
     ("std.core", include_str!("../std/atom/std/core.atom")),
-    ("std.map", include_str!("../std/atom/std/map.atom")),
     ("std.io", include_str!("../std/atom/std/io.atom")),
     (
         "std.encoding.utf8",
@@ -281,6 +280,7 @@ impl Compiler {
                 match &literal_expr.literal {
                     Literal::Byte(val) => Code::ConstByte(*val),
                     Literal::Int(val) => Code::ConstInt(*val),
+                    Literal::Uint(val) => Code::ConstUint(*val),
                     Literal::Float(val) => Code::ConstFloat(*val),
                     Literal::Bool(val) => Code::ConstBool(*val),
                     Literal::Char(val) => Code::ConstChar(*val),
@@ -956,7 +956,7 @@ impl Compiler {
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
-            self.set_local(arg.name.clone(), false)?;
+            self.set_local(arg.name.clone(), arg.mutable)?;
         }
 
         let mut body = self._compile_stmt_list(&fn_decl.body)?;

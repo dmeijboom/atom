@@ -36,9 +36,9 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
             return Some(match method_name {
                 "push" => array_push,
                 "pop" => array_pop,
-                "remove" => array_remove,
                 "len" => array_len,
                 "clear" => array_clear,
+                "remove" => array_remove,
                 _ => return None,
             });
         }

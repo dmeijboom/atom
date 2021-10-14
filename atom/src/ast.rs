@@ -57,6 +57,9 @@ pub enum ArithmeticOp {
     Exp,
     BitAnd,
     BitOr,
+    BitXor,
+    BitShiftLeft,
+    BitShiftRight,
 }
 
 impl Into<Code> for ArithmeticOp {
@@ -69,6 +72,9 @@ impl Into<Code> for ArithmeticOp {
             ArithmeticOp::Exp => Code::ArithmeticExp,
             ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
             ArithmeticOp::BitOr => Code::ArithmeticBitOr,
+            ArithmeticOp::BitXor => Code::ArithmeticBitOr,
+            ArithmeticOp::BitShiftLeft => Code::ArithmeticBitShiftLeft,
+            ArithmeticOp::BitShiftRight => Code::ArithmeticBitShiftRight,
         }
     }
 }
@@ -179,6 +185,7 @@ pub struct MapExpr {
 pub enum Literal {
     Byte(u8),
     Int(i64),
+    Uint(u64),
     Float(f64),
     Bool(bool),
     Char(char),

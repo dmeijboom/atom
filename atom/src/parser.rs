@@ -32,8 +32,19 @@ peg::parser! {
             = value:$(['1'..='9'] ['0'..='9']* ("_" ['0'..='9']['0'..='9']['0'..='9'])*) { value.replace("_", "") }
                 / "0" { "0".to_string() }
 
+        rule hex_lit() -> Literal
+            = "0x" value:$(['0'..='9' | 'A'..='F' | 'a'..='f']+) { Literal::Uint(u64::from_str_radix(value, 16).unwrap()) }
+
         rule int_lit() -> Literal
-            = sign:$("-"?) value:raw_int() { Literal::Int(format!("{}{}", sign, value).parse().unwrap()) }
+            = sign:$("-"?) value:raw_int() {
+                let num = format!("{}{}", sign, value);
+                let int: Result<i64, _> = num.parse();
+
+                match int {
+                    Ok(int) => Literal::Int(int),
+                    Err(_) => Literal::Uint(num.parse().unwrap())
+                }
+            }
 
         rule float_lit() -> Literal
             = sign:$("-"?) pre:raw_int() "." post:$(['0'..='9']+) { Literal::Float(format!("{}{}.{}", sign, pre, post).parse().unwrap()) }
@@ -74,7 +85,7 @@ peg::parser! {
                 / !("\"" / "\\" / ("\r"? "\n")) value:char() { value }
 
         rule literal() -> Literal
-            = symbol_lit() / bool_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
+            = symbol_lit() / hex_lit() / bool_lit() / float_lit() / int_lit() / byte_lit() / char_lit() / string_lit()
 
         rule literal_expr() -> Expr
             = start:pos() literal:literal() end:pos() { Expr::Literal(LiteralExpr { literal, pos: (start..end) }) }
@@ -126,6 +137,9 @@ peg::parser! {
             --
             left:(@) _ "|" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitOr, right }.into()) }
             left:(@) _ "&" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitAnd, right }.into()) }
+            left:(@) _ "^" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitXor, right }.into()) }
+            left:(@) _ "<<" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitShiftLeft, right }.into()) }
+            left:(@) _ ">>" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::BitShiftRight, right }.into()) }
             --
             from:(@) _ ".." _ to:@ { Expr::Range(RangeExpr { pos: (start..to.pos().end), from, to }.into()) }
             left:(@) _ "==" _ right:@ { Expr::Comparison(ComparisonExpr { pos: (start..right.pos().end), left, op: ComparisonOp::Eq, right }.into()) }
