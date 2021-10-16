@@ -14,7 +14,7 @@ use crate::ast::{
     TemplateComponent, Variable,
 };
 use crate::compiler::filesystem::{FileSystem, FileSystemCache};
-use crate::compiler::optimizers::remove_core_validations;
+use crate::compiler::optimizers::{remove_core_validations, remove_type_cast};
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
@@ -109,6 +109,7 @@ impl Compiler {
             module: Module::new(),
             optimizers: if optimize {
                 vec![
+                    remove_type_cast::optimize,
                     call_void::optimize,
                     load_local_twice_add::optimize,
                     remove_core_validations::optimize,

@@ -265,6 +265,10 @@ impl IR {
         self.codes.get_unchecked(index)
     }
 
+    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut Code {
+        self.codes.get_unchecked_mut(index)
+    }
+
     pub fn iter(&self) -> Iter<Code> {
         self.codes.iter()
     }
