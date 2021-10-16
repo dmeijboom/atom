@@ -238,6 +238,10 @@ pub class Array extends Iterator {
 
     pub fn iter() -> ArrayIter(array: this, index: 0);
 
+    pub fn isEmpty() {
+        return this.len() == 0;
+    }
+
     pub fn append(other) {
         for {
             let item = other.remove(0);

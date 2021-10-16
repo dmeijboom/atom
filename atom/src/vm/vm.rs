@@ -33,7 +33,7 @@ macro_rules! impl_op {
                     "invalid type '{}' and '{}' in {}",
                     left.get_type().name(),
                     right.get_type().name(),
-                    stringify!($ident)
+                    stringify!($opname)
                 )));
             }
         });
@@ -793,6 +793,16 @@ impl VM {
         self.stack.push(match value {
             Value::Int(val) if type_name == "Float" => Value::Float(val.to_float()),
             Value::Int(val) if type_name == "Byte" => Value::Byte(val.to_byte()),
+            Value::Int(val) if type_name == "Int128" => Value::Int(Int::Int128(val.into())),
+            Value::Int(val) if type_name == "Uint128" => Value::Int(Int::Uint128(val.into())),
+            Value::Int(val) if type_name == "Int64" => Value::Int(Int::Int64(val.into())),
+            Value::Int(val) if type_name == "Uint64" => Value::Int(Int::Uint64(val.into())),
+            Value::Int(val) if type_name == "Int32" => Value::Int(Int::Int32(val.into())),
+            Value::Int(val) if type_name == "Uint32" => Value::Int(Int::Uint32(val.into())),
+            Value::Int(val) if type_name == "Int16" => Value::Int(Int::Int16(val.into())),
+            Value::Int(val) if type_name == "Uint16" => Value::Int(Int::Uint16(val.into())),
+            Value::Int(val) if type_name == "Int8" => Value::Int(Int::Int8(val.into())),
+            Value::Int(val) if type_name == "Uint8" => Value::Int(Int::Uint8(val.into())),
             Value::Float(val) if type_name == "Int" => {
                 if val.is_sign_negative() {
                     Value::Int(Int::Int64(val as i64))
@@ -801,12 +811,24 @@ impl VM {
                 }
             }
             Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
-            Value::Byte(val) if type_name == "Int" => Value::Int(Int::Uint8(val)),
+            Value::Byte(val) if type_name == "Int128" => Value::Int(Int::Int128(val as i128)),
+            Value::Byte(val) if type_name == "Uint128" => Value::Int(Int::Uint128(val as u128)),
+            Value::Byte(val) if type_name == "Int64" => Value::Int(Int::Int64(val as i64)),
+            Value::Byte(val) if type_name == "Uint64" => Value::Int(Int::Uint64(val as u64)),
+            Value::Byte(val) if type_name == "Int32" => Value::Int(Int::Int32(val as i32)),
+            Value::Byte(val) if type_name == "Uint32" => Value::Int(Int::Uint32(val as u32)),
+            Value::Byte(val) if type_name == "Int16" => Value::Int(Int::Int16(val as i16)),
+            Value::Byte(val) if type_name == "Uint16" => Value::Int(Int::Uint16(val as u16)),
+            Value::Byte(val) if type_name == "Int8" => Value::Int(Int::Int8(val as i8)),
+            Value::Byte(val) if type_name == "Uint8" || type_name == "Int" => {
+                Value::Int(Int::Uint8(val))
+            }
             Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
             Value::Bool(val) if type_name == "Int" => Value::Int(Int::Uint8(val as u8)),
             _ => {
                 return Err(RuntimeError::new(format!(
-                    "unable to cast to invalid type: {}",
+                    "unable to cast '{}' to invalid type: {}",
+                    value.get_type().name(),
                     type_name
                 )));
             }

@@ -45,6 +45,22 @@ macro_rules! impl_op {
     };
 }
 
+macro_rules! impl_conv {
+    ($name:ident, $rust_type:ident) => {
+        impl From<$rust_type> for Int {
+            fn from(val: $rust_type) -> Self {
+                Self::$name(val)
+            }
+        }
+
+        impl Into<$rust_type> for Int {
+            fn into(self) -> $rust_type {
+                cast!(self, $rust_type)
+            }
+        }
+    };
+}
+
 #[derive(Debug, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
 pub enum Int {
     Int128(i128),
@@ -84,71 +100,22 @@ impl Int {
     }
 }
 
-impl From<u8> for Int {
-    fn from(val: u8) -> Self {
-        Int::Uint8(val)
-    }
-}
-
-impl From<i8> for Int {
-    fn from(val: i8) -> Self {
-        Int::Int8(val)
-    }
-}
-
-impl From<u16> for Int {
-    fn from(val: u16) -> Self {
-        Int::Uint16(val)
-    }
-}
-
-impl From<i16> for Int {
-    fn from(val: i16) -> Self {
-        Int::Int16(val)
-    }
-}
-
-impl From<u32> for Int {
-    fn from(val: u32) -> Self {
-        Int::Uint32(val)
-    }
-}
-
-impl From<i32> for Int {
-    fn from(val: i32) -> Self {
-        Int::Int32(val)
-    }
-}
-
-impl From<u64> for Int {
-    fn from(val: u64) -> Self {
-        Int::Uint64(val)
-    }
-}
-
-impl From<i64> for Int {
-    fn from(val: i64) -> Self {
-        Int::Int64(val)
-    }
-}
-
-impl From<u128> for Int {
-    fn from(val: u128) -> Self {
-        Int::Uint128(val)
-    }
-}
-
-impl From<i128> for Int {
-    fn from(val: i128) -> Self {
-        Int::Int128(val)
-    }
-}
-
 impl From<usize> for Int {
     fn from(size: usize) -> Self {
         Int::Uint64(size as u64)
     }
 }
+
+impl_conv!(Int128, i128);
+impl_conv!(Uint128, u128);
+impl_conv!(Int64, i64);
+impl_conv!(Uint64, u64);
+impl_conv!(Int32, i32);
+impl_conv!(Uint32, u32);
+impl_conv!(Int16, i16);
+impl_conv!(Uint16, u16);
+impl_conv!(Int8, i8);
+impl_conv!(Uint8, u8);
 
 impl_op!(Add, add);
 impl_op!(Sub, sub);

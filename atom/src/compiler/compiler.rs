@@ -279,15 +279,9 @@ impl Compiler {
             Expr::Literal(literal_expr) => ir.add(
                 match &literal_expr.literal {
                     Literal::Int128(val) => Code::ConstInt128(*val),
-                    Literal::Uint128(val) => Code::ConstUint128(*val),
                     Literal::Int64(val) => Code::ConstInt64(*val),
                     Literal::Uint64(val) => Code::ConstUint64(*val),
                     Literal::Int32(val) => Code::ConstInt32(*val),
-                    Literal::Uint32(val) => Code::ConstUint32(*val),
-                    Literal::Int16(val) => Code::ConstInt16(*val),
-                    Literal::Uint16(val) => Code::ConstUint16(*val),
-                    Literal::Int8(val) => Code::ConstInt8(*val),
-                    Literal::Uint8(val) => Code::ConstUint8(*val),
                     Literal::Byte(val) => Code::ConstByte(*val),
                     Literal::Float(val) => Code::ConstFloat(*val),
                     Literal::Bool(val) => Code::ConstBool(*val),

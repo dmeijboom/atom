@@ -2,7 +2,6 @@ use atom_runtime::ExternalFn;
 
 pub mod array;
 pub mod float;
-//pub mod map;
 pub mod option;
 pub mod string;
 
