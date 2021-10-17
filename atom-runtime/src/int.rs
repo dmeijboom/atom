@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub};
@@ -29,16 +30,16 @@ macro_rules! impl_op {
 
             fn $opname(self, rhs: Self) -> Self::Output {
                 match self {
-                    Int::Int128(left) => (left.$opname(cast!(rhs, i128))).into(),
-                    Int::Uint128(left) => (left.$opname(cast!(rhs, u128))).into(),
-                    Int::Int64(left) => (left.$opname(cast!(rhs, i64))).into(),
-                    Int::Uint64(left) => (left.$opname(cast!(rhs, u64))).into(),
-                    Int::Int32(left) => (left.$opname(cast!(rhs, i32))).into(),
-                    Int::Uint32(left) => (left.$opname(cast!(rhs, u32))).into(),
-                    Int::Int16(left) => (left.$opname(cast!(rhs, i16))).into(),
-                    Int::Uint16(left) => (left.$opname(cast!(rhs, u16))).into(),
-                    Int::Int8(left) => (left.$opname(cast!(rhs, i8))).into(),
-                    Int::Uint8(left) => (left.$opname(cast!(rhs, u8))).into(),
+                    Int::Int128(lhs) => (lhs.$opname(cast!(rhs, i128))).into(),
+                    Int::Uint128(lhs) => (lhs.$opname(cast!(rhs, u128))).into(),
+                    Int::Int64(lhs) => (lhs.$opname(cast!(rhs, i64))).into(),
+                    Int::Uint64(lhs) => (lhs.$opname(cast!(rhs, u64))).into(),
+                    Int::Int32(lhs) => (lhs.$opname(cast!(rhs, i32))).into(),
+                    Int::Uint32(lhs) => (lhs.$opname(cast!(rhs, u32))).into(),
+                    Int::Int16(lhs) => (lhs.$opname(cast!(rhs, i16))).into(),
+                    Int::Uint16(lhs) => (lhs.$opname(cast!(rhs, u16))).into(),
+                    Int::Int8(lhs) => (lhs.$opname(cast!(rhs, i8))).into(),
+                    Int::Uint8(lhs) => (lhs.$opname(cast!(rhs, u8))).into(),
                 }
             }
         }
@@ -53,15 +54,15 @@ macro_rules! impl_conv {
             }
         }
 
-        impl Into<$rust_type> for Int {
-            fn into(self) -> $rust_type {
-                cast!(self, $rust_type)
+        impl From<Int> for $rust_type {
+            fn from(int: Int) -> Self {
+                cast!(int, $rust_type)
             }
         }
     };
 }
 
-#[derive(Debug, Hash, PartialEq, Eq, Clone, Copy, PartialOrd, Ord)]
+#[derive(Debug, Eq, Clone, Copy)]
 pub enum Int {
     Int128(i128),
     Uint128(u128),
@@ -96,6 +97,40 @@ impl Int {
             Int::Uint16(val) => val.pow(cast!(exp, u32)).into(),
             Int::Int8(val) => val.pow(cast!(exp, u32)).into(),
             Int::Uint8(val) => val.pow(cast!(exp, u32)).into(),
+        }
+    }
+}
+
+impl PartialEq for Int {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            Int::Int128(val) => val.eq(&cast!(*other, i128)),
+            Int::Uint128(val) => val.eq(&cast!(*other, u128)),
+            Int::Int64(val) => val.eq(&cast!(*other, i64)),
+            Int::Uint64(val) => val.eq(&cast!(*other, u64)),
+            Int::Int32(val) => val.eq(&cast!(*other, i32)),
+            Int::Uint32(val) => val.eq(&cast!(*other, u32)),
+            Int::Int16(val) => val.eq(&cast!(*other, i16)),
+            Int::Uint16(val) => val.eq(&cast!(*other, u16)),
+            Int::Int8(val) => val.eq(&cast!(*other, i8)),
+            Int::Uint8(val) => val.eq(&cast!(*other, u8)),
+        }
+    }
+}
+
+impl PartialOrd for Int {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+        match self {
+            Int::Int128(val) => val.partial_cmp(&cast!(*other, i128)),
+            Int::Uint128(val) => val.partial_cmp(&cast!(*other, u128)),
+            Int::Int64(val) => val.partial_cmp(&cast!(*other, i64)),
+            Int::Uint64(val) => val.partial_cmp(&cast!(*other, u64)),
+            Int::Int32(val) => val.partial_cmp(&cast!(*other, i32)),
+            Int::Uint32(val) => val.partial_cmp(&cast!(*other, u32)),
+            Int::Int16(val) => val.partial_cmp(&cast!(*other, i16)),
+            Int::Uint16(val) => val.partial_cmp(&cast!(*other, u16)),
+            Int::Int8(val) => val.partial_cmp(&cast!(*other, i8)),
+            Int::Uint8(val) => val.partial_cmp(&cast!(*other, u8)),
         }
     }
 }

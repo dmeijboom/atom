@@ -52,9 +52,9 @@ macro_rules! impl_try_into {
                 }
 
                 Err(RuntimeError::new(format!(
-                    "invalid type '{}', expected: {}",
-                    type_val.name(),
-                    stringify!($atom_type)
+                    "expected '{}', found: {}",
+                    stringify!($atom_type),
+                    type_val.name()
                 ))
                 .with_kind("TypeError".to_string()))
             }
@@ -73,9 +73,9 @@ macro_rules! impl_try_into {
                 }
 
                 Err(RuntimeError::new(format!(
-                    "invalid type '{}', expected: {}",
-                    type_val.name(),
-                    stringify!($atom_type)
+                    "expected '{}', found: {}",
+                    stringify!($atom_type),
+                    type_val.name()
                 ))
                 .with_kind("TypeError".to_string()))
             }
@@ -92,9 +92,9 @@ macro_rules! impl_try_into {
                 }
 
                 Err(RuntimeError::new(format!(
-                    "invalid type '{}', expected: {}",
-                    self.get_type().name(),
-                    stringify!($atom_type)
+                    "expected '{}', found: {}",
+                    stringify!($atom_type),
+                    self.get_type().name()
                 ))
                 .with_kind("TypeError".to_string()))
             }
@@ -206,7 +206,7 @@ pub enum Value {
 
 // Setup base conversions between atom / Rust code
 
-impl_type!(Int, Int, [from try_into try_into_ref try_into_mut]);
+impl_type!(Int, Int, [from try_into_ref try_into_mut]);
 impl_type!(Float, f64, [from try_into_ref try_into_mut]);
 impl_type!(Char, char, [from try_into try_into_ref try_into_mut]);
 impl_type!(Byte, u8, [from try_into try_into_ref try_into_mut]);
@@ -219,23 +219,41 @@ impl_type!(Extern, Extern, [from try_into try_into_ref try_into_mut]);
 impl_try_into!(&String, str);
 impl_try_into!(&Array, [Value]);
 
+impl TryInto<Int> for Value {
+    type Error = RuntimeError;
+
+    fn try_into(self) -> Result<Int, Self::Error> {
+        match self {
+            Self::Float(val) => Ok(Int::Int64(val as i64)),
+            Self::Int(val) => Ok(val),
+            _ => Err(RuntimeError::new(format!(
+                "expected 'Int', found: {}",
+                self.get_type().name()
+            ))
+            .with_kind("TypeError".to_string())),
+        }
+    }
+}
+
 // Conversions for Float / f64
 
 impl TryInto<f64> for Value {
     type Error = RuntimeError;
 
     fn try_into(self) -> Result<f64, Self::Error> {
-        if let Value::Float(val) = self {
-            return Ok(val);
+        match self {
+            Self::Float(val) => Ok(val),
+            Self::Int(val) => Ok(val.to_float()),
+            _ => Err(RuntimeError::new(format!(
+                "expected 'Float', found: {}",
+                self.get_type().name()
+            ))
+            .with_kind("TypeError".to_string())),
         }
-
-        Err(RuntimeError::new(format!(
-            "invalid type '{}', expected: Float",
-            self.get_type().name()
-        ))
-        .with_kind("TypeError".to_string()))
     }
 }
+
+// Conversions for Int / f64
 
 impl<T> From<Option<T>> for Value
 where

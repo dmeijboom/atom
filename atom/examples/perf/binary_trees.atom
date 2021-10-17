@@ -34,7 +34,7 @@ fn main() {
     println(f"stretch tree of depth {stretchDepth} check: {checkTree(makeTree(0, stretchDepth))}");
 
     let long_livedTree = makeTree(0, maxDepth);
-    let mut iterations = 2 ** maxDepth;
+    let mut iterations = 2.0 ** maxDepth;
 
     for depth in (minDepth..stretchDepth).step(2) {
         let mut check = 0;
@@ -45,7 +45,7 @@ fn main() {
 
         println(f"{iterations * 2} trees of depth {depth} check: {check}");
 
-        iterations = (Int)(((Float)iterations / 4).floor());
+        iterations = ((Float)iterations / 4).floor();
     }
 
     println(f"long lived tree of depth {maxDepth} check: {checkTree(long_livedTree)}");

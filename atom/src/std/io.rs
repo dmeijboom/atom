@@ -15,9 +15,11 @@ fn file_size(this: &Object) -> Result<Int> {
         }
     }
 
-    Err(RuntimeError::new(
-        "invalid type '{}' expected: std.io.File".to_string(),
+    Err(RuntimeError::new(format!(
+        "expected 'std.io.File', found: {}",
+        this.class.as_ref()
     ))
+    .with_kind("TypeError".to_string()))
 }
 
 #[export]

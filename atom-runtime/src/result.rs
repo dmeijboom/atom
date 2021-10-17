@@ -33,6 +33,12 @@ impl RuntimeError {
         }
     }
 
+    pub fn with_context(mut self, context: &str) -> Self {
+        self.message = format!("{}: {}", context, self.message);
+
+        self
+    }
+
     pub fn with_message(mut self, message: String) -> Self {
         self.message = message;
 

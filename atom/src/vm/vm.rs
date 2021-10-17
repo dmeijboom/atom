@@ -30,9 +30,9 @@ macro_rules! impl_op {
             Value::Int(val) => Value::Int(val.$opname(right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
-                    "invalid type '{}' and '{}' in {}",
-                    left.get_type().name(),
+                    "expected '{}', found '{}' in: {}",
                     right.get_type().name(),
+                    left.get_type().name(),
                     stringify!($opname)
                 )));
             }
@@ -50,9 +50,9 @@ macro_rules! impl_op {
             Value::Float(val) => Value::Bool(val.$opname(&right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
-                    "invalid type '{}' and '{}' in {}",
-                    left.get_type().name(),
+                    "expected '{}', found '{}' in: {}",
                     right.get_type().name(),
+                    left.get_type().name(),
                     stringify!($opname)
                 )));
             }
@@ -70,9 +70,9 @@ macro_rules! impl_op {
             Value::Float(val) => Value::Float(val.$opname(&right.try_into()?)),
             _ => {
                 return Err(RuntimeError::new(format!(
-                    "invalid type '{}' and '{}' in {}",
-                    left.get_type().name(),
+                    "expected '{}', found '{}' in: {}",
                     right.get_type().name(),
+                    left.get_type().name(),
                     stringify!($opname)
                 )));
             }
@@ -535,19 +535,20 @@ impl VM {
     }
 
     fn eval_make_range(&mut self) -> Result<()> {
-        let to = self.stack.pop()?;
-        let from = self.stack.pop()?;
-
-        if from.get_type() != ValueType::Int || to.get_type() != ValueType::Int {
-            return Err(RuntimeError::new(format!(
-                "unable to construct Range with '{}' and '{}', expected: Int",
-                from.get_type().name(),
-                to.get_type().name()
-            ))
-            .with_kind("TypeError".to_string()));
-        }
-
-        let object = Object::new(self.find_class("std.core", "Range")?, vec![from, to]);
+        let to: Int = self
+            .stack
+            .pop()?
+            .try_into()
+            .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
+        let from: Int = self
+            .stack
+            .pop()?
+            .try_into()
+            .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
+        let object = Object::new(
+            self.find_class("std.core", "Range")?,
+            vec![Value::Int(from), Value::Int(to)],
+        );
 
         self.stack.push(Value::Object(AtomRef::new(object)));
 
@@ -614,10 +615,11 @@ impl VM {
             Value::Bool(val) => Value::Bool(val && right.try_into()?),
             _ => {
                 return Err(RuntimeError::new(format!(
-                    "invalid types: {} and {} in logical and",
-                    left.get_type().name(),
-                    right.get_type().name()
-                )))
+                    "expected '{}', found: {}",
+                    right.get_type().name(),
+                    left.get_type().name()
+                ))
+                .with_kind("TypeError".to_string()))
             }
         });
 
@@ -790,6 +792,12 @@ impl VM {
 
     fn eval_cast(&mut self, type_name: &str) -> Result<()> {
         let value = self.stack.pop()?;
+
+        if value.get_type().name() == type_name {
+            self.stack.push(value);
+
+            return Ok(());
+        }
 
         self.stack.push(match value {
             Value::Int(val) if type_name == "Float" => Value::Float(val.to_float()),

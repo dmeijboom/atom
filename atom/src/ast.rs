@@ -35,9 +35,9 @@ pub enum ComparisonOp {
     Neq,
 }
 
-impl Into<Code> for ComparisonOp {
-    fn into(self) -> Code {
-        match self {
+impl From<ComparisonOp> for Code {
+    fn from(op: ComparisonOp) -> Self {
+        match op {
             ComparisonOp::Lt => Code::ComparisonLt,
             ComparisonOp::Lte => Code::ComparisonLte,
             ComparisonOp::Gt => Code::ComparisonGt,
@@ -62,9 +62,9 @@ pub enum ArithmeticOp {
     BitShiftRight,
 }
 
-impl Into<Code> for ArithmeticOp {
-    fn into(self) -> Code {
-        match self {
+impl From<ArithmeticOp> for Code {
+    fn from(op: ArithmeticOp) -> Self {
+        match op {
             ArithmeticOp::Mul => Code::ArithmeticMul,
             ArithmeticOp::Div => Code::ArithmeticDiv,
             ArithmeticOp::Add => Code::ArithmeticAdd,
@@ -72,7 +72,7 @@ impl Into<Code> for ArithmeticOp {
             ArithmeticOp::Exp => Code::ArithmeticExp,
             ArithmeticOp::BitAnd => Code::ArithmeticBitAnd,
             ArithmeticOp::BitOr => Code::ArithmeticBitOr,
-            ArithmeticOp::BitXor => Code::ArithmeticBitOr,
+            ArithmeticOp::BitXor => Code::ArithmeticBitXor,
             ArithmeticOp::BitShiftLeft => Code::ArithmeticBitShiftLeft,
             ArithmeticOp::BitShiftRight => Code::ArithmeticBitShiftRight,
         }
