@@ -254,18 +254,6 @@ pub class Array extends Iterator {
         }
     }
 
-    pub fn slice(range) {
-        let mut output = [];
-
-        for item in range {
-            unsafe {
-                output.push(this[item]);
-            }
-        }
-
-        return output;
-    }
-
     pub fn contains(value) {
         for item in this {
             if item == value {

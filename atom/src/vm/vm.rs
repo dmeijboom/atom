@@ -509,6 +509,7 @@ impl VM {
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,
             Code::LoadIndex => self.eval_load_index(false)?,
+            Code::MakeSlice => self.eval_make_slice()?,
             Code::TeeIndex => self.eval_load_index(true)?,
             Code::StoreIndex => self.eval_store_index()?,
             Code::LoadMember(member) => self.eval_load_member(module_id, member, false)?,
@@ -900,10 +901,29 @@ impl VM {
         )))
     }
 
+    fn eval_make_slice(&mut self) -> Result<()> {
+        let to = self.stack.pop()?.try_into()?;
+        let from = self.stack.pop()?.try_into()?;
+        let value = self.stack.pop()?;
+
+        match value {
+            Value::Array(array) => {
+                let data = array.as_ref()[from..to].to_vec();
+
+                self.stack.push(Value::Array(AtomRef::new(data)));
+
+                Ok(())
+            }
+            _ => Err(RuntimeError::new(format!(
+                "unable to create a slice of type: {}",
+                value
+            ))),
+        }
+    }
+
     fn eval_store_index(&mut self) -> Result<()> {
         let value = self.stack.pop()?;
         let index = self.stack.pop()?;
-
         let data = self.stack.pop()?;
 
         match data {
