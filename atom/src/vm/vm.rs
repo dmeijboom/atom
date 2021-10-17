@@ -1,13 +1,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
 use std::mem;
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
-use atom_ir::{Code, IR, Label};
+use atom_ir::{Code, Label, IR};
 use atom_runtime::{
     AtomApi, AtomRef, Class, Closure, Fn, FnArg, FnPtr, Int, Interface, Method, Object, Result,
     RuntimeError, Symbol, Value, ValueType,
@@ -481,6 +481,7 @@ impl VM {
             Code::ArithmeticMul => self.eval_arithmetic_mul()?,
             Code::ArithmeticDiv => self.eval_arithmetic_div()?,
             Code::ArithmeticExp => self.eval_arithmetic_exp()?,
+            Code::ArithmeticMod => self.eval_arithmetic_mod()?,
             Code::ArithmeticBitOr => self.eval_arithmetic_bit_or()?,
             Code::ArithmeticBitAnd => self.eval_arithmetic_bit_and()?,
             Code::ArithmeticBitXor => self.eval_arithmetic_bit_xor()?,
@@ -676,6 +677,28 @@ impl VM {
             _ => {
                 return Err(RuntimeError::new(format!(
                     "invalid types: {} and {} in exponent",
+                    left.get_type().name(),
+                    right.get_type().name()
+                )))
+            }
+        });
+
+        Ok(())
+    }
+
+    fn eval_arithmetic_mod(&mut self) -> Result<()> {
+        let right = self.stack.pop()?;
+        let left = self.stack.pop()?;
+
+        self.stack.push(match left {
+            Value::Int(val) => {
+                let right_val: Int = right.try_into()?;
+
+                Value::Int(val.rem(right_val))
+            }
+            _ => {
+                return Err(RuntimeError::new(format!(
+                    "invalid types: {} and {} in modulus",
                     left.get_type().name(),
                     right.get_type().name()
                 )))

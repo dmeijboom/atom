@@ -61,12 +61,17 @@ fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-const STD_SOURCES: [(&str, &str); 4] = [
+const STD_SOURCES: [(&str, &str); 6] = [
     ("std.core", include_str!("../std/atom/std/core.atom")),
+    ("std.map", include_str!("../std/atom/std/map.atom")),
     ("std.io", include_str!("../std/atom/std/io.atom")),
     (
         "std.encoding.utf8",
         include_str!("../std/atom/std/encoding/utf8.atom"),
+    ),
+    (
+        "std.encoding.binary",
+        include_str!("../std/atom/std/encoding/binary.atom"),
     ),
     (
         "std.encoding.json",
@@ -449,13 +454,22 @@ impl Compiler {
                 ir.add(Code::MakeArray(array_expr.items.len()), location);
             }
             Expr::Map(map_expr) => {
-                //for key_val in map_expr.key_values.iter() {
-                //    ir.append(self.compile_expr(&key_val.key)?);
-                //    ir.append(self.compile_expr(&key_val.value)?);
-                //}
+                let local = self.set_local("__map__".to_string(), false)?;
+                let new_map_id = self.module.imports.get_index_of("newMap").unwrap();
 
-                //ir.add(Code::MakeMap(map_expr.key_values.len()), location);
-                unreachable!("not implemented yet")
+                ir.add(Code::LoadGlobal(new_map_id), location);
+                ir.add(Code::Call(0), location);
+                ir.add(Code::Store(local.id), location);
+
+                for key_val in map_expr.key_values.iter() {
+                    self.compile_expr(ir, &key_val.key)?;
+                    self.compile_expr(ir, &key_val.value)?;
+                    ir.add(Code::Load(local.id), location);
+                    ir.add(Code::LoadMember("set".to_string()), location);
+                    ir.add(Code::CallVoid(2), location);
+                }
+
+                ir.add(Code::Load(local.id), location);
             }
             Expr::Closure(closure_expr) => {
                 ir.add(self.compile_closure(closure_expr, None)?, location);
@@ -1131,7 +1145,10 @@ impl Compiler {
 
     fn setup_prelude(&mut self) -> Result<()> {
         // Core module shouldn't include the prelude as that would create an infinite loop
-        if self.module.name == "std.core" || self.module.name == "std.map" {
+        if self.module.name == "std.core"
+            || self.module.name == "std.map"
+            || self.module.name == "std.encoding.binary"
+        {
             return Ok(());
         }
 

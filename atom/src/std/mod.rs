@@ -4,6 +4,11 @@ pub mod core;
 pub mod encoding;
 pub mod io;
 
-pub fn get_hooks() -> [ExternalHook; 3] {
-    [core::hook, io::hook, encoding::utf8::hook]
+pub fn get_hooks() -> [ExternalHook; 4] {
+    [
+        core::hook,
+        io::hook,
+        encoding::utf8::hook,
+        encoding::binary::hook,
+    ]
 }

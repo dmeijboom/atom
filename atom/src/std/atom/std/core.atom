@@ -135,6 +135,10 @@ pub class String {
     pub extern fn trim();
     pub extern fn len();
 
+    pub fn toString() {
+        return this;
+    }
+
     pub fn containsAny(values) {
         let chars = this.chars();
 

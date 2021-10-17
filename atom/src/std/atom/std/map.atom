@@ -1,0 +1,249 @@
+module std.map;
+
+import std.core.some;
+import std.core.String;
+import std.core.println;
+import std.core.Iterable;
+import std.encoding.binary.int_from_bytes;
+import std.encoding.binary.uint_from_bytes;
+
+pub class MapIter {
+    let data;
+    let keys;
+    let mut index;
+
+    pub fn next() {
+        if this.index >= this.keys.len() {
+            return nil;
+        }
+
+        unsafe {
+            let key = this.keys[this.index];
+
+            this.index += 1;
+
+            return some((key, this.data[key]));
+        }
+    }
+}
+
+fn wyr8(bytes) {
+    return int_from_bytes(bytes);
+}
+
+fn wyr4(bytes) {
+    return (Uint64)uint_from_bytes(bytes);
+}
+
+fn wyr3(bytes, index) {
+    unsafe {
+        return (Uint64)bytes[0] << 16
+            | (Uint64)bytes[index >> 1] << 8
+            | (Uint64)bytes[index - 1];
+    }
+}
+
+fn wymum(a, b) {
+    let r = (Uint128)a * (Uint128)b;
+
+    return ((Uint64)r, (Uint64)(r >> 64));
+}
+
+fn wymix(a, b) {
+    let (ra, rb) = wymum(a, b);
+
+    return ra ^ rb;
+}
+
+pub fn wyseed(bytes, mut seed) {
+    let wyp0 = 0xa0761d6478bd642f;
+    let wyp1 = 0xe7037ed1a0b428db;
+    let wyp2 = 0x8ebc6af09c88c6e3;
+    let wyp3 = 0x589965cc75374cc3;
+
+    seed = (Uint64)seed ^ wyp0;
+
+    if bytes.len() <= 16 {
+        if bytes.len() <= 8 {
+            if bytes.len() >= 4 {
+                let a = wyr4(bytes[0..4]);
+                let b = wyr4(bytes[bytes.len()-4..bytes.len()]);
+
+                return wymix(a ^ wyp1, b ^ seed);
+            } else if !bytes.isEmpty() {
+                let a = wyr3(bytes, bytes.len());
+                let b = 0;
+
+                return wymix(a ^ wyp1, b ^ seed);
+            } else {
+                let a = 0;
+                let b = 0;
+
+                return wymix(a ^ wyp1, b ^ seed);
+            }
+        } else {
+            let a = wyr8(bytes[0..8]);
+            let b = wyr8(bytes[bytes.len()-8..bytes.len()]);
+
+            return wymix(a ^ wyp1, b ^ seed);
+        }
+    } else {
+        let mut i = bytes.len();
+        let mut pos = 0;
+
+        if bytes.len() > 48 {
+            let mut seed1 = seed;
+            let mut seed2 = seed;
+
+            for {
+                seed = wymix(
+                    wyr8(bytes[pos..pos+8]) ^ wyp1,
+                    wyr8(bytes[pos+8..pos+8+8]) ^ seed
+                );
+
+                seed1 = wymix(
+                    wyr8(bytes[pos+16..pos+16+8]) ^ wyp2,
+                    wyr8(bytes[pos+24..pos+24+8]) ^ seed1
+                );
+
+                seed2 = wymix(
+                    wyr8(bytes[pos+32..pos+32+8]) ^ wyp3,
+                    wyr8(bytes[pos+40..pos+40+8]) ^ seed2
+                );
+
+                pos += 48;
+                i -= 48;
+
+                if i <= 48 {
+                    break;
+                }
+            }
+
+            seed = seed ^ seed1 ^ seed2;
+        }
+
+        if i > 16 {
+            seed = wymix(
+                wyr8(bytes[pos..pos+8]) ^ wyp1,
+                wyr8(bytes[pos+8..pos+8+8]) ^ seed
+            );
+
+            pos += 16;
+            i -= 16;
+        }
+
+        let mut offset = pos + i - 17;
+        let a = wyr8(bytes[offset..offset+8]);
+
+        offset = pos + i - 9;
+        let b = wyr8(bytes[offset..offset+8]);
+
+        return wymix(a ^ wyp1, b ^ seed);
+    }
+}
+
+pub fn hash(bytes, seed) {
+    let wyp1 = 0xe7037ed1a0b428db;
+    let newSeed = wyseed(bytes, seed);
+
+    return wymix(wyp1 ^ bytes.len(), newSeed);
+}
+
+class Entry {
+    let hash;
+    let key;
+    let value;
+}
+
+class Bucket {
+    let mut entry;
+    let mut next;
+}
+
+pub class Map {
+    let buckets;
+    let mut size;
+
+    pub fn len() {
+        return this.size;
+    }
+
+    fn grow() {
+        if this.size == 0 {
+            for 0..5 {
+                this.buckets.push(Bucket(entry: nil, next: nil));
+            }
+        } else {
+            raise "not supported";
+        }
+    }
+
+    pub fn set(key, value) {
+        if this.buckets.len() == 0 {
+            this.grow();
+        }
+
+        let hash = hash(key.toString().bytes(), 0);
+        let index = hash % this.buckets.len();
+        let bucket = this.buckets.nth(index)!;
+        let entry = Entry(hash: hash, key: key, value: value);
+
+        if bucket.entry.isNone() {
+            this.size += 1;
+
+            bucket.entry = some(entry);
+        } else {
+            let mut tail = bucket;
+
+            for {
+                if tail.entry!.hash == hash {
+                    tail.entry = some(entry);
+
+                    return nil;
+                }
+
+                if tail.next.isNone() {
+                    break;
+                }
+
+                tail = tail.next!;
+            }
+
+            tail.next = some(Bucket(entry: some(entry), next: nil));
+
+            this.size += 1;
+        }
+    }
+
+    pub fn get(key) {
+        if this.buckets.len() == 0 {
+            return nil;
+        }
+
+        let hash = hash(key.toString().bytes(), 0);
+        let index = hash % this.buckets.len();
+        let bucket = this.buckets.nth(index)!;
+
+        if bucket.entry.isSome() {
+            let mut current = bucket;
+
+            for {
+                if current.entry!.hash == hash {
+                    return some(current.entry!.value);
+                }
+
+                if current.next.isNone() {
+                    break;
+                }
+
+                current = current.next!;
+            }
+        }
+
+        return nil;
+    }
+}
+
+pub fn newMap() {
+    return Map(buckets: [], size: 0);
+}

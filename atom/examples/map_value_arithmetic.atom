@@ -1,7 +1,7 @@
 fn main() {
     let mut map = {};
 
-    map.set(0, 10);
+    map.set("0", 10);
 
-    return 10 + map.get(0)!;
+    return 10 + map.get("0")!;
 }

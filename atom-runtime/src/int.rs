@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::convert::{TryFrom, TryInto};
 use std::fmt::{Display, Formatter};
-use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Shl, Shr, Sub};
+use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 
 use super::result::RuntimeError;
 use super::value::Value;
@@ -161,6 +161,7 @@ impl_op!(BitOr, bitor);
 impl_op!(BitXor, bitxor);
 impl_op!(Shl, shl);
 impl_op!(Shr, shr);
+impl_op!(Rem, rem);
 
 impl TryFrom<Value> for usize {
     type Error = RuntimeError;

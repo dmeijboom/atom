@@ -159,6 +159,7 @@ peg::parser! {
             left:(@) _ "-" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Sub, right }.into()) }
             --
             left:(@) _ "**" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Exp, right }.into()) }
+            left:(@) _ "%" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Mod, right }.into()) }
             left:(@) _ "*" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Mul, right }.into()) }
             left:(@) _ "/" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Div, right }.into()) }
             --
