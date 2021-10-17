@@ -22,8 +22,6 @@ mod vm;
 fn main() {
     let opts = Opts::parse();
 
-    //println!("{}", wyhash2::wyhash_single("hello".as_bytes(), 1));
-
     match opts.cmd {
         Cmd::Run(run_opts) => {
             let source = match fs::read_to_string(&run_opts.filename) {

@@ -5,6 +5,7 @@ use std::rc::Rc;
 use std::sync::RwLock;
 
 use indexmap::map::IndexMap;
+use wyhash2::WyHash;
 
 use atom_ir::{Code, Label, Location, IR};
 
@@ -81,7 +82,7 @@ pub struct Compiler {
     module: Module,
     tree: Vec<Stmt>,
     scope: Vec<Scope>,
-    labels: Vec<String>,
+    labels: HashMap<String, bool, WyHash>,
     modules: Rc<RwLock<HashMap<String, Module>>>,
     optimizers: Vec<Optimizer>,
     // Unfortunately the parser doesn't expose line or column information so we're using a map of
@@ -105,7 +106,7 @@ impl Compiler {
             optimize,
             pos: 0..0,
             scope_id: 0,
-            labels: vec![],
+            labels: HashMap::with_hasher(WyHash::default()),
             module: Module::new(),
             optimizers: if optimize {
                 vec![
@@ -186,7 +187,7 @@ impl Compiler {
             module: Module::with_name(module_name),
             tree,
             scope: vec![],
-            labels: vec![],
+            labels: HashMap::with_hasher(WyHash::default()),
             line_numbers_offset,
             optimizers: self.optimizers.clone(),
             modules: Rc::clone(&self.modules),
@@ -220,7 +221,7 @@ impl Compiler {
         let location = self.get_location_by_offset(&member_cond_expr.pos);
         let location = Some(&location);
 
-        ir.append(self.compile_expr(&member_cond_expr.object)?);
+        self.compile_expr(&mut ir, &member_cond_expr.object)?;
         ir.add(Code::TeeMember("isSome".to_string()), location);
         ir.add(Code::Call(0), location);
         ir.add(
@@ -258,8 +259,8 @@ impl Compiler {
                 format!("{}{}", prefix, i)
             };
 
-            if !self.labels.contains(&label) {
-                self.labels.push(label.clone());
+            if !self.labels.contains_key(&label) {
+                self.labels.insert(label.clone(), true);
 
                 return label;
             }
@@ -268,9 +269,7 @@ impl Compiler {
         }
     }
 
-    fn compile_expr(&mut self, expr: &Expr) -> Result<IR> {
-        let mut ir = IR::new();
-
+    fn compile_expr(&mut self, ir: &mut IR, expr: &Expr) -> Result<()> {
         self.pos = expr.pos();
 
         let location = self.get_location();
@@ -298,22 +297,22 @@ impl Compiler {
                         TemplateComponent::String(s) => {
                             ir.add(Code::ConstString(s.clone()), location);
                         }
-                        TemplateComponent::Expr(expr) => ir.append(self.compile_expr(expr)?),
+                        TemplateComponent::Expr(expr) => self.compile_expr(ir, expr)?,
                     }
                 }
 
                 ir.add(Code::MakeTemplate(template_expr.components.len()), location);
             }
             Expr::Range(range_expr) => {
-                ir.append(self.compile_expr(&range_expr.from)?);
-                ir.append(self.compile_expr(&range_expr.to)?);
+                self.compile_expr(ir, &range_expr.from)?;
+                self.compile_expr(ir, &range_expr.to)?;
                 ir.add(Code::MakeRange, location);
             }
             Expr::Ident(ident) => {
                 ir.add(self.compile_name(&ident.name)?, location);
             }
             Expr::Cast(cast_expr) => {
-                ir.append(self.compile_expr(&cast_expr.expr)?);
+                self.compile_expr(ir, &cast_expr.expr)?;
                 ir.add(Code::Cast(cast_expr.type_name.clone()), location);
             }
             Expr::Call(call_expr) => {
@@ -321,11 +320,11 @@ impl Compiler {
 
                 for arg in call_expr.keyword_args.iter() {
                     names.push(arg.name.clone());
-                    ir.append(self.compile_expr(&arg.value)?);
+                    self.compile_expr(ir, &arg.value)?;
                 }
 
                 for arg in call_expr.args.iter() {
-                    ir.append(self.compile_expr(arg)?);
+                    self.compile_expr(ir, arg)?;
                 }
 
                 let instruction = if names.is_empty() {
@@ -386,47 +385,65 @@ impl Compiler {
                     if (self.optimize || force_optimize) && is_target {
                         ir.add(Code::LoadTarget, location);
                     } else {
-                        ir.append(self.compile_expr(&call_expr.callee)?);
+                        self.compile_expr(ir, &call_expr.callee)?;
                     }
 
                     ir.add(instruction, location);
                 }
             }
             Expr::Unwrap(unwrap_expr) => {
-                ir.append(self.compile_expr(&unwrap_expr.expr)?);
+                self.compile_expr(ir, &unwrap_expr.expr)?;
                 ir.add(Code::Unwrap, location);
             }
             Expr::Not(not_expr) => {
-                ir.append(self.compile_expr(&not_expr.expr)?);
+                self.compile_expr(ir, &not_expr.expr)?;
                 ir.add(Code::Not, location);
             }
             Expr::Index(index_expr) => {
-                if !Scope::in_unsafe_block(&self.scope) {
+                let slice_params = if let Expr::Range(range) = &index_expr.index {
+                    Some((&range.from, &range.to))
+                } else {
+                    None
+                };
+
+                // Contrary to 'normal' index operations the slice operation is safe
+                if slice_params.is_none() && !Scope::in_unsafe_block(&self.scope) {
                     return Err(CompileError::new(
                         "unable to perform index operation outside of an 'unsafe' block"
                             .to_string(),
                     ));
                 }
 
-                ir.append(self.compile_expr(&index_expr.object)?);
+                self.compile_expr(ir, &index_expr.object)?;
 
-                if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
-                    ir.append(self.compile_member_cond(member_cond_expr, Some(Code::LoadIndex))?);
-                } else {
-                    ir.append(self.compile_expr(&index_expr.index)?);
-                    ir.add(Code::LoadIndex, location);
+                match slice_params {
+                    Some((from, to)) => {
+                        self.compile_expr(ir, from)?;
+                        self.compile_expr(ir, to)?;
+                        ir.add(Code::MakeSlice, location);
+                    }
+                    None => {
+                        if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
+                            ir.append(
+                                self.compile_member_cond(member_cond_expr, Some(Code::LoadIndex))?,
+                            );
+                        } else {
+                            self.compile_expr(ir, &index_expr.index)?;
+                            ir.add(Code::LoadIndex, location);
+                        }
+                    }
                 }
             }
             Expr::Tuple(tuple_expr) => {
                 for item in tuple_expr.items.iter() {
-                    ir.append(self.compile_expr(item)?);
+                    self.compile_expr(ir, item)?;
                 }
 
                 ir.add(Code::MakeTuple(tuple_expr.items.len()), location);
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
-                    ir.append(self.compile_expr(item)?);
+                    self.compile_expr(ir, item)?;
                 }
 
                 ir.add(Code::MakeArray(array_expr.items.len()), location);
@@ -447,53 +464,53 @@ impl Compiler {
                 ir.append(self.compile_member_cond(member_cond_expr, None)?);
             }
             Expr::Member(member_expr) => {
-                ir.append(self.compile_expr(&member_expr.object)?);
+                self.compile_expr(ir, &member_expr.object)?;
                 ir.add(Code::LoadMember(member_expr.member.to_string()), location);
             }
             Expr::Arithmetic(arithmetic_expr) => {
-                ir.append(self.compile_expr(&arithmetic_expr.left)?);
-                ir.append(self.compile_expr(&arithmetic_expr.right)?);
+                self.compile_expr(ir, &arithmetic_expr.left)?;
+                self.compile_expr(ir, &arithmetic_expr.right)?;
                 ir.add(arithmetic_expr.op.into(), location);
             }
             Expr::TypeAssert(type_assert_expr) => {
-                ir.append(self.compile_expr(&type_assert_expr.left)?);
-                ir.append(self.compile_expr(&type_assert_expr.right)?);
+                self.compile_expr(ir, &type_assert_expr.left)?;
+                self.compile_expr(ir, &type_assert_expr.right)?;
                 ir.add(Code::AssertIsType, location);
             }
             Expr::Comparison(comparison_expr) => {
-                ir.append(self.compile_expr(&comparison_expr.left)?);
-                ir.append(self.compile_expr(&comparison_expr.right)?);
+                self.compile_expr(ir, &comparison_expr.left)?;
+                self.compile_expr(ir, &comparison_expr.right)?;
                 ir.add(comparison_expr.op.into(), location);
             }
             Expr::Logical(logical_expr) => {
                 match logical_expr.op {
                     LogicalOp::And => {
-                        ir.append(self.compile_expr(&logical_expr.left)?);
-                        ir.append(self.compile_expr(&logical_expr.right)?);
+                        self.compile_expr(ir, &logical_expr.left)?;
+                        self.compile_expr(ir, &logical_expr.right)?;
                         ir.add(Code::LogicalAnd, location);
                     }
                     LogicalOp::Or => {
-                        ir.append(self.compile_expr(&logical_expr.left)?);
+                        self.compile_expr(ir, &logical_expr.left)?;
 
                         let label = self.make_label("or");
 
                         ir.add(Code::JumpIfTrue(Label::new(label.clone())), location);
-                        ir.append(self.compile_expr(&logical_expr.right)?);
+                        self.compile_expr(ir, &logical_expr.right)?;
                         ir.add(Code::SetLabel(label), location);
                     }
                 };
             }
             Expr::MakeRef(make_ref_expr) => {
-                ir.append(self.compile_expr(&make_ref_expr.expr)?);
+                self.compile_expr(ir, &make_ref_expr.expr)?;
                 ir.add(Code::MakeRef, location);
             }
             Expr::Deref(deref_expr) => {
-                ir.append(self.compile_expr(&deref_expr.expr)?);
+                self.compile_expr(ir, &deref_expr.expr)?;
                 ir.add(Code::Deref, location);
             }
         };
 
-        Ok(ir)
+        Ok(())
     }
 
     fn compile_name(&mut self, name: &str) -> Result<Code> {
@@ -573,18 +590,16 @@ impl Compiler {
         Ok(Code::MakeClosure(id))
     }
 
-    fn compile_assign_local(&mut self, name: &str, value: &Expr) -> Result<IR> {
+    fn compile_assign_local(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<()> {
         if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(format!("name is not mutable: {}", name)));
             }
 
-            let mut ir = IR::new();
-
-            ir.append(self.compile_name_value(name, value)?);
+            self.compile_name_value(ir, name, value)?;
             ir.add(self.compile_store(&local), Some(&self.get_location()));
 
-            return Ok(ir);
+            return Ok(());
         }
 
         Err(CompileError::new(format!(
@@ -593,38 +608,46 @@ impl Compiler {
         )))
     }
 
-    fn compile_assign_member(&mut self, object: &Expr, member: &str, value: &Expr) -> Result<IR> {
-        let mut ir = IR::new();
-
-        ir.append(self.compile_expr(value)?);
-        ir.append(self.compile_expr(object)?);
+    fn compile_assign_member(
+        &mut self,
+        ir: &mut IR,
+        object: &Expr,
+        member: &str,
+        value: &Expr,
+    ) -> Result<()> {
+        self.compile_expr(ir, value)?;
+        self.compile_expr(ir, object)?;
         ir.add(
             Code::StoreMember(member.to_string()),
             Some(&self.get_location()),
         );
 
-        Ok(ir)
+        Ok(())
     }
 
-    fn compile_assign_index(&mut self, object: &Expr, index: &Expr, value: &Expr) -> Result<IR> {
-        let mut ir = IR::new();
-
-        ir.append(self.compile_expr(object)?);
-        ir.append(self.compile_expr(index)?);
-        ir.append(self.compile_expr(value)?);
+    fn compile_assign_index(
+        &mut self,
+        ir: &mut IR,
+        object: &Expr,
+        index: &Expr,
+        value: &Expr,
+    ) -> Result<()> {
+        self.compile_expr(ir, object)?;
+        self.compile_expr(ir, index)?;
+        self.compile_expr(ir, value)?;
         ir.add(Code::StoreIndex, Some(&self.get_location()));
 
-        Ok(ir)
+        Ok(())
     }
 
-    fn compile_assign(&mut self, left: &Expr, right: &Expr) -> Result<IR> {
+    fn compile_assign(&mut self, ir: &mut IR, left: &Expr, right: &Expr) -> Result<()> {
         match left {
             Expr::Index(index_expr) => {
-                self.compile_assign_index(&index_expr.object, &index_expr.index, right)
+                self.compile_assign_index(ir, &index_expr.object, &index_expr.index, right)
             }
-            Expr::Ident(ident_expr) => self.compile_assign_local(&ident_expr.name, right),
+            Expr::Ident(ident_expr) => self.compile_assign_local(ir, &ident_expr.name, right),
             Expr::Member(member_expr) => {
-                self.compile_assign_member(&member_expr.object, &member_expr.member, right)
+                self.compile_assign_member(ir, &member_expr.object, &member_expr.member, right)
             }
             _ => Err(CompileError::new(
                 "invalid left-hand side in assignment".to_string(),
@@ -640,14 +663,17 @@ impl Compiler {
         }
     }
 
-    fn compile_name_value(&mut self, name: &str, value: &Expr) -> Result<IR> {
+    fn compile_name_value(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<()> {
         if let Expr::Closure(closure_expr) = value {
-            return Ok(IR::with_codes(vec![
-                self.compile_closure(closure_expr, Some(name.to_string()))?
-            ]));
-        }
+            ir.add(
+                self.compile_closure(closure_expr, Some(name.to_string()))?,
+                Some(&self.get_location()),
+            );
 
-        self.compile_expr(value)
+            Ok(())
+        } else {
+            self.compile_expr(ir, value)
+        }
     }
 
     fn compile_stmt(&mut self, stmt: &Stmt, ir: &mut IR) -> Result<()> {
@@ -662,7 +688,7 @@ impl Compiler {
                 let else_label = self.make_label("else");
                 let cont_label = self.make_label("if_else_cont");
 
-                ir.append(self.compile_expr(&if_stmt.cond)?);
+                self.compile_expr(ir, &if_stmt.cond)?;
                 ir.add(
                     Code::Branch((
                         Label::new(if_label.clone()),
@@ -692,19 +718,19 @@ impl Compiler {
             }
             Stmt::Else(else_stmt) => ir.append(self._compile_stmt_list(&else_stmt.body)?),
             Stmt::Expr(expr_stmt) => {
-                ir.append(self.compile_expr(&expr_stmt.expr)?);
+                self.compile_expr(ir, &expr_stmt.expr)?;
                 ir.add(Code::Discard, location);
             }
             Stmt::Let(let_stmt) => match &let_stmt.var {
                 Variable::Name(name) => {
-                    ir.append(self.compile_name_value(name, &let_stmt.value)?);
+                    self.compile_name_value(ir, name, &let_stmt.value)?;
 
                     let local = self.declare_local(let_stmt.mutable, name)?;
 
                     ir.add(self.compile_store(&local), location);
                 }
                 Variable::Tuple(names) | Variable::Array(names) => {
-                    ir.append(self.compile_expr(&let_stmt.value)?);
+                    self.compile_expr(ir, &let_stmt.value)?;
 
                     for (i, name) in names.iter().enumerate() {
                         let local = self.declare_local(let_stmt.mutable, name)?;
@@ -728,27 +754,26 @@ impl Compiler {
             }
             Stmt::Assign(assign_stmt) => {
                 if let Some(op) = &assign_stmt.op {
-                    ir.append(
-                        self.compile_assign(
-                            &assign_stmt.left,
-                            &Expr::Arithmetic(
-                                ArithmeticExpr {
-                                    left: assign_stmt.left.clone(),
-                                    right: assign_stmt.right.clone(),
-                                    op: match op {
-                                        AssignOp::Mul => ArithmeticOp::Mul,
-                                        AssignOp::Div => ArithmeticOp::Div,
-                                        AssignOp::Add => ArithmeticOp::Add,
-                                        AssignOp::Sub => ArithmeticOp::Sub,
-                                    },
-                                    pos: assign_stmt.pos.clone(),
-                                }
-                                .into(),
-                            ),
-                        )?,
-                    );
+                    self.compile_assign(
+                        ir,
+                        &assign_stmt.left,
+                        &Expr::Arithmetic(
+                            ArithmeticExpr {
+                                left: assign_stmt.left.clone(),
+                                right: assign_stmt.right.clone(),
+                                op: match op {
+                                    AssignOp::Mul => ArithmeticOp::Mul,
+                                    AssignOp::Div => ArithmeticOp::Div,
+                                    AssignOp::Add => ArithmeticOp::Add,
+                                    AssignOp::Sub => ArithmeticOp::Sub,
+                                },
+                                pos: assign_stmt.pos.clone(),
+                            }
+                            .into(),
+                        ),
+                    )?;
                 } else {
-                    ir.append(self.compile_assign(&assign_stmt.left, &assign_stmt.right)?)
+                    self.compile_assign(ir, &assign_stmt.left, &assign_stmt.right)?;
                 }
             }
             Stmt::For(for_stmt) => {
@@ -759,7 +784,7 @@ impl Compiler {
                 if let Some(expr) = &for_stmt.expr {
                     let iter = self.set_local("__iter__".to_string(), false)?;
 
-                    ir.append(self.compile_expr(expr)?);
+                    self.compile_expr(ir, expr)?;
 
                     self.enter_scope(ScopeContext::ForLoop(ForLoopMeta {
                         continue_label: cont_label.clone(),
@@ -863,11 +888,11 @@ impl Compiler {
                 }
             }
             Stmt::Raise(raise_stmt) => {
-                ir.append(self.compile_expr(&raise_stmt.expr)?);
+                self.compile_expr(ir, &raise_stmt.expr)?;
                 ir.add(Code::Raise, location);
             }
             Stmt::Return(return_stmt) => {
-                ir.append(self.compile_expr(&return_stmt.expr)?);
+                self.compile_expr(ir, &return_stmt.expr)?;
                 ir.add(Code::Return, location);
             }
             Stmt::Unsafe(unsafe_stmt) => {
@@ -913,14 +938,17 @@ impl Compiler {
     fn has_no_side_effects(&self, code: &Code) -> bool {
         matches!(
             code,
-            Code::ArithmeticAdd
+            Code::Return
+                | Code::ArithmeticAdd
                 | Code::ArithmeticSub
                 | Code::ArithmeticMul
                 | Code::ArithmeticDiv
                 | Code::ArithmeticExp
-                | Code::Return
                 | Code::ArithmeticBitAnd
                 | Code::ArithmeticBitOr
+                | Code::ArithmeticBitXor
+                | Code::ArithmeticBitShiftLeft
+                | Code::ArithmeticBitShiftRight
                 | Code::ComparisonEq
                 | Code::ComparisonNeq
                 | Code::ComparisonGt

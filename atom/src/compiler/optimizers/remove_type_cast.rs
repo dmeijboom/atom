@@ -51,7 +51,9 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
                 "Uint128" => Code::ConstUint128(value as u128),
                 "Int128" => Code::ConstInt128(value as i128),
                 _ => unreachable!(),
-            }
+            };
+
+            continue;
         }
 
         break;

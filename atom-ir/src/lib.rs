@@ -298,6 +298,12 @@ impl IR {
     }
 
     pub fn append(&mut self, mut ir: IR) {
+        if self.codes.is_empty() && self.locations.is_empty() {
+            *self = ir;
+
+            return;
+        }
+
         for (i, location) in ir.locations {
             self.locations.insert(self.codes.len() + i, location);
         }

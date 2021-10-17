@@ -7,7 +7,7 @@ use std::rc::Rc;
 use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
-use atom_ir::{Code, Label, IR};
+use atom_ir::{Code, IR, Label};
 use atom_runtime::{
     AtomApi, AtomRef, Class, Closure, Fn, FnArg, FnPtr, Int, Interface, Method, Object, Result,
     RuntimeError, Symbol, Value, ValueType,
