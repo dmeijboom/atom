@@ -112,7 +112,10 @@ pub fn display_parse_error(e: ParseError<LineCol>) {
 pub fn display_compile_error(e: CompileError) {
     eprintln!(
         "CompileError: {} at {}:{}:{}",
-        e.message, "<unknown>", e.location.line, e.location.column
+        e.message,
+        e.filename.unwrap_or_else(|| "<unknown>".to_string()),
+        e.location.line,
+        e.location.column
     );
 }
 

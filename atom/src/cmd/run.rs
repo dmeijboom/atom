@@ -38,7 +38,13 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         compiler.add_lookup_path(path);
     }
 
-    let mut modules = compiler.compile_all()?;
+    let mut modules = compiler.compile_all().map_err(|e| {
+        if let Some(filename) = opts.filename.to_str().map(|s| s.to_string()) {
+            e.with_filename(filename)
+        } else {
+            e
+        }
+    })?;
     let module = modules
         .iter_mut()
         .find(|module| module.name == "main")

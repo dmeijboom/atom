@@ -31,11 +31,13 @@ pub enum Type {
     Class(String),
     Closure(String),
     Interface(String),
-    Object(String),
+    // @TODO: use this
+    //Object(String),
     Tuple(Vec<Type>),
     Array(Box<Type>),
     Ref(Box<Type>),
-    Extern(String),
+    // @TODO: use this
+    //Extern(String),
     Map(Box<MapType>),
     Unknown,
 }
@@ -57,7 +59,8 @@ impl Display for Type {
             Type::Class(name) => write!(f, "{}", name),
             Type::Closure(_) => write!(f, "Closure"),
             Type::Interface(name) => write!(f, "{}", name),
-            Type::Object(inner_type) => write!(f, "Object<{}>", inner_type),
+            // @TODO: implement this
+            //Type::Object(inner_type) => write!(f, "Object<{}>", inner_type),
             Type::Tuple(types) => write!(
                 f,
                 "Tuple<{}>",
@@ -69,7 +72,8 @@ impl Display for Type {
             ),
             Type::Array(inner_type) => write!(f, "Array<{}>", inner_type),
             Type::Ref(ref_type) => write!(f, "Ref<{}>", ref_type),
-            Type::Extern(_) => write!(f, "Extern"),
+            // @TODO: implement this
+            //Type::Extern(_) => write!(f, "Extern"),
             Type::Map(map_type) => {
                 write!(f, "Map<{}, {}>", map_type.key, map_type.value)
             }

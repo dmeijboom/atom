@@ -1235,12 +1235,22 @@ impl Compiler {
         let tree = parser::parse(file.source())
             .map_err(|e| CompileError::new(format!("failed to parse module '{}': {}", name, e)))?;
 
-        let line_numbers_offset = parse_line_numbers_offset(file.source());
-        let mut module = self.fork(name, tree, line_numbers_offset).compile()?;
-
-        module.filename = file
+        let filename = file
             .name()
             .and_then(|name| name.to_str().map(|filename| filename.to_string()));
+        let line_numbers_offset = parse_line_numbers_offset(file.source());
+        let mut module = self
+            .fork(name, tree, line_numbers_offset)
+            .compile()
+            .map_err(|e| {
+                if let Some(filename) = filename.clone() {
+                    e.with_filename(filename)
+                } else {
+                    e
+                }
+            })?;
+
+        module.filename = filename;
 
         Ok(module)
     }
