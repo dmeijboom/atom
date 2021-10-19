@@ -8,7 +8,7 @@ use atom_runtime::{
     AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError, Value,
 };
 
-use crate::compiler::{self, TypeKind};
+use crate::compiler::{self, Type};
 use crate::vm::module::ModuleId;
 
 use super::module::Module;
@@ -171,52 +171,48 @@ impl ModuleCache {
             .collect();
 
         // At last, register the globals
-        for (global_name, global) in compiled_module.imports {
-            let sub_module = self.modules.get(&global.module_name).ok_or_else(|| {
-                RuntimeError::new(format!(
-                    "unable to register global '{}' for unknown module: {}",
-                    global_name, global.module_name
-                ))
-            })?;
-
-            let value = match global.kind {
-                TypeKind::Fn => {
-                    let func = sub_module
-                        .funcs
-                        .iter()
-                        .find(|func| func.name == global_name)
+        for (import_name, import) in compiled_module.imports {
+            let origin = self.modules.get(&import.origin);
+            let value = match import.known_type {
+                Type::Fn(_) => {
+                    let func = origin
+                        .and_then(|module| {
+                            module.funcs.iter().find(|func| func.name == import_name)
+                        })
                         .ok_or_else(|| {
-                            RuntimeError::new(format!(
-                                "unable to register function '{}' for module: {}",
-                                global_name, global.module_name
-                            ))
+                            RuntimeError::new(format!("unable to resolve import: {}", import_name))
                         })?;
 
                     Value::Fn(AtomRef::clone(func))
                 }
-                TypeKind::Class => {
-                    let class = sub_module.classes.get(&global_name).ok_or_else(|| {
-                        RuntimeError::new(format!(
-                            "unable to register class '{}' for module: {}",
-                            global_name, global.module_name
-                        ))
-                    })?;
+                Type::Class(_) => {
+                    let class = origin
+                        .and_then(|module| module.classes.get(&import_name))
+                        .ok_or_else(|| {
+                            RuntimeError::new(format!("unable to resolve import: {}", import_name))
+                        })?;
 
                     Value::Class(AtomRef::clone(class))
                 }
-                TypeKind::Interface => {
-                    let interface = sub_module
-                        .interfaces
-                        .iter()
-                        .find(|interface| interface.name == global_name)
+                Type::Interface(_) => {
+                    let interface = origin
+                        .and_then(|module| {
+                            module
+                                .interfaces
+                                .iter()
+                                .find(|interface| interface.name == import_name)
+                        })
                         .ok_or_else(|| {
-                            RuntimeError::new(format!(
-                                "unable to register interface '{}' for module: {}",
-                                global_name, global.module_name
-                            ))
+                            RuntimeError::new(format!("unable to resolve import: {}", import_name))
                         })?;
 
                     Value::Interface(AtomRef::clone(interface))
+                }
+                _ => {
+                    return Err(RuntimeError::new(format!(
+                        "invalid type for import: {}",
+                        import_name
+                    )))
                 }
             };
 

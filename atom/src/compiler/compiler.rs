@@ -14,15 +14,17 @@ use crate::ast::{
     FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
     TemplateComponent, Variable,
 };
-use crate::compiler::filesystem::{FileSystem, FileSystemCache};
-use crate::compiler::optimizers::{remove_core_validations, remove_type_cast};
+use crate::compiler::module::Import;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
-use super::module::{Class, Field, Func, FuncArg, Interface, Module, Type, TypeKind};
+use super::filesystem::{FileSystem, FileSystemCache};
+use super::module::{Class, Field, Func, FuncArg, Interface, Module};
 use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, Optimizer};
+use super::optimizers::{remove_core_validations, remove_type_cast};
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
+use super::types::Type;
 
 pub fn parse_line_numbers_offset(source: &str) -> Vec<usize> {
     let mut i = 0;
@@ -197,12 +199,6 @@ impl Compiler {
             optimizers: self.optimizers.clone(),
             modules: Rc::clone(&self.modules),
         }
-    }
-
-    fn add_export(&mut self, kind: TypeKind, name: String) {
-        self.module
-            .exports
-            .insert(name, Type::new(kind, self.module.name.clone()));
     }
 
     #[inline(always)]
@@ -991,7 +987,10 @@ impl Compiler {
 
     fn compile_extern_fn(&mut self, extern_fn_decl: &ExternFnDeclStmt) -> Func {
         if extern_fn_decl.public {
-            self.add_export(TypeKind::Fn, extern_fn_decl.name.clone());
+            self.module.exports.insert(
+                extern_fn_decl.name.clone(),
+                Type::Fn(extern_fn_decl.name.clone()),
+            );
         }
 
         Func {
@@ -1007,6 +1006,12 @@ impl Compiler {
     }
 
     fn compile_fn(&mut self, fn_decl: &FnDeclStmt, is_method: bool) -> Result<Func> {
+        if fn_decl.public {
+            self.module
+                .exports
+                .insert(fn_decl.name.clone(), Type::Fn(fn_decl.name.clone()));
+        }
+
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
@@ -1053,10 +1058,6 @@ impl Compiler {
             }
         }
 
-        if fn_decl.public {
-            self.add_export(TypeKind::Fn, fn_decl.name.clone());
-        }
-
         Ok(Func {
             location: self.get_location_by_offset(&fn_decl.pos),
             name: fn_decl.name.clone(),
@@ -1077,7 +1078,10 @@ impl Compiler {
 
     fn compile_class(&mut self, class_decl: ClassDeclStmt) -> Result<()> {
         if class_decl.public {
-            self.add_export(TypeKind::Class, class_decl.name.clone());
+            self.module.exports.insert(
+                class_decl.name.clone(),
+                Type::Class(class_decl.name.clone()),
+            );
         }
 
         // Register class early so that it can be referenced in one of it's methods
@@ -1130,7 +1134,10 @@ impl Compiler {
 
     fn compile_interface(&mut self, interface_decl: &InterfaceDeclStmt) -> Result<Interface> {
         if interface_decl.public {
-            self.add_export(TypeKind::Interface, interface_decl.name.clone());
+            self.module.exports.insert(
+                interface_decl.name.clone(),
+                Type::Interface(interface_decl.name.clone()),
+            );
         }
 
         Ok(Interface {
@@ -1209,7 +1216,10 @@ impl Compiler {
                 )));
             }
 
-            self.module.imports.insert(name.to_string(), global.clone());
+            self.module.imports.insert(
+                name.to_string(),
+                Import::new(global.clone(), module.name.clone()),
+            );
 
             return Ok(());
         } else if let Some(mixin) = module.mixins.get(name) {
@@ -1422,7 +1432,7 @@ impl Compiler {
             .into_inner()
             .unwrap();
 
-        // sort modules based on it's dependencies (@TODO: better error reporting)
+        // Sort modules based on their dependencies (@TODO: better error reporting)
         let mut output = vec![];
         let mut resolved = vec![];
 
@@ -1433,10 +1443,19 @@ impl Compiler {
                     !module
                         .imports
                         .iter()
-                        .any(|(_, global)| !resolved.contains(&global.module_name))
+                        .any(|(_, import)| !resolved.contains(&import.origin))
                 })
                 .map(|(name, _)| name)
-                .ok_or_else(|| CompileError::new("circular dependency not allowed".to_string()))?
+                .ok_or_else(|| {
+                    CompileError::new(format!(
+                        "circular dependency not allowed: {}",
+                        modules
+                            .iter()
+                            .map(|(name, _)| name.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    ))
+                })?
                 .clone();
 
             let module = modules.remove(&name).unwrap();

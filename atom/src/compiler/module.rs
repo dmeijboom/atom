@@ -7,6 +7,8 @@ use atom_ir::{Location, IR};
 
 use crate::ast::MixinDeclStmt;
 
+use super::types::Type;
+
 #[derive(Debug, Clone)]
 pub struct FuncArg {
     pub mutable: bool,
@@ -59,22 +61,15 @@ pub struct Interface {
     pub functions: Vec<String>,
 }
 
-#[derive(Debug, Clone)]
-pub enum TypeKind {
-    Fn,
-    Class,
-    Interface,
+#[derive(Debug)]
+pub struct Import {
+    pub known_type: Type,
+    pub origin: String,
 }
 
-#[derive(Debug, Clone)]
-pub struct Type {
-    pub kind: TypeKind,
-    pub module_name: String,
-}
-
-impl Type {
-    pub fn new(kind: TypeKind, module_name: String) -> Self {
-        Self { kind, module_name }
+impl Import {
+    pub fn new(known_type: Type, origin: String) -> Self {
+        Self { known_type, origin }
     }
 }
 
@@ -86,7 +81,7 @@ pub struct Module {
     pub mixins: HashMap<String, MixinDeclStmt>,
     pub classes: IndexMap<String, Class>,
     pub interfaces: IndexMap<String, Interface>,
-    pub imports: IndexMap<String, Type>,
+    pub imports: IndexMap<String, Import>,
     pub exports: HashMap<String, Type>,
 }
 

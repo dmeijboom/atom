@@ -1,11 +1,11 @@
 use atom_ir::{Code, IR};
 
-use crate::compiler::Module;
+use crate::compiler::{Module, Type};
 
 /// Skip 'Iterable' validations for known core iterators
 pub fn optimize(module: &Module, instructions: &mut IR) {
-    if let Some((id, _, global)) = module.imports.get_full("Iterable") {
-        if global.module_name != "std.core" {
+    if let Some((id, _, import)) = module.imports.get_full("Iterable") {
+        if !(matches!(import.known_type, Type::Interface(_)) && import.origin == "std.core") {
             return;
         }
 
