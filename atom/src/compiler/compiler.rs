@@ -10,8 +10,8 @@ use wyhash2::WyHash;
 use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
-    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, Expr, ExternFnDeclStmt,
-    FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
+    ArithmeticExpr, ArithmeticOp, AssignOp, CallExpr, ClassDeclStmt, ClosureExpr, Expr,
+    ExternFnDeclStmt, FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
     TemplateComponent, Variable,
 };
 use crate::compiler::module::Import;
@@ -720,11 +720,11 @@ impl Compiler {
         }
     }
 
-    fn declare_local(&mut self, mutable: bool, name: &str) -> Result<Local> {
+    fn declare_local(&mut self, name: &str, mutable: bool, known_type: Type) -> Result<Local> {
         if Scope::get_local(&self.scope, name, false).is_some() {
             Err(CompileError::new(format!("name already defined: {}", name)))
         } else {
-            Ok(self.set_local(name.to_string(), mutable, Type::Unknown)?)
+            Ok(self.set_local(name.to_string(), mutable, known_type)?)
         }
     }
 
@@ -753,7 +753,9 @@ impl Compiler {
                 let else_label = self.make_label("else");
                 let cont_label = self.make_label("if_else_cont");
 
-                self.compile_expr(ir, &if_stmt.cond)?;
+                let condition = self.compile_expr(ir, &if_stmt.cond)?;
+                self.type_checker.condition(condition)?;
+
                 ir.add(
                     Code::Branch((
                         Label::new(if_label.clone()),
@@ -788,9 +790,8 @@ impl Compiler {
             }
             Stmt::Let(let_stmt) => match &let_stmt.var {
                 Variable::Name(name) => {
-                    self.compile_name_value(ir, name, &let_stmt.value)?;
-
-                    let local = self.declare_local(let_stmt.mutable, name)?;
+                    let local_type = self.compile_name_value(ir, name, &let_stmt.value)?;
+                    let local = self.declare_local(name, let_stmt.mutable, local_type)?;
 
                     ir.add(self.compile_store(&local), location);
                 }
@@ -798,7 +799,7 @@ impl Compiler {
                     self.compile_expr(ir, &let_stmt.value)?;
 
                     for (i, name) in names.iter().enumerate() {
-                        let local = self.declare_local(let_stmt.mutable, name)?;
+                        let local = self.declare_local(name, let_stmt.mutable, Type::Unknown)?;
 
                         ir.add(Code::ConstUint64(i as u64), location);
                         // We need to keep the current value until the last item was processed
@@ -815,7 +816,7 @@ impl Compiler {
                 }
             },
             Stmt::LetDecl(let_decl_stmt) => {
-                self.declare_local(true, &let_decl_stmt.name)?;
+                self.declare_local(&let_decl_stmt.name, true, Type::Unknown)?;
             }
             Stmt::Assign(assign_stmt) => {
                 if let Some(op) = &assign_stmt.op {
