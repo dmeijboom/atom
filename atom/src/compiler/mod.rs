@@ -9,4 +9,5 @@ mod module;
 mod optimizers;
 mod result;
 mod scope;
+mod type_checker;
 mod types;

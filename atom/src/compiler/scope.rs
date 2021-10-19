@@ -1,12 +1,24 @@
 use std::collections::HashMap;
 
-use crate::compiler::CompileError;
+use crate::compiler::{CompileError, Type};
 
 #[derive(Clone)]
 pub struct Local {
     pub id: usize,
     pub name: String,
     pub mutable: bool,
+    pub known_type: Type,
+}
+
+impl Local {
+    pub fn new(id: usize, name: String, mutable: bool, known_type: Type) -> Self {
+        Self {
+            id,
+            name,
+            mutable,
+            known_type,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -105,6 +117,7 @@ impl Scope {
         scope: &mut [Scope],
         name: String,
         mutable: bool,
+        known_type: Type,
     ) -> Result<Local, CompileError> {
         let id = walk_mut(scope, |scope| {
             if let ScopeContext::Function(_) = &scope.context {
@@ -122,7 +135,7 @@ impl Scope {
         })?;
 
         let scope = scope.last_mut().unwrap();
-        let local = Local { id, name, mutable };
+        let local = Local::new(id, name, mutable, known_type);
 
         scope.locals.insert(local.name.clone(), local.clone());
 

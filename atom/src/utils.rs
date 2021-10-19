@@ -110,7 +110,10 @@ pub fn display_parse_error(e: ParseError<LineCol>) {
 }
 
 pub fn display_compile_error(e: CompileError) {
-    eprintln!("CompileError: {}", e);
+    eprintln!(
+        "CompileError: {} at {}:{}:{}",
+        e.message, "<unknown>", e.location.line, e.location.column
+    );
 }
 
 pub fn display_runtime_error(e: RuntimeError) {

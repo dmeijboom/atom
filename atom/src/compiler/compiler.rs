@@ -15,6 +15,7 @@ use crate::ast::{
     TemplateComponent, Variable,
 };
 use crate::compiler::module::Import;
+use crate::compiler::types::MapType;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
@@ -24,7 +25,8 @@ use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, Opt
 use super::optimizers::{remove_core_validations, remove_type_cast};
 use super::result::{CompileError, Result};
 use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
-use super::types::Type;
+use super::type_checker::TypeChecker;
+use super::types::{self, Type};
 
 pub fn parse_line_numbers_offset(source: &str) -> Vec<usize> {
     let mut i = 0;
@@ -89,6 +91,7 @@ pub struct Compiler {
     module: Module,
     tree: Vec<Stmt>,
     scope: Vec<Scope>,
+    type_checker: TypeChecker,
     labels: HashMap<String, bool, WyHash>,
     modules: Rc<RwLock<HashMap<String, Module>>>,
     optimizers: Vec<Optimizer>,
@@ -126,6 +129,7 @@ impl Compiler {
             } else {
                 vec![]
             },
+            type_checker: TypeChecker::new(),
             scope: vec![Scope::new()],
             line_numbers_offset,
             modules: Rc::new(RwLock::new(HashMap::new())),
@@ -175,8 +179,8 @@ impl Compiler {
     }
 
     #[inline(always)]
-    fn set_local(&mut self, name: String, mutable: bool) -> Result<Local> {
-        Scope::set_local(self.scope.as_mut(), name, mutable).map_err(|e| {
+    fn set_local(&mut self, name: String, mutable: bool, known_type: Type) -> Result<Local> {
+        Scope::set_local(self.scope.as_mut(), name, mutable, known_type).map_err(|e| {
             let mut e = e;
 
             e.location = self.get_location();
@@ -196,6 +200,7 @@ impl Compiler {
             scope: vec![],
             labels: HashMap::with_hasher(WyHash::default()),
             line_numbers_offset,
+            type_checker: TypeChecker::new(),
             optimizers: self.optimizers.clone(),
             modules: Rc::clone(&self.modules),
         }
@@ -243,7 +248,7 @@ impl Compiler {
             ir.add(body, location);
         }
 
-        ir.add(self.compile_name("some")?, location);
+        ir.add(self.compile_name("some")?.0, location);
         ir.add(Code::Call(1), location);
         ir.add(Code::SetLabel(label_none), location);
 
@@ -270,51 +275,70 @@ impl Compiler {
         }
     }
 
-    fn compile_expr(&mut self, ir: &mut IR, expr: &Expr) -> Result<()> {
+    fn compile_expr(&mut self, ir: &mut IR, expr: &Expr) -> Result<Type> {
         self.pos = expr.pos();
 
         let location = self.get_location();
         let location = Some(&location);
 
-        match &expr {
-            Expr::Literal(literal_expr) => ir.add(
-                match &literal_expr.literal {
-                    Literal::Int128(val) => Code::ConstInt128(*val),
-                    Literal::Int64(val) => Code::ConstInt64(*val),
-                    Literal::Uint64(val) => Code::ConstUint64(*val),
-                    Literal::Int32(val) => Code::ConstInt32(*val),
-                    Literal::Byte(val) => Code::ConstByte(*val),
-                    Literal::Float(val) => Code::ConstFloat(*val),
-                    Literal::Bool(val) => Code::ConstBool(*val),
-                    Literal::Char(val) => Code::ConstChar(*val),
-                    Literal::Symbol(name) => Code::ConstSymbol(name.clone()),
-                    Literal::String(val) => Code::ConstString(val.clone()),
-                },
-                location,
-            ),
+        Ok(match &expr {
+            Expr::Literal(literal_expr) => {
+                let (code, known_type) = match &literal_expr.literal {
+                    Literal::Int128(val) => (Code::ConstInt128(*val), types::INT.clone()),
+                    Literal::Int64(val) => (Code::ConstInt64(*val), types::INT.clone()),
+                    Literal::Uint64(val) => (Code::ConstUint64(*val), types::INT.clone()),
+                    Literal::Int32(val) => (Code::ConstInt32(*val), types::INT.clone()),
+                    Literal::Byte(val) => (Code::ConstByte(*val), types::BYTE.clone()),
+                    Literal::Float(val) => (Code::ConstFloat(*val), types::FLOAT.clone()),
+                    Literal::Bool(val) => (Code::ConstBool(*val), types::BOOL.clone()),
+                    Literal::Char(val) => (Code::ConstChar(*val), types::CHAR.clone()),
+                    Literal::Symbol(name) => {
+                        (Code::ConstSymbol(name.clone()), types::SYMBOL.clone())
+                    }
+                    Literal::String(val) => (Code::ConstString(val.clone()), types::STRING.clone()),
+                };
+
+                ir.add(code, location);
+
+                known_type
+            }
             Expr::Template(template_expr) => {
                 for component in template_expr.components.iter() {
                     match component {
                         TemplateComponent::String(s) => {
                             ir.add(Code::ConstString(s.clone()), location);
                         }
-                        TemplateComponent::Expr(expr) => self.compile_expr(ir, expr)?,
+                        TemplateComponent::Expr(expr) => {
+                            self.compile_expr(ir, expr)?;
+                        }
                     }
                 }
 
                 ir.add(Code::MakeTemplate(template_expr.components.len()), location);
+
+                types::STRING.clone()
             }
             Expr::Range(range_expr) => {
                 self.compile_expr(ir, &range_expr.from)?;
                 self.compile_expr(ir, &range_expr.to)?;
+
                 ir.add(Code::MakeRange, location);
+
+                // @TODO: return an actual type
+                Type::Unknown
             }
             Expr::Ident(ident) => {
-                ir.add(self.compile_name(&ident.name)?, location);
+                let (code, known_type) = self.compile_name(&ident.name)?;
+
+                ir.add(code, location);
+
+                known_type
             }
             Expr::Cast(cast_expr) => {
                 self.compile_expr(ir, &cast_expr.expr)?;
                 ir.add(Code::Cast(cast_expr.type_name.clone()), location);
+
+                Type::Unknown
             }
             Expr::Call(call_expr) => {
                 let mut names = vec![];
@@ -362,16 +386,6 @@ impl Compiler {
                                         self.module.get_fn_by_name(&target).is_none(),
                                     );
                                 }
-
-                                // @TODO: Support tail calls for methods
-                                //if is_method {
-                                //    if let Expr::Member(member_expr) = &call_expr.callee {
-                                //        if let Expr::Ident(ident_expr) = &member_expr.object {
-                                //            return ident_expr.name == "this"
-                                //                && member_expr.member == target;
-                                //        }
-                                //    }
-                                //}
                             }
                         }
 
@@ -391,14 +405,20 @@ impl Compiler {
 
                     ir.add(instruction, location);
                 }
+
+                Type::Unknown
             }
             Expr::Unwrap(unwrap_expr) => {
-                self.compile_expr(ir, &unwrap_expr.expr)?;
+                let known_type = self.compile_expr(ir, &unwrap_expr.expr)?;
                 ir.add(Code::Unwrap, location);
+
+                self.type_checker.unwrap_option(known_type)?
             }
             Expr::Not(not_expr) => {
-                self.compile_expr(ir, &not_expr.expr)?;
+                let condition = self.compile_expr(ir, &not_expr.expr)?;
                 ir.add(Code::Not, location);
+
+                self.type_checker.condition(condition)?
             }
             Expr::Index(index_expr) => {
                 let slice_params = if let Expr::Range(range) = &index_expr.index {
@@ -415,32 +435,42 @@ impl Compiler {
                     ));
                 }
 
-                self.compile_expr(ir, &index_expr.object)?;
+                let array_type = self.compile_expr(ir, &index_expr.object)?;
 
                 match slice_params {
                     Some((from, to)) => {
                         self.compile_expr(ir, from)?;
                         self.compile_expr(ir, to)?;
                         ir.add(Code::MakeSlice, location);
+
+                        array_type
                     }
                     None => {
                         if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
                             ir.append(
                                 self.compile_member_cond(member_cond_expr, Some(Code::LoadIndex))?,
                             );
+
+                            Type::Unknown
                         } else {
                             self.compile_expr(ir, &index_expr.index)?;
                             ir.add(Code::LoadIndex, location);
+
+                            self.type_checker.index(array_type)?
                         }
                     }
                 }
             }
             Expr::Tuple(tuple_expr) => {
+                let mut item_types = vec![];
+
                 for item in tuple_expr.items.iter() {
-                    self.compile_expr(ir, item)?;
+                    item_types.push(self.compile_expr(ir, item)?);
                 }
 
                 ir.add(Code::MakeTuple(tuple_expr.items.len()), location);
+
+                Type::Tuple(item_types)
             }
             Expr::Array(array_expr) => {
                 for item in array_expr.items.iter() {
@@ -448,9 +478,12 @@ impl Compiler {
                 }
 
                 ir.add(Code::MakeArray(array_expr.items.len()), location);
+
+                Type::Array(Box::new(Type::Unknown))
             }
             Expr::Map(map_expr) => {
-                let local = self.set_local("__map__".to_string(), false)?;
+                let map_type = Type::Map(Box::new(MapType::new(Type::Unknown, Type::Unknown)));
+                let local = self.set_local("__map__".to_string(), false, map_type.clone())?;
                 let new_map_id = self.module.imports.get_index_of("newMap").unwrap();
 
                 ir.add(Code::LoadGlobal(new_map_id), location);
@@ -466,31 +499,46 @@ impl Compiler {
                 }
 
                 ir.add(Code::Load(local.id), location);
+
+                map_type
             }
             Expr::Closure(closure_expr) => {
                 ir.add(self.compile_closure(closure_expr, None)?, location);
+
+                Type::Unknown
             }
             Expr::MemberCond(member_cond_expr) => {
                 ir.append(self.compile_member_cond(member_cond_expr, None)?);
+
+                Type::Unknown
             }
             Expr::Member(member_expr) => {
                 self.compile_expr(ir, &member_expr.object)?;
+
                 ir.add(Code::LoadMember(member_expr.member.to_string()), location);
+
+                Type::Unknown
             }
             Expr::Arithmetic(arithmetic_expr) => {
                 self.compile_expr(ir, &arithmetic_expr.left)?;
                 self.compile_expr(ir, &arithmetic_expr.right)?;
                 ir.add(arithmetic_expr.op.into(), location);
+
+                Type::Unknown
             }
             Expr::TypeAssert(type_assert_expr) => {
                 self.compile_expr(ir, &type_assert_expr.left)?;
                 self.compile_expr(ir, &type_assert_expr.right)?;
                 ir.add(Code::AssertIsType, location);
+
+                types::BOOL.clone()
             }
             Expr::Comparison(comparison_expr) => {
                 self.compile_expr(ir, &comparison_expr.left)?;
                 self.compile_expr(ir, &comparison_expr.right)?;
                 ir.add(comparison_expr.op.into(), location);
+
+                types::BOOL.clone()
             }
             Expr::Logical(logical_expr) => {
                 match logical_expr.op {
@@ -509,33 +557,38 @@ impl Compiler {
                         ir.add(Code::SetLabel(label), location);
                     }
                 };
+
+                types::BOOL.clone()
             }
             Expr::MakeRef(make_ref_expr) => {
-                self.compile_expr(ir, &make_ref_expr.expr)?;
+                let inner_type = self.compile_expr(ir, &make_ref_expr.expr)?;
                 ir.add(Code::MakeRef, location);
+
+                Type::Ref(Box::new(inner_type))
             }
             Expr::Deref(deref_expr) => {
-                self.compile_expr(ir, &deref_expr.expr)?;
-                ir.add(Code::Deref, location);
-            }
-        };
+                let ref_type = self.compile_expr(ir, &deref_expr.expr)?;
 
-        Ok(())
+                ir.add(Code::Deref, location);
+
+                self.type_checker.deref(ref_type)?
+            }
+        })
     }
 
-    fn compile_name(&mut self, name: &str) -> Result<Code> {
+    fn compile_name(&mut self, name: &str) -> Result<(Code, Type)> {
         if name == "this" && Scope::in_function_block(&self.scope) {
-            Ok(Code::LoadReceiver)
+            Ok((Code::LoadReceiver, Type::Unknown))
         } else if let Some(local) = Scope::get_local(&self.scope, name, true) {
-            Ok(Code::Load(local.id))
-        } else if let Some(id) = self.module.imports.get_index_of(name) {
-            Ok(Code::LoadGlobal(id))
+            Ok((Code::Load(local.id), local.known_type))
+        } else if let Some((id, _, import)) = self.module.imports.get_full(name) {
+            Ok((Code::LoadGlobal(id), import.known_type.clone()))
         } else if let Some(id) = self.module.funcs.iter().position(|func| func.name == name) {
-            Ok(Code::LoadFn(id))
+            Ok((Code::LoadFn(id), Type::Fn(name.to_string())))
         } else if let Some(id) = self.module.classes.get_index_of(name) {
-            Ok(Code::LoadClass(id))
+            Ok((Code::LoadClass(id), Type::Class(name.to_string())))
         } else if let Some(id) = self.module.interfaces.get_index_of(name) {
-            Ok(Code::LoadInterface(id))
+            Ok((Code::LoadInterface(id), Type::Interface(name.to_string())))
         } else {
             let index = self.tree.iter().position(|stmt| match stmt {
                 Stmt::FnDecl(fn_decl_stmt) if fn_decl_stmt.name == name => true,
@@ -573,7 +626,7 @@ impl Compiler {
         }
 
         for arg in closure_expr.args.iter() {
-            self.set_local(arg.name.clone(), arg.mutable)?;
+            self.set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
 
             args.push(FuncArg {
                 mutable: arg.mutable,
@@ -600,7 +653,7 @@ impl Compiler {
         Ok(Code::MakeClosure(id))
     }
 
-    fn compile_assign_local(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<()> {
+    fn compile_assign_local(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<Type> {
         if let Some(local) = Scope::get_local(&self.scope, name, true) {
             if !local.mutable {
                 return Err(CompileError::new(format!("name is not mutable: {}", name)));
@@ -609,7 +662,7 @@ impl Compiler {
             self.compile_name_value(ir, name, value)?;
             ir.add(self.compile_store(&local), Some(&self.get_location()));
 
-            return Ok(());
+            return Ok(local.known_type);
         }
 
         Err(CompileError::new(format!(
@@ -641,23 +694,25 @@ impl Compiler {
         object: &Expr,
         index: &Expr,
         value: &Expr,
-    ) -> Result<()> {
-        self.compile_expr(ir, object)?;
+    ) -> Result<Type> {
+        let index_type = self.compile_expr(ir, object)?;
         self.compile_expr(ir, index)?;
         self.compile_expr(ir, value)?;
         ir.add(Code::StoreIndex, Some(&self.get_location()));
 
-        Ok(())
+        self.type_checker.index(index_type)
     }
 
-    fn compile_assign(&mut self, ir: &mut IR, left: &Expr, right: &Expr) -> Result<()> {
+    fn compile_assign(&mut self, ir: &mut IR, left: &Expr, right: &Expr) -> Result<Type> {
         match left {
             Expr::Index(index_expr) => {
                 self.compile_assign_index(ir, &index_expr.object, &index_expr.index, right)
             }
             Expr::Ident(ident_expr) => self.compile_assign_local(ir, &ident_expr.name, right),
             Expr::Member(member_expr) => {
-                self.compile_assign_member(ir, &member_expr.object, &member_expr.member, right)
+                self.compile_assign_member(ir, &member_expr.object, &member_expr.member, right)?;
+
+                Ok(Type::Unknown)
             }
             _ => Err(CompileError::new(
                 "invalid left-hand side in assignment".to_string(),
@@ -669,18 +724,18 @@ impl Compiler {
         if Scope::get_local(&self.scope, name, false).is_some() {
             Err(CompileError::new(format!("name already defined: {}", name)))
         } else {
-            Ok(self.set_local(name.to_string(), mutable)?)
+            Ok(self.set_local(name.to_string(), mutable, Type::Unknown)?)
         }
     }
 
-    fn compile_name_value(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<()> {
+    fn compile_name_value(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<Type> {
         if let Expr::Closure(closure_expr) = value {
             ir.add(
                 self.compile_closure(closure_expr, Some(name.to_string()))?,
                 Some(&self.get_location()),
             );
 
-            Ok(())
+            Ok(Type::Closure(name.to_string()))
         } else {
             self.compile_expr(ir, value)
         }
@@ -792,7 +847,11 @@ impl Compiler {
                 let cont_label = self.make_label("for_cont");
 
                 if let Some(expr) = &for_stmt.expr {
-                    let iter = self.set_local("__iter__".to_string(), false)?;
+                    let iter = self.set_local(
+                        "__iter__".to_string(),
+                        false,
+                        Type::Interface("Iterable".to_string()),
+                    )?;
 
                     self.compile_expr(ir, expr)?;
 
@@ -806,10 +865,11 @@ impl Compiler {
                             _ => "__item__".to_string(),
                         },
                         false,
+                        Type::Unknown,
                     )?;
 
                     // Step 1. Get the iterator from the object
-                    ir.add(self.compile_name("Iterable")?, location);
+                    ir.add(self.compile_name("Iterable")?.0, location);
                     ir.add(Code::Validate, location);
                     ir.add(Code::LoadMember("iter".to_string()), location);
                     ir.add(Code::Call(0), location);
@@ -846,7 +906,8 @@ impl Compiler {
                             }
                             Variable::Tuple(names) | Variable::Array(names) => {
                                 for (i, name) in names.iter().enumerate() {
-                                    let local = self.set_local(name.clone(), false)?;
+                                    let local =
+                                        self.set_local(name.clone(), false, Type::Unknown)?;
 
                                     ir.add(Code::ConstUint64(i as u64), location);
                                     ir.add(
@@ -1015,7 +1076,7 @@ impl Compiler {
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
-            self.set_local(arg.name.clone(), arg.mutable)?;
+            self.set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
         }
 
         let mut body = self._compile_stmt_list(&fn_decl.body)?;
@@ -1208,6 +1269,7 @@ impl Compiler {
 
         let guard = self.modules.read().unwrap();
         let module = guard.get(&module_name).unwrap();
+
         if let Some(global) = module.exports.get(name) {
             if self.module.imports.contains_key(name) {
                 return Err(CompileError::new(format!(
