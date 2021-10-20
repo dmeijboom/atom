@@ -10,9 +10,8 @@ use wyhash2::WyHash;
 use atom_ir::{Code, Label, Location, IR};
 
 use crate::ast::{
-    ArithmeticExpr, ArithmeticOp, AssignOp, CallExpr, ClassDeclStmt, ClosureExpr, Expr,
-    ExternFnDeclStmt, FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, MemberCondExpr, Pos, Stmt,
-    TemplateComponent, Variable,
+    ArithmeticExpr, ArithmeticOp, AssignOp, ClassDeclStmt, ClosureExpr, Expr, ExternFnDeclStmt,
+    FnDeclStmt, InterfaceDeclStmt, Literal, LogicalOp, Pos, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::module::Import;
 use crate::compiler::types::MapType;
@@ -24,7 +23,7 @@ use super::module::{Class, Field, Func, FuncArg, Interface, Module};
 use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, Optimizer};
 use super::optimizers::{remove_core_validations, remove_type_cast};
 use super::result::{CompileError, Result};
-use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
+use super::scope::{ForLoopMeta, Local, Scope, ScopeContext, ScopeGraph};
 use super::type_checker::TypeChecker;
 use super::types::{self, Type};
 
@@ -87,10 +86,9 @@ pub struct Compiler {
     pos: Pos,
     fs: FileSystem,
     optimize: bool,
-    scope_id: usize,
     module: Module,
     tree: Vec<Stmt>,
-    scope: Vec<Scope>,
+    scope: ScopeGraph,
     type_checker: TypeChecker,
     labels: HashMap<String, bool, WyHash>,
     modules: Rc<RwLock<HashMap<String, Module>>>,
@@ -115,7 +113,6 @@ impl Compiler {
             fs,
             optimize,
             pos: 0..0,
-            scope_id: 0,
             labels: HashMap::with_hasher(WyHash::default()),
             module: Module::new(),
             optimizers: if optimize {
@@ -130,7 +127,7 @@ impl Compiler {
                 vec![]
             },
             type_checker: TypeChecker::new(),
-            scope: vec![Scope::new()],
+            scope: ScopeGraph::new(),
             line_numbers_offset,
             modules: Rc::new(RwLock::new(HashMap::new())),
         }
@@ -166,9 +163,7 @@ impl Compiler {
 
     #[inline(always)]
     fn enter_scope(&mut self, context: ScopeContext) {
-        self.scope_id += 1;
-
-        let new_scope = Scope::new_child(context, self.scope_id);
+        let new_scope = Scope::new_child(context);
 
         self.scope.push(new_scope);
     }
@@ -179,25 +174,14 @@ impl Compiler {
     }
 
     #[inline(always)]
-    fn set_local(&mut self, name: String, mutable: bool, known_type: Type) -> Result<Local> {
-        Scope::set_local(self.scope.as_mut(), name, mutable, known_type).map_err(|e| {
-            let mut e = e;
-
-            e.location = self.get_location();
-            e
-        })
-    }
-
-    #[inline(always)]
     fn fork(&self, module_name: String, tree: Vec<Stmt>, line_numbers_offset: Vec<usize>) -> Self {
         Self {
             fs: self.fs.clone(),
             pos: 0..0,
             optimize: self.optimize,
-            scope_id: 0,
             module: Module::with_name(module_name),
             tree,
-            scope: vec![],
+            scope: ScopeGraph::new(),
             labels: HashMap::with_hasher(WyHash::default()),
             line_numbers_offset,
             type_checker: TypeChecker::new(),
@@ -213,46 +197,6 @@ impl Compiler {
         } else {
             Code::Store(local.id)
         }
-    }
-
-    fn compile_member_cond(
-        &mut self,
-        member_cond_expr: &MemberCondExpr,
-        body: Option<Code>,
-    ) -> Result<IR> {
-        let mut ir = IR::new();
-        let label_some = self.make_label("cond_some");
-        let label_none = self.make_label("cond_none");
-
-        let location = self.get_location_by_offset(&member_cond_expr.pos);
-        let location = Some(&location);
-
-        self.compile_expr(&mut ir, &member_cond_expr.object)?;
-        ir.add(Code::TeeMember("isSome".to_string()), location);
-        ir.add(Code::Call(0), location);
-        ir.add(
-            Code::Branch((
-                Label::new(label_some.clone()),
-                Label::new(label_none.clone()),
-            )),
-            location,
-        );
-        ir.add(Code::SetLabel(label_some), location);
-        ir.add(Code::Unwrap, location);
-        ir.add(
-            Code::LoadMember(member_cond_expr.member.to_string()),
-            location,
-        );
-
-        if let Some(body) = body {
-            ir.add(body, location);
-        }
-
-        ir.add(self.compile_name("some")?.0, location);
-        ir.add(Code::Call(1), location);
-        ir.add(Code::SetLabel(label_none), location);
-
-        Ok(ir)
     }
 
     fn make_label(&mut self, prefix: &str) -> String {
@@ -374,37 +318,33 @@ impl Compiler {
                     Code::CallKeywords((names, call_expr.keyword_args.len() + call_expr.args.len()))
                 };
 
-                if let Expr::MemberCond(member_cond_expr) = &call_expr.callee {
-                    ir.append(self.compile_member_cond(member_cond_expr, Some(instruction))?);
-                } else {
-                    let find_target_match = || {
-                        if let Some((target, is_method)) = Scope::get_function_target(&self.scope) {
-                            if !is_method {
-                                if let Expr::Ident(ident_expr) = &call_expr.callee {
-                                    return (
-                                        ident_expr.name == target,
-                                        self.module.get_fn_by_name(&target).is_none(),
-                                    );
-                                }
+                let find_target_match = || {
+                    if let Some((target, is_method)) = self.scope.get_function_target() {
+                        if !is_method {
+                            if let Expr::Ident(ident_expr) = &call_expr.callee {
+                                return (
+                                    ident_expr.name == target,
+                                    self.module.get_fn_by_name(&target).is_none(),
+                                );
                             }
                         }
-
-                        (false, false)
-                    };
-
-                    let (is_target, force_optimize) = find_target_match();
-
-                    // If the target refers to a closure it can't be referenced by it's name (at least not globally).
-                    // So we have to use the 'LoadTarget' instruction instead even without optimizations enabled.
-                    // Otherwise it won't work
-                    if (self.optimize || force_optimize) && is_target {
-                        ir.add(Code::LoadTarget, location);
-                    } else {
-                        self.compile_expr(ir, &call_expr.callee)?;
                     }
 
-                    ir.add(instruction, location);
+                    (false, false)
+                };
+
+                let (is_target, force_optimize) = find_target_match();
+
+                // If the target refers to a closure it can't be referenced by it's name (at least not globally).
+                // So we have to use the 'LoadTarget' instruction instead even without optimizations enabled.
+                // Otherwise it won't work
+                if (self.optimize || force_optimize) && is_target {
+                    ir.add(Code::LoadTarget, location);
+                } else {
+                    self.compile_expr(ir, &call_expr.callee)?;
                 }
+
+                ir.add(instruction, location);
 
                 Type::Unknown
             }
@@ -428,7 +368,7 @@ impl Compiler {
                 };
 
                 // Contrary to 'normal' index operations the slice operation is safe
-                if slice_params.is_none() && !Scope::in_unsafe_block(&self.scope) {
+                if slice_params.is_none() && !self.scope.in_unsafe_block() {
                     return Err(CompileError::new(
                         "unable to perform index operation outside of an 'unsafe' block"
                             .to_string(),
@@ -446,18 +386,10 @@ impl Compiler {
                         array_type
                     }
                     None => {
-                        if let Expr::MemberCond(member_cond_expr) = &index_expr.index {
-                            ir.append(
-                                self.compile_member_cond(member_cond_expr, Some(Code::LoadIndex))?,
-                            );
+                        self.compile_expr(ir, &index_expr.index)?;
+                        ir.add(Code::LoadIndex, location);
 
-                            Type::Unknown
-                        } else {
-                            self.compile_expr(ir, &index_expr.index)?;
-                            ir.add(Code::LoadIndex, location);
-
-                            self.type_checker.index(array_type)?
-                        }
+                        self.type_checker.index(array_type)?
                     }
                 }
             }
@@ -483,7 +415,9 @@ impl Compiler {
             }
             Expr::Map(map_expr) => {
                 let map_type = Type::Map(Box::new(MapType::new(Type::Unknown, Type::Unknown)));
-                let local = self.set_local("__map__".to_string(), false, map_type.clone())?;
+                let local = self
+                    .scope
+                    .set_local("__map__".to_string(), false, map_type.clone())?;
                 let new_map_id = self.module.imports.get_index_of("newMap").unwrap();
 
                 ir.add(Code::LoadGlobal(new_map_id), location);
@@ -507,11 +441,7 @@ impl Compiler {
 
                 Type::Unknown
             }
-            Expr::MemberCond(member_cond_expr) => {
-                ir.append(self.compile_member_cond(member_cond_expr, None)?);
-
-                Type::Unknown
-            }
+            Expr::MemberCond(_) => unreachable!("not supported yet"),
             Expr::Member(member_expr) => {
                 self.compile_expr(ir, &member_expr.object)?;
 
@@ -577,9 +507,9 @@ impl Compiler {
     }
 
     fn compile_name(&mut self, name: &str) -> Result<(Code, Type)> {
-        if name == "this" && Scope::in_function_block(&self.scope) {
+        if name == "this" && self.scope.in_function_block() {
             Ok((Code::LoadReceiver, Type::Unknown))
-        } else if let Some(local) = Scope::get_local(&self.scope, name, true) {
+        } else if let Some(local) = self.scope.get_local(name, true) {
             Ok((Code::Load(local.id), local.known_type))
         } else if let Some((id, _, import)) = self.module.imports.get_full(name) {
             Ok((Code::LoadGlobal(id), import.known_type.clone()))
@@ -621,12 +551,13 @@ impl Compiler {
 
         // As the vm will copy all the locals of the parent function we need to pretend like we set the
         // locals of the parent function
-        if let Some(parent) = self.scope.get(self.scope.len() - 2) {
-            self.scope.last_mut().unwrap().local_id = parent.local_id;
+        if let Some(parent) = self.scope.get_by_id(self.scope.len() - 2) {
+            self.scope.current_mut().local_id = parent.local_id;
         }
 
         for arg in closure_expr.args.iter() {
-            self.set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
+            self.scope
+                .set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
 
             args.push(FuncArg {
                 mutable: arg.mutable,
@@ -654,7 +585,7 @@ impl Compiler {
     }
 
     fn compile_assign_local(&mut self, ir: &mut IR, name: &str, value: &Expr) -> Result<Type> {
-        if let Some(local) = Scope::get_local(&self.scope, name, true) {
+        if let Some(local) = self.scope.get_local(name, true) {
             if !local.mutable {
                 return Err(CompileError::new(format!("name is not mutable: {}", name)));
             }
@@ -671,6 +602,7 @@ impl Compiler {
         )))
     }
 
+    #[inline(always)]
     fn compile_assign_member(
         &mut self,
         ir: &mut IR,
@@ -688,6 +620,7 @@ impl Compiler {
         Ok(())
     }
 
+    #[inline(always)]
     fn compile_assign_index(
         &mut self,
         ir: &mut IR,
@@ -720,11 +653,14 @@ impl Compiler {
         }
     }
 
+    #[inline(always)]
     fn declare_local(&mut self, name: &str, mutable: bool, known_type: Type) -> Result<Local> {
-        if Scope::get_local(&self.scope, name, false).is_some() {
+        if self.scope.get_local(name, false).is_some() {
             Err(CompileError::new(format!("name already defined: {}", name)))
         } else {
-            Ok(self.set_local(name.to_string(), mutable, known_type)?)
+            Ok(self
+                .scope
+                .set_local(name.to_string(), mutable, known_type)?)
         }
     }
 
@@ -848,7 +784,7 @@ impl Compiler {
                 let cont_label = self.make_label("for_cont");
 
                 if let Some(expr) = &for_stmt.expr {
-                    let iter = self.set_local(
+                    let iter = self.scope.set_local(
                         "__iter__".to_string(),
                         false,
                         Type::Interface("Iterable".to_string()),
@@ -860,7 +796,7 @@ impl Compiler {
                         continue_label: cont_label.clone(),
                     }));
 
-                    let local = self.set_local(
+                    let local = self.scope.set_local(
                         match &for_stmt.alias {
                             Some(Variable::Name(name)) => name.clone(),
                             _ => "__item__".to_string(),
@@ -908,7 +844,7 @@ impl Compiler {
                             Variable::Tuple(names) | Variable::Array(names) => {
                                 for (i, name) in names.iter().enumerate() {
                                     let local =
-                                        self.set_local(name.clone(), false, Type::Unknown)?;
+                                        self.scope.set_local(name.clone(), false, Type::Unknown)?;
 
                                     ir.add(Code::ConstUint64(i as u64), location);
                                     ir.add(
@@ -951,7 +887,7 @@ impl Compiler {
                     unreachable!();
                 }
 
-                if let Some(meta) = Scope::get_for_loop(&self.scope) {
+                if let Some(meta) = self.scope.get_for_loop() {
                     ir.add(Code::Jump(Label::new(meta.continue_label)), location);
                 } else {
                     return Err(CompileError::new(
@@ -1077,7 +1013,8 @@ impl Compiler {
         self.enter_scope(ScopeContext::Function((fn_decl.name.clone(), is_method)));
 
         for arg in fn_decl.args.iter() {
-            self.set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
+            self.scope
+                .set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
         }
 
         let mut body = self._compile_stmt_list(&fn_decl.body)?;
