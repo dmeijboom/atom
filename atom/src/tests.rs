@@ -40,6 +40,11 @@ mod tests {
         )))
     }
 
+    #[test_case(include_str!("../examples/int_ops.atom"), Value::Array(AtomRef::new(vec![
+        Value::Int(Int::Uint64(11562461410742939137)),
+        Value::Int(Int::Uint64(11562461410679940144)),
+        Value::Bool(false),
+    ])); "integer operations")]
     #[test_case(include_str!("../examples/calls.atom"), Value::Int(Int::Int32(0)); "calls")]
     #[test_case(include_str!("../examples/loops.atom"), Value::Int(Int::Int32(75)); "loops")]
     #[test_case(include_str!("../examples/casts.atom"), Value::Int(Int::Uint64(34)); "casts")]

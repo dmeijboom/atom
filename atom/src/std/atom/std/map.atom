@@ -2,7 +2,6 @@ module std.map;
 
 import std.core.some;
 import std.core.String;
-import std.core.println;
 import std.core.Iterable;
 import std.encoding.binary.int_from_bytes;
 import std.encoding.binary.uint_from_bytes;
@@ -28,7 +27,7 @@ pub class MapIter {
 }
 
 fn wyr8(bytes) {
-    return int_from_bytes(bytes);
+    return (Uint64)int_from_bytes(bytes);
 }
 
 fn wyr4(bytes) {
