@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use indexmap::IndexMap;
 
 use crate::ast::{
-    ClassDeclStmt, Expr, ExternFnDeclStmt, FnArg, FnDeclStmt, InterfaceDeclStmt,
-    Literal, Pos, Stmt, TemplateComponent, Variable,
+    ClassDeclStmt, Expr, ExternFnDeclStmt, FnArg, FnDeclStmt, InterfaceDeclStmt, Literal, Pos,
+    Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::LineNumberOffset;
 

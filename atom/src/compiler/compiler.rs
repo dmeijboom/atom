@@ -14,8 +14,9 @@ use super::filesystem::{FileSystem, FileSystemCache};
 use super::frontend::FrontendCompiler;
 use super::line_number_offset::LineNumberOffset;
 use super::module::{Import, Module};
-use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, Optimizer};
-use super::optimizers::{remove_core_validations, remove_type_cast};
+use super::optimizers::{
+    call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, remove_type_cast,
+};
 use super::result::{CompileError, Result};
 
 fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
@@ -60,7 +61,6 @@ pub struct Compiler {
     module: Module,
     tree: Vec<Stmt>,
     modules: Rc<RwLock<HashMap<String, Module>>>,
-    optimizers: Vec<Optimizer>,
     line_numbers_offset: LineNumberOffset,
 }
 
@@ -79,17 +79,6 @@ impl Compiler {
             fs,
             optimize,
             module: Module::new(),
-            optimizers: if optimize {
-                vec![
-                    remove_type_cast::optimize,
-                    call_void::optimize,
-                    load_local_twice_add::optimize,
-                    remove_core_validations::optimize,
-                    pre_compute_labels::optimize,
-                ]
-            } else {
-                vec![]
-            },
             line_numbers_offset,
             modules: Rc::new(RwLock::new(HashMap::new())),
         }
@@ -112,7 +101,6 @@ impl Compiler {
             module: Module::with_name(module_name),
             tree,
             line_numbers_offset,
-            optimizers: self.optimizers.clone(),
             modules: Rc::clone(&self.modules),
         }
     }
@@ -396,7 +384,22 @@ impl Compiler {
         let frontend = FrontendCompiler::new(&mut self.module, &self.line_numbers_offset);
         let scopes = frontend.compile(&self.tree)?;
 
-        let backend = BackendCompiler::new(&mut self.module, scopes, &self.line_numbers_offset);
+        let backend = BackendCompiler::new(
+            &mut self.module,
+            scopes,
+            &self.line_numbers_offset,
+            if self.optimize {
+                vec![
+                    remove_type_cast::optimize,
+                    call_void::optimize,
+                    load_local_twice_add::optimize,
+                    remove_core_validations::optimize,
+                    pre_compute_labels::optimize,
+                ]
+            } else {
+                vec![]
+            },
+        );
         backend.compile(&self.tree)?;
 
         Ok(self.module)

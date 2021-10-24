@@ -1,8 +1,11 @@
-use crate::ast::{Expr, FnDeclStmt, Literal, LogicalOp, Stmt, TemplateComponent, Variable};
-use atom_ir::{Code, Label, Location, IR};
 use std::collections::HashMap;
 use std::mem;
+
 use wyhash2::WyHash;
+
+use crate::ast::{Expr, FnDeclStmt, Literal, LogicalOp, Stmt, TemplateComponent, Variable};
+use crate::compiler::optimizers::Optimizer;
+use atom_ir::{Code, Label, Location, IR};
 
 use super::line_number_offset::LineNumberOffset;
 use super::module::Module;
@@ -86,8 +89,9 @@ pub struct BackendCompiler<'c> {
     ir: IR,
     scope: ScopeCursor,
     module: &'c mut Module,
-    line_number_offset: &'c LineNumberOffset,
+    optimizers: Vec<Optimizer>,
     labels: HashMap<String, bool, WyHash>,
+    line_number_offset: &'c LineNumberOffset,
 }
 
 impl<'c> BackendCompiler<'c> {
@@ -95,10 +99,12 @@ impl<'c> BackendCompiler<'c> {
         module: &'c mut Module,
         scopes: Vec<Scope>,
         line_number_offset: &'c LineNumberOffset,
+        optimizers: Vec<Optimizer>,
     ) -> Self {
         Self {
             ir: IR::new(),
             module,
+            optimizers,
             line_number_offset,
             scope: ScopeCursor::new(scopes),
             labels: HashMap::with_hasher(WyHash::default()),
@@ -126,7 +132,7 @@ impl<'c> BackendCompiler<'c> {
     }
 
     fn compile_name(&self, name: &str) -> Result<Code> {
-        Ok(if let Some(local) = self.scope.get_local(name).ok() {
+        Ok(if let Ok(local) = self.scope.get_local(name) {
             Code::Load(local.id)
         } else if let Some(id) = self.module.imports.get_index_of(name) {
             Code::LoadGlobal(id)
@@ -316,7 +322,7 @@ impl<'c> BackendCompiler<'c> {
                         TemplateComponent::String(val) => {
                             self.ir.add(Code::ConstString(val.clone()), location)
                         }
-                        TemplateComponent::Expr(expr) => self.compile_expr(&expr)?,
+                        TemplateComponent::Expr(expr) => self.compile_expr(expr)?,
                     }
                 }
 
@@ -402,7 +408,7 @@ impl<'c> BackendCompiler<'c> {
                     self.ir.add(Code::Call(0), location);
                     self.ir.add(Code::Store(iter.id), location);
                     // Step 2. Now in the loop, get the next value from the iterator
-                    self.ir.add(Code::SetLabel(for_label.clone()), location);
+                    self.ir.add(Code::SetLabel(for_label), location);
                     self.ir.add(Code::Load(iter.id), location);
                     self.ir.add(Code::LoadMember("next".to_string()), location);
                     self.ir.add(Code::Call(0), location);
@@ -413,10 +419,7 @@ impl<'c> BackendCompiler<'c> {
                         .add(Code::LoadMember("isSome".to_string()), location);
                     self.ir.add(Code::Call(0), location);
                     self.ir.add(
-                        Code::Branch((
-                            Label::new(body_label.clone()),
-                            Label::new(cont_label.clone()),
-                        )),
+                        Code::Branch((Label::new(body_label.clone()), Label::new(cont_label))),
                         location,
                     );
                     // Step 4. Evaluate the body and so on..
@@ -513,6 +516,10 @@ impl<'c> BackendCompiler<'c> {
         let mut ir = IR::new();
         mem::swap(&mut ir, &mut self.ir);
 
+        for optimizer in self.optimizers.iter() {
+            optimizer(self.module, &mut ir);
+        }
+
         ir
     }
 
@@ -539,7 +546,7 @@ impl<'c> BackendCompiler<'c> {
                         .next(ScopeContext::Class(class_decl.name.clone()))?;
 
                     for fn_decl in class_decl.funcs.iter() {
-                        let body = self.compile_fn(&fn_decl)?;
+                        let body = self.compile_fn(fn_decl)?;
 
                         if let Some(class) = self.module.classes.get_mut(&class_decl.name) {
                             if let Some(method) = class.methods.get_mut(&fn_decl.name) {
