@@ -11,7 +11,7 @@ pub enum PrimitiveType {
     Symbol,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MapType {
     pub key: Type,
     pub value: Type,
@@ -29,10 +29,10 @@ pub enum Type {
     Option(Box<Type>),
     Fn(String),
     Class(String),
-    Closure(String),
-    Interface(String),
     // @TODO: use this
-    //Object(String),
+    //Closure(String),
+    Interface(String),
+    Object(String),
     Tuple(Vec<Type>),
     Array(Box<Type>),
     Ref(Box<Type>),
@@ -40,6 +40,18 @@ pub enum Type {
     //Extern(String),
     Map(Box<MapType>),
     Unknown,
+}
+
+impl Type {
+    pub fn is_typed(&self) -> bool {
+        !matches!(self, Type::Unknown)
+    }
+}
+
+impl Default for Type {
+    fn default() -> Self {
+        Self::Unknown
+    }
 }
 
 impl Display for Type {
@@ -57,10 +69,9 @@ impl Display for Type {
             Type::Option(inner_type) => write!(f, "Option<{}>", inner_type),
             Type::Fn(_) => write!(f, "Fn"),
             Type::Class(name) => write!(f, "{}", name),
-            Type::Closure(_) => write!(f, "Closure"),
+            //Type::Closure(_) => write!(f, "Closure"),
             Type::Interface(name) => write!(f, "{}", name),
-            // @TODO: implement this
-            //Type::Object(inner_type) => write!(f, "Object<{}>", inner_type),
+            Type::Object(inner_type) => write!(f, "Object<{}>", inner_type),
             Type::Tuple(types) => write!(
                 f,
                 "Tuple<{}>",
@@ -83,9 +94,9 @@ impl Display for Type {
 }
 
 pub const INT: Type = Type::Primitive(PrimitiveType::Int);
-pub const FLOAT: Type = Type::Primitive(PrimitiveType::Float);
-pub const CHAR: Type = Type::Primitive(PrimitiveType::Char);
-pub const BYTE: Type = Type::Primitive(PrimitiveType::Byte);
+//pub const FLOAT: Type = Type::Primitive(PrimitiveType::Float);
+//pub const CHAR: Type = Type::Primitive(PrimitiveType::Char);
+//pub const BYTE: Type = Type::Primitive(PrimitiveType::Byte);
 pub const BOOL: Type = Type::Primitive(PrimitiveType::Bool);
 pub const STRING: Type = Type::Primitive(PrimitiveType::String);
-pub const SYMBOL: Type = Type::Primitive(PrimitiveType::Symbol);
+//pub const SYMBOL: Type = Type::Primitive(PrimitiveType::Symbol);

@@ -5,7 +5,7 @@ use clap::Clap;
 use atom_ir::{Code, IR};
 use atom_runtime::RuntimeError;
 
-use crate::compiler::{parse_line_numbers_offset, Compiler};
+use crate::compiler::{Compiler, LineNumberOffset};
 use crate::parser;
 use crate::utils::Error;
 use crate::vm::VM;
@@ -30,7 +30,7 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
 
     let mut compiler = Compiler::new(
         tree,
-        parse_line_numbers_offset(source),
+        LineNumberOffset::parse(source),
         !opts.no_optimizations,
     );
 
@@ -39,6 +39,10 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
     }
 
     let mut modules = compiler.compile_all().map_err(|e| {
+        if e.filename.is_some() {
+            return e;
+        }
+
         if let Some(filename) = opts.filename.to_str().map(|s| s.to_string()) {
             e.with_filename(filename)
         } else {
@@ -65,7 +69,7 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
 
     let mut vm = VM::new()?;
 
-    if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
+    if let Some(id) = module.funcs.get_index_of("main") {
         for module in modules {
             vm.register_module(module)?;
         }

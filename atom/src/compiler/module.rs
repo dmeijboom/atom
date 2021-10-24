@@ -9,21 +9,27 @@ use crate::ast::MixinDeclStmt;
 
 use super::types::Type;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct FuncArg {
     pub mutable: bool,
     pub name: String,
 }
 
-#[derive(Clone)]
+impl FuncArg {
+    pub fn new(name: String, mutable: bool) -> Self {
+        Self { name, mutable }
+    }
+}
+
+#[derive(Clone, Default)]
 pub struct Func {
     pub name: String,
     pub body: IR,
-    pub is_void: bool,
     pub is_extern: bool,
     pub is_closure: bool,
     pub args: Vec<FuncArg>,
     pub location: Location,
+    pub return_type: Option<Type>,
 }
 
 impl Debug for Func {
@@ -32,7 +38,10 @@ impl Debug for Func {
             f,
             "Fn {}() -> {} {{\n{}\n}}",
             self.name,
-            if self.is_void { "Void" } else { "Any" },
+            self.return_type
+                .as_ref()
+                .map(|return_type| format!("{}", return_type))
+                .unwrap_or_else(|| "Void".to_string()),
             self.body
                 .iter()
                 .map(|code| format!("  {:?}", code))
@@ -42,20 +51,26 @@ impl Debug for Func {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct Field {
     pub mutable: bool,
     pub public: bool,
 }
 
-#[derive(Debug)]
+impl Field {
+    pub fn new(mutable: bool, public: bool) -> Self {
+        Self { mutable, public }
+    }
+}
+
+#[derive(Debug, Default)]
 pub struct Class {
     pub name: String,
     pub methods: HashMap<String, Func>,
     pub fields: IndexMap<String, Field>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Interface {
     pub name: String,
     pub functions: Vec<String>,
@@ -77,9 +92,9 @@ impl Import {
 pub struct Module {
     pub name: String,
     pub filename: Option<String>,
-    pub funcs: Vec<Func>,
     pub mixins: HashMap<String, MixinDeclStmt>,
     pub classes: IndexMap<String, Class>,
+    pub funcs: IndexMap<String, Func>,
     pub interfaces: IndexMap<String, Interface>,
     pub imports: IndexMap<String, Import>,
     pub exports: HashMap<String, Type>,
@@ -94,16 +109,12 @@ impl Module {
         Self {
             name,
             filename: None,
-            funcs: vec![],
             mixins: HashMap::new(),
+            funcs: IndexMap::new(),
             classes: IndexMap::new(),
             interfaces: IndexMap::new(),
             imports: IndexMap::new(),
             exports: HashMap::new(),
         }
-    }
-
-    pub fn get_fn_by_name(&self, name: &str) -> Option<&Func> {
-        self.funcs.iter().find(|func| func.name == name)
     }
 }

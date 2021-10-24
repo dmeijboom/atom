@@ -1,8 +1,9 @@
+use atom_ir::Code;
 use std::collections::HashMap;
 
 use crate::compiler::{CompileError, Type};
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Local {
     pub id: usize,
     pub name: String,
@@ -19,29 +20,58 @@ impl Local {
             known_type,
         }
     }
+
+    pub fn store_instr(&self) -> Code {
+        if self.mutable {
+            Code::StoreMut(self.id)
+        } else {
+            Code::Store(self.id)
+        }
+    }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone, PartialEq, Default)]
 pub struct ForLoopMeta {
     pub continue_label: String,
 }
 
+#[derive(Debug)]
 pub enum ScopeContext {
     Global,
     IfElse,
     Unsafe,
     Class(String),
     ForLoop(ForLoopMeta),
-    Function((String, bool)),
+    Function(String),
 }
 
+impl PartialEq for ScopeContext {
+    fn eq(&self, other: &Self) -> bool {
+        match self {
+            ScopeContext::Global => matches!(other, ScopeContext::Global),
+            ScopeContext::IfElse => matches!(other, ScopeContext::IfElse),
+            ScopeContext::Unsafe => matches!(other, ScopeContext::Unsafe),
+            ScopeContext::Class(name) => {
+                matches!(other, ScopeContext::Class(other) if name == other)
+            }
+            ScopeContext::ForLoop(_) => matches!(other, ScopeContext::ForLoop(_)),
+            ScopeContext::Function(name) => {
+                matches!(other, ScopeContext::Function(other) if name == other)
+            }
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct Scope {
     pub id: usize,
     pub local_id: usize,
     pub context: ScopeContext,
+    pub parent: Option<usize>,
     pub locals: HashMap<String, Local>,
 }
 
+#[derive(Debug)]
 pub struct ScopeGraph {
     current: usize,
     graph: Vec<Scope>,
@@ -55,7 +85,7 @@ impl ScopeGraph {
         }
     }
 
-    fn walk<T>(&self, handler: impl Fn(&Scope) -> Option<T>) -> Option<T> {
+    fn walk<'s, T>(&'s self, handler: impl Fn(&'s Scope) -> Option<T>) -> Option<T> {
         for scope in self.graph.iter().rev() {
             if let Some(value) = handler(scope) {
                 return Some(value);
@@ -65,7 +95,7 @@ impl ScopeGraph {
         None
     }
 
-    fn walk_mut<T>(&mut self, handler: impl Fn(&mut Scope) -> Option<T>) -> Option<T> {
+    fn walk_mut<'s, T>(&'s mut self, handler: impl Fn(&'s mut Scope) -> Option<T>) -> Option<T> {
         for scope in self.graph.iter_mut().rev() {
             if let Some(value) = handler(scope) {
                 return Some(value);
@@ -75,16 +105,12 @@ impl ScopeGraph {
         None
     }
 
-    pub fn len(&self) -> usize {
-        self.graph.len()
-    }
-
-    pub fn get_by_id(&self, id: usize) -> Option<&Scope> {
-        self.graph.get(id)
-    }
-
     pub fn current_mut(&mut self) -> &mut Scope {
         self.graph.last_mut().unwrap()
+    }
+
+    pub fn current(&mut self) -> &Scope {
+        self.graph.last().unwrap()
     }
 
     pub fn push(&mut self, mut scope: Scope) {
@@ -95,8 +121,8 @@ impl ScopeGraph {
         self.graph.push(scope);
     }
 
-    pub fn pop(&mut self) {
-        self.graph.pop();
+    pub fn pop(&mut self) -> Option<Scope> {
+        self.graph.pop()
     }
 
     pub fn in_unsafe_block(&self) -> bool {
@@ -108,37 +134,6 @@ impl ScopeGraph {
             None
         })
         .unwrap_or(false)
-    }
-
-    pub fn in_function_block(&self) -> bool {
-        self.walk(|scope| {
-            if let ScopeContext::Function(_) = &scope.context {
-                return Some(true);
-            }
-
-            None
-        })
-        .unwrap_or(false)
-    }
-
-    pub fn get_for_loop(&self) -> Option<ForLoopMeta> {
-        self.walk(|scope| {
-            if let ScopeContext::ForLoop(meta) = &scope.context {
-                return Some(meta.clone());
-            }
-
-            None
-        })
-    }
-
-    pub fn get_function_target(&self) -> Option<(String, bool)> {
-        self.walk(|scope| {
-            if let ScopeContext::Function((target, is_method)) = &scope.context {
-                return Some((target.clone(), *is_method));
-            }
-
-            None
-        })
     }
 
     pub fn set_local(
@@ -171,17 +166,31 @@ impl ScopeGraph {
         Ok(local)
     }
 
-    pub fn get_local(&self, name: &str, parents: bool) -> Option<Local> {
+    pub fn get_local(&self, name: &str, parents: bool) -> Option<&Local> {
         if !parents {
-            return self
-                .graph
-                .last()
-                .and_then(|scope| scope.locals.get(name).cloned());
+            return self.graph.last().and_then(|scope| scope.locals.get(name));
         }
 
         self.walk(|scope| {
             if let Some(local) = scope.locals.get(name) {
-                return Some(local.clone());
+                return Some(local);
+            }
+
+            None
+        })
+    }
+
+    pub fn get_local_mut(&mut self, name: &str, parents: bool) -> Option<&mut Local> {
+        if !parents {
+            return self
+                .graph
+                .last_mut()
+                .and_then(|scope| scope.locals.get_mut(name));
+        }
+
+        self.walk_mut(|scope| {
+            if let Some(local) = scope.locals.get_mut(name) {
+                return Some(local);
             }
 
             None
@@ -194,17 +203,19 @@ impl Scope {
         Self {
             id: 0,
             local_id: 0,
+            parent: None,
             locals: HashMap::new(),
             context: ScopeContext::Global,
         }
     }
 
-    pub fn new_child(context: ScopeContext) -> Self {
+    pub fn new_child(parent: &Scope, context: ScopeContext) -> Self {
         Self {
             id: 0,
             context,
             local_id: 0,
             locals: HashMap::new(),
+            parent: Some(parent.id),
         }
     }
 }

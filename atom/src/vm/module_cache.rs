@@ -152,7 +152,7 @@ impl ModuleCache {
             compiled_module.filename,
         );
 
-        for func in compiled_module.funcs {
+        for (_, func) in compiled_module.funcs {
             module
                 .funcs
                 .push(AtomRef::new(self.make_fn(&module, func, None)?));

@@ -4,22 +4,21 @@ use std::io::{Error, ErrorKind, Result};
 use std::path::{Path, PathBuf};
 
 pub enum File {
-    Cached(&'static str),
+    Cached((PathBuf, &'static str)),
     Loaded((PathBuf, String)),
 }
 
 impl File {
-    pub fn name(&self) -> Option<&Path> {
-        if let File::Loaded((path, _)) = self {
-            return Some(path);
+    pub fn name(&self) -> &Path {
+        match self {
+            File::Cached((path, _)) => path,
+            File::Loaded((path, _)) => path,
         }
-
-        None
     }
 
     pub fn source(&self) -> &str {
         match self {
-            File::Cached(source) => source,
+            File::Cached((_, source)) => source,
             File::Loaded((_, source)) => source.as_str(),
         }
     }
@@ -93,7 +92,10 @@ impl FileSystem {
 
     pub fn read_file(&self, name: &str) -> Result<File> {
         if let Some(source) = self.cache.get_module(name) {
-            return Ok(File::Cached(source));
+            return Ok(File::Cached((
+                format!("{}.atom", name.replace(".", "/")).into(),
+                source,
+            )));
         }
 
         if let Some(path) = self.find_path(name) {

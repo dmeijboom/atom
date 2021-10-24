@@ -22,7 +22,7 @@ mod tests {
 
         let mut vm = VM::new()?;
 
-        if let Some(id) = module.funcs.iter().position(|func| func.name == "main") {
+        if let Some(id) = module.funcs.get_index_of("main") {
             for module in modules {
                 vm.register_module(module)?;
             }

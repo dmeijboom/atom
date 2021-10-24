@@ -63,6 +63,24 @@ pub enum ArithmeticOp {
     BitShiftRight,
 }
 
+impl ArithmeticOp {
+    pub fn description(&self) -> &str {
+        match self {
+            ArithmeticOp::Mul => "multiply",
+            ArithmeticOp::Div => "divide",
+            ArithmeticOp::Add => "add",
+            ArithmeticOp::Sub => "subtract",
+            ArithmeticOp::Mod => "modulo",
+            ArithmeticOp::Exp => "exponent",
+            ArithmeticOp::BitAnd => "bitwise and",
+            ArithmeticOp::BitOr => "bitwise or",
+            ArithmeticOp::BitXor => "xor",
+            ArithmeticOp::BitShiftLeft => "bitwise shift left",
+            ArithmeticOp::BitShiftRight => "bitwise shift right",
+        }
+    }
+}
+
 impl From<ArithmeticOp> for Code {
     fn from(op: ArithmeticOp) -> Self {
         match op {
@@ -373,6 +391,26 @@ pub struct AssignStmt {
     pub right: Expr,
     pub op: Option<AssignOp>,
     pub pos: Pos,
+}
+
+impl AssignStmt {
+    pub fn expand(&self) -> Expr {
+        if let Some(op) = &self.op {
+            Expr::Arithmetic(Box::new(ArithmeticExpr {
+                left: self.left.clone(),
+                right: self.right.clone(),
+                op: match op {
+                    AssignOp::Add => ArithmeticOp::Add,
+                    AssignOp::Sub => ArithmeticOp::Sub,
+                    AssignOp::Mul => ArithmeticOp::Mul,
+                    AssignOp::Div => ArithmeticOp::Div,
+                },
+                pos: self.pos.clone(),
+            }))
+        } else {
+            self.right.clone()
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

@@ -232,7 +232,7 @@ impl Debug for Code {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct IR {
     codes: Vec<Code>,
     locations: HashMap<usize, Location>,

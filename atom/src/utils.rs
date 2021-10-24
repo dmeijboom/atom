@@ -6,7 +6,7 @@ use atom_runtime::RuntimeError;
 use crate::compiler::CompileError;
 #[cfg(test)]
 use crate::{
-    compiler::{self, parse_line_numbers_offset, Compiler},
+    compiler::{self, Compiler, LineNumberOffset},
     parser,
 };
 
@@ -41,7 +41,7 @@ pub fn parse_and_compile(
     lookup_paths: Vec<String>,
 ) -> Result<Vec<compiler::Module>, Error> {
     let tree = parser::parse(source)?;
-    let mut compiler = Compiler::new(tree, parse_line_numbers_offset(source), true);
+    let mut compiler = Compiler::new(tree, LineNumberOffset::parse(source), true);
 
     for path in lookup_paths {
         compiler.add_lookup_path(path);
