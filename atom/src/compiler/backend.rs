@@ -10,7 +10,6 @@ use atom_ir::{Code, Label, Location, IR};
 use super::line_number_offset::LineNumberOffset;
 use super::module::Module;
 use super::result::{CompileError, Result};
-use super::scope::{ForLoopMeta, Local, Scope, ScopeContext};
 
 struct ScopeCursor {
     pos: usize,

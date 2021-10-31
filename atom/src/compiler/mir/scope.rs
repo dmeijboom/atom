@@ -3,16 +3,19 @@ use std::collections::HashMap;
 
 use crate::compiler::{CompileError, Type};
 
+pub type ScopeId = usize;
+pub type LocalId = usize;
+
 #[derive(Debug, Clone)]
 pub struct Local {
-    pub id: usize,
+    pub id: LocalId,
     pub name: String,
     pub mutable: bool,
     pub known_type: Type,
 }
 
 impl Local {
-    pub fn new(id: usize, name: String, mutable: bool, known_type: Type) -> Self {
+    pub fn new(id: LocalId, name: String, mutable: bool, known_type: Type) -> Self {
         Self {
             id,
             name,
@@ -38,6 +41,7 @@ pub struct ForLoopMeta {
 #[derive(Debug)]
 pub enum ScopeContext {
     Global,
+    Block,
     IfElse,
     Unsafe,
     Class(String),
@@ -48,6 +52,7 @@ pub enum ScopeContext {
 impl PartialEq for ScopeContext {
     fn eq(&self, other: &Self) -> bool {
         match self {
+            ScopeContext::Block => matches!(other, ScopeContext::Block),
             ScopeContext::Global => matches!(other, ScopeContext::Global),
             ScopeContext::IfElse => matches!(other, ScopeContext::IfElse),
             ScopeContext::Unsafe => matches!(other, ScopeContext::Unsafe),
@@ -64,16 +69,16 @@ impl PartialEq for ScopeContext {
 
 #[derive(Debug)]
 pub struct Scope {
-    pub id: usize,
-    pub local_id: usize,
+    pub id: ScopeId,
+    pub local_id: LocalId,
     pub context: ScopeContext,
-    pub parent: Option<usize>,
+    pub parent: Option<ScopeId>,
     pub locals: HashMap<String, Local>,
 }
 
 #[derive(Debug)]
 pub struct ScopeGraph {
-    current: usize,
+    current: ScopeId,
     graph: Vec<Scope>,
 }
 
@@ -113,12 +118,14 @@ impl ScopeGraph {
         self.graph.last().unwrap()
     }
 
-    pub fn push(&mut self, mut scope: Scope) {
+    pub fn add(&mut self, mut scope: Scope) -> ScopeId {
         self.current += 1;
 
         scope.id = self.current;
 
         self.graph.push(scope);
+
+        self.current
     }
 
     pub fn pop(&mut self) -> Option<Scope> {

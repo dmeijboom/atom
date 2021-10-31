@@ -53,13 +53,18 @@ impl Debug for Func {
 
 #[derive(Debug, Clone, Default)]
 pub struct Field {
+    pub name: String,
     pub mutable: bool,
     pub public: bool,
 }
 
 impl Field {
-    pub fn new(mutable: bool, public: bool) -> Self {
-        Self { mutable, public }
+    pub fn new(name: String, mutable: bool, public: bool) -> Self {
+        Self {
+            name,
+            mutable,
+            public,
+        }
     }
 }
 

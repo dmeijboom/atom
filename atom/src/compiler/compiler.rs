@@ -6,12 +6,11 @@ use std::sync::RwLock;
 use atom_ir::Code;
 
 use crate::ast::Stmt;
+use crate::compiler::mir;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
-use super::backend::BackendCompiler;
 use super::filesystem::{FileSystem, FileSystemCache};
-use super::frontend::FrontendCompiler;
 use super::line_number_offset::LineNumberOffset;
 use super::module::{Import, Module};
 use super::optimizers::{
@@ -376,31 +375,35 @@ impl Compiler {
 
     pub fn compile(mut self) -> Result<Module> {
         self.module_name_pass()?;
-        self.setup_prelude()?;
+        // @TODO: Enable setting up the prelude
+        //self.setup_prelude()?;
         self.mixins_pass()?;
         self.name_validation_pass()?;
         self.imports_pass()?;
 
-        let frontend = FrontendCompiler::new(&mut self.module, &self.line_numbers_offset);
-        let scopes = frontend.compile(&self.tree)?;
+        let compiler = mir::Compiler::new(&mut self.module, &self.line_numbers_offset);
+        let output = compiler.compile(&self.tree)?;
 
-        let backend = BackendCompiler::new(
-            &mut self.module,
-            scopes,
-            &self.line_numbers_offset,
-            if self.optimize {
-                vec![
-                    remove_type_cast::optimize,
-                    call_void::optimize,
-                    load_local_twice_add::optimize,
-                    remove_core_validations::optimize,
-                    pre_compute_labels::optimize,
-                ]
-            } else {
-                vec![]
-            },
-        );
-        backend.compile(&self.tree)?;
+        println!("{:#?}", output.program);
+        panic!("exit");
+
+        //let backend = BackendCompiler::new(
+        //    &mut self.module,
+        //    mid_output.sc,
+        //    &self.line_numbers_offset,
+        //    if self.optimize {
+        //        vec![
+        //            remove_type_cast::optimize,
+        //            call_void::optimize,
+        //            load_local_twice_add::optimize,
+        //            remove_core_validations::optimize,
+        //            pre_compute_labels::optimize,
+        //        ]
+        //    } else {
+        //        vec![]
+        //    },
+        //);
+        //backend.compile(&self.tree)?;
 
         Ok(self.module)
     }
