@@ -19,7 +19,19 @@ pub enum Terminator {
 }
 
 #[derive(Debug)]
-pub enum Decl {
+pub struct Decl {
+    pub public: bool,
+    pub kind: DeclKind,
+}
+
+impl Decl {
+    pub fn new(kind: DeclKind, public: bool) -> Self {
+        Self { kind, public }
+    }
+}
+
+#[derive(Debug)]
+pub enum DeclKind {
     Class(Class),
     Function(Function),
     Interface(Interface),
@@ -141,6 +153,12 @@ impl Assign {
 pub struct Id {
     pub module_name: String,
     pub name: String,
+}
+
+impl ToString for Id {
+    fn to_string(&self) -> String {
+        format!("{}.{}", self.module_name, self.name)
+    }
 }
 
 impl Id {
@@ -285,7 +303,7 @@ pub enum ValueKind {
 pub struct Value {
     pub loc: Location,
     pub kind: ValueKind,
-    pub known_type: Type,
+    pub known_type: Option<Type>,
 }
 
 impl Value {
@@ -293,7 +311,7 @@ impl Value {
         Self {
             loc,
             kind,
-            known_type: Type::Unknown,
+            known_type: None,
         }
     }
 
@@ -301,7 +319,7 @@ impl Value {
         Self {
             loc,
             kind,
-            known_type,
+            known_type: Some(known_type),
         }
     }
 }

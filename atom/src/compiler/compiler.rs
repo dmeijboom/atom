@@ -11,6 +11,7 @@ use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
 use super::filesystem::{FileSystem, FileSystemCache};
+use super::frontend::FrontendCompiler;
 use super::line_number_offset::LineNumberOffset;
 use super::module::{Import, Module};
 use super::optimizers::{
@@ -382,10 +383,12 @@ impl Compiler {
         self.imports_pass()?;
 
         let compiler = mir::Compiler::new(&mut self.module, &self.line_numbers_offset);
-        let output = compiler.compile(&self.tree)?;
+        let mir = compiler.compile(&self.tree)?;
 
-        println!("{:#?}", output.program);
-        panic!("exit");
+        let frontend = FrontendCompiler::new(&mut self.module, &mir);
+        frontend.compile()?;
+
+        panic!("exit - OK");
 
         //let backend = BackendCompiler::new(
         //    &mut self.module,

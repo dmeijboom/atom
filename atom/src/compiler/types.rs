@@ -92,11 +92,3 @@ impl Display for Type {
         }
     }
 }
-
-pub const INT: Type = Type::Primitive(PrimitiveType::Int);
-//pub const FLOAT: Type = Type::Primitive(PrimitiveType::Float);
-//pub const CHAR: Type = Type::Primitive(PrimitiveType::Char);
-//pub const BYTE: Type = Type::Primitive(PrimitiveType::Byte);
-pub const BOOL: Type = Type::Primitive(PrimitiveType::Bool);
-pub const STRING: Type = Type::Primitive(PrimitiveType::String);
-//pub const SYMBOL: Type = Type::Primitive(PrimitiveType::Symbol);

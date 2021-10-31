@@ -76,6 +76,28 @@ pub struct Scope {
     pub locals: HashMap<String, Local>,
 }
 
+impl Scope {
+    pub fn new() -> Self {
+        Self {
+            id: 0,
+            local_id: 0,
+            parent: None,
+            locals: HashMap::new(),
+            context: ScopeContext::Global,
+        }
+    }
+
+    pub fn new_child(parent: &Scope, context: ScopeContext) -> Self {
+        Self {
+            id: 0,
+            context,
+            local_id: 0,
+            locals: HashMap::new(),
+            parent: Some(parent.id),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct ScopeGraph {
     current: ScopeId,
@@ -202,27 +224,5 @@ impl ScopeGraph {
 
             None
         })
-    }
-}
-
-impl Scope {
-    pub fn new() -> Self {
-        Self {
-            id: 0,
-            local_id: 0,
-            parent: None,
-            locals: HashMap::new(),
-            context: ScopeContext::Global,
-        }
-    }
-
-    pub fn new_child(parent: &Scope, context: ScopeContext) -> Self {
-        Self {
-            id: 0,
-            context,
-            local_id: 0,
-            locals: HashMap::new(),
-            parent: Some(parent.id),
-        }
     }
 }

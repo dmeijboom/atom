@@ -7,6 +7,7 @@ pub use types::Type;
 //mod backend;
 mod compiler;
 mod filesystem;
+mod frontend;
 mod line_number_offset;
 mod mir;
 mod module;

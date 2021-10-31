@@ -541,6 +541,10 @@ impl<'c> Compiler<'c> {
 
     fn compile_stmt_list(&mut self, block: &mut Block, stmt_list: &[Stmt]) -> Result<()> {
         for stmt in stmt_list {
+            if block.terminator.is_some() {
+                break;
+            }
+
             self.compile_stmt(block, stmt)?;
         }
 
@@ -635,22 +639,22 @@ impl<'c> Compiler<'c> {
                 Stmt::FnDecl(fn_decl) => {
                     let function = self.compile_function(fn_decl, None)?;
 
-                    Decl::Function(function)
+                    Decl::new(DeclKind::Function(function), fn_decl.public)
                 }
                 Stmt::ExternFnDecl(extern_fn_decl) => {
                     let function = self.compile_extern_function(extern_fn_decl)?;
 
-                    Decl::Function(function)
+                    Decl::new(DeclKind::Function(function), extern_fn_decl.public)
                 }
                 Stmt::ClassDecl(class_decl) => {
                     let class = self.compile_class(class_decl)?;
 
-                    Decl::Class(class)
+                    Decl::new(DeclKind::Class(class), class_decl.public)
                 }
                 Stmt::InterfaceDecl(interface_decl) => {
                     let interface = self.compile_interface(interface_decl);
 
-                    Decl::Interface(interface)
+                    Decl::new(DeclKind::Interface(interface), interface_decl.public)
                 }
 
                 _ => unreachable!(),
