@@ -5,6 +5,7 @@ use std::sync::RwLock;
 
 use crate::ast::Stmt;
 use crate::compiler::mir;
+use crate::compiler::optimizers::tail_call;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
@@ -352,6 +353,7 @@ impl Compiler {
             if self.optimize {
                 vec![
                     remove_type_cast::optimize,
+                    tail_call::optimize,
                     call_void::optimize,
                     load_local_twice_add::optimize,
                     remove_core_validations::optimize,

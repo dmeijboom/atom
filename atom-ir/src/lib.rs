@@ -271,6 +271,10 @@ impl IR {
         self.codes.get_unchecked_mut(index)
     }
 
+    pub fn slice(&self, index: usize) -> &[Code] {
+        &self.codes[index..]
+    }
+
     pub fn iter(&self) -> Iter<Code> {
         self.codes.iter()
     }

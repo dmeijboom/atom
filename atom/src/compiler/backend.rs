@@ -109,7 +109,18 @@ impl<'c> BackendCompiler<'c> {
             }
             ValueKind::Call(call) => {
                 self.compile_values(scope, &call.args)?;
-                self.compile_value(scope, &call.callee)?;
+
+                let function_target = if let ValueKind::Name(function_name) = &call.callee.kind {
+                    Some(function_name)
+                } else {
+                    None
+                };
+
+                if function_target.map(|s| s.as_str()) == self.mir.get_function_target(scope) {
+                    self.ir.add(Code::LoadTarget, location);
+                } else {
+                    self.compile_value(scope, &call.callee)?;
+                }
 
                 let code = if call.keywords.is_empty() {
                     Code::Call(call.args.len())

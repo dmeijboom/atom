@@ -243,14 +243,12 @@ impl<'c> FrontendCompiler<'c> {
                 let left = self.compile_type(scope, &comparison.left)?;
                 let right = self.compile_type(scope, &comparison.right)?;
 
-                if left.is_typed() && right.is_typed() {
-                    if left != right {
-                        return Err(CompileError::new(format!(
-                            "unable to compare '{}' and: {}",
-                            left, right
-                        ))
-                        .with_location(comparison.left.loc.clone()));
-                    }
+                if left.is_typed() && right.is_typed() && left != right {
+                    return Err(CompileError::new(format!(
+                        "unable to compare '{}' and: {}",
+                        left, right
+                    ))
+                    .with_location(comparison.left.loc.clone()));
                 }
 
                 Type::Primitive(PrimitiveType::Bool)

@@ -7,5 +7,6 @@ pub mod load_local_twice_add;
 pub mod pre_compute_labels;
 pub mod remove_core_validations;
 pub mod remove_type_cast;
+pub mod tail_call;
 
 pub type Optimizer = fn(&Module, &mut IR);

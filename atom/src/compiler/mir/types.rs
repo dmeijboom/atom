@@ -1,5 +1,5 @@
 use crate::ast::{ArithmeticOp, ComparisonOp, FnArg, LogicalOp};
-use crate::compiler::mir::Local;
+use crate::compiler::mir::{Local, ScopeContext};
 use crate::compiler::module::Field;
 use crate::compiler::{FuncArg, Type};
 use atom_ir::Location;
@@ -18,13 +18,23 @@ impl Mir {
             return local;
         }
 
-        if let Some(parent_id) = scope.parent {
-            unsafe {
-                return self.get_local(self.scopes.get_unchecked(parent_id), id);
-            }
+        if let Some(parent) = scope.parent.and_then(|id| self.scopes.get(id)) {
+            return self.get_local(parent, id);
         }
 
         unreachable!("unable to find local with ID: {}", id)
+    }
+
+    pub fn get_function_target<'m>(&'m self, scope: &'m Scope) -> Option<&'m str> {
+        if let ScopeContext::Function(name) = &scope.context {
+            return Some(name);
+        }
+
+        if let Some(parent) = scope.parent.and_then(|id| self.scopes.get(id)) {
+            return self.get_function_target(parent);
+        }
+
+        None
     }
 }
 
