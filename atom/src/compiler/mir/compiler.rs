@@ -6,7 +6,7 @@ use crate::ast::{
 };
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
-use crate::compiler::{FuncArg, LineNumberOffset, Module, Type};
+use crate::compiler::{FuncArg, LineNumberOffset, Type};
 
 use super::scope::{ForLoopMeta, LocalId, Scope, ScopeContext, ScopeGraph, ScopeId};
 use super::types::{self, *};
@@ -66,6 +66,14 @@ impl<'c> Compiler<'c> {
         )
     }
 
+    fn loop_name(&self, prefix: &str) -> String {
+        if self.loops == 0 {
+            return prefix.to_string();
+        }
+
+        format!("{}{}", prefix, self.loops)
+    }
+
     fn compile_items(&mut self, items: &[Expr]) -> Result<Vec<Value>> {
         let mut values = vec![];
 
@@ -98,18 +106,39 @@ impl<'c> Compiler<'c> {
                     .statements
                     .push(self.build_assign_local(local.id, value));
             }
-            Variable::Tuple(_names) | Variable::Array(_names) => {
-                unreachable!("not implemented yet")
-                //for name in names {
-                //    if self.scope.get_local(name, false).is_some() {
-                //        return Err(CompileError::new(format!(
-                //            "unable to redefine name: {}",
-                //            name
-                //        )));
-                //    }
+            Variable::Tuple(names) | Variable::Array(names) => {
+                let tmp = self
+                    .scope
+                    .set_local("tmp".to_string(), false, Type::Unknown)?;
 
-                //    self.scope.set_local(name.clone(), mutable, Type::Unknown)?;
-                //}
+                block
+                    .statements
+                    .push(self.build_assign_local(tmp.id, value));
+
+                for (i, name) in names.iter().enumerate() {
+                    if self.scope.get_local(name, false).is_some() {
+                        return Err(CompileError::new(format!(
+                            "unable to redefine name: {}",
+                            name
+                        )));
+                    }
+
+                    let local = self.scope.set_local(name.clone(), mutable, Type::Unknown)?;
+
+                    block.statements.push(self.build_assign_local(
+                        local.id,
+                        Value::new(
+                            self.loc.clone(),
+                            ValueKind::Index(Box::new(Index::new(
+                                Value::new(self.loc.clone(), ValueKind::Local(tmp.id)),
+                                Value::new(
+                                    self.loc.clone(),
+                                    ValueKind::Const(Const::Int32(i as i32)),
+                                ),
+                            ))),
+                        ),
+                    ))
+                }
             }
         }
 
@@ -350,16 +379,12 @@ impl<'c> Compiler<'c> {
                 root.statements.push(self.compile_if_stmt(if_stmt)?);
             }
             Stmt::For(for_stmt) => {
-                let meta = ForLoopMeta::new(if self.loops == 0 {
-                    "loop_const".to_string()
-                } else {
-                    format!("loop_cont{}", self.loops)
-                });
+                let meta = ForLoopMeta::new(self.loop_name("loop_cont"));
                 let for_block = if let Some(expr) = &for_stmt.expr {
                     // Step 1. Get the iterator from the value
                     let value = self.compile_expr(expr)?;
                     let iter = self.scope.set_local(
-                        "__iter__".to_string(),
+                        self.loop_name("__iter__"),
                         false,
                         Type::Interface("Iterable".to_string()),
                     )?;
@@ -375,7 +400,7 @@ impl<'c> Compiler<'c> {
                     // Step 2. Now in the loop, get the next value from the iterator
                     let item =
                         self.scope
-                            .set_local("__item__".to_string(), false, Type::Unknown)?;
+                            .set_local(self.loop_name("__item__"), false, Type::Unknown)?;
 
                     block.statements.push(self.build_assign_local(
                         item.id,
@@ -408,7 +433,13 @@ impl<'c> Compiler<'c> {
                     if let Some(var) = &for_stmt.alias {
                         self.compile_store_var(
                             &mut block,
-                            Value::new(self.loc.clone(), ValueKind::Local(item.id)),
+                            Value::new(
+                                self.loc.clone(),
+                                ValueKind::Unwrap(Box::new(Value::new(
+                                    self.loc.clone(),
+                                    ValueKind::Local(item.id),
+                                ))),
+                            ),
                             false,
                             var,
                         )?;
@@ -451,7 +482,7 @@ impl<'c> Compiler<'c> {
                     Expr::Index(index_expr) => {
                         let object = self.compile_expr(&index_expr.object)?;
                         let index = self.compile_expr(&index_expr.index)?;
-                        let left = AssignLeftHand::Index(Index::new(object, index));
+                        let left = AssignLeftHand::Index(Box::new(Index::new(object, index)));
 
                         Assign::new(left, right)
                     }

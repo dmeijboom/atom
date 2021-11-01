@@ -1,6 +1,6 @@
 use crate::compiler::mir::{
-    Assign, AssignLeftHand, Block, Const, Decl, DeclKind, Function, Index, Local, LocalId, Mir,
-    Scope, Stmt, StmtKind, Value, ValueKind,
+    Assign, AssignLeftHand, Block, Const, DeclKind, Function, Index, Mir, Scope, Stmt, StmtKind,
+    Value, ValueKind,
 };
 use crate::compiler::result::{CompileError, Result};
 use crate::compiler::types::{MapType, PrimitiveType};
@@ -50,33 +50,19 @@ impl<'c> FrontendCompiler<'c> {
         }
     }
 
-    fn get_class_type(&self, name: String) -> Type {
-        if self.module.name == "std.core" {
-            let unknown = Box::new(Type::Unknown);
+    //fn collect_return_type(&mut self) -> Option<Type> {
+    //    if self.return_types.is_empty() {
+    //        return None;
+    //    }
 
-            return match name.as_str() {
-                "Option" => Type::Option(unknown),
-                "Array" => Type::Array(unknown),
-                _ => Type::Class(name),
-            };
-        }
+    //    let mut return_types = self.return_types.drain(..).collect::<Vec<_>>();
 
-        Type::Class(name)
-    }
-
-    fn collect_return_type(&mut self) -> Option<Type> {
-        if self.return_types.is_empty() {
-            return None;
-        }
-
-        let mut return_types = self.return_types.drain(..).collect::<Vec<_>>();
-
-        Some(if !return_types.is_empty() && is_same_type(&return_types) {
-            return_types.remove(0)
-        } else {
-            Type::Unknown
-        })
-    }
+    //    Some(if !return_types.is_empty() && is_same_type(&return_types) {
+    //        return_types.remove(0)
+    //    } else {
+    //        Type::Unknown
+    //    })
+    //}
 
     fn compile_single_type(&mut self, scope: &'c Scope, values: &[Value]) -> Result<Type> {
         let mut types = vec![];
@@ -129,7 +115,7 @@ impl<'c> FrontendCompiler<'c> {
         if public {
             self.module
                 .exports
-                .insert(class.name.clone(), self.get_class_type(class.name.clone()));
+                .insert(class.name.clone(), Type::Class(class.name.clone()));
         }
 
         let mut output = Class {
@@ -196,7 +182,7 @@ impl<'c> FrontendCompiler<'c> {
                 } else if let Some(func) = self.module.funcs.get(name) {
                     Type::Fn(func.name.clone())
                 } else if let Some(class) = self.module.classes.get(name) {
-                    self.get_class_type(class.name.clone())
+                    Type::Class(class.name.clone())
                 } else if let Some(interface) = self.module.interfaces.get(name) {
                     Type::Interface(interface.name.clone())
                 } else {

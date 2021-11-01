@@ -132,7 +132,6 @@ pub enum Code {
     LoadMember(String),
     TeeMember(String),
     StoreMember(String),
-    Raise,
 }
 
 impl Code {
@@ -221,7 +220,6 @@ impl Code {
             Code::StoreIndex => "  storeIndex".to_string(),
             Code::LoadMember(name) => format!("  loadMember(name: '{}')", name),
             Code::TeeMember(name) => format!("  teeMember(name: '{}')", name),
-            Code::Raise => "  raise".to_string(),
         }
     }
 }

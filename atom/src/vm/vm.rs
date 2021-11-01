@@ -529,7 +529,6 @@ impl VM {
             }
             Code::Jump(label) => return Ok(Flow::JumpTo(label)),
             Code::JumpIfTrue(label) => return self.eval_jump_if_true(label),
-            Code::Raise => self.eval_raise(module_id)?,
         };
 
         Ok(Flow::Continue)
@@ -1214,26 +1213,6 @@ impl VM {
         }
 
         Ok(Flow::Continue)
-    }
-
-    fn eval_raise(&mut self, module_id: ModuleId) -> Result<()> {
-        let value = self.stack.pop()?;
-
-        // @TODO: come up with a generic solution for raising errors from atom
-        if let Value::Object(object) = &value {
-            if object.class.fields.contains_key("message") {
-                let kind = object.class.name.clone();
-
-                self.stack.push(value);
-                self.eval_load_member(module_id, "message", false)?;
-
-                let message = self.stack.pop()?;
-
-                return Err(RuntimeError::new(format!("{}", message)).with_kind(kind));
-            }
-        }
-
-        Err(RuntimeError::new(format!("{}", value)))
     }
 
     fn find_label(&self, instructions: &IR, search: &str) -> Result<usize> {

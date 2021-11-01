@@ -3,8 +3,6 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use atom_ir::Code;
-
 use crate::ast::Stmt;
 use crate::compiler::mir;
 use crate::parser;
@@ -104,46 +102,6 @@ impl Compiler {
             line_numbers_offset,
             modules: Rc::clone(&self.modules),
         }
-    }
-
-    fn has_no_side_effects(&self, code: &Code) -> bool {
-        matches!(
-            code,
-            Code::Return
-                | Code::ArithmeticAdd
-                | Code::ArithmeticSub
-                | Code::ArithmeticMul
-                | Code::ArithmeticDiv
-                | Code::ArithmeticExp
-                | Code::ArithmeticBitAnd
-                | Code::ArithmeticBitOr
-                | Code::ArithmeticBitXor
-                | Code::ArithmeticBitShiftLeft
-                | Code::ArithmeticBitShiftRight
-                | Code::ComparisonEq
-                | Code::ComparisonNeq
-                | Code::ComparisonGt
-                | Code::ComparisonGte
-                | Code::ComparisonLt
-                | Code::ComparisonLte
-                | Code::ConstString(_)
-                | Code::ConstBool(_)
-                | Code::ConstSymbol(_)
-                | Code::ConstByte(_)
-                | Code::ConstChar(_)
-                | Code::ConstFloat(_)
-                | Code::ConstInt128(_)
-                | Code::ConstUint128(_)
-                | Code::ConstInt64(_)
-                | Code::ConstUint64(_)
-                | Code::ConstInt32(_)
-                | Code::ConstUint32(_)
-                | Code::ConstInt16(_)
-                | Code::ConstUint16(_)
-                | Code::ConstInt8(_)
-                | Code::ConstUint8(_)
-                | Code::Discard
-        )
     }
 
     fn setup_prelude(&mut self) -> Result<()> {

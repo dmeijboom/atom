@@ -1,6 +1,7 @@
 module std.map;
 
 import std.core.some;
+import std.core.raise;
 import std.core.String;
 import std.core.Iterable;
 import std.encoding.binary.int_from_bytes;

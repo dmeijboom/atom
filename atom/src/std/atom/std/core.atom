@@ -2,6 +2,7 @@ module std.core;
 
 pub extern fn println(values);
 pub extern fn some(value);
+pub extern fn raise(exception);
 
 pub interface Iterable {
     fn iter();

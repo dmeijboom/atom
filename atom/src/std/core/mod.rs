@@ -1,4 +1,4 @@
-use atom_runtime::ExternalFn;
+use atom_runtime::{ExternalFn, RuntimeError};
 
 pub mod array;
 pub mod float;
@@ -19,6 +19,10 @@ pub fn hook(module_name: &str, name: &str, method_name: Option<&str>) -> Option<
 
             Ok(None)
         });
+    }
+
+    if module_name == "std.core" && name == "raise" {
+        return Some(|_, _, values| Err(RuntimeError::new(format!("{}", values[0]))));
     }
 
     option::hook(module_name, name, method_name).or_else(|| {

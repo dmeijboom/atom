@@ -150,7 +150,7 @@ pub enum StmtKind {
 #[derive(Debug)]
 pub enum AssignLeftHand {
     Local(LocalId),
-    Index(Index),
+    Index(Box<Index>),
     Member(Member),
 }
 
@@ -163,24 +163,6 @@ pub struct Assign {
 impl Assign {
     pub fn new(left: AssignLeftHand, right: Value) -> Self {
         Self { left, right }
-    }
-}
-
-#[derive(Debug)]
-pub struct Id {
-    pub module_name: String,
-    pub name: String,
-}
-
-impl ToString for Id {
-    fn to_string(&self) -> String {
-        format!("{}.{}", self.module_name, self.name)
-    }
-}
-
-impl Id {
-    pub fn new(module_name: String, name: String) -> Self {
-        Self { module_name, name }
     }
 }
 
