@@ -1,4 +1,5 @@
 use crate::ast::{ArithmeticOp, ComparisonOp, FnArg, LogicalOp};
+use crate::compiler::mir::Local;
 use crate::compiler::module::Field;
 use crate::compiler::{FuncArg, Type};
 use atom_ir::Location;
@@ -9,6 +10,22 @@ use super::scope::{LocalId, Scope, ScopeId};
 pub struct Mir {
     pub scopes: Vec<Scope>,
     pub program: Vec<Decl>,
+}
+
+impl Mir {
+    pub fn get_local<'m>(&'m self, scope: &'m Scope, id: LocalId) -> &'m Local {
+        if let Some((_, local)) = scope.locals.iter().find(|(_, local)| local.id == id) {
+            return local;
+        }
+
+        if let Some(parent_id) = scope.parent {
+            unsafe {
+                return self.get_local(self.scopes.get_unchecked(parent_id), id);
+            }
+        }
+
+        unreachable!("unable to find local with ID: {}", id)
+    }
 }
 
 #[derive(Debug)]
@@ -177,6 +194,7 @@ pub struct Cast {
 pub struct Call {
     pub callee: Value,
     pub args: Vec<Value>,
+    pub keywords: Vec<String>,
 }
 
 impl Call {
@@ -184,11 +202,16 @@ impl Call {
         Self {
             callee,
             args: vec![],
+            keywords: vec![],
         }
     }
 
     pub fn with_args(callee: Value, args: Vec<Value>) -> Self {
-        Self { callee, args }
+        Self {
+            callee,
+            args,
+            keywords: vec![],
+        }
     }
 }
 
@@ -277,13 +300,16 @@ pub enum Const {
 #[derive(Debug)]
 pub enum ValueKind {
     Const(Const),
-    Load(LocalId),
-    LoadFn(Id),
+    Local(LocalId),
+    // Loads a value by name in the following order: imports, fn, class, interface
+    Name(String),
+    Receiver,
     Cast(Box<Cast>),
     Call(Box<Call>),
     Unwrap(Box<Value>),
     Array(Vec<Value>),
     Tuple(Vec<Value>),
+    // @TODO: this should be desugarized
     Map(Vec<KeyValuePair>),
     Closure(Closure),
     Member(Box<Member>),
@@ -312,14 +338,6 @@ impl Value {
             loc,
             kind,
             known_type: None,
-        }
-    }
-
-    pub fn with_type(loc: Location, kind: ValueKind, known_type: Type) -> Self {
-        Self {
-            loc,
-            kind,
-            known_type: Some(known_type),
         }
     }
 }

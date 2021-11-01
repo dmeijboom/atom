@@ -50,6 +50,20 @@ impl<'c> FrontendCompiler<'c> {
         }
     }
 
+    fn get_class_type(&self, name: String) -> Type {
+        if self.module.name == "std.core" {
+            let unknown = Box::new(Type::Unknown);
+
+            return match name.as_str() {
+                "Option" => Type::Option(unknown),
+                "Array" => Type::Array(unknown),
+                _ => Type::Class(name),
+            };
+        }
+
+        Type::Class(name)
+    }
+
     fn collect_return_type(&mut self) -> Option<Type> {
         if self.return_types.is_empty() {
             return None;
@@ -62,20 +76,6 @@ impl<'c> FrontendCompiler<'c> {
         } else {
             Type::Unknown
         })
-    }
-
-    fn get_local(&self, scope: &'c Scope, id: LocalId) -> &'c Local {
-        if let Some((_, local)) = scope.locals.iter().find(|(_, local)| local.id == id) {
-            return local;
-        }
-
-        if let Some(parent_id) = scope.parent {
-            unsafe {
-                return self.get_local(self.mir.scopes.get_unchecked(parent_id), id);
-            }
-        }
-
-        unreachable!("unable to find local with ID: {}", id)
     }
 
     fn compile_single_type(&mut self, scope: &'c Scope, values: &[Value]) -> Result<Type> {
@@ -92,20 +92,16 @@ impl<'c> FrontendCompiler<'c> {
         let object = self.compile_type(scope, &index.object)?;
         let index_type = self.compile_type(scope, &index.index)?;
 
-        if object.is_typed() {
-            if !matches!(object, Type::Array(_)) {
-                return Err(CompileError::new(format!("unable to index: {}", object))
-                    .with_location(index.object.loc.clone()));
-            }
+        if object.is_typed() && !matches!(object, Type::Array(_)) {
+            return Err(CompileError::new(format!("unable to index: {}", object))
+                .with_location(index.object.loc.clone()));
         }
 
-        if index_type.is_typed() {
-            if !matches!(index_type, Type::Primitive(PrimitiveType::Int)) {
-                return Err(
-                    CompileError::new(format!("unable to use '{}' as index", index_type))
-                        .with_location(index.object.loc.clone()),
-                );
-            }
+        if index_type.is_typed() && !matches!(index_type, Type::Primitive(PrimitiveType::Int)) {
+            return Err(
+                CompileError::new(format!("unable to use '{}' as index", index_type))
+                    .with_location(index.object.loc.clone()),
+            );
         }
 
         Ok(unwrap_type!(Array, object))
@@ -133,22 +129,33 @@ impl<'c> FrontendCompiler<'c> {
         if public {
             self.module
                 .exports
-                .insert(class.name.clone(), Type::Class(class.name.clone()));
+                .insert(class.name.clone(), self.get_class_type(class.name.clone()));
         }
 
-        self.module.classes.insert(
-            class.name.clone(),
-            Class {
-                name: class.name.clone(),
-                fields: class
-                    .fields
-                    .iter()
-                    .cloned()
-                    .map(|field| (field.name.clone(), field))
-                    .collect(),
-                ..Class::default()
-            },
-        );
+        let mut output = Class {
+            name: class.name.clone(),
+            fields: class
+                .fields
+                .iter()
+                .cloned()
+                .map(|field| (field.name.clone(), field))
+                .collect(),
+            ..Class::default()
+        };
+
+        for function in class.methods.iter() {
+            output.methods.insert(
+                function.name.clone(),
+                Func {
+                    name: function.name.clone(),
+                    is_extern: function.is_extern,
+                    args: function.args.clone(),
+                    ..Func::default()
+                },
+            );
+        }
+
+        self.module.classes.insert(class.name.clone(), output);
     }
 
     fn register_interface(&mut self, interface: &mir::Interface, public: bool) {
@@ -181,22 +188,45 @@ impl<'c> FrontendCompiler<'c> {
                 Const::Symbol(_) => PrimitiveType::Symbol,
                 Const::String(_) => PrimitiveType::String,
             }),
-            ValueKind::Load(id) => self.get_local(scope, *id).known_type.clone(),
-            ValueKind::LoadFn(id) => Type::Fn(id.to_string()),
+            ValueKind::Receiver => Type::Unknown,
+            ValueKind::Local(id) => self.mir.get_local(scope, *id).known_type.clone(),
+            ValueKind::Name(name) => {
+                if let Some((_, _, import)) = self.module.imports.get_full(name) {
+                    import.known_type.clone()
+                } else if let Some(func) = self.module.funcs.get(name) {
+                    Type::Fn(func.name.clone())
+                } else if let Some(class) = self.module.classes.get(name) {
+                    self.get_class_type(class.name.clone())
+                } else if let Some(interface) = self.module.interfaces.get(name) {
+                    Type::Interface(interface.name.clone())
+                } else {
+                    return Err(CompileError::new(format!("no such name: {}", name)));
+                }
+            }
             // @TODO: can we predict the resulting type?
-            ValueKind::Cast(_) => Type::Unknown,
+            ValueKind::Cast(cast) => {
+                self.compile_type(scope, &cast.value)?;
+
+                Type::Unknown
+            }
             // @TODO: we could parse the `return_type` field of the function
-            ValueKind::Call(_) => Type::Unknown,
+            ValueKind::Call(call) => {
+                self.compile_type(scope, &call.callee)?;
+
+                for arg in call.args.iter() {
+                    self.compile_type(scope, arg)?;
+                }
+
+                Type::Unknown
+            }
             ValueKind::Unwrap(value) => {
                 let value_type = self.compile_type(scope, value)?;
 
-                if value_type.is_typed() {
-                    if !matches!(value_type, Type::Option(_)) {
-                        return Err(
-                            CompileError::new(format!("unable to unwrap: {}", value_type))
-                                .with_location(value.loc.clone()),
-                        );
-                    }
+                if value_type.is_typed() && !matches!(value_type, Type::Option(_)) {
+                    return Err(
+                        CompileError::new(format!("unable to unwrap: {}", value_type))
+                            .with_location(value.loc.clone()),
+                    );
                 }
 
                 unwrap_type!(Option, value_type)
@@ -263,26 +293,22 @@ impl<'c> FrontendCompiler<'c> {
             ValueKind::Logical(logical) => {
                 let left = self.compile_type(scope, &logical.left)?;
 
-                if left.is_typed() {
-                    if !matches!(left, Type::Primitive(PrimitiveType::Bool)) {
-                        return Err(CompileError::new(format!(
-                            "unable to use '{}' as condition",
-                            left
-                        ))
-                        .with_location(logical.left.loc.clone()));
-                    }
+                if left.is_typed() && !matches!(left, Type::Primitive(PrimitiveType::Bool)) {
+                    return Err(CompileError::new(format!(
+                        "unable to use '{}' as condition",
+                        left
+                    ))
+                    .with_location(logical.left.loc.clone()));
                 }
 
                 let right = self.compile_type(scope, &logical.right)?;
 
-                if right.is_typed() {
-                    if !matches!(right, Type::Primitive(PrimitiveType::Bool)) {
-                        return Err(CompileError::new(format!(
-                            "unable to use '{}' as condition",
-                            right
-                        ))
-                        .with_location(logical.right.loc.clone()));
-                    }
+                if right.is_typed() && !matches!(right, Type::Primitive(PrimitiveType::Bool)) {
+                    return Err(CompileError::new(format!(
+                        "unable to use '{}' as condition",
+                        right
+                    ))
+                    .with_location(logical.right.loc.clone()));
                 }
 
                 Type::Primitive(PrimitiveType::Bool)
@@ -295,11 +321,9 @@ impl<'c> FrontendCompiler<'c> {
             ValueKind::Deref(deref) => {
                 let ref_type = self.compile_type(scope, deref)?;
 
-                if ref_type.is_typed() {
-                    if !matches!(ref_type, Type::Ref(_)) {
-                        return Err(CompileError::new(format!("unable to deref: {}", ref_type))
-                            .with_location(deref.loc.clone()));
-                    }
+                if ref_type.is_typed() && !matches!(ref_type, Type::Ref(_)) {
+                    return Err(CompileError::new(format!("unable to deref: {}", ref_type))
+                        .with_location(deref.loc.clone()));
                 }
 
                 unwrap_type!(Ref, ref_type)
@@ -308,34 +332,27 @@ impl<'c> FrontendCompiler<'c> {
             ValueKind::Slice(slice) => {
                 let array = self.compile_type(scope, &slice.object)?;
 
-                if array.is_typed() {
-                    if !matches!(array, Type::Array(_)) {
-                        return Err(CompileError::new(format!("unable to slice: {}", array))
-                            .with_location(slice.object.loc.clone()));
-                    }
+                if array.is_typed() && !matches!(array, Type::Array(_)) {
+                    return Err(CompileError::new(format!("unable to slice: {}", array))
+                        .with_location(slice.object.loc.clone()));
                 }
 
                 let begin = self.compile_type(scope, &slice.begin)?;
 
-                if begin.is_typed() {
-                    if !matches!(begin, Type::Primitive(PrimitiveType::Int)) {
-                        return Err(CompileError::new(format!(
-                            "unable to use '{}' to slice",
-                            begin
-                        ))
-                        .with_location(slice.object.loc.clone()));
-                    }
+                if begin.is_typed() && !matches!(begin, Type::Primitive(PrimitiveType::Int)) {
+                    return Err(
+                        CompileError::new(format!("unable to use '{}' to slice", begin))
+                            .with_location(slice.object.loc.clone()),
+                    );
                 }
 
                 let end = self.compile_type(scope, &slice.end)?;
 
-                if end.is_typed() {
-                    if !matches!(end, Type::Primitive(PrimitiveType::Int)) {
-                        return Err(
-                            CompileError::new(format!("unable to use '{}' to slice", end))
-                                .with_location(slice.object.loc.clone()),
-                        );
-                    }
+                if end.is_typed() && !matches!(end, Type::Primitive(PrimitiveType::Int)) {
+                    return Err(
+                        CompileError::new(format!("unable to use '{}' to slice", end))
+                            .with_location(slice.object.loc.clone()),
+                    );
                 }
 
                 array
@@ -361,7 +378,7 @@ impl<'c> FrontendCompiler<'c> {
         match &assign.left {
             AssignLeftHand::Local(id) => {
                 // @TODO: implement optional check
-                self.get_local(scope, *id);
+                self.mir.get_local(scope, *id);
             }
             AssignLeftHand::Index(index) => {
                 self.compile_index_type(scope, index)?;
@@ -381,14 +398,14 @@ impl<'c> FrontendCompiler<'c> {
             StmtKind::Cond(cond) => {
                 let cond_type = self.compile_type(scope, &cond.condition)?;
 
-                if cond_type.is_typed() {
-                    if !matches!(cond_type, Type::Primitive(PrimitiveType::Bool)) {
-                        return Err(CompileError::new(format!(
-                            "unable to use '{}' as condition",
-                            cond_type
-                        ))
-                        .with_location(stmt.loc.clone()));
-                    }
+                if cond_type.is_typed()
+                    && !matches!(cond_type, Type::Primitive(PrimitiveType::Bool))
+                {
+                    return Err(CompileError::new(format!(
+                        "unable to use '{}' as condition",
+                        cond_type
+                    ))
+                    .with_location(stmt.loc.clone()));
                 }
 
                 self.walk_block(&cond.block)?;

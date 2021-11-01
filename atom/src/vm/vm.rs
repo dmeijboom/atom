@@ -1051,9 +1051,9 @@ impl VM {
     }
 
     fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
+        let value = self.stack.pop()?;
         let object = self.stack.pop()?;
         let class = self.get_class(&object)?;
-        let value = self.stack.pop()?;
 
         if let Some(field) = class.fields.get(member) {
             if !field.public && module_id != class.origin.module_id {

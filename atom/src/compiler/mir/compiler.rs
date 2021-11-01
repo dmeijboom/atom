@@ -19,17 +19,17 @@ fn map_fn_args(args: &[FnArg]) -> Vec<FuncArg> {
 
 /// Compiler compiles high-level IR (the AST) to mid-level IR
 pub struct Compiler<'c> {
+    loops: usize,
     loc: Location,
     scope: ScopeGraph,
     scopes: Vec<Scope>,
-    module: &'c mut Module,
     line_number_offset: &'c LineNumberOffset,
 }
 
 impl<'c> Compiler<'c> {
-    pub fn new(module: &'c mut Module, line_number_offset: &'c LineNumberOffset) -> Self {
+    pub fn new(line_number_offset: &'c LineNumberOffset) -> Self {
         Self {
-            module,
+            loops: 0,
             loc: Location::default(),
             scopes: vec![],
             scope: ScopeGraph::new(),
@@ -98,7 +98,7 @@ impl<'c> Compiler<'c> {
                     .statements
                     .push(self.build_assign_local(local.id, value));
             }
-            Variable::Tuple(names) | Variable::Array(names) => {
+            Variable::Tuple(_names) | Variable::Array(_names) => {
                 unreachable!("not implemented yet")
                 //for name in names {
                 //    if self.scope.get_local(name, false).is_some() {
@@ -134,25 +134,19 @@ impl<'c> Compiler<'c> {
             }),
             Expr::Ident(ident) => {
                 if let Some(local) = self.scope.get_local(&ident.name, true) {
-                    ValueKind::Load(local.id)
+                    ValueKind::Local(local.id)
                 } else {
-                    unreachable!()
+                    ValueKind::Name(ident.name.clone())
                 }
-
-                //else if let Some((_, _, import)) = self.module.imports.get_full(&ident.name) {
-                //    import.known_type.clone()
-                //} else if let Some(func) = self.module.funcs.get(&ident.name) {
-                //    Type::Fn(func.name.clone())
-                //} else if let Some(class) = self.module.classes.get(&ident.name) {
-                //    Type::Class(class.name.clone())
-                //} else if let Some(interface) = self.module.interfaces.get(&ident.name) {
-                //    Type::Interface(interface.name.clone())
-                //} else {
-                //    return Err(CompileError::new(format!("no such name: {}", ident.name)));
-                //}
             }
             Expr::Call(call) => {
                 let mut args = vec![];
+                let mut keywords = vec![];
+
+                for arg in call.keyword_args.iter() {
+                    keywords.push(arg.name.clone());
+                    args.push(self.compile_expr(&arg.value)?);
+                }
 
                 for arg in call.args.iter() {
                     args.push(self.compile_expr(arg)?);
@@ -160,7 +154,11 @@ impl<'c> Compiler<'c> {
 
                 let callee = self.compile_expr(&call.callee)?;
 
-                ValueKind::Call(Box::new(Call { callee, args }))
+                ValueKind::Call(Box::new(Call {
+                    callee,
+                    args,
+                    keywords,
+                }))
             }
             Expr::Cast(cast) => {
                 let value = self.compile_expr(&cast.expr)?;
@@ -170,7 +168,15 @@ impl<'c> Compiler<'c> {
                     dest: cast.type_name.clone(),
                 }))
             }
-            Expr::Not(not) => unreachable!("not implemented yet"),
+            Expr::Not(not) => {
+                let left = self.compile_expr(&not.expr)?;
+
+                ValueKind::Comparison(Box::new(Operator::<ComparisonOp> {
+                    left,
+                    right: Value::new(self.loc.clone(), ValueKind::Const(Const::Bool(false))),
+                    op: ComparisonOp::Eq,
+                }))
+            }
             Expr::Unwrap(unwrap) => {
                 let value = self.compile_expr(&unwrap.expr)?;
 
@@ -344,8 +350,14 @@ impl<'c> Compiler<'c> {
                 root.statements.push(self.compile_if_stmt(if_stmt)?);
             }
             Stmt::For(for_stmt) => {
+                let meta = ForLoopMeta::new(if self.loops == 0 {
+                    "loop_const".to_string()
+                } else {
+                    format!("loop_cont{}", self.loops)
+                });
                 let for_block = if let Some(expr) = &for_stmt.expr {
                     // Step 1. Get the iterator from the value
+                    let value = self.compile_expr(expr)?;
                     let iter = self.scope.set_local(
                         "__iter__".to_string(),
                         false,
@@ -354,13 +366,10 @@ impl<'c> Compiler<'c> {
 
                     root.statements.push(self.build_assign_local(
                         iter.id,
-                        self.build_method_call(
-                            Value::new(self.loc.clone(), ValueKind::Load(iter.id)),
-                            "iter".to_string(),
-                        ),
+                        self.build_method_call(value, "iter".to_string()),
                     ));
 
-                    let scope_id = self.enter_scope(ScopeContext::ForLoop(ForLoopMeta::default()));
+                    let scope_id = self.enter_scope(ScopeContext::ForLoop(meta));
                     let mut block = Block::new(self.loc.clone(), scope_id);
 
                     // Step 2. Now in the loop, get the next value from the iterator
@@ -371,7 +380,7 @@ impl<'c> Compiler<'c> {
                     block.statements.push(self.build_assign_local(
                         item.id,
                         self.build_method_call(
-                            Value::new(self.loc.clone(), ValueKind::Load(iter.id)),
+                            Value::new(self.loc.clone(), ValueKind::Local(iter.id)),
                             "next".to_string(),
                         ),
                     ));
@@ -387,7 +396,7 @@ impl<'c> Compiler<'c> {
                         self.loc.clone(),
                         StmtKind::Cond(Cond {
                             condition: self.build_method_call(
-                                Value::new(self.loc.clone(), ValueKind::Load(item.id)),
+                                Value::new(self.loc.clone(), ValueKind::Local(item.id)),
                                 "isNone".to_string(),
                             ),
                             block: exit_loop_block,
@@ -399,7 +408,7 @@ impl<'c> Compiler<'c> {
                     if let Some(var) = &for_stmt.alias {
                         self.compile_store_var(
                             &mut block,
-                            Value::new(self.loc.clone(), ValueKind::Load(item.id)),
+                            Value::new(self.loc.clone(), ValueKind::Local(item.id)),
                             false,
                             var,
                         )?;
@@ -410,13 +419,15 @@ impl<'c> Compiler<'c> {
 
                     block
                 } else {
-                    let scope_id = self.enter_scope(ScopeContext::ForLoop(ForLoopMeta::default()));
+                    let scope_id = self.enter_scope(ScopeContext::ForLoop(meta));
                     let block = self.compile_block(scope_id, &for_stmt.body)?;
 
                     self.exit_scope();
 
                     block
                 };
+
+                self.loops += 1;
 
                 root.statements.push(types::Stmt::new(
                     self.loc.clone(),
@@ -498,21 +509,17 @@ impl<'c> Compiler<'c> {
                     StmtKind::Eval(Value::new(
                         self.loc.clone(),
                         ValueKind::Call(Box::new(Call::with_args(
-                            Value::new(
-                                self.loc.clone(),
-                                ValueKind::LoadFn(Id::new(
-                                    "std.core".to_string(),
-                                    "raise".to_string(),
-                                )),
-                            ),
+                            Value::new(self.loc.clone(), ValueKind::Name("raise".to_string())),
                             vec![value],
                         ))),
                     )),
                 ));
             }
+            Stmt::Break(_) => {
+                root.terminator = Some(Terminator::Break);
+            }
             Stmt::Else(_)
             | Stmt::LetDecl(_)
-            | Stmt::Break(_)
             | Stmt::Import(_)
             | Stmt::FnDecl(_)
             | Stmt::Module(_)
@@ -552,18 +559,31 @@ impl<'c> Compiler<'c> {
     ) -> Result<Function> {
         let scope_id = self.enter_scope(ScopeContext::Function(fn_decl.name.clone()));
 
-        if let Some(_) = class_name {
-            self.scope
-                .set_local("this".to_string(), true, Type::Unknown)?;
-        }
-
         // Register locals for input arguments
         for arg in fn_decl.args.iter() {
             self.scope
                 .set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
         }
 
-        let block = self.compile_block(scope_id, &fn_decl.body)?;
+        let block = if class_name.is_some() {
+            let local = self
+                .scope
+                .set_local("this".to_string(), true, Type::Unknown)?;
+
+            let mut block = self.compile_block(scope_id, &fn_decl.body)?;
+
+            block.statements.insert(
+                0,
+                self.build_assign_local(
+                    local.id,
+                    Value::new(self.loc.clone(), ValueKind::Receiver),
+                ),
+            );
+
+            block
+        } else {
+            self.compile_block(scope_id, &fn_decl.body)?
+        };
 
         self.exit_scope();
 

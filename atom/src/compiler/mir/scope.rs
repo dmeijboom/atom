@@ -33,9 +33,15 @@ impl Local {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Default)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ForLoopMeta {
     pub continue_label: String,
+}
+
+impl ForLoopMeta {
+    pub fn new(continue_label: String) -> Self {
+        Self { continue_label }
+    }
 }
 
 #[derive(Debug)]
@@ -189,23 +195,6 @@ impl ScopeGraph {
 
         self.walk(|scope| {
             if let Some(local) = scope.locals.get(name) {
-                return Some(local);
-            }
-
-            None
-        })
-    }
-
-    pub fn get_local_mut(&mut self, name: &str, parents: bool) -> Option<&mut Local> {
-        if !parents {
-            return self
-                .graph
-                .last_mut()
-                .and_then(|scope| scope.locals.get_mut(name));
-        }
-
-        self.walk_mut(|scope| {
-            if let Some(local) = scope.locals.get_mut(name) {
                 return Some(local);
             }
 

@@ -4,7 +4,7 @@ pub use module::{Class, Func, FuncArg, Interface, Module};
 pub use result::{CompileError, Result};
 pub use types::Type;
 
-//mod backend;
+mod backend;
 mod compiler;
 mod filesystem;
 mod frontend;
