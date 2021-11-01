@@ -80,7 +80,6 @@ pub struct Interface {
 pub struct Block {
     pub loc: Location,
     pub scope_id: ScopeId,
-    pub label: Option<String>,
     pub statements: Vec<Stmt>,
     pub terminator: Option<Terminator>,
 }
@@ -90,7 +89,6 @@ impl Default for Block {
         Self {
             loc: Location::default(),
             scope_id: 0,
-            label: None,
             statements: vec![],
             terminator: None,
         }
@@ -102,7 +100,6 @@ impl Block {
         Self {
             loc,
             scope_id,
-            label: None,
             terminator: None,
             statements: vec![],
         }
@@ -112,7 +109,6 @@ impl Block {
         Self {
             loc,
             scope_id,
-            label: None,
             terminator: Some(terminator),
             statements: vec![],
         }

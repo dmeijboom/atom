@@ -1,7 +1,4 @@
-use std::collections::HashMap;
 use std::mem;
-
-use wyhash2::WyHash;
 
 use crate::ast::LogicalOp;
 use crate::compiler::mir::{
@@ -9,6 +6,7 @@ use crate::compiler::mir::{
     StmtKind, TemplateComponent, Terminator, Value, ValueKind,
 };
 use crate::compiler::optimizers::Optimizer;
+use crate::compiler::slugs::Slugs;
 use atom_ir::{Code, Label, IR};
 
 use super::module::Module;
@@ -16,10 +14,10 @@ use super::result::{CompileError, Result};
 
 pub struct BackendCompiler<'c> {
     ir: IR,
+    slugs: Slugs,
     mir: &'c Mir,
     module: &'c mut Module,
     optimizers: Vec<Optimizer>,
-    labels: HashMap<String, bool, WyHash>,
 }
 
 impl<'c> BackendCompiler<'c> {
@@ -29,27 +27,7 @@ impl<'c> BackendCompiler<'c> {
             mir,
             module,
             optimizers,
-            labels: HashMap::with_hasher(WyHash::default()),
-        }
-    }
-
-    fn make_label(&mut self, prefix: &str) -> String {
-        let mut i: i64 = 0;
-
-        loop {
-            let label = if i == 0 {
-                prefix.to_string()
-            } else {
-                format!("{}{}", prefix, i)
-            };
-
-            if !self.labels.contains_key(&label) {
-                self.labels.insert(label.clone(), true);
-
-                return label;
-            }
-
-            i += 1;
+            slugs: Slugs::new(),
         }
     }
 
@@ -179,7 +157,7 @@ impl<'c> BackendCompiler<'c> {
                         self.ir.add(Code::LogicalAnd, location);
                     }
                     LogicalOp::Or => {
-                        let label = self.make_label("or");
+                        let label = self.slugs.get("or");
 
                         self.ir
                             .add(Code::JumpIfTrue(Label::new(label.clone())), location);
@@ -260,9 +238,9 @@ impl<'c> BackendCompiler<'c> {
                 }
             },
             StmtKind::Cond(cond) => {
-                let if_label = self.make_label("if");
-                let else_label = self.make_label("else");
-                let cont_label = self.make_label("if_else_cont");
+                let if_label = self.slugs.get("if");
+                let else_label = self.slugs.get("else");
+                let cont_label = self.slugs.get("if_else_cont");
 
                 self.compile_value(scope, &cond.condition)?;
 
@@ -293,7 +271,7 @@ impl<'c> BackendCompiler<'c> {
                 self.ir.add(Code::SetLabel(cont_label), location);
             }
             StmtKind::Loop(block) => {
-                let loop_label = self.make_label("loop_body");
+                let loop_label = self.slugs.get("loop_body");
 
                 self.ir.add(Code::SetLabel(loop_label.clone()), location);
                 self.compile_block(block)?;

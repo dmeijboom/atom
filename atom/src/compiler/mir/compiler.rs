@@ -6,6 +6,7 @@ use crate::ast::{
 };
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
+use crate::compiler::slugs::Slugs;
 use crate::compiler::{FuncArg, LineNumberOffset, Type};
 
 use super::scope::{ForLoopMeta, LocalId, Scope, ScopeContext, ScopeGraph, ScopeId};
@@ -19,8 +20,8 @@ fn map_fn_args(args: &[FnArg]) -> Vec<FuncArg> {
 
 /// Compiler compiles high-level IR (the AST) to mid-level IR
 pub struct Compiler<'c> {
-    loops: usize,
     loc: Location,
+    slugs: Slugs,
     scope: ScopeGraph,
     scopes: Vec<Scope>,
     line_number_offset: &'c LineNumberOffset,
@@ -29,7 +30,7 @@ pub struct Compiler<'c> {
 impl<'c> Compiler<'c> {
     pub fn new(line_number_offset: &'c LineNumberOffset) -> Self {
         Self {
-            loops: 0,
+            slugs: Slugs::new(),
             loc: Location::default(),
             scopes: vec![],
             scope: ScopeGraph::new(),
@@ -64,14 +65,6 @@ impl<'c> Compiler<'c> {
                 ValueKind::Member(Box::new(Member::new(object, method_name))),
             )))),
         )
-    }
-
-    fn loop_name(&self, prefix: &str) -> String {
-        if self.loops == 0 {
-            return prefix.to_string();
-        }
-
-        format!("{}{}", prefix, self.loops)
     }
 
     fn compile_items(&mut self, items: &[Expr]) -> Result<Vec<Value>> {
@@ -109,7 +102,7 @@ impl<'c> Compiler<'c> {
             Variable::Tuple(names) | Variable::Array(names) => {
                 let tmp = self
                     .scope
-                    .set_local("tmp".to_string(), false, Type::Unknown)?;
+                    .set_local(self.slugs.get("tmp"), false, Type::Unknown)?;
 
                 block
                     .statements
@@ -379,12 +372,12 @@ impl<'c> Compiler<'c> {
                 root.statements.push(self.compile_if_stmt(if_stmt)?);
             }
             Stmt::For(for_stmt) => {
-                let meta = ForLoopMeta::new(self.loop_name("loop_cont"));
+                let meta = ForLoopMeta::new(self.slugs.get("loop_cont"));
                 let for_block = if let Some(expr) = &for_stmt.expr {
                     // Step 1. Get the iterator from the value
                     let value = self.compile_expr(expr)?;
                     let iter = self.scope.set_local(
-                        self.loop_name("__iter__"),
+                        self.slugs.get("__iter__"),
                         false,
                         Type::Interface("Iterable".to_string()),
                     )?;
@@ -400,7 +393,7 @@ impl<'c> Compiler<'c> {
                     // Step 2. Now in the loop, get the next value from the iterator
                     let item =
                         self.scope
-                            .set_local(self.loop_name("__item__"), false, Type::Unknown)?;
+                            .set_local(self.slugs.get("__item__"), false, Type::Unknown)?;
 
                     block.statements.push(self.build_assign_local(
                         item.id,
@@ -457,8 +450,6 @@ impl<'c> Compiler<'c> {
 
                     block
                 };
-
-                self.loops += 1;
 
                 root.statements.push(types::Stmt::new(
                     self.loc.clone(),

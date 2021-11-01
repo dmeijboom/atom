@@ -13,4 +13,5 @@ mod mir;
 mod module;
 mod optimizers;
 mod result;
+mod slugs;
 mod types;
