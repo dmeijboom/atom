@@ -3,7 +3,7 @@ use crate::compiler::mir::{
     Value, ValueKind,
 };
 use crate::compiler::result::{CompileError, Result};
-use crate::compiler::types::{MapType, PrimitiveType};
+use crate::compiler::types::PrimitiveType;
 use crate::compiler::{mir, Class, Func, Interface, Module, Type};
 
 fn is_same_type(types: &[Type]) -> bool {
@@ -230,20 +230,6 @@ impl<'c> FrontendCompiler<'c> {
                 }
 
                 Type::Tuple(items)
-            }
-            ValueKind::Map(pairs) => {
-                let mut key_types = vec![];
-                let mut value_types = vec![];
-
-                for pair in pairs.iter() {
-                    key_types.push(self.compile_type(scope, &pair.key)?);
-                    value_types.push(self.compile_type(scope, &pair.value)?);
-                }
-
-                let key = parse_type(&mut key_types);
-                let value = parse_type(&mut value_types);
-
-                Type::Map(Box::new(MapType::new(key, value)))
             }
             // @TODO: return the proper type here
             ValueKind::Closure(_) => Type::Unknown,

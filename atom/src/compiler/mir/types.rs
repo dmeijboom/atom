@@ -287,8 +287,6 @@ pub enum ValueKind {
     Unwrap(Box<Value>),
     Array(Vec<Value>),
     Tuple(Vec<Value>),
-    // @TODO: this should be desugarized
-    Map(Vec<KeyValuePair>),
     Closure(Closure),
     Member(Box<Member>),
     Comparison(Box<Operator<ComparisonOp>>),

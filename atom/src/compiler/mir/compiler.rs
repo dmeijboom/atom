@@ -221,10 +221,16 @@ impl<'c> Compiler<'c> {
                     let key = self.compile_expr(&key_value.key)?;
                     let value = self.compile_expr(&key_value.value)?;
 
-                    pairs.push(KeyValuePair { key, value });
+                    pairs.push(Value::new(
+                        self.loc.clone(),
+                        ValueKind::Tuple(vec![key, value]),
+                    ));
                 }
 
-                ValueKind::Map(pairs)
+                ValueKind::Call(Box::new(Call::with_args(
+                    Value::new(self.loc.clone(), ValueKind::Name("newMap".to_string())),
+                    vec![Value::new(self.loc.clone(), ValueKind::Array(pairs))],
+                )))
             }
             Expr::Closure(_) => unreachable!("not implemented yet"),
             Expr::Member(member) => {

@@ -1,6 +1,7 @@
 module std.map;
 
 import std.core.some;
+import std.core.Tuple;
 import std.core.raise;
 import std.core.String;
 import std.core.Iterable;
@@ -240,6 +241,12 @@ pub class Map {
     }
 }
 
-pub fn newMap() {
-    return Map(buckets: [], size: 0);
+pub fn newMap(pairs) {
+    let mut map = Map(buckets: [], size: 0);
+
+    for (key, value) in pairs {
+        map.set(key, value);
+    }
+
+    return map;
 }

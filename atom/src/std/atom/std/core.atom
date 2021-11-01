@@ -232,6 +232,8 @@ pub class ArrayIter {
     }
 }
 
+pub class Tuple {}
+
 pub class Array extends Iterator {
     pub extern fn remove(index);
     pub extern fn push(value);

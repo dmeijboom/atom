@@ -131,7 +131,6 @@ impl<'c> BackendCompiler<'c> {
                 self.compile_values(scope, values)?;
                 self.ir.add(Code::MakeTuple(values.len()), location);
             }
-            ValueKind::Map(_) => unreachable!("should be removed"),
             ValueKind::Closure(_) => unreachable!(),
             ValueKind::Member(member) => {
                 self.compile_value(scope, &member.object)?;

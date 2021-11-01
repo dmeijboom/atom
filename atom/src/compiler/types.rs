@@ -11,18 +11,6 @@ pub enum PrimitiveType {
     Symbol,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
-pub struct MapType {
-    pub key: Type,
-    pub value: Type,
-}
-
-impl MapType {
-    pub fn new(key: Type, value: Type) -> Self {
-        Self { key, value }
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Type {
     Primitive(PrimitiveType),
@@ -39,7 +27,6 @@ pub enum Type {
     Ref(Box<Type>),
     // @TODO: use this
     //Extern(String),
-    Map(Box<MapType>),
     Unknown,
 }
 
@@ -85,9 +72,6 @@ impl Display for Type {
             Type::Array(inner_type) => write!(f, "Array<{}>", inner_type),
             Type::Ref(ref_type) => write!(f, "Ref<{}>", ref_type),
             //Type::Extern(_) => write!(f, "Extern"),
-            Type::Map(map_type) => {
-                write!(f, "Map<{}, {}>", map_type.key, map_type.value)
-            }
             Type::Unknown => write!(f, "Unknown"),
         }
     }
