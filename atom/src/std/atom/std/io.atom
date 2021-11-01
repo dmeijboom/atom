@@ -23,9 +23,7 @@ pub class LinesIter {
                 break;
             }
 
-            unsafe {
-                buff.push(bytes[0]);
-            }
+            buff.push(bytes[0]);
         }
 
         return some(decode(buff));

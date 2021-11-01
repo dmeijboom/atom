@@ -489,12 +489,6 @@ impl<'c> Compiler<'c> {
                 root.statements
                     .push(types::Stmt::new(self.loc.clone(), StmtKind::Return(value)));
             }
-            Stmt::Unsafe(unsafe_stmt) => {
-                self.enter_scope(ScopeContext::Unsafe);
-                // @TODO: make sure the unsafe stuff works in this layer
-                self.compile_stmt_list(root, &unsafe_stmt.body)?;
-                self.exit_scope();
-            }
             Stmt::Raise(raise) => {
                 let value = self.compile_expr(&raise.expr)?;
 

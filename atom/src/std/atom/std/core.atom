@@ -223,13 +223,11 @@ pub class ArrayIter {
             return nil;
         }
 
-        unsafe {
-            let value = this.array[this.index];
+        let value = this.array[this.index];
 
-            this.index += 1;
+        this.index += 1;
 
-            return some(value);
-        }
+        return some(value);
     }
 }
 
@@ -273,18 +271,16 @@ pub class Array extends Iterator {
         let length = this.len();
 
         for i in 0..length {
-            unsafe {
-                let value = this[i];
+            let value = this[i];
 
-                if value is String {
-                    output.append(value);
-                } else {
-                    output.append(f"{value}");
-                }
+            if value is String {
+                output.append(value);
+            } else {
+                output.append(f"{value}");
+            }
 
-                if i < length - 1 {
-                    output.append(separator);
-                }
+            if i < length - 1 {
+                output.append(separator);
             }
         }
 

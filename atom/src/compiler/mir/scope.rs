@@ -43,7 +43,6 @@ pub enum ScopeContext {
     Global,
     Block,
     IfElse,
-    Unsafe,
     Class(String),
     ForLoop(ForLoopMeta),
     Function(String),
@@ -55,7 +54,6 @@ impl PartialEq for ScopeContext {
             ScopeContext::Block => matches!(other, ScopeContext::Block),
             ScopeContext::Global => matches!(other, ScopeContext::Global),
             ScopeContext::IfElse => matches!(other, ScopeContext::IfElse),
-            ScopeContext::Unsafe => matches!(other, ScopeContext::Unsafe),
             ScopeContext::Class(name) => {
                 matches!(other, ScopeContext::Class(other) if name == other)
             }
@@ -152,17 +150,6 @@ impl ScopeGraph {
 
     pub fn pop(&mut self) -> Option<Scope> {
         self.graph.pop()
-    }
-
-    pub fn in_unsafe_block(&self) -> bool {
-        self.walk(|scope| {
-            if let ScopeContext::Unsafe = &scope.context {
-                return Some(true);
-            }
-
-            None
-        })
-        .unwrap_or(false)
     }
 
     pub fn set_local(

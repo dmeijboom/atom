@@ -16,13 +16,11 @@ pub class MapIter {
             return nil;
         }
 
-        unsafe {
-            let key = this.keys[this.index];
+        let key = this.keys[this.index];
 
-            this.index += 1;
+        this.index += 1;
 
-            return some((key, this.data[key]));
-        }
+        return some((key, this.data[key]));
     }
 }
 
@@ -35,11 +33,9 @@ fn wyr4(bytes) {
 }
 
 fn wyr3(bytes, index) {
-    unsafe {
-        return (Uint64)bytes[0] << 16
-            | (Uint64)bytes[index >> 1] << 8
-            | (Uint64)bytes[index - 1];
-    }
+    return (Uint64)bytes[0] << 16
+        | (Uint64)bytes[index >> 1] << 8
+        | (Uint64)bytes[index - 1];
 }
 
 fn wymum(a, b) {

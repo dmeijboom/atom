@@ -226,9 +226,6 @@ peg::parser! {
             = start:pos() "break" __ label:ident() _ ";" end:pos() { Stmt::Break(BreakStmt { label: Some(label), pos: (start..end) }) }
                 / start:pos() "break" _ ";" end:pos() { Stmt::Break(BreakStmt { label: None, pos: (start..end) }) }
 
-        rule unsafe_stmt() -> Stmt
-            = start:pos() "unsafe" __ "{" _ body:stmt_list() _ "}" end:pos() { Stmt::Unsafe(UnsafeStmt { body, pos: (start..end) }) }
-
         rule raise_stmt() -> Stmt
             = start:pos() "raise" __ expr:expr() _ ";" end:pos() { Stmt::Raise(RaiseStmt { expr, pos: (start..end) }) }
 
@@ -236,7 +233,7 @@ peg::parser! {
             = start:pos() "#" content:$([^ '\n']+) "\n"? end:pos() { Comment { content: content.trim().to_string(), pos: (start..end) } }
 
         rule stmt() -> Stmt
-            = unsafe_stmt() / raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
+            = raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
 
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
