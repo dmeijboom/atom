@@ -1,6 +1,24 @@
 use std::fmt::{Display, Formatter};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Id {
+    pub name: String,
+    pub module: String,
+}
+
+impl Id {
+    pub fn new(module: String, name: String) -> Self {
+        Self { module, name }
+    }
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}.{}", self.module, self.name)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PrimitiveType {
     Int,
     Float,
@@ -15,11 +33,11 @@ pub enum PrimitiveType {
 pub enum Type {
     Primitive(PrimitiveType),
     Option(Box<Type>),
-    Fn(String),
-    Class(String),
+    Fn(Id),
+    Class(Id),
     // @TODO: use this
     //Closure(String),
-    Interface(String),
+    Interface(Id),
     // @TODO: use this
     //Object(String),
     Tuple(Vec<Type>),

@@ -382,11 +382,9 @@ impl<'c> Compiler<'c> {
                 let for_block = if let Some(expr) = &for_stmt.expr {
                     // Step 1. Get the iterator from the value
                     let value = self.compile_expr(expr)?;
-                    let iter = self.scope.set_local(
-                        self.slugs.get("__iter__"),
-                        false,
-                        Type::Interface("Iterable".to_string()),
-                    )?;
+                    let iter =
+                        self.scope
+                            .set_local(self.slugs.get("__iter__"), false, Type::Unknown)?;
 
                     root.statements.push(self.build_assign_local(
                         iter.id,

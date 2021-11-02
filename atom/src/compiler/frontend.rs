@@ -3,7 +3,7 @@ use crate::compiler::mir::{
     Value, ValueKind,
 };
 use crate::compiler::result::{CompileError, Result};
-use crate::compiler::types::PrimitiveType;
+use crate::compiler::types::{Id, PrimitiveType};
 use crate::compiler::{mir, Class, Func, Interface, Module, Type};
 
 fn is_same_type(types: &[Type]) -> bool {
@@ -95,9 +95,10 @@ impl<'c> FrontendCompiler<'c> {
 
     fn register_function(&mut self, function: &mir::Function, public: bool) {
         if public {
-            self.module
-                .exports
-                .insert(function.name.clone(), Type::Fn(function.name.clone()));
+            self.module.exports.insert(
+                function.name.clone(),
+                Type::Fn(Id::new(self.module.name.clone(), function.name.clone())),
+            );
         }
 
         self.module.funcs.insert(
@@ -113,9 +114,10 @@ impl<'c> FrontendCompiler<'c> {
 
     fn register_class(&mut self, class: &mir::Class, public: bool) {
         if public {
-            self.module
-                .exports
-                .insert(class.name.clone(), Type::Class(class.name.clone()));
+            self.module.exports.insert(
+                class.name.clone(),
+                Type::Class(Id::new(self.module.name.clone(), class.name.clone())),
+            );
         }
 
         let mut output = Class {
@@ -148,7 +150,7 @@ impl<'c> FrontendCompiler<'c> {
         if public {
             self.module.exports.insert(
                 interface.name.clone(),
-                Type::Interface(interface.name.clone()),
+                Type::Interface(Id::new(self.module.name.clone(), interface.name.clone())),
             );
         }
 
@@ -180,11 +182,11 @@ impl<'c> FrontendCompiler<'c> {
                 if let Some((_, _, import)) = self.module.imports.get_full(name) {
                     import.known_type.clone()
                 } else if let Some(func) = self.module.funcs.get(name) {
-                    Type::Fn(func.name.clone())
+                    Type::Fn(Id::new(self.module.name.clone(), func.name.clone()))
                 } else if let Some(class) = self.module.classes.get(name) {
-                    Type::Class(class.name.clone())
+                    Type::Class(Id::new(self.module.name.clone(), class.name.clone()))
                 } else if let Some(interface) = self.module.interfaces.get(name) {
-                    Type::Interface(interface.name.clone())
+                    Type::Interface(Id::new(self.module.name.clone(), interface.name.clone()))
                 } else {
                     return Err(CompileError::new(format!("no such name: {}", name)));
                 }
