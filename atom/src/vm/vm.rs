@@ -1,6 +1,5 @@
 use std::collections::{BTreeMap, HashMap};
 use std::convert::TryInto;
-use std::mem;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 use std::rc::Rc;
 
@@ -23,8 +22,8 @@ use super::stack::Stack;
 
 macro_rules! impl_op {
     ($vm:expr, int_only: $opname:ident) => {{
-        let right = $vm.stack.pop()?;
-        let left = $vm.stack.pop()?;
+        let right = $vm.stack.pop();
+        let left = $vm.stack.pop();
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Int(val.$opname(right.try_into()?)),
@@ -42,8 +41,8 @@ macro_rules! impl_op {
     }};
 
     ($vm:expr, compare: $opname:ident) => {{
-        let right = $vm.stack.pop()?;
-        let left = $vm.stack.pop()?;
+        let right = $vm.stack.pop();
+        let left = $vm.stack.pop();
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Bool(val.$opname(&right.try_into()?)),
@@ -62,8 +61,8 @@ macro_rules! impl_op {
     }};
 
     ($vm:expr, $opname:ident) => {{
-        let right = $vm.stack.pop()?;
-        let left = $vm.stack.pop()?;
+        let right = $vm.stack.pop();
+        let left = $vm.stack.pop();
 
         $vm.stack.push(match left {
             Value::Int(val) => Value::Int(val.$opname(right.try_into()?)),
@@ -145,18 +144,8 @@ impl VM {
     fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
         // Reset locals, we can do this quite easily as the first n-locals are the arguments
         let context = self.call_stack.current_mut()?;
-        let mut values = self.stack.pop_many(arg_count)?;
 
-        for i in 0..arg_count {
-            let local = unsafe { context.locals.get_unchecked_mut(i) };
-            let arg_value = unsafe { values.get_unchecked_mut(i) };
-
-            mem::swap(local, arg_value);
-        }
-
-        if context.locals.len() > arg_count {
-            context.locals.drain(arg_count..);
-        }
+        context.locals = self.stack.pop_many(arg_count)?;
 
         Ok(())
     }
@@ -168,10 +157,7 @@ impl VM {
         arg_count: usize,
         store_result: bool,
     ) -> Result<()> {
-        let value = self
-            .stack
-            .pop()
-            .map_err(|_| RuntimeError::new("expected function on stack".to_string()))?;
+        let value = self.stack.pop();
 
         match value {
             Value::Fn(func) => self.eval_function_call(func, keywords, arg_count, store_result),
@@ -470,10 +456,10 @@ impl VM {
             Code::MakeTuple(len) => self.eval_make_tuple(*len)?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
-            Code::MakeRef => self.eval_make_ref()?,
+            Code::MakeRef => self.eval_make_ref(),
             Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, *fn_id)?,
             Code::Discard => self.stack.delete()?,
-            Code::Return => return Ok(Flow::Return(self.stack.pop()?)),
+            Code::Return => return Ok(Flow::Return(self.stack.pop())),
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
             Code::ArithmeticAdd => self.eval_arithmetic_add()?,
@@ -487,8 +473,8 @@ impl VM {
             Code::ArithmeticBitXor => self.eval_arithmetic_bit_xor()?,
             Code::ArithmeticBitShiftLeft => self.eval_arithmetic_bit_shift_left()?,
             Code::ArithmeticBitShiftRight => self.eval_arithmetic_bit_shift_right()?,
-            Code::ComparisonEq => self.eval_comparison_eq()?,
-            Code::ComparisonNeq => self.eval_comparison_neq()?,
+            Code::ComparisonEq => self.eval_comparison_eq(),
+            Code::ComparisonNeq => self.eval_comparison_neq(),
             Code::ComparisonGt => self.eval_comparison_gt()?,
             Code::ComparisonGte => self.eval_comparison_gte()?,
             Code::ComparisonLt => self.eval_comparison_lt()?,
@@ -537,12 +523,12 @@ impl VM {
     fn eval_make_range(&mut self) -> Result<()> {
         let to: Int = self
             .stack
-            .pop()?
+            .pop()
             .try_into()
             .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
         let from: Int = self
             .stack
-            .pop()?
+            .pop()
             .try_into()
             .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
         let object = Object::new(
@@ -584,16 +570,14 @@ impl VM {
         Ok(())
     }
 
-    fn eval_make_ref(&mut self) -> Result<()> {
-        let value = self.stack.pop()?;
+    fn eval_make_ref(&mut self) {
+        let value = self.stack.pop();
 
         self.stack.push(Value::Ref(AtomRef::new(value)));
-
-        Ok(())
     }
 
     fn eval_deref(&mut self) -> Result<()> {
-        let value = self.stack.pop()?;
+        let value = self.stack.pop();
 
         if let Value::Ref(value) = value {
             self.stack.push(value.unwrap_or_clone_inner());
@@ -608,8 +592,8 @@ impl VM {
     }
 
     fn eval_logical_and(&mut self) -> Result<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
+        let right = self.stack.pop();
+        let left = self.stack.pop();
 
         self.stack.push(match left {
             Value::Bool(val) => Value::Bool(val && right.try_into()?),
@@ -663,8 +647,8 @@ impl VM {
     }
 
     fn eval_arithmetic_exp(&mut self) -> Result<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
+        let right = self.stack.pop();
+        let left = self.stack.pop();
 
         self.stack.push(match left {
             Value::Int(val) => {
@@ -686,8 +670,8 @@ impl VM {
     }
 
     fn eval_arithmetic_mod(&mut self) -> Result<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
+        let right = self.stack.pop();
+        let left = self.stack.pop();
 
         self.stack.push(match left {
             Value::Int(val) => {
@@ -707,22 +691,18 @@ impl VM {
         Ok(())
     }
 
-    fn eval_comparison_eq(&mut self) -> Result<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
+    fn eval_comparison_eq(&mut self) {
+        let right = self.stack.pop();
+        let left = self.stack.pop();
 
         self.stack.push(Value::Bool(left.eq(&right)));
-
-        Ok(())
     }
 
-    fn eval_comparison_neq(&mut self) -> Result<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
+    fn eval_comparison_neq(&mut self) {
+        let right = self.stack.pop();
+        let left = self.stack.pop();
 
         self.stack.push(Value::Bool(left.ne(&right)));
-
-        Ok(())
     }
 
     fn eval_comparison_gt(&mut self) -> Result<()> {
@@ -742,8 +722,8 @@ impl VM {
     }
 
     fn eval_assert_is_type(&mut self) -> Result<()> {
-        let right = self.stack.pop()?;
-        let left = self.stack.pop()?;
+        let right = self.stack.pop();
+        let left = self.stack.pop();
         let left_class = self.get_class(&left)?;
 
         if let Value::Class(right_class) = right {
@@ -767,7 +747,7 @@ impl VM {
     }
 
     fn eval_unwrap(&mut self) -> Result<()> {
-        let value: Option<Box<Value>> = self.stack.pop()?.try_into()?;
+        let value: Option<Box<Value>> = self.stack.pop().try_into()?;
 
         if let Some(value) = value {
             self.stack.push(*value);
@@ -779,7 +759,7 @@ impl VM {
     }
 
     fn eval_not(&mut self) -> Result<()> {
-        let value: bool = self.stack.pop()?.try_into()?;
+        let value: bool = self.stack.pop().try_into()?;
 
         self.stack.push(Value::Bool(!value));
 
@@ -787,10 +767,10 @@ impl VM {
     }
 
     fn eval_validate(&mut self) -> Result<()> {
-        let interface_value = self.stack.pop()?;
+        let interface_value = self.stack.pop();
 
         if let Value::Interface(interface) = interface_value {
-            let value = self.stack.pop()?;
+            let value = self.stack.pop();
             let class = self.get_class(&value)?;
 
             if !self.validate_class(&class, &interface) {
@@ -813,7 +793,7 @@ impl VM {
     }
 
     fn eval_cast(&mut self, type_name: &str) -> Result<()> {
-        let value = self.stack.pop()?;
+        let value = self.stack.pop();
 
         if value.get_type().name() == type_name {
             self.stack.push(value);
@@ -869,7 +849,7 @@ impl VM {
     }
 
     fn eval_store(&mut self, id: usize, _is_mutable: bool) -> Result<()> {
-        let value = self.stack.pop()?;
+        let value = self.stack.pop();
         let context = self.call_stack.current_mut()?;
         let locals_len = context.locals.len();
 
@@ -892,8 +872,8 @@ impl VM {
     }
 
     fn eval_load_index(&mut self, push_back: bool) -> Result<()> {
-        let index = self.stack.pop()?;
-        let value = self.stack.pop()?;
+        let index = self.stack.pop();
+        let value = self.stack.pop();
 
         let elems = if let Value::Array(array) = &value {
             Some(array.as_slice())
@@ -932,9 +912,9 @@ impl VM {
     }
 
     fn eval_make_slice(&mut self) -> Result<()> {
-        let to = self.stack.pop()?.try_into()?;
-        let from = self.stack.pop()?.try_into()?;
-        let value = self.stack.pop()?;
+        let to = self.stack.pop().try_into()?;
+        let from = self.stack.pop().try_into()?;
+        let value = self.stack.pop();
 
         match value {
             Value::Array(array) => {
@@ -952,9 +932,9 @@ impl VM {
     }
 
     fn eval_store_index(&mut self) -> Result<()> {
-        let value = self.stack.pop()?;
-        let index = self.stack.pop()?;
-        let data = self.stack.pop()?;
+        let value = self.stack.pop();
+        let index = self.stack.pop();
+        let data = self.stack.pop();
 
         match data {
             Value::Array(mut array) => {
@@ -992,7 +972,7 @@ impl VM {
         member: &str,
         push_back: bool,
     ) -> Result<()> {
-        let receiver = self.stack.pop()?;
+        let receiver = self.stack.pop();
         let class = self.get_class(&receiver)?;
 
         if let Some(field) = class.fields.get(member) {
@@ -1050,8 +1030,8 @@ impl VM {
     }
 
     fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
-        let value = self.stack.pop()?;
-        let object = self.stack.pop()?;
+        let value = self.stack.pop();
+        let object = self.stack.pop();
         let class = self.get_class(&object)?;
 
         if let Some(field) = class.fields.get(member) {
@@ -1198,13 +1178,13 @@ impl VM {
         true_label: &'s Label,
         false_label: &'s Label,
     ) -> Result<&'s Label> {
-        let value = self.stack.pop()?.try_into()?;
+        let value = self.stack.pop().try_into()?;
 
         Ok(if value { true_label } else { false_label })
     }
 
     fn eval_jump_if_true<'i>(&mut self, label: &'i Label) -> Result<Flow<'i>> {
-        let value = self.stack.pop()?.try_into()?;
+        let value = self.stack.pop().try_into()?;
 
         if value {
             self.stack.push(Value::Bool(value));
@@ -1295,7 +1275,7 @@ impl VM {
                 };
             }
 
-            // We're finished but there is stil a return-address, this means we're expected to have pushed a return-value
+            // We're finished but there is still a return-address, this means we're expected to have pushed a return-value
             if let Some(addr) = return_addr.pop() {
                 i = addr;
 
@@ -1321,7 +1301,11 @@ impl VM {
 
     #[cfg(test)]
     pub fn result(&mut self) -> Option<Value> {
-        self.stack.pop().ok()
+        if self.stack.is_empty() {
+            return None;
+        }
+
+        Some(self.stack.pop())
     }
 }
 

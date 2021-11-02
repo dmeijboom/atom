@@ -251,34 +251,42 @@ impl IR {
         }
     }
 
+    #[inline]
     pub fn remove(&mut self, index: usize) -> Code {
         self.codes.remove(index)
     }
 
+    #[inline]
     pub fn len(&self) -> usize {
         self.codes.len()
     }
 
+    #[inline]
     pub fn get(&self, index: usize) -> Option<&Code> {
         self.codes.get(index)
     }
 
+    #[inline]
     pub unsafe fn get_unchecked(&self, index: usize) -> &Code {
         self.codes.get_unchecked(index)
     }
 
+    #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut Code {
         self.codes.get_unchecked_mut(index)
     }
 
+    #[inline]
     pub fn slice(&self, index: usize) -> &[Code] {
         &self.codes[index..]
     }
 
+    #[inline]
     pub fn iter(&self) -> Iter<Code> {
         self.codes.iter()
     }
 
+    #[inline]
     pub fn iter_mut(&mut self) -> IterMut<Code> {
         self.codes.iter_mut()
     }

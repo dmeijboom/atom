@@ -22,12 +22,17 @@ impl Stack {
         Ok(())
     }
 
-    pub fn pop(&mut self) -> Result<Value> {
+    #[cfg(test)]
+    pub fn is_empty(&self) -> bool {
+        self.data.is_empty()
+    }
+
+    pub fn pop(&mut self) -> Value {
         if let Some(value) = self.data.pop() {
-            return Ok(value);
+            return value;
         }
 
-        Err(RuntimeError::new("expecting element on stack".to_string()))
+        unreachable!("expecting element on stack".to_string())
     }
 
     pub fn pop_many_t<T>(&mut self, len: usize, mut map: impl FnMut(Value) -> T) -> Result<Vec<T>> {
@@ -49,7 +54,16 @@ impl Stack {
     }
 
     pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
-        self.pop_many_t(len, |v| v)
+        let data_len = self.data.len();
+
+        if data_len < len {
+            return Err(RuntimeError::new(format!(
+                "expected {} elements on stack",
+                len
+            )));
+        }
+
+        Ok(self.data.split_off(data_len - len))
     }
 }
 
