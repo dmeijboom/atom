@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Clap;
+use clap::Parser;
 
 use atom_ir::{Code, IR};
 use atom_runtime::RuntimeError;
@@ -10,7 +10,7 @@ use crate::parser;
 use crate::utils::Error;
 use crate::vm::VM;
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct Opts {
     pub(crate) filename: PathBuf,
     #[clap(long)]

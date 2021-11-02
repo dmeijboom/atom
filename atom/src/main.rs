@@ -1,7 +1,7 @@
 use ::std::fs;
 use ::std::process::exit;
 
-use clap::Clap;
+use clap::Parser;
 
 use crate::cmd::{Cmd, Opts};
 use crate::utils::display_error;

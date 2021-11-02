@@ -1,6 +1,6 @@
 [package]
 name = "atom"
-version = "0.1.0"
+version = "0.2.0-beta.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
@@ -12,7 +12,7 @@ wyhash2 = "0.2.1"
 indexmap = "1.7.0"
 test-case = "1.2.0"
 rustyline = "9.0.0"
-clap = "3.0.0-beta.4"
+clap = "3.0.0-beta.5"
 lazy_static = "1.4.0"
 atom-ir = { path = "../atom-ir" }
 atom-runtime = { path = "../atom-runtime" }

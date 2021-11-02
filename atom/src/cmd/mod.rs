@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use clap::Clap;
+use clap::Parser;
 
 pub use run::command as run;
 pub use stats::command as stats;
@@ -8,7 +8,7 @@ pub use stats::command as stats;
 mod run;
 mod stats;
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub struct Opts {
     #[clap(long)]
     pub module_path: Vec<PathBuf>,
@@ -16,7 +16,7 @@ pub struct Opts {
     pub cmd: Cmd,
 }
 
-#[derive(Clap)]
+#[derive(Parser)]
 pub enum Cmd {
     Run(run::Opts),
     Stats,
