@@ -1,3 +1,5 @@
+use std::cell::RefCell;
+
 use crate::ast::{ArithmeticOp, ComparisonOp, FnArg, LogicalOp};
 use crate::compiler::mir::{Local, ScopeContext};
 use crate::compiler::module::Field;
@@ -315,7 +317,7 @@ pub enum ValueKind {
 pub struct Value {
     pub loc: Location,
     pub kind: ValueKind,
-    pub known_type: Option<Type>,
+    pub known_type: RefCell<Type>,
 }
 
 impl Value {
@@ -323,7 +325,7 @@ impl Value {
         Self {
             loc,
             kind,
-            known_type: None,
+            known_type: RefCell::new(Type::Unknown),
         }
     }
 }

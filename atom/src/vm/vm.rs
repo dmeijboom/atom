@@ -164,7 +164,7 @@ impl VM {
             Value::Closure(closure) => {
                 self.eval_closure_call(closure, keywords, arg_count, store_result)
             }
-            Value::Class(class) => self.eval_class_init(class, keywords, arg_count, store_result),
+            Value::Class(class) => self.eval_new_instance(class, keywords, arg_count, store_result),
             Value::Method(method) => {
                 self.eval_method_call(method, keywords, arg_count, store_result)
             }
@@ -209,7 +209,7 @@ impl VM {
         Ok(())
     }
 
-    fn eval_class_init(
+    fn eval_new_instance(
         &mut self,
         class: AtomRef<Class>,
         keywords: &[String],
@@ -218,7 +218,7 @@ impl VM {
     ) -> Result<()> {
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(format!(
-                "unable to initialize '{}' with non-keyword arguments",
+                "unable to create instance of '{}' with non-keyword arguments",
                 class.as_ref()
             )));
         }
@@ -227,7 +227,7 @@ impl VM {
         for keyword in keywords {
             if !class.fields.contains_key(keyword) {
                 return Err(RuntimeError::new(format!(
-                    "unable to initialize '{}' with unknown field: {}",
+                    "unable to create instance of '{}' with unknown field: {}",
                     class.as_ref(),
                     keyword
                 )));
@@ -240,7 +240,7 @@ impl VM {
         for (i, (field_name, _)) in class.fields.iter().enumerate() {
             if !keywords.contains(field_name) {
                 return Err(RuntimeError::new(format!(
-                    "unable to initialize '{}' without field: {}",
+                    "unable to create instance of '{}' without field: {}",
                     class.as_ref(),
                     field_name,
                 )));

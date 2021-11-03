@@ -164,7 +164,7 @@ impl<'c> FrontendCompiler<'c> {
     }
 
     fn compile_type(&mut self, scope: &'c Scope, value: &Value) -> Result<Type> {
-        Ok(match &value.kind {
+        let known_type = match &value.kind {
             ValueKind::Const(val) => Type::Primitive(match val {
                 Const::Int128(_) | Const::Int64(_) | Const::Uint64(_) | Const::Int32(_) => {
                     PrimitiveType::Int
@@ -341,7 +341,13 @@ impl<'c> FrontendCompiler<'c> {
 
                 Type::Primitive(PrimitiveType::Bool)
             }
-        })
+        };
+
+        if known_type.is_typed() {
+            *value.known_type.borrow_mut() = known_type.clone();
+        }
+
+        Ok(known_type)
     }
 
     fn check_assign(&mut self, scope: &'c Scope, assign: &Assign) -> Result<()> {
