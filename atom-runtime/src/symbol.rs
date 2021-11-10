@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Formatter};
-use std::hash::{Hash, Hasher};
 use std::ops::Deref;
 
 /// Symbols are unique names in atom encoded as a byte slice or constant value
@@ -13,12 +12,6 @@ impl Symbol {
         Self {
             name: name.as_ref().as_bytes().into(),
         }
-    }
-}
-
-impl Hash for Symbol {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state)
     }
 }
 

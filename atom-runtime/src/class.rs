@@ -1,6 +1,5 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
-use std::hash::{Hash, Hasher};
 
 use wyhash2::WyHash;
 
@@ -9,7 +8,7 @@ use crate::AtomRef;
 
 use super::r#fn::Fn;
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub id: usize,
     pub name: String,
@@ -39,13 +38,6 @@ pub struct Class {
 impl Display for Class {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}.{}", self.origin.module_name, self.name)
-    }
-}
-
-impl Hash for Class {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.origin.hash(state);
     }
 }
 

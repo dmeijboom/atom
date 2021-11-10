@@ -1,7 +1,6 @@
 use std::any::Any;
 use std::convert::TryInto;
 use std::fmt::{Display, Formatter};
-use std::hash::Hash;
 
 use strum_macros::EnumIter;
 
@@ -134,7 +133,7 @@ macro_rules! impl_type {
     };
 }
 
-#[derive(Clone, Copy, Hash, PartialEq, Eq, EnumIter)]
+#[derive(Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
 pub enum ValueType {
     Int,
     Float,

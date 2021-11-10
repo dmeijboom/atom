@@ -1,5 +1,3 @@
-use std::hash::{Hash, Hasher};
-
 use crate::Value;
 
 use super::atom_ref::AtomRef;
@@ -18,11 +16,5 @@ impl PartialEq for Closure {
         }
 
         self.values == other.values
-    }
-}
-
-impl Hash for Closure {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.func.hash(state);
     }
 }

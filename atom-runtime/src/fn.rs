@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::hash::{Hash, Hasher};
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
@@ -76,12 +75,5 @@ impl Display for Fn {
 impl PartialEq for Fn {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name && self.origin == other.origin
-    }
-}
-
-impl Hash for Fn {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.name.hash(state);
-        self.origin.hash(state);
     }
 }

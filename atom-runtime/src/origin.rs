@@ -1,6 +1,6 @@
 use atom_ir::Location;
 
-#[derive(Debug, Clone, PartialEq, Hash)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Origin {
     pub filename: Option<String>,
     pub module_id: usize,

@@ -2,7 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::Origin;
 
-#[derive(Debug, PartialEq, Hash)]
+#[derive(Debug, PartialEq)]
 pub struct Interface {
     pub name: String,
     pub origin: Origin,
