@@ -1,10 +1,9 @@
 pub use compiler::Compiler;
 pub use line_number_offset::LineNumberOffset;
-pub use module::{Class, Func, FuncArg, Interface, Module};
+pub use module::{Class, Element, ElementKind, FuncArg, Function, Interface, Module};
 pub use result::{CompileError, Result};
-pub use types::Type;
 
-mod backend;
+mod codegen;
 mod compiler;
 mod filesystem;
 mod frontend;
@@ -14,4 +13,3 @@ mod module;
 mod optimizers;
 mod result;
 mod slugs;
-mod types;

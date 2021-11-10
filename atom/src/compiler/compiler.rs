@@ -9,14 +9,12 @@ use crate::compiler::optimizers::tail_call;
 use crate::parser;
 use crate::std::core::DEFAULT_IMPORTS;
 
-use super::backend::BackendCompiler;
+use super::codegen::CodeGenerator;
 use super::filesystem::{FileSystem, FileSystemCache};
-use super::frontend::FrontendCompiler;
+use super::frontend::Frontend;
 use super::line_number_offset::LineNumberOffset;
-use super::module::{Import, Module};
-use super::optimizers::{
-    call_void, load_local_twice_add, pre_compute_labels, remove_core_validations, remove_type_cast,
-};
+use super::module::Module;
+use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, remove_type_cast};
 use super::result::{CompileError, Result};
 
 fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
@@ -171,7 +169,7 @@ impl Compiler {
         let guard = self.modules.read().unwrap();
         let module = guard.get(&module_name).unwrap();
 
-        if let Some(global) = module.exports.get(name) {
+        if let Some(elem) = module.exports.get(name) {
             if self.module.imports.contains_key(name) {
                 return Err(CompileError::new(format!(
                     "unable to redefine global: {}",
@@ -179,10 +177,7 @@ impl Compiler {
                 )));
             }
 
-            self.module.imports.insert(
-                name.to_string(),
-                Import::new(global.clone(), module.name.clone()),
-            );
+            self.module.imports.insert(name.to_string(), elem.clone());
 
             return Ok(());
         } else if let Some(mixin) = module.mixins.get(name) {
@@ -344,10 +339,10 @@ impl Compiler {
         let compiler = mir::Compiler::new(&self.line_numbers_offset);
         let mir = compiler.compile(&self.tree)?;
 
-        let frontend = FrontendCompiler::new(&mut self.module, &mir);
+        let frontend = Frontend::new(&mut self.module, &mir);
         frontend.compile()?;
 
-        let backend = BackendCompiler::new(
+        let backend = CodeGenerator::new(
             &mut self.module,
             &mir,
             if self.optimize {
@@ -356,7 +351,6 @@ impl Compiler {
                     tail_call::optimize,
                     call_void::optimize,
                     load_local_twice_add::optimize,
-                    remove_core_validations::optimize,
                     pre_compute_labels::optimize,
                 ]
             } else {
@@ -389,7 +383,7 @@ impl Compiler {
                     !module
                         .imports
                         .iter()
-                        .any(|(_, import)| !resolved.contains(&import.origin))
+                        .any(|(_, import)| !resolved.contains(&import.id.module))
                 })
                 .map(|(name, _)| name)
                 .ok_or_else(|| {

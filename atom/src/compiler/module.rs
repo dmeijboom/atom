@@ -7,8 +7,6 @@ use atom_ir::{Location, IR};
 
 use crate::ast::MixinDeclStmt;
 
-use super::types::Type;
-
 #[derive(Debug, Clone, Default)]
 pub struct FuncArg {
     pub mutable: bool,
@@ -22,26 +20,21 @@ impl FuncArg {
 }
 
 #[derive(Clone, Default)]
-pub struct Func {
+pub struct Function {
     pub name: String,
     pub body: IR,
     pub is_extern: bool,
     pub is_closure: bool,
     pub args: Vec<FuncArg>,
     pub location: Location,
-    pub return_type: Option<Type>,
 }
 
-impl Debug for Func {
+impl Debug for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Fn {}() -> {} {{\n{}\n}}",
+            "Fn {}() {{\n{}\n}}",
             self.name,
-            self.return_type
-                .as_ref()
-                .map(|return_type| format!("{}", return_type))
-                .unwrap_or_else(|| "Void".to_string()),
             self.body
                 .iter()
                 .map(|code| format!("  {:?}", code))
@@ -71,25 +64,44 @@ impl Field {
 #[derive(Debug, Default)]
 pub struct Class {
     pub name: String,
-    pub methods: HashMap<String, Func>,
+    pub methods: HashMap<String, Function>,
     pub fields: IndexMap<String, Field>,
 }
 
 #[derive(Debug, Default)]
 pub struct Interface {
     pub name: String,
-    pub functions: Vec<String>,
+    pub methods: Vec<String>,
 }
 
-#[derive(Debug)]
-pub struct Import {
-    pub known_type: Type,
-    pub origin: String,
+#[derive(Debug, Clone)]
+pub enum ElementKind {
+    Fn,
+    Class,
+    Interface,
 }
 
-impl Import {
-    pub fn new(known_type: Type, origin: String) -> Self {
-        Self { known_type, origin }
+#[derive(Debug, Clone)]
+pub struct Id {
+    pub name: String,
+    pub module: String,
+}
+
+impl Id {
+    pub fn new(module: String, name: String) -> Self {
+        Self { module, name }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct Element {
+    pub kind: ElementKind,
+    pub id: Id,
+}
+
+impl Element {
+    pub fn new(kind: ElementKind, id: Id) -> Self {
+        Self { kind, id }
     }
 }
 
@@ -99,10 +111,10 @@ pub struct Module {
     pub filename: Option<String>,
     pub mixins: HashMap<String, MixinDeclStmt>,
     pub classes: IndexMap<String, Class>,
-    pub funcs: IndexMap<String, Func>,
+    pub functions: IndexMap<String, Function>,
     pub interfaces: IndexMap<String, Interface>,
-    pub imports: IndexMap<String, Import>,
-    pub exports: HashMap<String, Type>,
+    pub imports: IndexMap<String, Element>,
+    pub exports: HashMap<String, Element>,
 }
 
 impl Module {
@@ -115,7 +127,7 @@ impl Module {
             name,
             filename: None,
             mixins: HashMap::new(),
-            funcs: IndexMap::new(),
+            functions: IndexMap::new(),
             classes: IndexMap::new(),
             interfaces: IndexMap::new(),
             imports: IndexMap::new(),

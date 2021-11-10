@@ -377,15 +377,6 @@ pub struct FnDeclStmt {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct ExternFnDeclStmt {
-    pub name: String,
-    pub public: bool,
-    pub args: Vec<FnArg>,
-    pub comments: Vec<Comment>,
-    pub pos: Pos,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct AssignStmt {
     pub left: Expr,
     pub right: Expr,
@@ -449,7 +440,7 @@ pub struct ClassDeclStmt {
     pub extends: Vec<String>,
     pub fields: Vec<Field>,
     pub funcs: Vec<FnDeclStmt>,
-    pub extern_funcs: Vec<ExternFnDeclStmt>,
+    pub extern_funcs: Vec<FnDeclStmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
 }
@@ -459,7 +450,7 @@ pub struct MixinDeclStmt {
     pub name: String,
     pub public: bool,
     pub funcs: Vec<FnDeclStmt>,
-    pub extern_funcs: Vec<ExternFnDeclStmt>,
+    pub extern_funcs: Vec<FnDeclStmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
 }
@@ -516,7 +507,7 @@ pub enum Stmt {
     Raise(RaiseStmt),
     LetDecl(LetDeclStmt),
     FnDecl(FnDeclStmt),
-    ExternFnDecl(ExternFnDeclStmt),
+    ExternFnDecl(FnDeclStmt),
     Assign(AssignStmt),
     Return(ReturnStmt),
     Import(ImportStmt),
@@ -538,7 +529,7 @@ impl Stmt {
             Stmt::Let(let_stmt) => let_stmt.pos.clone(),
             Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),
             Stmt::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
-            Stmt::ExternFnDecl(extern_decl_stmt) => extern_decl_stmt.pos.clone(),
+            Stmt::ExternFnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
             Stmt::Assign(assign_stmt) => assign_stmt.pos.clone(),
             Stmt::Return(return_stmt) => return_stmt.pos.clone(),
             Stmt::Module(module_stmt) => module_stmt.pos.clone(),

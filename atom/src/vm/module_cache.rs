@@ -8,7 +8,7 @@ use atom_runtime::{
     AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError, Value,
 };
 
-use crate::compiler::{self, Type};
+use crate::compiler::{self, ElementKind};
 use crate::vm::module::ModuleId;
 
 use super::module::Module;
@@ -60,7 +60,7 @@ impl ModuleCache {
     fn make_interface(&self, module: &Module, interface: compiler::Interface) -> Interface {
         Interface {
             name: interface.name,
-            functions: interface.functions,
+            functions: interface.methods,
             origin: Origin::new(
                 module.id,
                 module.name.clone(),
@@ -73,7 +73,7 @@ impl ModuleCache {
     fn make_fn(
         &self,
         module: &Module,
-        func: compiler::Func,
+        func: compiler::Function,
         class_name: Option<&str>,
     ) -> Result<Fn> {
         let origin = Origin::new(
@@ -152,7 +152,7 @@ impl ModuleCache {
             compiled_module.filename,
         );
 
-        for (_, func) in compiled_module.funcs {
+        for (_, func) in compiled_module.functions {
             module
                 .funcs
                 .push(AtomRef::new(self.make_fn(&module, func, None)?));
@@ -172,9 +172,9 @@ impl ModuleCache {
 
         // At last, register the globals
         for (import_name, import) in compiled_module.imports {
-            let origin = self.modules.get(&import.origin);
-            let value = match import.known_type {
-                Type::Fn(_) => {
+            let origin = self.modules.get(&import.id.module);
+            let value = match import.kind {
+                ElementKind::Fn => {
                     let func = origin
                         .and_then(|module| {
                             module.funcs.iter().find(|func| func.name == import_name)
@@ -185,7 +185,7 @@ impl ModuleCache {
 
                     Value::Fn(AtomRef::clone(func))
                 }
-                Type::Class(_) => {
+                ElementKind::Class => {
                     let class = origin
                         .and_then(|module| module.classes.get(&import_name))
                         .ok_or_else(|| {
@@ -194,7 +194,7 @@ impl ModuleCache {
 
                     Value::Class(AtomRef::clone(class))
                 }
-                Type::Interface(_) => {
+                ElementKind::Interface => {
                     let interface = origin
                         .and_then(|module| {
                             module
@@ -207,12 +207,6 @@ impl ModuleCache {
                         })?;
 
                     Value::Interface(AtomRef::clone(interface))
-                }
-                _ => {
-                    return Err(RuntimeError::new(format!(
-                        "invalid type for import: {}",
-                        import_name
-                    )))
                 }
             };
 

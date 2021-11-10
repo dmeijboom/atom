@@ -1,7 +1,8 @@
-use atom_ir::Code;
 use std::collections::HashMap;
 
-use crate::compiler::{CompileError, Type};
+use atom_ir::Code;
+
+use crate::compiler::CompileError;
 
 pub type ScopeId = usize;
 pub type LocalId = usize;
@@ -11,17 +12,11 @@ pub struct Local {
     pub id: LocalId,
     pub name: String,
     pub mutable: bool,
-    pub known_type: Type,
 }
 
 impl Local {
-    pub fn new(id: LocalId, name: String, mutable: bool, known_type: Type) -> Self {
-        Self {
-            id,
-            name,
-            mutable,
-            known_type,
-        }
+    pub fn new(id: LocalId, name: String, mutable: bool) -> Self {
+        Self { id, name, mutable }
     }
 
     pub fn store_instr(&self) -> Code {
@@ -158,12 +153,7 @@ impl ScopeGraph {
         self.graph.pop()
     }
 
-    pub fn set_local(
-        &mut self,
-        name: String,
-        mutable: bool,
-        known_type: Type,
-    ) -> Result<Local, CompileError> {
+    pub fn set_local(&mut self, name: String, mutable: bool) -> Result<Local, CompileError> {
         let id = self
             .walk_mut(|scope| {
                 if let ScopeContext::Function(_) = &scope.context {
@@ -181,7 +171,7 @@ impl ScopeGraph {
             })?;
 
         let scope = self.current_mut();
-        let local = Local::new(id, name, mutable, known_type);
+        let local = Local::new(id, name, mutable);
 
         scope.locals.insert(local.name.clone(), local.clone());
 

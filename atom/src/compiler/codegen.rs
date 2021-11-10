@@ -12,7 +12,7 @@ use atom_ir::{Code, Label, IR};
 use super::module::Module;
 use super::result::{CompileError, Result};
 
-pub struct BackendCompiler<'c> {
+pub struct CodeGenerator<'c> {
     ir: IR,
     slugs: Slugs,
     mir: &'c Mir,
@@ -20,7 +20,7 @@ pub struct BackendCompiler<'c> {
     optimizers: Vec<Optimizer>,
 }
 
-impl<'c> BackendCompiler<'c> {
+impl<'c> CodeGenerator<'c> {
     pub fn new(module: &'c mut Module, mir: &'c Mir, optimizers: Vec<Optimizer>) -> Self {
         Self {
             ir: IR::new(),
@@ -90,7 +90,7 @@ impl<'c> BackendCompiler<'c> {
             ValueKind::Name(name) => {
                 let code = if let Some(id) = self.module.imports.get_index_of(name) {
                     Code::LoadGlobal(id)
-                } else if let Some(id) = self.module.funcs.get_index_of(name) {
+                } else if let Some(id) = self.module.functions.get_index_of(name) {
                     Code::LoadFn(id)
                 } else if let Some(id) = self.module.classes.get_index_of(name) {
                     Code::LoadClass(id)
@@ -345,7 +345,7 @@ impl<'c> BackendCompiler<'c> {
                 DeclKind::Function(function) => {
                     let body = self.compile_function(function)?;
 
-                    if let Some(func) = self.module.funcs.get_mut(&function.name) {
+                    if let Some(func) = self.module.functions.get_mut(&function.name) {
                         func.body = body;
                     } else {
                         return Err(CompileError::new(format!(

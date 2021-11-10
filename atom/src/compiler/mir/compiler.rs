@@ -1,13 +1,13 @@
 use atom_ir::Location;
 
 use crate::ast::{
-    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, ExternFnDeclStmt, FnArg, FnDeclStmt, IfStmt,
-    InterfaceDeclStmt, Literal, LogicalOp, Stmt, TemplateComponent, Variable,
+    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt, InterfaceDeclStmt,
+    Literal, LogicalOp, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
-use crate::compiler::{FuncArg, LineNumberOffset, Type};
+use crate::compiler::{FuncArg, LineNumberOffset};
 
 use super::scope::{ForLoopMeta, LocalId, Scope, ScopeContext, ScopeGraph, ScopeId};
 use super::types::{self, *};
@@ -93,16 +93,14 @@ impl<'c> Compiler<'c> {
                     )));
                 }
 
-                let local = self.scope.set_local(name.clone(), mutable, Type::Unknown)?;
+                let local = self.scope.set_local(name.clone(), mutable)?;
 
                 block
                     .statements
                     .push(self.build_assign_local(local.id, value));
             }
             Variable::Tuple(names) | Variable::Array(names) => {
-                let tmp = self
-                    .scope
-                    .set_local(self.slugs.get("tmp"), false, Type::Unknown)?;
+                let tmp = self.scope.set_local(self.slugs.get("tmp"), false)?;
 
                 block
                     .statements
@@ -116,7 +114,7 @@ impl<'c> Compiler<'c> {
                         )));
                     }
 
-                    let local = self.scope.set_local(name.clone(), mutable, Type::Unknown)?;
+                    let local = self.scope.set_local(name.clone(), mutable)?;
 
                     block.statements.push(self.build_assign_local(
                         local.id,
@@ -382,9 +380,7 @@ impl<'c> Compiler<'c> {
                 let for_block = if let Some(expr) = &for_stmt.expr {
                     // Step 1. Get the iterator from the value
                     let value = self.compile_expr(expr)?;
-                    let iter =
-                        self.scope
-                            .set_local(self.slugs.get("__iter__"), false, Type::Unknown)?;
+                    let iter = self.scope.set_local(self.slugs.get("__iter__"), false)?;
 
                     root.statements.push(self.build_assign_local(
                         iter.id,
@@ -395,9 +391,7 @@ impl<'c> Compiler<'c> {
                     let mut block = Block::new(self.loc.clone(), scope_id);
 
                     // Step 2. Now in the loop, get the next value from the iterator
-                    let item =
-                        self.scope
-                            .set_local(self.slugs.get("__item__"), false, Type::Unknown)?;
+                    let item = self.scope.set_local(self.slugs.get("__item__"), false)?;
 
                     block.statements.push(self.build_assign_local(
                         item.id,
@@ -587,14 +581,11 @@ impl<'c> Compiler<'c> {
 
         // Register locals for input arguments
         for arg in fn_decl.args.iter() {
-            self.scope
-                .set_local(arg.name.clone(), arg.mutable, Type::Unknown)?;
+            self.scope.set_local(arg.name.clone(), arg.mutable)?;
         }
 
         let block = if class_name.is_some() {
-            let local = self
-                .scope
-                .set_local("this".to_string(), true, Type::Unknown)?;
+            let local = self.scope.set_local("this".to_string(), true)?;
 
             let mut block = self.compile_block(scope_id, &fn_decl.body)?;
 
@@ -622,7 +613,7 @@ impl<'c> Compiler<'c> {
         })
     }
 
-    fn compile_extern_function(&mut self, extern_fn_decl: &ExternFnDeclStmt) -> Result<Function> {
+    fn compile_extern_function(&mut self, extern_fn_decl: &FnDeclStmt) -> Result<Function> {
         Ok(Function {
             name: extern_fn_decl.name.to_string(),
             args: map_fn_args(&extern_fn_decl.args),
@@ -681,10 +672,10 @@ impl<'c> Compiler<'c> {
 
                     Decl::new(DeclKind::Function(function), fn_decl.public)
                 }
-                Stmt::ExternFnDecl(extern_fn_decl) => {
-                    let function = self.compile_extern_function(extern_fn_decl)?;
+                Stmt::ExternFnDecl(fn_decl_stmt) => {
+                    let function = self.compile_extern_function(fn_decl_stmt)?;
 
-                    Decl::new(DeclKind::Function(function), extern_fn_decl.public)
+                    Decl::new(DeclKind::Function(function), fn_decl_stmt.public)
                 }
                 Stmt::ClassDecl(class_decl) => {
                     let class = self.compile_class(class_decl)?;

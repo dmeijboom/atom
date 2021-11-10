@@ -1,10 +1,9 @@
-use std::cell::RefCell;
+use atom_ir::Location;
 
 use crate::ast::{ArithmeticOp, ComparisonOp, FnArg, LogicalOp};
 use crate::compiler::mir::{Local, ScopeContext};
 use crate::compiler::module::Field;
-use crate::compiler::{FuncArg, Type};
-use atom_ir::Location;
+use crate::compiler::FuncArg;
 
 use super::scope::{LocalId, Scope, ScopeId};
 
@@ -317,15 +316,10 @@ pub enum ValueKind {
 pub struct Value {
     pub loc: Location,
     pub kind: ValueKind,
-    pub known_type: RefCell<Type>,
 }
 
 impl Value {
     pub fn new(loc: Location, kind: ValueKind) -> Self {
-        Self {
-            loc,
-            kind,
-            known_type: RefCell::new(Type::Unknown),
-        }
+        Self { loc, kind }
     }
 }

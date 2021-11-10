@@ -64,12 +64,12 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("{:#?}", module.classes);
 
         println!("\nFunctions:");
-        println!("{:#?}", module.funcs);
+        println!("{:#?}", module.functions);
     }
 
     let mut vm = VM::new()?;
 
-    if let Some(id) = module.funcs.get_index_of("main") {
+    if let Some(id) = module.functions.get_index_of("main") {
         for module in modules {
             vm.register_module(module)?;
         }

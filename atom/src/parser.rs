@@ -251,8 +251,8 @@ peg::parser! {
         rule extern_fn_decl_stmt() -> Stmt
             = extern_fn_decl:extern_fn_decl() { Stmt::ExternFnDecl(extern_fn_decl) }
 
-        rule extern_fn_decl() -> ExternFnDeclStmt
-            = start:pos() public:$("pub")? _ "extern" __ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ");" end:pos() { ExternFnDeclStmt { name, args, public: public.is_some(), comments: vec![], pos: (start..end) } }
+        rule extern_fn_decl() -> FnDeclStmt
+            = start:pos() public:$("pub")? _ "extern" __ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ");" end:pos() { FnDeclStmt { name, args, body: vec![], public: public.is_some(), comments: vec![], pos: (start..end) } }
 
         rule interface_fn() -> InterfaceFn
             = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
