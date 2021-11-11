@@ -1,0 +1,290 @@
+module std.core;
+
+pub extern fn println(values);
+pub extern fn some(value);
+pub extern fn raise(exception);
+
+pub interface Iterable {
+    fn iter();
+}
+
+pub mixin Iterator {
+    pub fn enum() -> Enum(iterator: this.iter());
+
+    pub fn collect() {
+        let mut output = [];
+
+        for item in this {
+            output.push(item);
+        }
+
+        return output;
+    }
+
+    pub fn nth(index) {
+        let iter = this.iter();
+
+        for i in 0..index {
+            if iter.next().isNone() {
+                return nil;
+            }
+        }
+
+        return iter.next();
+    }
+
+    pub fn first() -> this.nth(0);
+
+    pub fn last() {
+        let mut last = nil;
+
+        for item in this {
+            last = some(item);
+        }
+
+        return last;
+    }
+
+    pub fn filter(filter) -> Filter(iterator: this.iter(), filterFn: filter);
+}
+
+pub class FilterIter extends Iterator {
+    let iterator;
+    let filterFn;
+
+    pub fn next() {
+        for {
+            let item = this.iterator.next();
+
+            if item.isNone() {
+                return nil;
+            }
+
+            if this.filterFn(item!) {
+                return item;
+            }
+        }
+    }
+}
+
+pub class Filter extends Iterator {
+    let iterator;
+    let filterFn;
+
+    pub fn iter() -> FilterIter(iterator: this.iterator, filterFn: this.filterFn);
+}
+
+pub class EnumIter {
+    let iterator;
+    let mut index;
+
+    pub fn next() {
+        let index = this.index;
+        let item = this.iterator.next();
+
+        if item.isNone() {
+            return nil;
+        }
+
+        this.index += 1;
+
+        return some((index, item!));
+    }
+}
+
+pub class Enum extends Iterator {
+    let iterator;
+
+    pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
+}
+
+pub class Symbol {
+    pub fn toString() -> f"{this}".substr(1);
+}
+
+pub class Option {
+    pub extern fn isSome();
+    pub extern fn isNone();
+
+    pub fn unwrapOr(alt) {
+        if this.isSome() {
+            return this!;
+        }
+
+        return alt;
+    }
+}
+
+pub class String {
+    pub let length;
+
+    pub extern fn upper();
+    pub extern fn lower();
+    pub extern fn split(pattern);
+    pub extern fn startsWith(pattern);
+    pub extern fn endsWith(pattern);
+    pub extern fn contains(pattern);
+    pub extern fn count(pattern);
+    pub extern fn find(pattern);
+    pub extern fn substr(index);
+    pub extern fn replace(pattern, replacement);
+    pub extern fn chars();
+    pub extern fn bytes();
+    pub extern fn repeat(n);
+    pub extern fn trim();
+    pub extern fn len();
+
+    pub fn toString() {
+        return this;
+    }
+
+    pub fn containsAny(values) {
+        let chars = this.chars();
+
+        for c2 in values.chars() {
+            for c1 in chars {
+                if c1 == c2 {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+}
+
+pub class Int {
+    pub fn toString() -> f"{this}";
+}
+
+pub class Float {
+    pub extern fn floor();
+
+    pub fn toString() -> f"{this}";
+}
+
+pub class Char {
+    pub fn toString() -> f"{this}";
+}
+
+pub class Byte {
+    pub fn toString() -> f"{this}";
+}
+
+pub class Bool {
+    pub fn toString() -> f"{this}";
+}
+
+pub class RangeIter {
+    let start;
+    let end;
+    let step;
+    let mut index;
+
+    pub fn next() {
+        let index = this.start + this.index;
+
+        if index >= this.end {
+            return nil;
+        }
+
+        let value = some(index);
+
+        this.index += this.step;
+
+        return value;
+    }
+}
+
+pub class RangeStep extends Iterator {
+    let range;
+    let step;
+
+    pub fn iter() {
+        return RangeIter(start: this.range.start, end: this.range.end, step: this.step, index: 0);
+    }
+}
+
+pub class Range extends Iterator {
+    pub let start;
+    pub let end;
+
+    pub fn iter() -> RangeIter(start: this.start, end: this.end, step: 1, index: 0);
+    pub fn step(n) -> RangeStep(range: this, step: n);
+}
+
+pub class ArrayIter {
+    let array;
+    let mut index;
+
+    pub fn next() {
+        if this.index >= this.array.len() {
+            return nil;
+        }
+
+        let value = this.array[this.index];
+
+        this.index += 1;
+
+        return some(value);
+    }
+}
+
+pub class Tuple {}
+
+pub class Array extends Iterator {
+    pub extern fn remove(index);
+    pub extern fn push(value);
+    pub extern fn pop();
+    pub extern fn len();
+    pub extern fn clear();
+
+    pub fn iter() -> ArrayIter(array: this, index: 0);
+
+    pub fn isEmpty() {
+        return this.len() == 0;
+    }
+
+    pub fn append(other) {
+        for {
+            let item = other.remove(0);
+
+            if !item.isSome() {
+                break;
+            }
+
+            this.push(item!);
+        }
+    }
+
+    pub fn contains(value) {
+        for item in this {
+            if item == value {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    pub fn join(separator) {
+        let mut output = "";
+        let length = this.len();
+
+        for i in 0..length {
+            let value = this[i];
+
+            if value is String {
+                output.append(value);
+            } else {
+                output.append(f"{value}");
+            }
+
+            if i < length - 1 {
+                output.append(separator);
+            }
+        }
+
+        return output;
+    }
+}
