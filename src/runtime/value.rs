@@ -273,15 +273,15 @@ impl Clone for Value {
             Self::Symbol(name) => Value::Symbol(name.clone()),
             Self::Option(val) => Value::Option(val.clone()),
             Self::Ref(val) => Value::Ref(AtomRef::clone(val)),
-            Self::Fn(atom_fn) => Value::Fn(atom_fn.clone()),
-            Self::Class(class) => Value::Class(class.clone()),
+            Self::Fn(atom_fn) => Value::Fn(AtomRef::clone(atom_fn)),
+            Self::Class(class) => Value::Class(AtomRef::clone(class)),
             Self::Closure(closure) => Value::Closure(AtomRef::clone(closure)),
             Self::Method(method) => Value::Method(AtomRef::clone(method)),
             Self::String(val) => Value::String(AtomRef::clone(val)),
             Self::Object(val) => Value::Object(AtomRef::clone(val)),
             Self::Tuple(tuple) => Value::Tuple(tuple.clone()),
             Self::Array(val) => Value::Array(AtomRef::clone(val)),
-            Self::Interface(interface) => Value::Interface(interface.clone()),
+            Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
         }
     }
 

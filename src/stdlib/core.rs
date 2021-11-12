@@ -52,7 +52,7 @@ pub fn raise(input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn option_is_some(mut input: Input<'_>) -> Result<Option<Value>> {
-    let value = input.pop_receiver()?;
+    let value = input.take_receiver()?;
 
     Ok(Some(Value::Bool(
         !matches!(value, Value::Option(opt) if opt.is_none()),
@@ -60,7 +60,7 @@ pub fn option_is_some(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn option_is_none(mut input: Input<'_>) -> Result<Option<Value>> {
-    let value = input.pop_receiver()?;
+    let value = input.take_receiver()?;
 
     Ok(Some(Value::Bool(
         matches!(value, Value::Option(opt) if opt.is_none()),
@@ -68,17 +68,17 @@ pub fn option_is_none(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn string_upper(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     Ok(Some(Value::String(AtomRef::new(s.as_str().to_uppercase()))))
 }
 
 pub fn string_lower(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     Ok(Some(Value::String(AtomRef::new(s.as_str().to_lowercase()))))
 }
 
 pub fn string_split(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
 
     if input.args.is_empty() {
@@ -101,35 +101,35 @@ pub fn string_split(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn string_starts_with(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
 
     Ok(Some(Value::Bool(s.starts_with(&pattern))))
 }
 
 pub fn string_ends_with(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
 
     Ok(Some(Value::Bool(s.ends_with(&pattern))))
 }
 
 pub fn string_contains(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
 
     Ok(Some(Value::Bool(s.contains(&pattern))))
 }
 
 pub fn string_count(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
 
     Ok(Some(Value::Int(s.matches(&pattern).count().into())))
 }
 
 pub fn string_find(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
 
     Ok(Some(Value::Option(
@@ -139,14 +139,14 @@ pub fn string_find(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn string_substr(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let index: usize = input.pop_first()?;
 
     Ok(Some(Value::String(AtomRef::new(s[index..].to_string()))))
 }
 
 pub fn string_replace(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let pattern: String = input.pop_first()?;
     let replacement: String = input.pop_first()?;
 
@@ -156,7 +156,7 @@ pub fn string_replace(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn string_chars(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
 
     Ok(Some(Value::Array(AtomRef::new(
         s.chars().into_iter().map(Value::Char).collect(),
@@ -164,7 +164,7 @@ pub fn string_chars(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn string_bytes(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
 
     Ok(Some(Value::Array(AtomRef::new(
         s.bytes().into_iter().map(Value::Byte).collect(),
@@ -172,32 +172,32 @@ pub fn string_bytes(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn string_repeat(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
     let count: usize = input.pop_first()?;
 
     Ok(Some(Value::String(AtomRef::new(s.repeat(count)))))
 }
 
 pub fn string_trim(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
 
     Ok(Some(Value::String(AtomRef::new(s.trim().to_string()))))
 }
 
 pub fn string_len(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.pop_receiver()?;
+    let s: String = input.take_receiver()?;
 
     Ok(Some(Value::Int(s.len().into())))
 }
 
 pub fn float_floor(mut input: Input<'_>) -> Result<Option<Value>> {
-    let f: f64 = input.pop_receiver()?;
+    let f: f64 = input.take_receiver()?;
 
     Ok(Some(Value::Float(f.floor())))
 }
 
 pub fn array_remove(mut input: Input<'_>) -> Result<Option<Value>> {
-    let mut a: AtomRef<Vec<Value>> = input.pop_receiver()?;
+    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
     let index: usize = input.pop_first()?;
 
     a.as_mut().remove(index);
@@ -206,7 +206,7 @@ pub fn array_remove(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn array_push(mut input: Input<'_>) -> Result<Option<Value>> {
-    let mut a: AtomRef<Vec<Value>> = input.pop_receiver()?;
+    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
     let item: Value = input.pop_first()?;
 
     a.as_mut().push(item);
@@ -215,13 +215,13 @@ pub fn array_push(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn array_pop(mut input: Input<'_>) -> Result<Option<Value>> {
-    let mut a: AtomRef<Vec<Value>> = input.pop_receiver()?;
+    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
 
     Ok(a.as_mut().pop())
 }
 
 pub fn array_clear(mut input: Input<'_>) -> Result<Option<Value>> {
-    let mut a: AtomRef<Vec<Value>> = input.pop_receiver()?;
+    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
 
     a.as_mut().clear();
 
@@ -229,6 +229,6 @@ pub fn array_clear(mut input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn array_len(mut input: Input<'_>) -> Result<Option<Value>> {
-    let a: Vec<Value> = input.pop_receiver()?;
+    let a: Vec<Value> = input.take_receiver()?;
     Ok(Some(Value::Int(a.len().into())))
 }

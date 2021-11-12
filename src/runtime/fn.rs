@@ -28,12 +28,16 @@ impl<'i> Input<'i> {
     }
 
     pub fn single(self) -> Value {
-        let mut args = self.args;
+        let mut args = self.take_args();
 
-        args.remove(0)
+        args.swap_remove(0)
     }
 
-    pub fn pop_receiver<T>(&mut self) -> Result<T>
+    pub fn take_args(self) -> Vec<Value> {
+        self.args
+    }
+
+    pub fn take_receiver<T>(&mut self) -> Result<T>
     where
         Value: Convert<T>,
     {
