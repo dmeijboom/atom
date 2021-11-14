@@ -1,5 +1,6 @@
 use core::mem;
 use std::cell::Cell;
+use std::fmt::{Debug, Formatter};
 use std::marker::PhantomData;
 use std::ops::Deref;
 use std::ptr::{self, NonNull};
@@ -37,7 +38,6 @@ impl<T: ?Sized> AtomRefInner<T> {
 
 pub type AtomRefPtr<T> = NonNull<AtomRefInner<T>>;
 
-#[derive(Debug)]
 pub struct AtomRef<T: ?Sized> {
     ptr: AtomRefPtr<T>,
     phantom: PhantomData<T>,
@@ -154,5 +154,11 @@ impl<T> Deref for AtomRef<T> {
 impl<T> From<T> for AtomRef<T> {
     fn from(inner: T) -> Self {
         AtomRef::new(inner)
+    }
+}
+
+impl<T: Debug> Debug for AtomRef<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "AtomRef<{:?}>", self.as_ref())
     }
 }

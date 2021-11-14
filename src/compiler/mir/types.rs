@@ -1,6 +1,5 @@
+use crate::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 use crate::compiler::ir::Location;
-
-use crate::ast::{ArithmeticOp, ComparisonOp, FnArg, LogicalOp};
 use crate::compiler::mir::{Local, ScopeContext};
 use crate::compiler::module::Field;
 use crate::compiler::FuncArg;
@@ -212,8 +211,15 @@ pub struct KeyValuePair {
 
 #[derive(Debug)]
 pub struct Closure {
-    pub args: Vec<FnArg>,
+    pub name: String,
+    pub args: Vec<FuncArg>,
     pub block: Block,
+}
+
+impl Closure {
+    pub fn new(name: String, args: Vec<FuncArg>, block: Block) -> Self {
+        Self { name, args, block }
+    }
 }
 
 #[derive(Debug)]

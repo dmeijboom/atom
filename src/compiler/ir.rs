@@ -283,6 +283,20 @@ impl IR {
         self.codes.iter_mut()
     }
 
+    pub fn append(&mut self, mut ir: IR) {
+        if self.codes.is_empty() && self.locations.is_empty() {
+            *self = ir;
+
+            return;
+        }
+
+        for (i, location) in ir.locations {
+            self.locations.insert(self.codes.len() + i, location);
+        }
+
+        self.codes.append(&mut ir.codes);
+    }
+
     pub fn add(&mut self, code: Code, location: Option<&Location>) {
         let id = self.codes.len();
 

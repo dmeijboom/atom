@@ -6,6 +6,7 @@ use crate::compiler::mir::{
     AssignLeftHand, Block, Const, DeclKind, ForLoopMeta, Function, Mir, Scope, ScopeContext, Stmt,
     StmtKind, TemplateComponent, Terminator, Value, ValueKind,
 };
+use crate::compiler::module;
 use crate::compiler::optimizers::Optimizer;
 use crate::compiler::slugs::Slugs;
 
@@ -45,12 +46,14 @@ impl<'c> CodeGenerator<'c> {
         unreachable!("invalid scope (missing loop metadata)")
     }
 
-    fn collect_instr(&mut self) -> IR {
+    fn collect_instr(&mut self, optimize: bool) -> IR {
         let mut ir = IR::new();
         mem::swap(&mut ir, &mut self.ir);
 
-        for optimizer in self.optimizers.iter() {
-            optimizer(self.module, &mut ir);
+        if optimize {
+            for optimizer in self.optimizers.iter() {
+                optimizer(self.module, &mut ir);
+            }
         }
 
         ir
@@ -142,7 +145,31 @@ impl<'c> CodeGenerator<'c> {
                 self.compile_values(scope, values)?;
                 self.ir.add(Code::MakeTuple(values.len()), location);
             }
-            ValueKind::Closure(_) => unreachable!(),
+            ValueKind::Closure(closure) => {
+                let parent_ir = self.collect_instr(false);
+
+                self.compile_block(&closure.block)?;
+
+                let body = self.collect_instr(true);
+
+                self.module.functions.insert(
+                    closure.name.clone(),
+                    module::Function {
+                        name: closure.name.clone(),
+                        body,
+                        is_extern: false,
+                        is_closure: true,
+                        args: closure.args.clone(),
+                        location: closure.block.loc.clone(),
+                    },
+                );
+
+                self.ir.append(parent_ir);
+                self.ir.add(
+                    Code::MakeClosure(self.module.functions.get_index_of(&closure.name).unwrap()),
+                    location,
+                );
+            }
             ValueKind::Member(member) => {
                 self.compile_value(scope, &member.object)?;
                 self.ir
@@ -336,7 +363,7 @@ impl<'c> CodeGenerator<'c> {
     fn compile_function(&mut self, function: &Function) -> Result<IR> {
         self.compile_block(&function.block)?;
 
-        Ok(self.collect_instr())
+        Ok(self.collect_instr(true))
     }
 
     pub fn compile(mut self) -> Result<()> {

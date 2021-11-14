@@ -1,9 +1,8 @@
-use crate::compiler::ir::Location;
-
 use crate::ast::{
-    ArithmeticOp, ClassDeclStmt, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt, InterfaceDeclStmt,
-    Literal, LogicalOp, Stmt, TemplateComponent, Variable,
+    ArithmeticOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt,
+    InterfaceDeclStmt, Literal, LogicalOp, Stmt, TemplateComponent, Variable,
 };
+use crate::compiler::ir::Location;
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
@@ -230,7 +229,7 @@ impl<'c> Compiler<'c> {
                     vec![Value::new(self.loc.clone(), ValueKind::Array(pairs))],
                 )))
             }
-            Expr::Closure(_) => unreachable!("not implemented yet"),
+            Expr::Closure(closure) => ValueKind::Closure(self.compile_closure(closure, None)?),
             Expr::Member(member) => {
                 let object = self.compile_expr(&member.object)?;
 
@@ -325,6 +324,31 @@ impl<'c> Compiler<'c> {
         };
 
         Ok(Value::new(self.loc.clone(), kind))
+    }
+
+    fn compile_closure(
+        &mut self,
+        closure: &ClosureExpr,
+        closure_name: Option<String>,
+    ) -> Result<Closure> {
+        let parent_locals_count = self.scope.current().local_id;
+        let name = self.slugs.get("closure");
+        let args = map_fn_args(&closure.args);
+        let scope = self.enter_scope(ScopeContext::Function(
+            closure_name.unwrap_or_else(|| name.clone()),
+        ));
+
+        self.scope.current_mut().local_id = parent_locals_count;
+
+        for arg in closure.args.iter() {
+            self.scope.set_local(arg.name.clone(), arg.mutable)?;
+        }
+
+        let block = self.compile_block(scope, &closure.body)?;
+
+        self.exit_scope();
+
+        Ok(Closure::new(name, args, block))
     }
 
     fn compile_if_stmt(&mut self, if_stmt: &IfStmt) -> Result<types::Stmt> {
@@ -461,7 +485,22 @@ impl<'c> Compiler<'c> {
                 ));
             }
             Stmt::Let(let_stmt) => {
-                let value = self.compile_expr(&let_stmt.value)?;
+                // If we store a closure in a name make sure the scope-context gets the same name so
+                // that the closure can reference itself using the `LoadTarget` instruction
+                let value = if let Variable::Name(name) = &let_stmt.var {
+                    if let Expr::Closure(closure_expr) = &let_stmt.value {
+                        Value::new(
+                            self.line_number_offset.get_location(&let_stmt.pos),
+                            ValueKind::Closure(
+                                self.compile_closure(closure_expr, Some(name.clone()))?,
+                            ),
+                        )
+                    } else {
+                        self.compile_expr(&let_stmt.value)?
+                    }
+                } else {
+                    self.compile_expr(&let_stmt.value)?
+                };
 
                 self.compile_store_var(root, value, let_stmt.mutable, &let_stmt.var)?;
             }

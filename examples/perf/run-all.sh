@@ -10,6 +10,9 @@ hyperfine --warmup 10 "target/release/atom run examples/perf/wyhash.atom"
 echo "Recursive fibonacci"
 hyperfine --warmup 10 "target/release/atom run examples/perf/fib.atom"
 
+echo "Recursive fibonacci (with closures)"
+hyperfine --warmup 10 "target/release/atom run examples/perf/fib_closure.atom"
+
 echo "Binary trees"
 hyperfine --warmup 10 "target/release/atom run examples/perf/binary_trees.atom"
 

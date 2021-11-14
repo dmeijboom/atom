@@ -1,0 +1,13 @@
+fn main() {
+    let fib = |n| {
+        if n < 2 {
+            return n;
+        }
+
+        return fib(n - 1) + fib(n - 2);
+    };
+
+    for 1..5 {
+        println(fib(28));
+    }
+}

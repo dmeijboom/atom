@@ -27,6 +27,15 @@ fn is_const(code: &Code) -> bool {
 
 /// Replace load/store instructions with constants when used only once
 pub fn optimize(_module: &Module, instructions: &mut IR) {
+    // In case of a closure we can no longer inspect the usages of load/store instructions as
+    // the will propagate to the closure which has it's own instruction set
+    if instructions
+        .iter()
+        .any(|code| matches!(code, Code::MakeClosure(_)))
+    {
+        return;
+    }
+
     // Detect usages for locals
     let mut usages = HashMap::new();
 

@@ -2,6 +2,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Result, RuntimeError, Trace, Value};
 
+#[derive(Debug)]
 pub enum Target {
     Fn(AtomRef<Fn>),
     Method(AtomRef<Method>),
@@ -38,6 +39,7 @@ impl Clone for Target {
     }
 }
 
+#[derive(Debug)]
 pub struct CallContext {
     pub target: Target,
     pub locals: Vec<Value>,
