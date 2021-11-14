@@ -1026,12 +1026,14 @@ impl VM {
 
     fn eval_load_receiver(&mut self) -> Result<()> {
         let receiver = self.call_stack.current().and_then(|context| {
-            context.get_receiver().clone().ok_or_else(|| {
-                RuntimeError::new("unable to load 'this' outside of a method".to_string())
-            })
+            context
+                .get_receiver()
+                .ok_or_else(|| {
+                    RuntimeError::new("unable to load 'this' outside of a method".to_string())
+                })
         })?;
 
-        self.stack.push(receiver);
+        self.stack.push(receiver.clone());
 
         Ok(())
     }
@@ -1250,7 +1252,7 @@ impl AtomApi for VM {
         self.module_cache.get_class(module_name, class_name)
     }
 
-    fn get_receiver(&self) -> Option<Value> {
+    fn get_receiver(&self) -> Option<&Value> {
         self.call_stack
             .current()
             .ok()

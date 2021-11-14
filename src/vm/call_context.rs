@@ -48,9 +48,9 @@ impl CallContext {
         Self { target, locals }
     }
 
-    pub fn get_receiver(&self) -> Option<Value> {
+    pub fn get_receiver(&self) -> Option<&Value> {
         if let Target::Method(method) = &self.target {
-            return Some(method.receiver.clone());
+            return Some(&method.receiver);
         }
 
         None

@@ -52,19 +52,29 @@ pub fn raise(input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn option_is_some(mut input: Input<'_>) -> Result<Option<Value>> {
-    let value = input.take_receiver()?;
+    let value = input.get_receiver()?;
 
-    Ok(Some(Value::Bool(
-        !matches!(value, Value::Option(opt) if opt.is_none()),
-    )))
+    if let Value::Option(inner) = value {
+        return Ok(Some(Value::Bool(inner.is_some())));
+    }
+
+    Err(
+        RuntimeError::new(format!("expected 'Option', found: {}", value))
+            .with_kind("TypeError".to_string()),
+    )
 }
 
 pub fn option_is_none(mut input: Input<'_>) -> Result<Option<Value>> {
-    let value = input.take_receiver()?;
+    let value = input.get_receiver()?;
 
-    Ok(Some(Value::Bool(
-        matches!(value, Value::Option(opt) if opt.is_none()),
-    )))
+    if let Value::Option(inner) = value {
+        return Ok(Some(Value::Bool(inner.is_none())));
+    }
+
+    Err(
+        RuntimeError::new(format!("expected 'Option', found: {}", value))
+            .with_kind("TypeError".to_string()),
+    )
 }
 
 pub fn string_upper(mut input: Input<'_>) -> Result<Option<Value>> {
