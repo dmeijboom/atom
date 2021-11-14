@@ -1026,11 +1026,9 @@ impl VM {
 
     fn eval_load_receiver(&mut self) -> Result<()> {
         let receiver = self.call_stack.current().and_then(|context| {
-            context
-                .get_receiver()
-                .ok_or_else(|| {
-                    RuntimeError::new("unable to load 'this' outside of a method".to_string())
-                })
+            context.get_receiver().ok_or_else(|| {
+                RuntimeError::new("unable to load 'this' outside of a method".to_string())
+            })
         })?;
 
         self.stack.push(receiver.clone());

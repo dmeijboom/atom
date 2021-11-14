@@ -9,8 +9,6 @@ fn makeTree(value, depth) {
         return Node(left: nil, value: value, right: nil);
     }
 
-    let value2 = value + value;
-
     return Node(
         left: some(makeTree((value + value) - 1, depth - 1)),
         value: value,

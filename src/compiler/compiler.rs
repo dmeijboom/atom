@@ -13,7 +13,7 @@ use super::filesystem::{FileSystem, FileSystemCache};
 use super::frontend::Frontend;
 use super::line_number_offset::LineNumberOffset;
 use super::module::Module;
-use super::optimizers::{call_void, load_local_twice_add, pre_compute_labels, remove_type_cast};
+use super::optimizers::{call_void, pre_compute_labels, remove_type_cast, replace_load_with_const};
 use super::result::{CompileError, Result};
 
 pub const DEFAULT_IMPORTS: &[&str; 17] = &[
@@ -370,7 +370,7 @@ impl Compiler {
                     remove_type_cast::optimize,
                     tail_call::optimize,
                     call_void::optimize,
-                    load_local_twice_add::optimize,
+                    replace_load_with_const::optimize,
                     pre_compute_labels::optimize,
                 ]
             } else {

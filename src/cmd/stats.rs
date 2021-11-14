@@ -1,7 +1,6 @@
 use std::mem::size_of;
 
 use crate::runtime::{AtomRef, Object, Value, ValueType};
-
 use crate::utils::Error;
 use crate::vm::CallContext;
 

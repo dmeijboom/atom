@@ -56,7 +56,7 @@ impl Stack {
     pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
         let data_len = self.data.len();
 
-        if data_len == 0 {
+        if len == 0 {
             return Ok(vec![]);
         }
 
