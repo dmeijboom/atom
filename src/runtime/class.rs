@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
+use indexmap::IndexMap;
 use wyhash2::WyHash;
 
 use super::atom_ref::AtomRef;
@@ -30,7 +31,7 @@ impl Field {
 pub struct Class {
     pub name: String,
     pub origin: Origin,
-    pub fields: HashMap<String, Field, WyHash>,
+    pub fields: IndexMap<String, Field, WyHash>,
     pub methods: HashMap<String, AtomRef<Fn>, WyHash>,
 }
 
