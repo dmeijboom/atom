@@ -475,9 +475,7 @@ impl VM {
             Code::ComparisonLt => self.eval_comparison_lt()?,
             Code::ComparisonLte => self.eval_comparison_lte()?,
             Code::AssertIsType => self.eval_assert_is_type()?,
-            Code::Not => self.eval_not()?,
             Code::Unwrap => self.eval_unwrap()?,
-            Code::Validate => self.eval_validate()?,
             Code::Cast(type_name) => self.eval_cast(type_name)?,
             Code::Call(arg_count) => self.eval_call(&[], *arg_count, true)?,
             Code::CallKeywords((keywords, arg_count)) => {
@@ -492,10 +490,8 @@ impl VM {
             Code::StoreMut(id) => self.eval_store(*id, true)?,
             Code::LoadIndex => self.eval_load_index(false)?,
             Code::MakeSlice => self.eval_make_slice()?,
-            Code::TeeIndex => self.eval_load_index(true)?,
             Code::StoreIndex => self.eval_store_index()?,
-            Code::LoadMember(member) => self.eval_load_member(module_id, member, false)?,
-            Code::TeeMember(member) => self.eval_load_member(module_id, member, true)?,
+            Code::LoadMember(member) => self.eval_load_member(module_id, member)?,
             Code::StoreMember(member) => self.eval_store_member(module_id, member)?,
             Code::Load(id) => self.eval_load(*id)?,
             Code::LoadReceiver => self.eval_load_receiver()?,
@@ -753,40 +749,6 @@ impl VM {
         Err(RuntimeError::new("unable to unwrap nil value".to_string()))
     }
 
-    fn eval_not(&mut self) -> Result<()> {
-        let value: bool = self.stack.pop().convert()?;
-
-        self.stack.push(Value::Bool(!value));
-
-        Ok(())
-    }
-
-    fn eval_validate(&mut self) -> Result<()> {
-        let interface_value = self.stack.pop();
-
-        if let Value::Interface(interface) = interface_value {
-            let value = self.stack.pop();
-            let class = self.get_class(&value)?;
-
-            if !self.validate_class(&class, &interface) {
-                return Err(RuntimeError::new(format!(
-                    "validation failed, class '{}' doesn't implement interface: {}",
-                    class.as_ref(),
-                    interface.as_ref(),
-                )));
-            }
-
-            self.stack.push(value);
-
-            return Ok(());
-        }
-
-        Err(RuntimeError::new(format!(
-            "unable to validate non-interface: {}",
-            interface_value.get_type().name()
-        )))
-    }
-
     fn eval_cast(&mut self, type_name: &str) -> Result<()> {
         let value = self.stack.pop();
 
@@ -965,7 +927,6 @@ impl VM {
         &mut self,
         module_id: ModuleId,
         member: &str,
-        push_back: bool,
     ) -> Result<()> {
         let receiver = self.stack.pop();
         let class = self.get_class(&receiver)?;
@@ -988,10 +949,6 @@ impl VM {
                     ))
                 })?;
 
-                if push_back {
-                    self.stack.push(Value::Object(object));
-                }
-
                 self.stack.push(field);
 
                 return Ok(());
@@ -1004,10 +961,6 @@ impl VM {
         }
 
         if let Some(func) = class.methods.get(member) {
-            if push_back {
-                self.stack.push(receiver.clone());
-            }
-
             self.stack.push(Value::Method(AtomRef::new(Method {
                 receiver,
                 func: AtomRef::clone(func),
@@ -1205,7 +1158,6 @@ impl VM {
         )))
     }
 
-    #[inline(always)]
     fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<Option<Value>> {
         let mut i = 0;
         let mut return_addr = vec![];

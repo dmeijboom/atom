@@ -22,7 +22,7 @@ impl<T: ?Sized> AtomRefInner<T> {
         let count = self.ref_count.get();
 
         if count == 0 {
-            panic!("unable to decrease reference count when zero");
+            unreachable!("unable to decrease reference count when zero");
         }
 
         self.ref_count.set(count - 1);
@@ -40,7 +40,7 @@ pub type AtomRefPtr<T> = NonNull<AtomRefInner<T>>;
 #[derive(Debug)]
 pub struct AtomRef<T: ?Sized> {
     ptr: AtomRefPtr<T>,
-    phantom: PhantomData<AtomRefInner<T>>,
+    phantom: PhantomData<T>,
 }
 
 impl<T: PartialEq> PartialEq for AtomRef<T> {

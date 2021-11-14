@@ -22,10 +22,4 @@ impl Origin {
             location,
         }
     }
-
-    pub fn with_filename(mut self, filename: String) -> Self {
-        self.filename = Some(filename);
-
-        self
-    }
 }

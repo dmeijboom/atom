@@ -56,6 +56,10 @@ impl Stack {
     pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
         let data_len = self.data.len();
 
+        if data_len == 0 {
+            return Ok(vec![]);
+        }
+
         if data_len < len {
             return Err(RuntimeError::new(format!(
                 "expected {} elements on stack",
@@ -77,11 +81,11 @@ mod tests {
     fn test_pop_many() {
         let mut stack = Stack::new();
 
-        stack.push(Value::Int(Int::Uint8(10)).into());
-        stack.push(Value::Int(Int::Uint8(20)).into());
-        stack.push(Value::Int(Int::Uint8(30)).into());
-        stack.push(Value::Int(Int::Uint8(40)).into());
-        stack.push(Value::Int(Int::Uint8(50)).into());
+        stack.push(Value::Int(Int::Uint8(10)));
+        stack.push(Value::Int(Int::Uint8(20)));
+        stack.push(Value::Int(Int::Uint8(30)));
+        stack.push(Value::Int(Int::Uint8(40)));
+        stack.push(Value::Int(Int::Uint8(50)));
 
         assert_eq!(
             stack.pop_many(3),

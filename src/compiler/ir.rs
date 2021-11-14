@@ -104,11 +104,9 @@ pub enum Code {
     ComparisonLt,
     ComparisonLte,
     AssertIsType,
-    Not,
     Unwrap,
     Discard,
     Return,
-    Validate,
     Cast(String),
     Call(usize),
     CallKeywords((Vec<String>, usize)),
@@ -127,10 +125,8 @@ pub enum Code {
     LoadTarget,
     LoadIndex,
     MakeSlice,
-    TeeIndex,
     StoreIndex,
     LoadMember(String),
-    TeeMember(String),
     StoreMember(String),
 }
 
@@ -185,11 +181,9 @@ impl Code {
             Code::ComparisonLt => "  lt".to_string(),
             Code::ComparisonLte => "  lte".to_string(),
             Code::AssertIsType => "  assertIsType".to_string(),
-            Code::Not => "  not".to_string(),
             Code::Unwrap => "  unwrap".to_string(),
             Code::Discard => "  discard".to_string(),
             Code::Return => "  return".to_string(),
-            Code::Validate => "  validate".to_string(),
             Code::Cast(type_name) => format!("  cast(type_name: '{}')", type_name),
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
             Code::CallKeywords((keywords, arg_count)) => format!(
@@ -215,11 +209,9 @@ impl Code {
             Code::LoadInterface(id) => format!("  loadInterface(id: {})", id),
             Code::LoadIndex => "  loadIndex".to_string(),
             Code::MakeSlice => "  makeSlice".to_string(),
-            Code::TeeIndex => "  teeIndex".to_string(),
             Code::LoadTarget => "  loadTarget".to_string(),
             Code::StoreIndex => "  storeIndex".to_string(),
             Code::LoadMember(name) => format!("  loadMember(name: '{}')", name),
-            Code::TeeMember(name) => format!("  teeMember(name: '{}')", name),
         }
     }
 }
@@ -307,20 +299,6 @@ impl IR {
 
             self.locations.insert(self.codes.len(), location.clone());
         }
-    }
-
-    pub fn append(&mut self, mut ir: IR) {
-        if self.codes.is_empty() && self.locations.is_empty() {
-            *self = ir;
-
-            return;
-        }
-
-        for (i, location) in ir.locations {
-            self.locations.insert(self.codes.len() + i, location);
-        }
-
-        self.codes.append(&mut ir.codes);
     }
 
     pub fn get_location(&self, index: usize) -> Option<&Location> {

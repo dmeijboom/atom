@@ -63,24 +63,6 @@ pub enum ArithmeticOp {
     BitShiftRight,
 }
 
-impl ArithmeticOp {
-    pub fn description(&self) -> &str {
-        match self {
-            ArithmeticOp::Mul => "multiply",
-            ArithmeticOp::Div => "divide",
-            ArithmeticOp::Add => "add",
-            ArithmeticOp::Sub => "subtract",
-            ArithmeticOp::Mod => "modulo",
-            ArithmeticOp::Exp => "exponent",
-            ArithmeticOp::BitAnd => "bitwise and",
-            ArithmeticOp::BitOr => "bitwise or",
-            ArithmeticOp::BitXor => "xor",
-            ArithmeticOp::BitShiftLeft => "bitwise shift left",
-            ArithmeticOp::BitShiftRight => "bitwise shift right",
-        }
-    }
-}
-
 impl From<ArithmeticOp> for Code {
     fn from(op: ArithmeticOp) -> Self {
         match op {
