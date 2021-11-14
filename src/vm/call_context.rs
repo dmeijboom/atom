@@ -40,17 +40,20 @@ impl Clone for Target {
 
 pub struct CallContext {
     pub target: Target,
-    pub receiver: Option<Value>,
     pub locals: Vec<Value>,
 }
 
 impl CallContext {
-    pub fn new(target: Target, receiver: Option<Value>, locals: Vec<Value>) -> Self {
-        Self {
-            target,
-            receiver,
-            locals,
+    pub fn new(target: Target, locals: Vec<Value>) -> Self {
+        Self { target, locals }
+    }
+
+    pub fn get_receiver(&self) -> Option<Value> {
+        if let Target::Method(method) = &self.target {
+            return Some(method.receiver.clone());
         }
+
+        None
     }
 }
 

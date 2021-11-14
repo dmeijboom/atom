@@ -1,13 +1,13 @@
 use std::mem;
 
 use crate::ast::LogicalOp;
+use crate::compiler::ir::{Code, Label, IR};
 use crate::compiler::mir::{
     AssignLeftHand, Block, Const, DeclKind, ForLoopMeta, Function, Mir, Scope, ScopeContext, Stmt,
     StmtKind, TemplateComponent, Terminator, Value, ValueKind,
 };
 use crate::compiler::optimizers::Optimizer;
 use crate::compiler::slugs::Slugs;
-use crate::compiler::ir::{Code, Label, IR};
 
 use super::module::Module;
 use super::result::{CompileError, Result};

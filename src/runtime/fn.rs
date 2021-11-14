@@ -14,17 +14,12 @@ use super::value::Value;
 
 pub struct Input<'i> {
     pub api: &'i dyn AtomApi,
-    pub receiver: Option<Value>,
     pub args: Vec<Value>,
 }
 
 impl<'i> Input<'i> {
-    pub fn new(api: &'i dyn AtomApi, receiver: Option<Value>, args: Vec<Value>) -> Self {
-        Self {
-            api,
-            receiver,
-            args,
-        }
+    pub fn new(api: &'i dyn AtomApi, args: Vec<Value>) -> Self {
+        Self { api, args }
     }
 
     pub fn single(self) -> Value {
@@ -41,8 +36,8 @@ impl<'i> Input<'i> {
     where
         Value: Convert<T>,
     {
-        self.receiver
-            .take()
+        self.api
+            .get_receiver()
             .ok_or_else(|| RuntimeError::new("missing receiver".to_string()))?
             .convert()
     }

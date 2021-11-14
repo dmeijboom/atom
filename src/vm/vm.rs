@@ -7,8 +7,8 @@ use wyhash2::WyHash;
 
 use crate::compiler::ir::{Code, Label, IR};
 use crate::runtime::{
-    AtomApi, AtomRef, Class, Closure, Fn, FnArg, FnPtr, Input, Int, Interface, Method, Object,
-    Result, RuntimeError, Symbol, Value, ValueType, Convert,
+    AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
+    Object, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::{compiler, stdlib};
 
@@ -325,18 +325,12 @@ impl VM {
         keywords: &[String],
         arg_count: usize,
     ) -> Result<Value> {
-        let (func, receiver, values) = match &target {
-            Target::Fn(func) => (AtomRef::clone(func), None, None),
-            Target::Method(method) => (
-                AtomRef::clone(&method.func),
-                Some(method.receiver.clone()),
-                None,
-            ),
-            Target::Closure(closure) => (
-                AtomRef::clone(&closure.func),
-                None,
-                Some(closure.values.clone()),
-            ),
+        let (func, values) = match &target {
+            Target::Fn(func) => (AtomRef::clone(func), None),
+            Target::Method(method) => (AtomRef::clone(&method.func), None),
+            Target::Closure(closure) => {
+                (AtomRef::clone(&closure.func), Some(closure.values.clone()))
+            }
         };
 
         match &func.ptr {
@@ -368,7 +362,6 @@ impl VM {
 
                 self.call_stack.push(CallContext::new(
                     target,
-                    receiver,
                     if let Some(values) = values {
                         vec![values, locals].concat()
                     } else {
@@ -392,11 +385,11 @@ impl VM {
                     )));
                 }
 
-                self.call_stack.push(CallContext::new(target, None, vec![]));
+                self.call_stack.push(CallContext::new(target, vec![]));
 
                 let values = self.stack.pop_many(arg_count)?;
 
-                if let Some(return_value) = closure(Input::new(self, receiver, values))? {
+                if let Some(return_value) = closure(Input::new(self, values))? {
                     self.call_stack.pop();
 
                     return Ok(return_value);
@@ -923,11 +916,7 @@ impl VM {
         }
     }
 
-    fn eval_load_member(
-        &mut self,
-        module_id: ModuleId,
-        member: &str,
-    ) -> Result<()> {
+    fn eval_load_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
         let receiver = self.stack.pop();
         let class = self.get_class(&receiver)?;
 
@@ -1037,7 +1026,7 @@ impl VM {
 
     fn eval_load_receiver(&mut self) -> Result<()> {
         let receiver = self.call_stack.current().and_then(|context| {
-            context.receiver.clone().ok_or_else(|| {
+            context.get_receiver().clone().ok_or_else(|| {
                 RuntimeError::new("unable to load 'this' outside of a method".to_string())
             })
         })?;
@@ -1259,5 +1248,12 @@ impl VM {
 impl AtomApi for VM {
     fn find_class(&self, module_name: &str, class_name: &str) -> Result<AtomRef<Class>> {
         self.module_cache.get_class(module_name, class_name)
+    }
+
+    fn get_receiver(&self) -> Option<Value> {
+        self.call_stack
+            .current()
+            .ok()
+            .and_then(|current| current.get_receiver())
     }
 }
