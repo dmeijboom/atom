@@ -11,6 +11,7 @@ use super::method::Method;
 use super::object::Object;
 use super::r#fn::Fn;
 use super::result::{Result, RuntimeError};
+use super::rust::RustObject;
 use super::symbol::Symbol;
 
 pub trait Convert<T> {
@@ -130,6 +131,7 @@ macro_rules! impl_type {
 
 #[derive(Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
 pub enum ValueType {
+    Void,
     Int,
     Float,
     Char,
@@ -147,11 +149,13 @@ pub enum ValueType {
     Tuple,
     Array,
     Ref,
+    RustObject,
 }
 
 impl ValueType {
     pub fn name(&self) -> &str {
         match self {
+            Self::Void => "Void",
             Self::Int => "Int",
             Self::Float => "Float",
             Self::Char => "Char",
@@ -169,6 +173,7 @@ impl ValueType {
             Self::Tuple => "Tuple",
             Self::Array => "Array",
             Self::Ref => "Ref",
+            Self::RustObject => "RustObject",
         }
     }
 }
@@ -193,6 +198,7 @@ pub enum Value {
     Object(AtomRef<Object>),
     Array(AtomRef<Vec<Value>>),
     Option(Option<Box<Value>>),
+    RustObject(RustObject),
 }
 
 // Setup base conversions between atom / Rust code
@@ -212,6 +218,23 @@ impl_type!(String, String, [from convert convert_ref convert_mut]);
 impl_type!(Object, Object, [from convert_ref convert_mut]);
 impl_type!(Array, Vec<Value>, [from convert convert_ref convert_mut]);
 impl_type!(Option, Option<Box<Value>>, [convert convert_ref convert_mut]);
+impl_type!(RustObject, RustObject, [convert convert_ref convert_mut]);
+
+// Conversions for Object / AtomRef<Object>
+
+impl Convert<AtomRef<Object>> for Value {
+    fn convert(self) -> Result<AtomRef<Object>> {
+        if let Value::Object(val) = self {
+            return Ok(val);
+        }
+
+        Err(RuntimeError::new(format!(
+            "expected 'Object', found: {}",
+            self.get_type().name()
+        ))
+        .with_kind("TypeError".to_string()))
+    }
+}
 
 // Conversions for Array / AtomRef<Vec<Value>>
 
@@ -220,6 +243,7 @@ impl Convert<AtomRef<Vec<Value>>> for Value {
         if let Value::Array(val) = self {
             return Ok(val);
         }
+
         Err(RuntimeError::new(format!(
             "expected 'Array', found: {}",
             self.get_type().name()
@@ -264,7 +288,7 @@ impl Clone for Value {
     #[inline(always)]
     fn clone(&self) -> Self {
         match self {
-            Self::Void => panic!("Void can't be cloned"),
+            Self::Void => Self::Void,
             Self::Int(val) => Value::Int(*val),
             Self::Float(val) => Value::Float(*val),
             Self::Char(val) => Value::Char(*val),
@@ -282,6 +306,7 @@ impl Clone for Value {
             Self::Tuple(tuple) => Value::Tuple(tuple.clone()),
             Self::Array(val) => Value::Array(AtomRef::clone(val)),
             Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
+            Self::RustObject(_) => panic!("RustObject can't be cloned"),
         }
     }
 
@@ -293,7 +318,7 @@ impl Clone for Value {
 impl Value {
     pub fn get_type(&self) -> ValueType {
         match self {
-            Self::Void => panic!("Void has no type"),
+            Self::Void => ValueType::Void,
             Self::Int(_) => ValueType::Int,
             Self::Float(_) => ValueType::Float,
             Self::Char(_) => ValueType::Char,
@@ -311,6 +336,7 @@ impl Value {
             Self::Object(_) => ValueType::Object,
             Self::Tuple(_) => ValueType::Tuple,
             Self::Array(_) => ValueType::Array,
+            Self::RustObject(_) => ValueType::RustObject,
         }
     }
 }
@@ -380,6 +406,7 @@ impl Display for Value {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
+            Self::RustObject(rust_object) => write!(f, "{:?}", rust_object),
         }
     }
 }

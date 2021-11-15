@@ -9,6 +9,7 @@ pub use object::Object;
 pub use origin::Origin;
 pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr, Input};
 pub use result::{Result, RuntimeError, Trace};
+pub use rust::RustObject;
 pub use symbol::Symbol;
 pub use value::{Convert, Value, ValueType};
 
@@ -23,5 +24,6 @@ mod method;
 mod object;
 mod origin;
 mod result;
+mod rust;
 mod symbol;
 mod value;

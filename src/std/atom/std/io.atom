@@ -1,5 +1,6 @@
 module std.io;
 
+import std.core.Iterator;
 import std.encoding.utf8.decode;
 
 pub interface Readable {
@@ -30,15 +31,13 @@ pub class LinesIter {
     }
 }
 
-pub class Reader {
-    let readable;
-
+pub mixin Reader {
     pub fn readAll() {
         let mut output = [];
 
         for {
             let buffSize = 1024;
-            let buff = this.readable.read(buffSize);
+            let buff = this.read(buffSize);
             let len = buff.len();
 
             if len > 0 {
@@ -76,14 +75,11 @@ pub class LinesReader {
     }
 }
 
-pub class File {
+pub class File extends Reader {
     let fd;
 
     pub extern fn size();
-
-    pub fn reader() {
-        return Reader(readable: this);
-    }
+    pub extern fn read(max);
 
     pub fn lines() {
         return LinesReader(readable: this);

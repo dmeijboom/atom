@@ -22,10 +22,13 @@ impl<'i> Input<'i> {
         Self { api, args }
     }
 
-    pub fn single(self) -> Value {
+    pub fn single<T>(self) -> Result<T>
+    where
+        Value: Convert<T>,
+    {
         let mut args = self.take_args();
 
-        args.swap_remove(0)
+        args.swap_remove(0).convert()
     }
 
     pub fn take_args(self) -> Vec<Value> {

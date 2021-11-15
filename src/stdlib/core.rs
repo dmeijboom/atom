@@ -44,7 +44,9 @@ pub fn println(input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn some(input: Input<'_>) -> Result<Option<Value>> {
-    Ok(Some(Value::Option(Some(Box::new(input.single())))))
+    let value: Value = input.single()?;
+
+    Ok(Some(Value::Option(Some(Box::new(value)))))
 }
 
 pub fn raise(input: Input<'_>) -> Result<Option<Value>> {
@@ -210,9 +212,13 @@ pub fn array_remove(mut input: Input<'_>) -> Result<Option<Value>> {
     let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
     let index: usize = input.pop_first()?;
 
-    a.as_mut().remove(index);
+    if a.len() <= index {
+        return Ok(Some(Value::Option(None)));
+    }
 
-    Ok(None)
+    let item = a.as_mut().remove(index);
+
+    Ok(Some(Value::Option(Some(Box::new(item)))))
 }
 
 pub fn array_push(mut input: Input<'_>) -> Result<Option<Value>> {

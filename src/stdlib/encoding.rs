@@ -24,7 +24,7 @@ fn to_fixed_array<T: Copy, const N: usize>(items: Vec<T>) -> Result<[T; N]> {
 }
 
 pub fn int_from_bytes(input: Input<'_>) -> Result<Option<Value>> {
-    let data: Vec<Value> = input.single().convert()?;
+    let data: Vec<Value> = input.single()?;
     let mut bytes = vec![];
 
     for item in data.into_iter() {
@@ -43,7 +43,7 @@ pub fn int_from_bytes(input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn uint_from_bytes(input: Input<'_>) -> Result<Option<Value>> {
-    let data: Vec<Value> = input.single().convert()?;
+    let data: Vec<Value> = input.single()?;
     let mut bytes = vec![];
 
     for item in data.into_iter() {
@@ -62,7 +62,7 @@ pub fn uint_from_bytes(input: Input<'_>) -> Result<Option<Value>> {
 }
 
 pub fn utf8_decode(input: Input<'_>) -> Result<Option<Value>> {
-    let data: Vec<Value> = input.single().convert()?;
+    let data: Vec<Value> = input.single()?;
     let mut bytes = vec![];
 
     for item in data.into_iter() {
