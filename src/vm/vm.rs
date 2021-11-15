@@ -8,7 +8,7 @@ use wyhash2::WyHash;
 use crate::compiler::ir::{Code, Label, IR};
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
-    Object, Result, RuntimeError, Symbol, Value, ValueType,
+    Object, Output, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::{compiler, stdlib};
 
@@ -389,7 +389,7 @@ impl VM {
 
                 let values = self.stack.pop_many(arg_count)?;
 
-                if let Some(return_value) = closure(Input::new(self, values))? {
+                if let Output::Value(return_value) = closure(Input::new(self, values))? {
                     self.call_stack.pop();
 
                     return Ok(return_value);

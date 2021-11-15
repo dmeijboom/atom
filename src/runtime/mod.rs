@@ -7,7 +7,7 @@ pub use interface::Interface;
 pub use method::Method;
 pub use object::Object;
 pub use origin::Origin;
-pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr, Input};
+pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr, Input, Output};
 pub use result::{Result, RuntimeError, Trace};
 pub use rust::RustObject;
 pub use symbol::Symbol;

@@ -1,4 +1,4 @@
-use crate::runtime::{AtomRef, ExternalFn, Input, Result, RuntimeError, Value};
+use crate::runtime::{AtomRef, ExternalFn, Input, Int, Output, Result, RuntimeError, Value};
 
 pub const FUNCTIONS: [(&str, ExternalFn); 3] =
     [("println", println), ("some", some), ("raise", raise)];
@@ -29,7 +29,7 @@ pub const METHODS: [(&str, &str, ExternalFn); 23] = [
     ("Array", "clear", array_clear),
 ];
 
-pub fn println(input: Input<'_>) -> Result<Option<Value>> {
+pub fn println(input: Input<'_>) -> Result<Output> {
     println!(
         "{}",
         input
@@ -40,24 +40,24 @@ pub fn println(input: Input<'_>) -> Result<Option<Value>> {
             .join(", ")
     );
 
-    Ok(None)
+    Output::void()
 }
 
-pub fn some(input: Input<'_>) -> Result<Option<Value>> {
+pub fn some(input: Input<'_>) -> Result<Output> {
     let value: Value = input.single()?;
 
-    Ok(Some(Value::Option(Some(Box::new(value)))))
+    Ok(Output::new(Some(Box::new(value))))
 }
 
-pub fn raise(input: Input<'_>) -> Result<Option<Value>> {
+pub fn raise(input: Input<'_>) -> Result<Output> {
     Err(RuntimeError::new(format!("{}", input.args[0])))
 }
 
-pub fn option_is_some(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn option_is_some(mut input: Input<'_>) -> Result<Output> {
     let value = input.get_receiver()?;
 
     if let Value::Option(inner) = value {
-        return Ok(Some(Value::Bool(inner.is_some())));
+        return Ok(Output::new(inner.is_some()));
     }
 
     Err(
@@ -66,11 +66,11 @@ pub fn option_is_some(mut input: Input<'_>) -> Result<Option<Value>> {
     )
 }
 
-pub fn option_is_none(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn option_is_none(mut input: Input<'_>) -> Result<Output> {
     let value = input.get_receiver()?;
 
     if let Value::Option(inner) = value {
-        return Ok(Some(Value::Bool(inner.is_none())));
+        return Ok(Output::new(inner.is_none()));
     }
 
     Err(
@@ -79,172 +79,173 @@ pub fn option_is_none(mut input: Input<'_>) -> Result<Option<Value>> {
     )
 }
 
-pub fn string_upper(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    Ok(Some(Value::String(AtomRef::new(s.as_str().to_uppercase()))))
+pub fn string_upper(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    Ok(Output::new(s.as_str().to_uppercase()))
 }
 
-pub fn string_lower(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    Ok(Some(Value::String(AtomRef::new(s.as_str().to_lowercase()))))
+pub fn string_lower(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    Ok(Output::new(s.as_str().to_lowercase()))
 }
 
-pub fn string_split(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
+pub fn string_split(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
 
     if input.args.is_empty() {
-        return Ok(Some(Value::Array(AtomRef::new(
-            s.split(&pattern)
+        return Ok(Output::new(
+            s.split(pattern.as_str())
                 .into_iter()
                 .map(|item| Value::String(AtomRef::new(item.to_string())))
-                .collect(),
-        ))));
+                .collect::<Vec<_>>(),
+        ));
     }
 
     let count: usize = input.pop_first()?;
 
-    Ok(Some(Value::Array(AtomRef::new(
-        s.splitn(count, &pattern)
+    Ok(Output::new(
+        s.splitn(count, pattern.as_str())
             .into_iter()
             .map(|item| Value::String(AtomRef::new(item.to_string())))
-            .collect(),
-    ))))
+            .collect::<Vec<_>>(),
+    ))
 }
 
-pub fn string_starts_with(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
+pub fn string_starts_with(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
 
-    Ok(Some(Value::Bool(s.starts_with(&pattern))))
+    Ok(Output::new(s.starts_with(pattern.as_str())))
 }
 
-pub fn string_ends_with(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
+pub fn string_ends_with(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
 
-    Ok(Some(Value::Bool(s.ends_with(&pattern))))
+    Ok(Output::new(s.ends_with(pattern.as_str())))
 }
 
-pub fn string_contains(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
+pub fn string_contains(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
 
-    Ok(Some(Value::Bool(s.contains(&pattern))))
+    Ok(Output::new(s.contains(pattern.as_str())))
 }
 
-pub fn string_count(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
+pub fn string_count(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
 
-    Ok(Some(Value::Int(s.matches(&pattern).count().into())))
+    Ok(Output::new(Int::from(s.matches(pattern.as_str()).count())))
 }
 
-pub fn string_find(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
+pub fn string_find(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
 
-    Ok(Some(Value::Option(
-        s.find(&pattern)
+    Ok(Output::new(
+        s.find(pattern.as_str())
             .map(|index| Box::new(Value::Int(index.into()))),
-    )))
+    ))
 }
 
-pub fn string_substr(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
+pub fn string_substr(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
     let index: usize = input.pop_first()?;
 
-    Ok(Some(Value::String(AtomRef::new(s[index..].to_string()))))
+    Ok(Output::new(s[index..].to_string()))
 }
 
-pub fn string_replace(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
-    let pattern: String = input.pop_first()?;
-    let replacement: String = input.pop_first()?;
+pub fn string_replace(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let pattern: AtomRef<String> = input.pop_first()?;
+    let replacement: AtomRef<String> = input.pop_first()?;
 
-    Ok(Some(Value::String(AtomRef::new(
-        s.replace(&pattern, &replacement),
-    ))))
+    Ok(Output::new(
+        s.as_str().replace(pattern.as_str(), replacement.as_str()),
+    ))
 }
 
-pub fn string_chars(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
+pub fn string_chars(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
 
-    Ok(Some(Value::Array(AtomRef::new(
-        s.chars().into_iter().map(Value::Char).collect(),
-    ))))
+    Ok(Output::new(
+        s.chars().into_iter().map(Value::Char).collect::<Vec<_>>(),
+    ))
 }
 
-pub fn string_bytes(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
+pub fn string_bytes(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
 
-    Ok(Some(Value::Array(AtomRef::new(
-        s.bytes().into_iter().map(Value::Byte).collect(),
-    ))))
+    Ok(Output::new(
+        s.bytes().into_iter().map(Value::Byte).collect::<Vec<_>>(),
+    ))
 }
 
-pub fn string_repeat(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
+pub fn string_repeat(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
     let count: usize = input.pop_first()?;
 
-    Ok(Some(Value::String(AtomRef::new(s.repeat(count)))))
+    Ok(Output::new(s.repeat(count)))
 }
 
-pub fn string_trim(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
+pub fn string_trim(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
 
-    Ok(Some(Value::String(AtomRef::new(s.trim().to_string()))))
+    Ok(Output::new(s.trim().to_string()))
 }
 
-pub fn string_len(mut input: Input<'_>) -> Result<Option<Value>> {
-    let s: String = input.take_receiver()?;
+pub fn string_len(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
 
-    Ok(Some(Value::Int(s.len().into())))
+    Ok(Output::new(Int::from(s.len())))
 }
 
-pub fn float_floor(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn float_floor(mut input: Input<'_>) -> Result<Output> {
     let f: f64 = input.take_receiver()?;
 
-    Ok(Some(Value::Float(f.floor())))
+    Ok(Output::new(f.floor()))
 }
 
-pub fn array_remove(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn array_remove(mut input: Input<'_>) -> Result<Output> {
     let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
     let index: usize = input.pop_first()?;
 
     if a.len() <= index {
-        return Ok(Some(Value::Option(None)));
+        return Ok(Output::new(None));
     }
 
     let item = a.as_mut().remove(index);
 
-    Ok(Some(Value::Option(Some(Box::new(item)))))
+    Ok(Output::new(Some(Box::new(item))))
 }
 
-pub fn array_push(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn array_push(mut input: Input<'_>) -> Result<Output> {
     let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
     let item: Value = input.pop_first()?;
 
     a.as_mut().push(item);
 
-    Ok(None)
+    Ok(Output::new(None))
 }
 
-pub fn array_pop(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn array_pop(mut input: Input<'_>) -> Result<Output> {
     let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
 
-    Ok(a.as_mut().pop())
+    Ok(Output::new(a.as_mut().pop().map(Box::new)))
 }
 
-pub fn array_clear(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn array_clear(mut input: Input<'_>) -> Result<Output> {
     let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
 
     a.as_mut().clear();
 
-    Ok(None)
+    Ok(Output::new(None))
 }
 
-pub fn array_len(mut input: Input<'_>) -> Result<Option<Value>> {
-    let a: Vec<Value> = input.take_receiver()?;
-    Ok(Some(Value::Int(a.len().into())))
+pub fn array_len(mut input: Input<'_>) -> Result<Output> {
+    let a: AtomRef<Vec<Value>> = input.take_receiver()?;
+
+    Ok(Output::new(Int::from(a.len())))
 }

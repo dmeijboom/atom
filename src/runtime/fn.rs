@@ -64,7 +64,25 @@ impl<'i> Input<'i> {
     }
 }
 
-pub type ExternalFn = fn(input: Input<'_>) -> Result<Option<Value>>;
+pub enum Output {
+    Value(Value),
+    None,
+}
+
+impl Output {
+    pub fn new<T>(value: T) -> Self
+    where
+        Value: From<T>,
+    {
+        Self::Value(value.into())
+    }
+
+    pub fn void() -> Result<Self> {
+        Ok(Self::None)
+    }
+}
+
+pub type ExternalFn = fn(input: Input<'_>) -> Result<Output>;
 
 #[derive(Clone)]
 pub enum FnPtr {

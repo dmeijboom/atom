@@ -3,7 +3,8 @@ use std::io;
 use std::io::Read;
 
 use crate::runtime::{
-    AtomRef, Convert, ExternalFn, Input, Int, Object, Result, RuntimeError, RustObject, Value,
+    AtomRef, Convert, ExternalFn, Input, Int, Object, Output, Result, RuntimeError, RustObject,
+    Value,
 };
 
 pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("openFileHandle", open_file_handle)];
@@ -14,14 +15,14 @@ fn map_io_err(e: io::Error) -> RuntimeError {
     RuntimeError::new(format!("{}", e)).with_kind("IOError".to_string())
 }
 
-pub fn open_file_handle(input: Input<'_>) -> Result<Option<Value>> {
-    let filename: String = input.single()?;
-    let file = File::open(filename).map_err(map_io_err)?;
+pub fn open_file_handle(input: Input<'_>) -> Result<Output> {
+    let filename: AtomRef<String> = input.single()?;
+    let file = File::open(filename.as_str()).map_err(map_io_err)?;
 
-    Ok(Some(Value::RustObject(RustObject::new(file))))
+    Ok(Output::new(RustObject::new(file)))
 }
 
-pub fn file_size(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn file_size(mut input: Input<'_>) -> Result<Output> {
     let object: AtomRef<Object> = input.take_receiver()?;
     let fd = object
         .get_field(0)
@@ -30,10 +31,10 @@ pub fn file_size(mut input: Input<'_>) -> Result<Option<Value>> {
     let file: &File = rust_object.try_as_ref()?;
     let meta = file.metadata().map_err(map_io_err)?;
 
-    Ok(Some(Value::Int(Int::Uint64(meta.len()))))
+    Ok(Output::new(Int::from(meta.len())))
 }
 
-pub fn file_read(mut input: Input<'_>) -> Result<Option<Value>> {
+pub fn file_read(mut input: Input<'_>) -> Result<Output> {
     let mut object: AtomRef<Object> = input.take_receiver()?;
     let fd = object
         .as_mut()
@@ -47,7 +48,11 @@ pub fn file_read(mut input: Input<'_>) -> Result<Option<Value>> {
 
     let max_size = file.read(&mut buffer).map_err(map_io_err)?;
 
-    Ok(Some(Value::Array(AtomRef::new(
-        buffer.into_iter().map(Value::Byte).take(max_size).collect(),
-    ))))
+    Ok(Output::new(
+        buffer
+            .into_iter()
+            .map(Value::Byte)
+            .take(max_size)
+            .collect::<Vec<_>>(),
+    ))
 }
