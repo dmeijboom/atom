@@ -35,24 +35,6 @@ impl Stack {
         unreachable!("expecting element on stack".to_string())
     }
 
-    pub fn pop_many_t<T>(&mut self, len: usize, mut map: impl FnMut(Value) -> T) -> Result<Vec<T>> {
-        let data_len = self.data.len();
-
-        if data_len < len {
-            return Err(RuntimeError::new(format!(
-                "expected {} elements on stack",
-                len
-            )));
-        }
-
-        Ok(self
-            .data
-            .drain((data_len - len)..)
-            .into_iter()
-            .map(|vm_value| map(vm_value))
-            .collect())
-    }
-
     pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
         let data_len = self.data.len();
 

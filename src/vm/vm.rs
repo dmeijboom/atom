@@ -145,7 +145,6 @@ impl VM {
         Ok(())
     }
 
-    #[inline(always)]
     fn eval_call(
         &mut self,
         keywords: &[String],
@@ -170,7 +169,6 @@ impl VM {
         }
     }
 
-    #[inline]
     fn eval_closure_call(
         &mut self,
         closure: AtomRef<Closure>,
@@ -187,7 +185,6 @@ impl VM {
         Ok(())
     }
 
-    #[inline]
     fn eval_function_call(
         &mut self,
         func: AtomRef<Fn>,
@@ -218,52 +215,55 @@ impl VM {
             )));
         }
 
-        // Verify if there aren't any unknown field names
-        for keyword in keywords {
-            if !class.fields.contains_key(keyword) {
-                return Err(RuntimeError::new(format!(
-                    "unable to create instance of '{}' with unknown field: {}",
-                    class.as_ref(),
-                    keyword
-                )));
-            }
+        if keywords.len() != class.fields.len() {
+            return Err(RuntimeError::new(format!(
+                "unable to create instance of '{}' with incorrect number of fields",
+                class.as_ref()
+            )));
         }
 
         let mut is_sorted = true;
 
-        // Verify if all fields are initialized
-        for (i, (field_name, _)) in class.fields.iter().enumerate() {
-            if !keywords.contains(field_name) {
-                return Err(RuntimeError::new(format!(
-                    "unable to create instance of '{}' without field: {}",
-                    class.as_ref(),
-                    field_name,
-                )));
+        for (i, keyword) in keywords.iter().enumerate() {
+            if let Some((field_name, _)) = class.fields.get_index(i) {
+                if is_sorted && field_name != keyword {
+                    is_sorted = false;
+                }
+
+                continue;
             }
 
-            if is_sorted && field_name != &keywords[i] {
-                is_sorted = false;
-            }
+            return Err(RuntimeError::new(format!(
+                "invalid field '{}' on {}",
+                keyword,
+                class.as_ref(),
+            )));
         }
 
         let fields = if is_sorted {
-            self.stack.pop_many(arg_count)?
+            self.stack.pop_many(keywords.len())?
         } else {
-            let mut i = 0;
-            let mut fields = self.stack.pop_many_t(class.fields.len(), |value| {
-                let index = class
-                    .fields
-                    .get(&keywords[i])
-                    .map(|field| field.id)
-                    .unwrap();
+            let mut fields = vec![];
 
-                i += 1;
+            while fields.len() < keywords.len() {
+                for (name, _) in class.fields.iter().rev() {
+                    if let Some(index) = keywords.iter().position(|keyword| keyword == name) {
+                        if index <= fields.len() {
+                            fields.insert(index, self.stack.pop());
+                        }
 
-                (index, value)
-            })?;
+                        continue;
+                    }
 
-            fields.sort_unstable_by_key(|(i, _)| *i);
-            fields.into_iter().map(|(_, value)| value).collect()
+                    return Err(RuntimeError::new(format!(
+                        "invalid field '{}' on {}",
+                        name,
+                        class.as_ref(),
+                    )));
+                }
+            }
+
+            fields
         };
 
         if store_result {
@@ -274,7 +274,6 @@ impl VM {
         Ok(())
     }
 
-    #[inline]
     fn eval_method_call(
         &mut self,
         method: AtomRef<Method>,
@@ -402,17 +401,14 @@ impl VM {
         Ok(Value::Void)
     }
 
-    #[inline(always)]
     fn eval_const<T: Into<Value>>(&mut self, data: T) {
         self.stack.push(data.into());
     }
 
-    #[inline(always)]
     fn eval_const_byte(&mut self, byte: u8) {
         self.stack.push(Value::Byte(byte));
     }
 
-    #[inline(always)]
     fn eval_symbol(&mut self, name: &str) {
         self.stack.push(if name == "nil" {
             Value::Option(None)
@@ -421,7 +417,6 @@ impl VM {
         });
     }
 
-    #[inline(always)]
     fn eval_single<'i>(&mut self, module_id: ModuleId, code: &'i Code) -> Result<Flow<'i>> {
         match code {
             Code::ConstInt128(val) => self.eval_const(Int::Int128(*val)),

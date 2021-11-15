@@ -106,7 +106,6 @@ impl Compiler {
         self.fs.add_path(path.as_ref().to_path_buf());
     }
 
-    #[inline(always)]
     fn fork(
         &self,
         module_name: String,

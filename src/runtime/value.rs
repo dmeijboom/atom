@@ -168,7 +168,6 @@ impl Convert<Value> for Value {
 }
 
 impl Clone for Value {
-    #[inline(always)]
     fn clone(&self) -> Self {
         match self {
             Self::Void => Self::Void,

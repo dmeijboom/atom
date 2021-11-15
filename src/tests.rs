@@ -79,7 +79,7 @@ mod tests {
     #[test_case(include_str!("../examples/invalid/duplicate_class.atom"), "unable to redefine class: Test"; "declaring a class more than once")]
     #[test_case(include_str!("../examples/invalid/fn_signature.atom"), "invalid argument count for target: main.test(...) (expected 3, not 2)"; "invalid Fn signature")]
     #[test_case(include_str!("../examples/invalid/method_not_found.atom"), "no such field or method 'test_example' for: std.map.Map"; "method not found on a map type")]
-    #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to create instance of 'main.Test' without field: three"; "initialize class with missing fields")]
+    #[test_case(include_str!("../examples/invalid/init_class_missing_fields.atom"), "unable to create instance of 'main.Test' with incorrect number of fields"; "initialize class with missing fields")]
     #[test_case(include_str!("../examples/invalid/private_class.atom"), "failed to import unknown name 'exampleClass' from: invalid.private_module"; "import and use a private class")]
     #[test_case(include_str!("../examples/invalid/init_class_with_args.atom"), "unable to create instance of 'main.Test' with non-keyword arguments"; "initialize class with non-keyword arguments")]
     fn code_fail(source: &str, message: &str) {
