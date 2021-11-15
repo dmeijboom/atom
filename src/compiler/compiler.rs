@@ -352,9 +352,9 @@ impl Compiler {
     pub fn compile(mut self) -> Result<Module> {
         self.module_name_pass()?;
         self.setup_prelude()?;
-        self.mixins_pass()?;
         self.name_validation_pass()?;
         self.imports_pass()?;
+        self.mixins_pass()?;
 
         let compiler = mir::Compiler::new(&self.line_numbers_offset);
         let mir = compiler.compile(&self.tree)?;

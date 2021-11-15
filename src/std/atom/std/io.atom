@@ -1,5 +1,7 @@
 module std.io;
 
+import std.core.Enum;
+import std.core.Filter;
 import std.core.Iterator;
 import std.encoding.utf8.decode;
 
@@ -7,7 +9,7 @@ pub interface Readable {
     fn read();
 }
 
-pub class LinesIter {
+pub class LinesIter extends Iterator {
     let readable;
 
     pub fn next() {
@@ -57,21 +59,11 @@ pub mixin Reader {
     }
 }
 
-pub class LinesReader {
+pub class LinesReader extends Iterator {
     let readable;
 
     pub fn iter() {
         return LinesIter(readable: this.readable);
-    }
-
-    pub fn collect() {
-        let mut lines = [];
-
-        for line in this {
-            lines.push(line);
-        }
-
-        return lines;
     }
 }
 
