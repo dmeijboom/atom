@@ -1,0 +1,39 @@
+fn simple(t) {
+    let ref = &100;
+
+    t.assert(100, *ref);
+}
+
+fn nested(t) {
+    let mut refref = &&100;
+    let refref2 = refref;
+    refref = &&200;
+    let ref = *refref2;
+
+    t.assert(100, *ref);
+}
+
+fn copyValueType(t) {
+    let mut num = 100;
+    let copy = num;
+    num = 50;
+
+    t.assert(100, copy);
+}
+
+fn noCopyReferenceType(t) {
+    let mut array = [10, 20];
+    let copy = array;
+    array.push(30);
+
+    t.assert([10, 20, 30], array);
+}
+
+pub fn referencesTests() {
+    return [
+        simple,
+        nested,
+        copyValueType,
+        noCopyReferenceType
+    ];
+}

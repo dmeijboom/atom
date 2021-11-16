@@ -22,7 +22,7 @@ macro_rules! cast {
     };
 }
 
-const fn upper_bound(lhs: Int, rhs: Int) -> (bool, u8) {
+fn upper_bound(lhs: Int, rhs: Int) -> (bool, u8) {
     let lsize = lhs.size();
     let rsize = rhs.size();
 

@@ -1,9 +1,9 @@
-use crate::runtime::{AtomRef, ExternalFn, Input, Int, Output, Result, RuntimeError, Value};
+use crate::runtime::{AtomRef, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value};
 
 pub const FUNCTIONS: [(&str, ExternalFn); 3] =
     [("println", println), ("some", some), ("raise", raise)];
 
-pub const METHODS: [(&str, &str, ExternalFn); 23] = [
+pub const METHODS: [(&str, &str, ExternalFn); 25] = [
     ("Option", "isSome", option_is_some),
     ("Option", "isNone", option_is_none),
     ("String", "upper", string_upper),
@@ -27,6 +27,8 @@ pub const METHODS: [(&str, &str, ExternalFn); 23] = [
     ("Array", "pop", array_pop),
     ("Array", "len", array_len),
     ("Array", "clear", array_clear),
+    ("Fn", "name", fn_name),
+    ("Int", "size", int_size),
 ];
 
 pub fn println(input: Input<'_>) -> Result<Output> {
@@ -248,4 +250,16 @@ pub fn array_len(mut input: Input<'_>) -> Result<Output> {
     let a: AtomRef<Vec<Value>> = input.take_receiver()?;
 
     Ok(Output::new(Int::from(a.len())))
+}
+
+pub fn fn_name(mut input: Input<'_>) -> Result<Output> {
+    let func: AtomRef<Fn> = input.take_receiver()?;
+
+    Ok(Output::new(format!("{}.{}", func.origin.module_name, func.name).clone()))
+}
+
+pub fn int_size(mut input: Input<'_>) -> Result<Output> {
+    let i: Int = input.take_receiver()?;
+
+    Ok(Output::new(Int::from(i.size())))
 }

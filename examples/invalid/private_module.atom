@@ -1,5 +1,0 @@
-module invalid.private_module;
-
-class exampleClass {}
-
-fn exampleFn() {}

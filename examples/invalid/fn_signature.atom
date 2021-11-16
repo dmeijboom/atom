@@ -1,6 +1,0 @@
-fn test(one, two, three) {
-}
-
-fn main() {
-    test(10, 20);
-}

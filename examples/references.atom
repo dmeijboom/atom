@@ -1,6 +1,0 @@
-fn main() {
-    let num = 100;
-    let ref = &num;
-
-    return *ref == 100;
-}

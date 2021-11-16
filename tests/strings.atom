@@ -1,0 +1,25 @@
+fn literal(t) {
+    t.assert("Hello World", "Hello World");
+}
+
+fn immutable(t) {
+    let result = "Hello World";
+    let copy = result.replace(" World", "");
+
+    t.assert("Hello World", result);
+    t.assert("Hello", copy);
+}
+
+fn formatting(t) {
+    let num = 110;
+
+    t.assert("Hello { World 120", f"{"h".upper()}ello \{ World {num + 10}");
+}
+
+pub fn stringsTests() {
+    return [
+        literal,
+        immutable,
+        formatting
+    ];
+}

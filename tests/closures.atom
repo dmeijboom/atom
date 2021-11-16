@@ -1,0 +1,41 @@
+fn example(inner) -> inner();
+fn test(outer) -> example(outer("hello"));
+
+fn nested(t) {
+    let last = '!';
+    let outer = |greeting| {
+        let suffix = "world";
+
+        return || {
+            return f"{greeting} {suffix}{last}";
+        };
+    };
+
+    t.assert("hello world!", test(outer));
+}
+
+fn simple(t) {
+    let upper = |name| name.upper();
+
+    t.assert("HELLO", upper("hello"));
+}
+
+fn selfReferencing(t) {
+    let handle = |input| {
+        if input < 5 {
+            return handle(input + 1);
+        }
+
+        return input;
+    };
+
+    t.assert(5, handle(0));
+}
+
+pub fn closuresTests() {
+    return [
+        simple,
+        nested,
+        selfReferencing
+    ];
+}

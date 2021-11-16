@@ -16,7 +16,6 @@ mod compiler;
 mod parser;
 mod runtime;
 mod stdlib;
-mod tests;
 mod utils;
 mod vm;
 

@@ -1,0 +1,31 @@
+import testing.runTests;
+
+import int.intTests;
+import maps.mapsTests;
+import calls.callsTests;
+import loops.loopsTests;
+import locals.localsTests;
+import ifelse.ifElseTests;
+import arrays.arraysTests;
+import strings.stringsTests;
+import classes.classesTests;
+import closures.closuresTests;
+import references.referencesTests;
+
+fn main() {
+    let mut tests = [];
+
+    tests.append(intTests());
+    tests.append(mapsTests());
+    tests.append(callsTests());
+    tests.append(loopsTests());
+    tests.append(localsTests());
+    tests.append(ifElseTests());
+    tests.append(arraysTests());
+    tests.append(classesTests());
+    tests.append(stringsTests());
+    tests.append(closuresTests());
+    tests.append(referencesTests());
+
+    runTests(tests);
+}

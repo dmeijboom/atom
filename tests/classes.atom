@@ -1,0 +1,54 @@
+class Wrapper {
+    let test;
+}
+
+class Test {
+    let value;
+
+    fn test() -> this.value;
+    fn example() -> this.test() + this.value;
+    fn foo() -> this.example() + this.test() + this.value;
+
+    fn set() {
+        this.value.set("name", "Bob");
+    }
+}
+
+fn composition(t) {
+    let wrapper = Wrapper(test: Test(value: 10));
+
+    t.assert(10, wrapper.test.value);
+}
+
+fn methodCall(t) {
+    let test = Test(value: 25);
+
+    t.assert(100, test.foo());
+}
+
+fn wrapReferenceType(t) {
+    let test = Test(value: {});
+
+    t.assertNil(test.value.get("name"));
+
+    test.set();
+
+    t.assert(some("Bob"), test.value.get("name"));
+}
+
+fn useBeforeDeclared(t) {
+    let test = Late(value: 10);
+
+    t.assert(10, test.value);
+}
+
+class Late { let value; }
+
+pub fn classesTests() {
+    return [
+        composition,
+        methodCall,
+        wrapReferenceType,
+        useBeforeDeclared
+    ];
+}

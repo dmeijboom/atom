@@ -844,9 +844,13 @@ impl VM {
             )));
         };
 
-        let index: usize = index
-            .convert()
-            .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
+        let index_type = index.get_type();
+        let index: usize = index.convert().map_err(|e| {
+            e.with_message(format!(
+                "unable to use '{}' as array index",
+                index_type.name()
+            ))
+        })?;
 
         if let Some(item) = elems.get(index) {
             let item = item.clone();
@@ -892,9 +896,13 @@ impl VM {
 
         match data {
             Value::Array(mut array) => {
-                let index: usize = index
-                    .convert()
-                    .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
+                let index_type = index.get_type();
+                let index: usize = index.convert().map_err(|e| {
+                    e.with_message(format!(
+                        "unable to use '{}' as array index",
+                        index_type.name()
+                    ))
+                })?;
 
                 let array = array.as_mut();
 

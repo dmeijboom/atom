@@ -4,7 +4,10 @@ pub extern fn println(values);
 pub extern fn some(value);
 pub extern fn raise(exception);
 
-pub class Fn {}
+pub class Fn {
+    pub extern fn name();
+}
+
 pub class Ref {}
 pub class Class {}
 pub class Object {}
@@ -163,6 +166,8 @@ pub class String {
 }
 
 pub class Int {
+    pub extern fn size();
+
     pub fn toString() -> f"{this}";
 }
 

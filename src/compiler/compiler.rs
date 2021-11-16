@@ -7,6 +7,7 @@ use crate::ast::Stmt;
 use crate::compiler::mir;
 use crate::compiler::optimizers::tail_call;
 use crate::parser;
+use crate::stdlib::DEFAULT_IMPORTS;
 
 use super::codegen::CodeGenerator;
 use super::filesystem::{FileSystem, FileSystemCache};
@@ -15,27 +16,6 @@ use super::line_number_offset::LineNumberOffset;
 use super::module::Module;
 use super::optimizers::{call_void, pre_compute_labels, remove_type_cast, replace_load_with_const};
 use super::result::{CompileError, Result};
-
-pub const DEFAULT_IMPORTS: &[&str; 17] = &[
-    "std.core.println",
-    "std.core.some",
-    "std.core.RangeIter",
-    "std.core.ArrayIter",
-    "std.core.Iterable",
-    "std.map.newMap",
-    // Also all basic types (for type assertions for example)
-    "std.core.String",
-    "std.core.Int",
-    "std.core.Float",
-    "std.core.Char",
-    "std.core.Byte",
-    "std.core.Bool",
-    "std.core.Symbol",
-    "std.core.Range",
-    "std.core.Option",
-    "std.core.Array",
-    "std.map.Map",
-];
 
 fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     for (i, (_, name)) in names.iter().enumerate() {
@@ -55,7 +35,8 @@ fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-const STD_SOURCES: [(&str, &str); 6] = [
+const STD_SOURCES: [(&str, &str); 8] = [
+    ("std.sys", include_str!("../std/atom/std/sys.atom")),
     ("std.core", include_str!("../std/atom/std/core.atom")),
     ("std.map", include_str!("../std/atom/std/map.atom")),
     ("std.io", include_str!("../std/atom/std/io.atom")),
@@ -71,6 +52,7 @@ const STD_SOURCES: [(&str, &str); 6] = [
         "std.encoding.json",
         include_str!("../std/atom/std/encoding/json.atom"),
     ),
+    ("testing", include_str!("../std/atom/testing.atom")),
 ];
 
 pub struct Compiler {

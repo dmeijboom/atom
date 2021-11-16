@@ -1,9 +1,0 @@
-fn main() {
-    let mut output = 0;
-
-    for i in 0..5 {
-        output += (i * 10);
-    }
-
-    return output;
-}

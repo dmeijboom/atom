@@ -1,5 +1,0 @@
-import invalid.private_module.exampleClass;
-
-fn main() {
-    exampleClass();
-}

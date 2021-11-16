@@ -14,6 +14,8 @@ use crate::vm::VM;
 pub struct Opts {
     pub(crate) filename: PathBuf,
     #[clap(long)]
+    module_path: Vec<PathBuf>,
+    #[clap(long)]
     show_ast: bool,
     #[clap(long)]
     show_ir: bool,
@@ -35,6 +37,10 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
     );
 
     for path in module_paths {
+        compiler.add_lookup_path(path);
+    }
+
+    for path in opts.module_path {
         compiler.add_lookup_path(path);
     }
 

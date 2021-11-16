@@ -1,20 +1,14 @@
 use peg::error::ParseError;
 use peg::str::LineCol;
 
-use crate::runtime::RuntimeError;
-
 use crate::compiler::CompileError;
-#[cfg(test)]
-use crate::{
-    compiler::{self, Compiler, LineNumberOffset},
-    parser,
-};
+use crate::runtime::RuntimeError;
 
 #[derive(Debug, PartialEq)]
 pub enum Error {
     Compile(CompileError),
     Runtime(RuntimeError),
-    ParseError(ParseError<LineCol>),
+    Parse(ParseError<LineCol>),
 }
 
 impl From<CompileError> for Error {
@@ -31,23 +25,8 @@ impl From<RuntimeError> for Error {
 
 impl From<ParseError<LineCol>> for Error {
     fn from(e: ParseError<LineCol>) -> Self {
-        Self::ParseError(e)
+        Self::Parse(e)
     }
-}
-
-#[cfg(test)]
-pub fn parse_and_compile(
-    source: &str,
-    lookup_paths: Vec<String>,
-) -> Result<Vec<compiler::Module>, Error> {
-    let tree = parser::parse(source)?;
-    let mut compiler = Compiler::new(tree, LineNumberOffset::parse(source), true);
-
-    for path in lookup_paths {
-        compiler.add_lookup_path(path);
-    }
-
-    Ok(compiler.compile_all()?)
 }
 
 pub fn display_parse_error(e: ParseError<LineCol>) {
@@ -146,6 +125,6 @@ pub fn display_error(e: Error) {
     match e {
         Error::Compile(e) => display_compile_error(e),
         Error::Runtime(e) => display_runtime_error(e),
-        Error::ParseError(e) => display_parse_error(e),
+        Error::Parse(e) => display_parse_error(e),
     }
 }

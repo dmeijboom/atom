@@ -1,7 +1,5 @@
 # Atom
 
-The documentation can be found at: [GitBook](https://app.gitbook.com/@gitbook-services/s/atom-lang/).
-
 ## What is atom?
 
 Atom is a general purpose dynamically typed programming language combining features from Rust, Go, Python and others.
@@ -15,6 +13,11 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 - Classes as first-class citizens
 - Supports 64-bit floats
 - Supports 8/16/32/64/128-bit signed/unsigned integers (defaults to 32-bit signed integer)
+
+## Test suite
+
+The test suite is written in atom using the `testing` module.
+To run the test suite, run `atom run --module-path ./tests -- tests/main.atom`.
 
 ### Integers
 

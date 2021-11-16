@@ -1,0 +1,71 @@
+import std.sys.exit;
+
+pub fn runTests(tests) {
+    let mut succeeded = 0;
+    
+    for test in tests {
+        if runTest(test) {
+            succeeded += 1;
+        }
+    }
+
+    println(f"\n{succeeded}/{tests.len()} tests passed");
+
+    if succeeded != tests.len() {
+        exit(1);
+    }
+}
+
+fn runTest(test) {
+    let testCase = TestCase(
+        hit: false,
+        errors: []
+    );
+
+    test(testCase);
+
+    if !testCase.hit {
+        testCase.errors.push(("NoopFailure", "nothing was asserted, maybe the test returned early?"));
+    }
+
+    if testCase.errors.len() == 0 {
+        println(f"test {test.name()} - OK");
+
+        return true;
+    }
+    
+    println(f"test {test.name()} - FAIL");
+
+    for (type, error) in testCase.errors {
+        println(f"\n-- {type} in test '{test.name()}' --\n{error}");
+    }
+
+    println("");
+    
+    return false;
+}
+
+pub class TestCase {
+    let mut hit;
+    let mut errors;
+
+    pub fn fail(type, message) {
+        this.errors.push((type, message));
+
+        return this;
+    }
+
+    pub fn assert(expected, actual) {
+        this.hit = true;
+
+        if expected != actual {
+            this.fail("AssertionFailure", f"expected: {expected}\nactual:   {actual}");
+        }
+
+        return this;
+    }
+
+    pub fn assertTrue(condition) -> this.assert(true, condition);
+    pub fn assertFalse(condition) -> this.assert(false, condition);
+    pub fn assertNil(result) -> this.assert(true, result.isNone());
+}

@@ -1,8 +1,0 @@
-fn test(one, two, three, four, five, six, seven, eight, nine, ten) {
-}
-
-fn main() {
-    test(three: 0, one: 0, two: 0, 0, 0, 0, 0, 0, 0, 0);
-
-    return 0;
-}

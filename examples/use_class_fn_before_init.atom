@@ -1,7 +1,0 @@
-fn main() -> test();
-
-fn test() -> Example(value: true).value;
-
-class Example {
-    let value;
-}

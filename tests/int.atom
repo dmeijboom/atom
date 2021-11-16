@@ -1,0 +1,56 @@
+fn assertInt(t, size, expected, actual) -> t.assert(expected, actual)
+    .assertTrue(actual is Int)
+    .assert(size, actual.size());
+
+fn assertInt32(t, expected, actual) -> assertInt(t, 32, expected, actual);
+fn assertInt64(t, expected, actual) -> assertInt(t, 64, expected, actual);
+fn assertInt128(t, expected, actual) -> assertInt(t, 128, expected, actual);
+
+fn literals(t) {
+    let result = 42;
+
+    assertInt32(t, 42, 42);
+    assertInt64(t, 2147483648, 2147483648);
+    assertInt128(t, 9223372036854775808, 9223372036854775808);
+}
+
+fn addition(t) {
+    assertInt32(t, 50, 25 + 25);
+    assertInt64(t, 2147483649, 1 + 2147483648);
+    assertInt32(t, 30, 10 + 10 + 10);
+}
+
+fn subtraction(t) {
+    assertInt32(t, 50, 75 - 25);
+    assertInt32(t, -10, 10 - 20);
+    assertInt64(t, -2147483647, 1 - 2147483648);
+}
+
+fn multiplication(t) {
+    assertInt32(t, 50, 10 * 5);
+    assertInt32(t, 1000, 10 * 5 * 20);
+    assertInt64(t, 4294967296, 2 * 2147483648);
+}
+
+fn division(t) {
+    assertInt32(t, 5, 10 / 2);
+    assertInt32(t, 25, 150 / 3 / 2);
+    assertInt128(t, 92233720368547758, 9223372036854775808 / 100);
+}
+
+fn pemdas(t) {
+    assertInt32(t, 9, 2 * (3 + 4) - 5);
+    assertInt32(t, 25, 7 + 6 * 5 / 2 + 3);
+    assertInt32(t, 17, 4 / 2 + (4 - 1) * 5);
+}
+
+pub fn intTests() {
+    return [
+        literals,
+        addition,
+        subtraction,
+        multiplication,
+        division,
+        pemdas
+    ];
+}
