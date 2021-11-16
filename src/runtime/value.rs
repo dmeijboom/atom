@@ -100,9 +100,10 @@ macro_rules! impl_convert {
 
 macro_rules! make_value {
     ($(($name:ident, $rust_type:ty)),+) => {
+        #[repr(usize)]
         #[derive(Clone, Copy, PartialEq, Hash, Eq, EnumIter)]
         pub enum ValueType {
-            Void,
+            Void = 0,
             $($name),+
         }
 

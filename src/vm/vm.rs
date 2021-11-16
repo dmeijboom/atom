@@ -1,9 +1,9 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 use std::rc::Rc;
 
 use indexmap::map::IndexMap;
-use wyhash2::WyHash;
+use strum::IntoEnumIterator;
 
 use crate::compiler::ir::{Code, Label, IR};
 use crate::runtime::{
@@ -89,7 +89,7 @@ pub struct VM {
     stack: Stack,
     call_stack: CallStack,
     module_cache: ModuleCache,
-    type_classes: HashMap<ValueType, AtomRef<Class>, WyHash>,
+    type_classes: Vec<AtomRef<Class>>,
 }
 
 impl VM {
@@ -98,7 +98,7 @@ impl VM {
             stack: Stack::new(),
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
-            type_classes: HashMap::with_hasher(WyHash::default()),
+            type_classes: vec![],
         };
 
         vm.module_cache.add_external_hook(stdlib::hook);
@@ -107,23 +107,41 @@ impl VM {
     }
 
     pub fn register_module(&mut self, module: compiler::Module) -> Result<()> {
+        let is_core = module.name == "std.core";
+
         self.module_cache.register(module)?;
+
+        if is_core {
+            // Fill the type classes cache
+            for value_type in ValueType::iter() {
+                if value_type == ValueType::Void {
+                    continue;
+                }
+
+                self.type_classes
+                    .push(self.module_cache.get_class("std.core", value_type.name())?);
+            }
+        }
 
         Ok(())
     }
 
     fn get_class(&self, value: &Value) -> Result<AtomRef<Class>> {
-        Ok(match &value {
-            Value::Object(object) => AtomRef::clone(&object.class),
+        match &value {
+            Value::Object(object) => Ok(AtomRef::clone(&object.class)),
             _ => {
-                if let Some(class) = self.type_classes.get(&value.get_type()) {
-                    return Ok(AtomRef::clone(class));
-                }
-
-                self.module_cache
-                    .get_class("std.core", value.get_type().name())?
+                // We need to get `index - 1` as the Void type is omitted in the type classes cache
+                self.type_classes
+                    .get(value.get_type() as usize - 1)
+                    .map(|class| AtomRef::clone(class))
+                    .ok_or_else(|| {
+                        RuntimeError::new(format!(
+                            "no class found for type: {}",
+                            value.get_type().name()
+                        ))
+                    })
             }
-        })
+        }
     }
 
     fn validate_class(&self, class: &Class, interface: &Interface) -> bool {
@@ -796,21 +814,16 @@ impl VM {
     fn eval_store(&mut self, id: usize, _is_mutable: bool) -> Result<()> {
         let value = self.stack.pop();
         let context = self.call_stack.current_mut()?;
-        let locals_len = context.locals.len();
 
-        if id < locals_len {
-            let item = unsafe { context.locals.get_unchecked_mut(id) };
-
-            *item = value;
+        if context.locals.len() == id {
+            context.locals.push(value);
         } else {
-            let diff = id - context.locals.len();
-
             // Insert padding if required
-            for _ in 0..diff {
+            while context.locals.len() <= id {
                 context.locals.push(Value::Void);
             }
 
-            context.locals.insert(id, value);
+            context.locals[id] = value;
         }
 
         Ok(())
@@ -821,39 +834,35 @@ impl VM {
         let value = self.stack.pop();
 
         let elems = if let Value::Array(array) = &value {
-            Some(array.as_slice())
+            array.as_slice()
         } else if let Value::Tuple(tuple) = &value {
-            Some(tuple.as_ref())
+            tuple.as_ref()
         } else {
-            None
+            return Err(RuntimeError::new(format!(
+                "unable to index type: {}",
+                value.get_type().name()
+            )));
         };
 
-        if let Some(elems) = elems {
-            let index: usize = index
-                .convert()
-                .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
+        let index: usize = index
+            .convert()
+            .map_err(|e| RuntimeError::new(format!("{} in index lookup", e)))?;
 
-            if let Some(item) = elems.get(index) {
-                let item = item.clone();
+        if let Some(item) = elems.get(index) {
+            let item = item.clone();
 
-                if push_back {
-                    self.stack.push(value);
-                }
-
-                self.stack.push(item);
-
-                return Ok(());
+            if push_back {
+                self.stack.push(value);
             }
 
-            return Err(RuntimeError::new(
-                format!("index out of bounds: {}", index,),
-            ));
+            self.stack.push(item);
+
+            return Ok(());
         }
 
-        Err(RuntimeError::new(format!(
-            "unable to index type: {}",
-            value.get_type().name()
-        )))
+        Err(RuntimeError::new(
+            format!("index out of bounds: {}", index,),
+        ))
     }
 
     fn eval_make_slice(&mut self) -> Result<()> {
@@ -939,7 +948,7 @@ impl VM {
             }
 
             return Err(RuntimeError::new(format!(
-                "unable to lookup field of type: {}",
+                "unable to lookup field on: {}",
                 receiver.get_type().name(),
             )));
         }
@@ -1033,30 +1042,28 @@ impl VM {
 
     fn eval_load_global(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let value = unsafe { current_module.globals.get_unchecked(id) }.clone();
 
-        self.stack.push(value);
+        self.stack.push(current_module.globals[id].clone());
 
         Ok(())
     }
 
     fn eval_load_fn(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let func = AtomRef::clone(unsafe { current_module.funcs.get_unchecked(id) });
 
-        self.stack.push(Value::Fn(func));
+        self.stack
+            .push(Value::Fn(AtomRef::clone(&current_module.funcs[id])));
 
         Ok(())
     }
 
     fn eval_make_closure(&mut self, module_id: ModuleId, fn_id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let func = AtomRef::clone(unsafe { current_module.funcs.get_unchecked(fn_id) });
 
         let context = self.call_stack.current()?;
 
         self.stack.push(Value::Closure(AtomRef::new(Closure {
-            func,
+            func: AtomRef::clone(&current_module.funcs[fn_id]),
             values: context.locals.clone(),
         })));
 
@@ -1149,7 +1156,7 @@ impl VM {
 
         loop {
             while i < instructions_len {
-                let code = unsafe { instructions.get_unchecked(i) };
+                let code = &instructions[i];
 
                 // Evaluates the instruction and optionally returns a label to jump to
                 match self.eval_single(module_id, code) {
@@ -1158,7 +1165,6 @@ impl VM {
                         Flow::Return(value) => {
                             if let Some(addr) = return_addr.pop() {
                                 i = addr;
-
                                 self.stack.push(value);
 
                                 continue;
@@ -1176,7 +1182,6 @@ impl VM {
                         }
                         Flow::TailCall(arg_count) => {
                             return_addr.push(i + 1);
-
                             self.eval_tail_call(arg_count)?;
 
                             i = 0;
@@ -1209,7 +1214,6 @@ impl VM {
             // We're finished but there is still a return-address, this means we're expected to have pushed a return-value
             if let Some(addr) = return_addr.pop() {
                 i = addr;
-
                 self.stack.push(Value::Void);
 
                 continue;
@@ -1237,6 +1241,11 @@ impl VM {
         }
 
         Some(self.stack.pop())
+    }
+
+    pub fn cleanup(&mut self) {
+        self.call_stack.clear();
+        self.stack.clear();
     }
 }
 

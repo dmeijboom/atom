@@ -79,6 +79,8 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
             IR::with_codes(vec![Code::LoadFn(id), Code::Call(0)]),
         )?;
 
+        vm.cleanup();
+
         return Ok(());
     }
 

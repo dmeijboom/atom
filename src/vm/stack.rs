@@ -51,6 +51,10 @@ impl Stack {
 
         Ok(self.data.split_off(data_len - len))
     }
+
+    pub fn clear(&mut self) {
+        self.data.clear();
+    }
 }
 
 #[cfg(test)]

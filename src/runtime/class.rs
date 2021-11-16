@@ -27,7 +27,7 @@ impl Field {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct Class {
     pub name: String,
     pub origin: Origin,

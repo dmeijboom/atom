@@ -259,11 +259,6 @@ impl IR {
     }
 
     #[inline]
-    pub unsafe fn get_unchecked(&self, index: usize) -> &Code {
-        self.codes.get_unchecked(index)
-    }
-
-    #[inline]
     pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut Code {
         self.codes.get_unchecked_mut(index)
     }

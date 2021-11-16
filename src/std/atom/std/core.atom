@@ -4,6 +4,15 @@ pub extern fn println(values);
 pub extern fn some(value);
 pub extern fn raise(exception);
 
+pub class Fn {}
+pub class Ref {}
+pub class Class {}
+pub class Object {}
+pub class Method {}
+pub class Closure {}
+pub class Interface {}
+pub class RustObject {}
+
 pub interface Iterable {
     fn iter();
 }
