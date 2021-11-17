@@ -1,7 +1,10 @@
 use crate::runtime::{AtomRef, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value};
 
-pub const FUNCTIONS: [(&str, ExternalFn); 3] =
-    [("println", println), ("some", some), ("raise", raise)];
+pub const FUNCTIONS: [(&str, ExternalFn); 3] = [
+    ("some", some),
+    ("println", println),
+    ("rt_raise", runtime_raise),
+];
 
 pub const METHODS: [(&str, &str, ExternalFn); 25] = [
     ("Option", "isSome", option_is_some),
@@ -51,7 +54,7 @@ pub fn some(input: Input<'_>) -> Result<Output> {
     Ok(Output::new(Some(Box::new(value))))
 }
 
-pub fn raise(input: Input<'_>) -> Result<Output> {
+pub fn runtime_raise(input: Input<'_>) -> Result<Output> {
     Err(RuntimeError::new(format!("{}", input.args[0])))
 }
 
@@ -255,7 +258,10 @@ pub fn array_len(mut input: Input<'_>) -> Result<Output> {
 pub fn fn_name(mut input: Input<'_>) -> Result<Output> {
     let func: AtomRef<Fn> = input.take_receiver()?;
 
-    Ok(Output::new(format!("{}.{}", func.origin.module_name, func.name).clone()))
+    Ok(Output::new(format!(
+        "{}.{}",
+        func.origin.module_name, func.name
+    )))
 }
 
 pub fn int_size(mut input: Input<'_>) -> Result<Output> {

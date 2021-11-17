@@ -67,6 +67,16 @@ impl<'c> Compiler<'c> {
         )
     }
 
+    fn build_function_call(&self, function_name: String, args: Vec<Value>) -> Value {
+        Value::new(
+            self.loc.clone(),
+            ValueKind::Call(Box::new(Call::with_args(
+                Value::new(self.loc.clone(), ValueKind::Name(function_name)),
+                args,
+            ))),
+        )
+    }
+
     fn compile_items(&mut self, items: &[Expr]) -> Result<Vec<Value>> {
         let mut values = vec![];
 
@@ -580,13 +590,7 @@ impl<'c> Compiler<'c> {
                 root.terminator = Some(Terminator::Raise);
                 root.statements.push(types::Stmt::new(
                     self.loc.clone(),
-                    StmtKind::Eval(Value::new(
-                        self.loc.clone(),
-                        ValueKind::Call(Box::new(Call::with_args(
-                            Value::new(self.loc.clone(), ValueKind::Name("raise".to_string())),
-                            vec![value],
-                        ))),
-                    )),
+                    StmtKind::Eval(self.build_function_call("rt_raise".to_string(), vec![value])),
                 ));
             }
             Stmt::Break(_) => {

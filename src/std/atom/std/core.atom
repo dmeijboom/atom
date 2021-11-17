@@ -2,7 +2,6 @@ module std.core;
 
 pub extern fn println(values);
 pub extern fn some(value);
-pub extern fn raise(exception);
 
 pub class Fn {
     pub extern fn name();
@@ -15,6 +14,7 @@ pub class Method {}
 pub class Closure {}
 pub class Interface {}
 pub class RustObject {}
+pub extern fn rt_raise(exception);
 
 pub interface Iterable {
     fn iter();

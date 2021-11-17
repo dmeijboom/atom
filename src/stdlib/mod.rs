@@ -6,8 +6,8 @@ mod io;
 mod sys;
 
 pub const DEFAULT_IMPORTS: &[&str; 18] = &[
+    "std.core.rt_raise",
     "std.core.some",
-    "std.core.raise",
     "std.core.println",
     "std.core.RangeIter",
     "std.core.ArrayIter",

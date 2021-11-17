@@ -2,7 +2,7 @@ module std.map;
 
 import std.core.some;
 import std.core.Tuple;
-import std.core.raise;
+import std.core.rt_raise;
 import std.core.println;
 import std.core.String;
 import std.core.Iterable;

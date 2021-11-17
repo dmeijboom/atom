@@ -22,17 +22,8 @@ impl Stack {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn is_empty(&self) -> bool {
-        self.data.is_empty()
-    }
-
     pub fn pop(&mut self) -> Value {
-        if let Some(value) = self.data.pop() {
-            return value;
-        }
-
-        unreachable!("expecting element on stack".to_string())
+        self.data.remove(self.data.len() - 1)
     }
 
     pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {

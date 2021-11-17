@@ -116,6 +116,18 @@ macro_rules! make_value {
             }
         }
 
+        impl TryFrom<&str> for ValueType {
+            type Error = RuntimeError;
+
+            fn try_from(name: &str) -> Result<Self> {
+                match name {
+                    "Void" => Ok(Self::Void),
+                    $(stringify!($name) => Ok(Self::$name)),+,
+                    _ => Err(RuntimeError::new(format!("unknown type: {}", name))),
+                }
+            }
+        }
+
         #[derive(Debug, PartialEq)]
         pub enum Value {
             Void,
