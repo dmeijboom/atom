@@ -1,22 +1,27 @@
 use std::collections::HashMap;
 
-use crate::compiler::ir::Code;
-
 use crate::compiler::CompileError;
+use crate::compiler::ir::Code;
 
 pub type ScopeId = usize;
 pub type LocalId = usize;
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum Tag {
+    IsReceiver,
+}
 
 #[derive(Debug, Clone)]
 pub struct Local {
     pub id: LocalId,
     pub name: String,
     pub mutable: bool,
+    tags: Vec<Tag>,
 }
 
 impl Local {
-    pub fn new(id: LocalId, name: String, mutable: bool) -> Self {
-        Self { id, name, mutable }
+    pub fn has_tag(&self, tag: Tag) -> bool {
+        self.tags.contains(&tag)
     }
 
     pub fn store_instr(&self) -> Code {
@@ -153,7 +158,7 @@ impl ScopeGraph {
         self.graph.pop()
     }
 
-    pub fn set_local(&mut self, name: String, mutable: bool) -> Result<Local, CompileError> {
+    pub fn set_local(&mut self, name: String, mutable: bool, tags: Vec<Tag>) -> Result<Local, CompileError> {
         let id = self
             .walk_mut(|scope| {
                 if let ScopeContext::Function(_) = &scope.context {
@@ -171,7 +176,12 @@ impl ScopeGraph {
             })?;
 
         let scope = self.current_mut();
-        let local = Local::new(id, name, mutable);
+        let local = Local {
+            id,
+            name,
+            mutable,
+            tags,
+        };
 
         scope.locals.insert(local.name.clone(), local.clone());
 

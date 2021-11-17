@@ -5,9 +5,15 @@ use super::class::Class;
 use super::r#fn::Fn;
 use super::value::Value;
 
+#[derive(Debug, PartialEq)]
+pub enum Receiver {
+    Bound(Value),
+    Unbound,
+}
+
 #[derive(Debug)]
 pub struct Method {
-    pub receiver: Value,
+    pub receiver: Receiver,
     pub func: AtomRef<Fn>,
     pub class: AtomRef<Class>,
 }

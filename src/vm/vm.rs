@@ -8,7 +8,7 @@ use strum::IntoEnumIterator;
 use crate::compiler::ir::{Code, Label, IR};
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
-    Object, Output, Result, RuntimeError, Symbol, Value, ValueType,
+    Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::{compiler, stdlib};
 
@@ -940,35 +940,41 @@ impl VM {
 
     fn eval_load_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
         let receiver = self.stack.pop();
-        let class = self.get_class(&receiver)?;
+        let (class, receiver) = if let Value::Class(class) = &receiver {
+            (AtomRef::clone(class), Receiver::Unbound)
+        } else {
+            (self.get_class(&receiver)?, Receiver::Bound(receiver))
+        };
 
-        if let Some(field) = class.fields.get(member) {
-            if let Value::Object(object) = receiver {
-                if !field.public && module_id != class.origin.module_id {
-                    return Err(RuntimeError::new(format!(
-                        "unable to access private field '{}' of class: {}",
-                        member,
-                        class.as_ref()
-                    )));
+        if let Receiver::Bound(receiver) = &receiver {
+            if let Some(field) = class.fields.get(member) {
+                if let Value::Object(object) = receiver {
+                    if !field.public && module_id != class.origin.module_id {
+                        return Err(RuntimeError::new(format!(
+                            "unable to access private field '{}' of class: {}",
+                            member,
+                            class.as_ref()
+                        )));
+                    }
+
+                    let field = object.get_field(field.id).cloned().ok_or_else(|| {
+                        RuntimeError::new(format!(
+                            "unable to get unknown field '{}' of class: {}",
+                            member,
+                            class.as_ref()
+                        ))
+                    })?;
+
+                    self.stack.push(field);
+
+                    return Ok(());
                 }
 
-                let field = object.get_field(field.id).cloned().ok_or_else(|| {
-                    RuntimeError::new(format!(
-                        "unable to get unknown field '{}' of class: {}",
-                        member,
-                        class.as_ref()
-                    ))
-                })?;
-
-                self.stack.push(field);
-
-                return Ok(());
+                return Err(RuntimeError::new(format!(
+                    "unable to lookup field on: {}",
+                    receiver.get_type().name(),
+                )));
             }
-
-            return Err(RuntimeError::new(format!(
-                "unable to lookup field on: {}",
-                receiver.get_type().name(),
-            )));
         }
 
         if let Some(func) = class.methods.get(member) {
@@ -984,7 +990,7 @@ impl VM {
         Err(RuntimeError::new(format!(
             "no such field or method '{}' for: {}",
             member,
-            self.get_class(&receiver).unwrap().as_ref(),
+            class.as_ref(),
         )))
     }
 

@@ -3,6 +3,7 @@ use crate::ast::{
     InterfaceDeclStmt, Literal, LogicalOp, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::ir::Location;
+use crate::compiler::mir::scope::Tag;
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
@@ -92,14 +93,14 @@ impl<'c> Compiler<'c> {
                     )));
                 }
 
-                let local = self.scope.set_local(name.clone(), mutable)?;
+                let local = self.scope.set_local(name.clone(), mutable, vec![])?;
 
                 block
                     .statements
                     .push(self.build_assign_local(local.id, value));
             }
             Variable::Tuple(names) | Variable::Array(names) => {
-                let tmp = self.scope.set_local(self.slugs.get("tmp"), false)?;
+                let tmp = self.scope.set_local(self.slugs.get("tmp"), false, vec![])?;
 
                 block
                     .statements
@@ -113,7 +114,7 @@ impl<'c> Compiler<'c> {
                         )));
                     }
 
-                    let local = self.scope.set_local(name.clone(), mutable)?;
+                    let local = self.scope.set_local(name.clone(), mutable, vec![])?;
 
                     block.statements.push(self.build_assign_local(
                         local.id,
@@ -153,7 +154,11 @@ impl<'c> Compiler<'c> {
             }),
             Expr::Ident(ident) => {
                 if let Some(local) = self.scope.get_local(&ident.name, true) {
-                    ValueKind::Local(local.id)
+                    if local.has_tag(Tag::IsReceiver) {
+                        ValueKind::Receiver
+                    } else {
+                        ValueKind::Local(local.id)
+                    }
                 } else {
                     ValueKind::Name(ident.name.clone())
                 }
@@ -346,7 +351,8 @@ impl<'c> Compiler<'c> {
         self.scope.current_mut().local_id = parent_locals_count;
 
         for arg in closure.args.iter() {
-            self.scope.set_local(arg.name.clone(), arg.mutable)?;
+            self.scope
+                .set_local(arg.name.clone(), arg.mutable, vec![])?;
         }
 
         let block = self.compile_block(scope, &closure.body)?;
@@ -409,7 +415,9 @@ impl<'c> Compiler<'c> {
                 let for_block = if let Some(expr) = &for_stmt.expr {
                     // Step 1. Get the iterator from the value
                     let value = self.compile_expr(expr)?;
-                    let iter = self.scope.set_local(self.slugs.get("__iter__"), false)?;
+                    let iter = self
+                        .scope
+                        .set_local(self.slugs.get("__iter__"), false, vec![])?;
 
                     root.statements.push(self.build_assign_local(
                         iter.id,
@@ -420,7 +428,9 @@ impl<'c> Compiler<'c> {
                     let mut block = Block::new(self.loc.clone(), scope_id);
 
                     // Step 2. Now in the loop, get the next value from the iterator
-                    let item = self.scope.set_local(self.slugs.get("__item__"), false)?;
+                    let item = self
+                        .scope
+                        .set_local(self.slugs.get("__item__"), false, vec![])?;
 
                     block.statements.push(self.build_assign_local(
                         item.id,
@@ -625,26 +635,16 @@ impl<'c> Compiler<'c> {
 
         // Register locals for input arguments
         for arg in fn_decl.args.iter() {
-            self.scope.set_local(arg.name.clone(), arg.mutable)?;
+            self.scope
+                .set_local(arg.name.clone(), arg.mutable, vec![])?;
         }
 
-        let block = if class_name.is_some() {
-            let local = self.scope.set_local("this".to_string(), true)?;
-
-            let mut block = self.compile_block(scope_id, &fn_decl.body)?;
-
-            block.statements.insert(
-                0,
-                self.build_assign_local(
-                    local.id,
-                    Value::new(self.loc.clone(), ValueKind::Receiver),
-                ),
-            );
-
-            block
-        } else {
-            self.compile_block(scope_id, &fn_decl.body)?
+        if class_name.is_some() {
+            self.scope
+                .set_local("this".to_string(), true, vec![Tag::IsReceiver])?;
         };
+
+        let block = self.compile_block(scope_id, &fn_decl.body)?;
 
         self.exit_scope();
 

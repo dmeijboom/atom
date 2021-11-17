@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Result, RuntimeError, Trace, Value};
+use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Receiver, Result, RuntimeError, Trace, Value};
 
 #[derive(Debug)]
 pub enum Target {
@@ -52,7 +52,9 @@ impl CallContext {
 
     pub fn get_receiver(&self) -> Option<&Value> {
         if let Target::Method(method) = &self.target {
-            return Some(&method.receiver);
+            if let Receiver::Bound(receiver) = &method.receiver {
+                return Some(receiver);
+            }
         }
 
         None

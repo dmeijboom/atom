@@ -4,7 +4,7 @@ pub use class::{Class, Field};
 pub use closure::Closure;
 pub use int::Int;
 pub use interface::Interface;
-pub use method::Method;
+pub use method::{Method, Receiver};
 pub use object::Object;
 pub use origin::Origin;
 pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr, Input, Output};
