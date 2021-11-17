@@ -165,12 +165,14 @@ peg::parser! {
             --
             expr:(@) _ "!" { Expr::Unwrap(UnwrapExpr {pos: (start..expr.pos().end), expr: expr.into()}) }
             "!" _ expr:(@) { Expr::Not(NotExpr {pos: (start..expr.pos().end), expr: expr.into() }) }
+            "(" _ type_name:ident() _ ")" _ expr:(@) { Expr::Cast(CastExpr { pos: (start..expr.pos().end), type_name, expr }.into()) }
+            --
+            "typeof" __ expr:(@) { Expr::TypeOf(TypeOfExpr { pos: (start..expr.pos().end), expr }.into()) }
             --
             object:(@) _ "?." _ member:ident() end:pos() { Expr::MemberCond(MemberCondExpr { pos: (start..end), object, member }.into()) }
             object:(@) _ "." _ member:ident() end:pos() { Expr::Member(MemberExpr { pos: (start..end), object, member }.into()) }
             --
             object:(@) "[" _ index:expr() _ "]" end:pos() { Expr::Index(IndexExpr { pos: (start..end), object, index }.into()) }
-            "(" _ type_name:ident() _ ")" _ expr:(@) { Expr::Cast(CastExpr { pos: (start..expr.pos().end), type_name, expr }.into()) }
             --
             "(" _ expr:expr() _ ")" { expr }
             --

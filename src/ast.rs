@@ -263,6 +263,12 @@ pub struct ClosureExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct TypeOfExpr {
+    pub expr: Expr,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
@@ -273,6 +279,7 @@ pub enum Expr {
     Array(ArrayExpr),
     Tuple(TupleExpr),
     Map(MapExpr),
+    TypeOf(Box<TypeOfExpr>),
     Closure(ClosureExpr),
     Member(Box<MemberExpr>),
     MemberCond(Box<MemberCondExpr>),
@@ -298,6 +305,7 @@ impl Expr {
             Self::Array(array_expr) => array_expr.pos.clone(),
             Self::Tuple(tuple_expr) => tuple_expr.pos.clone(),
             Self::Map(map_expr) => map_expr.pos.clone(),
+            Self::TypeOf(typeof_expr) => typeof_expr.pos.clone(),
             Self::Closure(closure_expr) => closure_expr.pos.clone(),
             Self::Member(member_expr) => member_expr.pos.clone(),
             Self::MemberCond(member_cond_expr) => member_cond_expr.pos.clone(),

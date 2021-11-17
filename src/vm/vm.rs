@@ -455,6 +455,7 @@ impl VM {
             Code::ConstString(val) => self.eval_const(val.clone()),
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeTuple(len) => self.eval_make_tuple(*len)?,
+            Code::GetType => self.eval_get_type()?,
             Code::MakeArray(len) => self.eval_make_array(*len)?,
             Code::MakeTemplate(len) => self.eval_make_template(*len)?,
             Code::MakeRef => self.eval_make_ref(),
@@ -542,6 +543,15 @@ impl VM {
         let values = self.stack.pop_many(len)?;
 
         self.stack.push(Value::Tuple(values.into()));
+
+        Ok(())
+    }
+
+    fn eval_get_type(&mut self) -> Result<()> {
+        let value = self.stack.pop();
+        let class = self.get_class(&value)?;
+
+        self.stack.push(Value::Class(AtomRef::clone(&class)));
 
         Ok(())
     }
@@ -1240,15 +1250,6 @@ impl VM {
             .map_err(|e| e.with_stack_trace(self.call_stack.rewind()))?;
 
         Ok(())
-    }
-
-    #[cfg(test)]
-    pub fn result(&mut self) -> Option<Value> {
-        if self.stack.is_empty() {
-            return None;
-        }
-
-        Some(self.stack.pop())
     }
 
     pub fn cleanup(&mut self) {

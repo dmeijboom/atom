@@ -229,6 +229,11 @@ impl<'c> Compiler<'c> {
                     vec![Value::new(self.loc.clone(), ValueKind::Array(pairs))],
                 )))
             }
+            Expr::TypeOf(type_of) => {
+                let value = self.compile_expr(&type_of.expr)?;
+
+                ValueKind::TypeOf(Box::new(value))
+            }
             Expr::Closure(closure) => ValueKind::Closure(self.compile_closure(closure, None)?),
             Expr::Member(member) => {
                 let object = self.compile_expr(&member.object)?;

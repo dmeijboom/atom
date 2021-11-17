@@ -145,6 +145,10 @@ impl<'c> CodeGenerator<'c> {
                 self.compile_values(scope, values)?;
                 self.ir.add(Code::MakeTuple(values.len()), location);
             }
+            ValueKind::TypeOf(type_of) => {
+                self.compile_value(scope, type_of)?;
+                self.ir.add(Code::GetType, location);
+            }
             ValueKind::Closure(closure) => {
                 let parent_ir = self.collect_instr(false);
 
