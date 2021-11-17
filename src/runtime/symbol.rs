@@ -23,12 +23,9 @@ impl PartialEq for Symbol {
             return false;
         }
 
-        // This is fine as we already verified the length of the byte array
-        unsafe {
-            for i in 0..length {
-                if self.name.get_unchecked(i) != other.name.get_unchecked(i) {
-                    return false;
-                }
+        for i in 0..length {
+            if self.name[i] != other.name[i] {
+                return false;
             }
         }
 

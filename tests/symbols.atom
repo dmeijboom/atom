@@ -1,0 +1,23 @@
+fn unique(t) {
+    t.assertFalse("hello" == :hello)
+        .assertFalse(:hello == :test)
+        .assert(:hello, :hello);
+}
+
+fn mapKey(t) {
+    let result = {
+        :name => "atom",
+        "name" => "not atom"
+    };
+
+    t.assert(some("atom"), result.get(:name))
+        .assertNil(result.get(:test))
+        .assert(some("not atom"), result.get("name"));
+}
+
+pub fn symbolsTests() {
+    return [
+        unique,
+        mapKey
+    ];
+}

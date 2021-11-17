@@ -27,6 +27,15 @@ pub class MapIter {
     }
 }
 
+fn encodeKey(key) {
+    # Make sure each basic type is different even though the string values are the same
+    let mut bytes = [(Byte)(typeof key).typeId()];
+
+    bytes.append(key.toString().bytes());
+
+    return bytes;
+}
+
 fn wyr8(bytes) {
     return (Uint64)int_from_bytes(bytes);
 }
@@ -181,7 +190,7 @@ pub class Map {
             this.grow();
         }
 
-        let hash = hash(key.toString().bytes(), 0);
+        let hash = hash(encodeKey(key), 0);
         let index = hash % this.buckets.len();
         let bucket = this.buckets.nth(index)!;
         let entry = Entry(hash: hash, key: key, value: value);
@@ -218,7 +227,7 @@ pub class Map {
             return nil;
         }
 
-        let hash = hash(key.toString().bytes(), 0);
+        let hash = hash(encodeKey(key), 0);
         let index = hash % this.buckets.len();
         let bucket = this.buckets.nth(index)!;
 
