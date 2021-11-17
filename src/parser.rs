@@ -230,7 +230,7 @@ peg::parser! {
             = start:pos() "raise" __ expr:expr() _ ";" end:pos() { Stmt::Raise(RaiseStmt { expr, pos: (start..end) }) }
 
         rule comment() -> Comment
-            = start:pos() "#" content:$([^ '\n']+) "\n"? end:pos() { Comment { content: content.trim().to_string(), pos: (start..end) } }
+            = start:pos() "#" content:$([^ '\n']+) "\n" end:pos() { Comment { content: content.trim().to_string(), pos: (start..end) } }
 
         rule stmt() -> Stmt
             = raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
@@ -283,13 +283,14 @@ peg::parser! {
             = comments:comment()* stmt:(extern_fn_decl_stmt() / fn_decl_stmt() / class_decl_stmt() / mixin_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
 
         rule stmt_list() -> Vec<Stmt>
-            = comment()* stmt:stmt() ** _ { stmt }
+            = (_ comment())* _ stmt:stmt() ** _ { stmt }
 
-        rule top_level_stmt_list() -> Vec<Stmt>
-            = (top_level_stmt() / stmt()) ** _
+        pub rule parse_stmt() -> Stmt
+            = stmt:top_level_stmt() _ { stmt }
+                / (_ comment())* _ stmt:stmt() _ { stmt }
 
         pub rule parse() -> Vec<Stmt>
-            = _ stmts:top_level_stmt_list() _ { stmts }
+            = _ stmt:top_level_stmt() ** _ _ { stmt }
 
         pub rule parse_expr() -> Expr
             = _ expr:expr() _ { expr }
@@ -310,7 +311,7 @@ mod tests {
     where
         ParseError<L>: From<ParseError<LineCol>>,
     {
-        Ok(parser::parse(source)?.pop().unwrap())
+        Ok(parser::parse_stmt(source)?)
     }
 
     #[test_case("hello", 0..5; "simple")]
