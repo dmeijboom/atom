@@ -5,16 +5,16 @@ set -e
 cargo build --release
 
 echo "Wyhash"
-hyperfine --warmup 10 "target/release/atom run examples/perf/wyhash.atom"
+hyperfine --warmup 10 "target/release/atom run ./benchmark/wyhash.atom"
 
 echo "Recursive fibonacci"
-hyperfine --warmup 10 "target/release/atom run examples/perf/fib.atom"
+hyperfine --warmup 10 "target/release/atom run ./benchmark/fib.atom"
 
 echo "Recursive fibonacci (with closures)"
-hyperfine --warmup 10 "target/release/atom run examples/perf/fib_closure.atom"
+hyperfine --warmup 10 "target/release/atom run ./benchmark/fib_closure.atom"
 
 echo "Binary trees"
-hyperfine --warmup 10 "target/release/atom run examples/perf/binary_trees.atom"
+hyperfine --warmup 10 "target/release/atom run ./benchmark/binary_trees.atom"
 
 echo "Method call"
-hyperfine --warmup 10 "target/release/atom run examples/perf/method_call.atom"
+hyperfine --warmup 10 "target/release/atom run ./benchmark/method_call.atom"

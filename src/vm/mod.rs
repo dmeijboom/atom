@@ -1,10 +1,10 @@
 pub use call_context::CallContext;
+pub use machine::Machine;
 pub use module::Module;
 pub use module_cache::{ExternalHook, ModuleCache};
-pub use vm::VM;
 
 mod call_context;
+mod machine;
 mod module;
 mod module_cache;
 mod stack;
-mod vm;

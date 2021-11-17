@@ -8,7 +8,7 @@ use crate::runtime::RuntimeError;
 use crate::compiler::{Compiler, LineNumberOffset};
 use crate::parser;
 use crate::utils::Error;
-use crate::vm::VM;
+use crate::vm::Machine;
 
 #[derive(Parser)]
 pub struct Opts {
@@ -73,7 +73,7 @@ pub fn command(module_paths: &[PathBuf], opts: Opts, source: &str) -> Result<(),
         println!("{:#?}", module.functions);
     }
 
-    let mut vm = VM::new()?;
+    let mut vm = Machine::new()?;
 
     if let Some(id) = module.functions.get_index_of("main") {
         for module in modules {

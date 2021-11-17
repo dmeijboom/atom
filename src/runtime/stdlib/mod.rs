@@ -5,15 +5,13 @@ mod encoding;
 mod io;
 mod sys;
 
-pub const DEFAULT_IMPORTS: &[&str; 18] = &[
+pub const DEFAULT_IMPORTS: &[&str; 19] = &[
     "std.core.rt_raise",
     "std.core.some",
     "std.core.println",
-    "std.core.RangeIter",
-    "std.core.ArrayIter",
-    "std.core.Iterable",
     "std.map.newMap",
     // Also all basic types (for type assertions for example)
+    "std.map.Map",
     "std.core.String",
     "std.core.Int",
     "std.core.Float",
@@ -24,7 +22,10 @@ pub const DEFAULT_IMPORTS: &[&str; 18] = &[
     "std.core.Range",
     "std.core.Option",
     "std.core.Array",
-    "std.map.Map",
+    "std.core.Enum",
+    "std.core.Iterable",
+    "std.core.RangeIterator",
+    "std.core.ArrayIterator",
 ];
 
 pub fn hook(module: &str, name: &str, class_name: Option<&str>) -> Option<ExternalFn> {

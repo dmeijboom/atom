@@ -5,100 +5,6 @@ pub extern fn some(value);
 
 pub extern fn rt_raise(exception);
 
-pub interface Iterable {
-    fn iter();
-}
-
-pub mixin Iterator {
-    pub fn enum() -> Enum(iterator: this.iter());
-
-    pub fn collect() {
-        let mut output = [];
-
-        for item in this {
-            output.push(item);
-        }
-
-        return output;
-    }
-
-    pub fn nth(index) {
-        let iter = this.iter();
-
-        for i in 0..index {
-            if iter.next().isNone() {
-                return nil;
-            }
-        }
-
-        return iter.next();
-    }
-
-    pub fn first() -> this.nth(0);
-
-    pub fn last() {
-        let mut last = nil;
-
-        for item in this {
-            last = some(item);
-        }
-
-        return last;
-    }
-
-    pub fn filter(filter) -> Filter(iterator: this.iter(), filterFn: filter);
-}
-
-pub class FilterIter extends Iterator {
-    let iterator;
-    let filterFn;
-
-    pub fn next() {
-        for {
-            let item = this.iterator.next();
-
-            if item.isNone() {
-                return nil;
-            }
-
-            if this.filterFn(item!) {
-                return item;
-            }
-        }
-    }
-}
-
-pub class Filter extends Iterator {
-    let iterator;
-    let filterFn;
-
-    pub fn iter() -> FilterIter(iterator: this.iterator, filterFn: this.filterFn);
-}
-
-pub class EnumIter {
-    let iterator;
-    let mut index;
-
-    pub fn next() {
-        let index = this.index;
-        let item = this.iterator.next();
-
-        if item.isNone() {
-            return nil;
-        }
-
-        this.index += 1;
-
-        return some((index, item!));
-    }
-}
-
-pub class Enum extends Iterator {
-    let iterator;
-
-    pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
-}
-
 pub class Int {
     pub extern fn size();
     pub fn toString() -> f"{this}";
@@ -203,31 +109,14 @@ pub class Object {
     pub fn typeId() -> 15;
 }
 
-pub class ArrayIter {
-    let array;
-    let mut index;
-
-    pub fn next() {
-        if this.index >= this.array.len() {
-            return nil;
-        }
-
-        let value = this.array[this.index];
-
-        this.index += 1;
-
-        return some(value);
-    }
-}
-
-pub class Array extends Iterator {
+pub class Array extends GetIterator {
     pub extern fn remove(index);
     pub extern fn push(value);
     pub extern fn pop();
     pub extern fn len();
     pub extern fn clear();
     pub fn typeId() -> 16;
-    pub fn iter() -> ArrayIter(array: this, index: 0);
+    pub fn iter() -> ArrayIterator(array: this, index: 0);
 
     pub fn isEmpty() {
         return this.len() == 0;
@@ -295,7 +184,118 @@ pub class RustObject {
     pub fn typeId() -> 18;
 }
 
-pub class RangeIter {
+pub class RangeStep extends GetIterator {
+    let range;
+    let step;
+
+    pub fn iter() {
+        return RangeIterator(start: this.range.start, end: this.range.end, step: this.step, index: 0);
+    }
+}
+
+pub class Range extends GetIterator {
+    pub let start;
+    pub let end;
+
+    pub fn iter() -> RangeIterator(start: this.start, end: this.end, step: 1, index: 0);
+    pub fn step(n) -> RangeStep(range: this, step: n);
+}
+
+pub interface Iterable {
+    fn iter();
+}
+
+pub mixin GetIterator {
+    pub fn enum() -> Enum(iterator: this.iter());
+
+    pub fn collect() {
+        let mut output = [];
+
+        for item in this {
+            output.push(item);
+        }
+
+        return output;
+    }
+
+    pub fn nth(index) {
+        let iter = this.iter();
+
+        for i in 0..index {
+            if iter.next().isNone() {
+                return nil;
+            }
+        }
+
+        return iter.next();
+    }
+
+    pub fn first() -> this.nth(0);
+
+    pub fn last() {
+        let mut last = nil;
+
+        for item in this {
+            last = some(item);
+        }
+
+        return last;
+    }
+
+    pub fn filter(filter) -> Filter(iterator: this.iter(), filterFn: filter);
+}
+
+pub class FilterIterator {
+    let iterator;
+    let filterFn;
+
+    pub fn next() {
+        for {
+            let item = this.iterator.next();
+
+            if item.isNone() {
+                return nil;
+            }
+
+            if this.filterFn(item!) {
+                return item;
+            }
+        }
+    }
+}
+
+pub class Filter extends GetIterator {
+    let iterator;
+    let filterFn;
+
+    pub fn iter() -> FilterIterator(iterator: this.iterator, filterFn: this.filterFn);
+}
+
+pub class EnumIter {
+    let iterator;
+    let mut index;
+
+    pub fn next() {
+        let index = this.index;
+        let item = this.iterator.next();
+
+        if item.isNone() {
+            return nil;
+        }
+
+        this.index += 1;
+
+        return some((index, item!));
+    }
+}
+
+pub class Enum extends GetIterator {
+    let iterator;
+
+    pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
+}
+
+pub class RangeIterator {
     let start;
     let end;
     let step;
@@ -316,19 +316,19 @@ pub class RangeIter {
     }
 }
 
-pub class RangeStep extends Iterator {
-    let range;
-    let step;
+pub class ArrayIterator {
+    let array;
+    let mut index;
 
-    pub fn iter() {
-        return RangeIter(start: this.range.start, end: this.range.end, step: this.step, index: 0);
+    pub fn next() {
+        if this.index >= this.array.len() {
+            return nil;
+        }
+
+        let value = this.array[this.index];
+
+        this.index += 1;
+
+        return some(value);
     }
-}
-
-pub class Range extends Iterator {
-    pub let start;
-    pub let end;
-
-    pub fn iter() -> RangeIter(start: this.start, end: this.end, step: 1, index: 0);
-    pub fn step(n) -> RangeStep(range: this, step: n);
 }

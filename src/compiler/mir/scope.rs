@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
-use crate::compiler::CompileError;
 use crate::compiler::ir::Code;
+use crate::compiler::CompileError;
 
 pub type ScopeId = usize;
 pub type LocalId = usize;
@@ -158,7 +158,12 @@ impl ScopeGraph {
         self.graph.pop()
     }
 
-    pub fn set_local(&mut self, name: String, mutable: bool, tags: Vec<Tag>) -> Result<Local, CompileError> {
+    pub fn set_local(
+        &mut self,
+        name: String,
+        mutable: bool,
+        tags: Vec<Tag>,
+    ) -> Result<Local, CompileError> {
         let id = self
             .walk_mut(|scope| {
                 if let ScopeContext::Function(_) = &scope.context {

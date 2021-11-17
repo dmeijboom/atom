@@ -5,12 +5,13 @@ use std::rc::Rc;
 use indexmap::map::IndexMap;
 use strum::IntoEnumIterator;
 
+use crate::compiler;
 use crate::compiler::ir::{Code, Label, IR};
+use crate::runtime::stdlib;
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
-use crate::{compiler, stdlib};
 
 use super::call_context::{CallContext, CallStack, Target};
 use super::module::ModuleId;
@@ -85,14 +86,14 @@ enum Flow<'i> {
     JumpTo(&'i Label),
 }
 
-pub struct VM {
+pub struct Machine {
     stack: Stack,
     call_stack: CallStack,
     module_cache: ModuleCache,
     type_classes: Vec<AtomRef<Class>>,
 }
 
-impl VM {
+impl Machine {
     pub fn new() -> Result<Self> {
         let mut vm = Self {
             stack: Stack::new(),
@@ -1264,7 +1265,7 @@ impl VM {
     }
 }
 
-impl AtomApi for VM {
+impl AtomApi for Machine {
     fn find_class(&self, module_name: &str, class_name: &str) -> Result<AtomRef<Class>> {
         self.module_cache.get_class(module_name, class_name)
     }

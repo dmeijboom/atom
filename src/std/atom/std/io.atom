@@ -1,15 +1,14 @@
 module std.io;
 
-import std.core.Enum;
 import std.core.Filter;
-import std.core.Iterator;
+import std.core.GetIterator;
 import std.encoding.utf8.decode;
 
 pub interface Readable {
     fn read();
 }
 
-pub class LinesIter extends Iterator {
+pub class LinesIter extends GetIterator {
     let readable;
 
     pub fn next() {
@@ -59,7 +58,7 @@ pub mixin Reader {
     }
 }
 
-pub class LinesReader extends Iterator {
+pub class LinesReader extends GetIterator {
     let readable;
 
     pub fn iter() {

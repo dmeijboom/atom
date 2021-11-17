@@ -13,6 +13,8 @@ pub use rust::RustObject;
 pub use symbol::Symbol;
 pub use value::{Convert, Value, ValueType};
 
+pub mod stdlib;
+
 mod api;
 mod atom_ref;
 mod class;

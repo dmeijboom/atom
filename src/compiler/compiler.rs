@@ -7,7 +7,7 @@ use crate::ast::Stmt;
 use crate::compiler::mir;
 use crate::compiler::optimizers::tail_call;
 use crate::parser;
-use crate::stdlib::DEFAULT_IMPORTS;
+use crate::runtime::stdlib::DEFAULT_IMPORTS;
 
 use super::codegen::CodeGenerator;
 use super::filesystem::{FileSystem, FileSystemCache};

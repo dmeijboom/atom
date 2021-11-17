@@ -1,6 +1,8 @@
 use std::fmt::{Display, Formatter};
 
-use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Receiver, Result, RuntimeError, Trace, Value};
+use crate::runtime::{
+    AtomRef, Closure, Fn, Method, Origin, Receiver, Result, RuntimeError, Trace, Value,
+};
 
 #[derive(Debug)]
 pub enum Target {
