@@ -300,13 +300,25 @@ impl Machine {
         arg_count: usize,
         store_result: bool,
     ) -> Result<()> {
-        let return_value = self.eval_func(Target::Method(method), keywords, arg_count)?;
+        match &method.receiver {
+            Receiver::Unbound if !method.is_static => Err(RuntimeError::new(format!(
+                "unable to call non-static '{}(..)' with unbound receiver",
+                method.as_ref()
+            ))),
+            Receiver::Bound(_) if method.is_static => Err(RuntimeError::new(format!(
+                "unable to call static '{}(..)' on instance",
+                method.as_ref()
+            ))),
+            _ => {
+                let return_value = self.eval_func(Target::Method(method), keywords, arg_count)?;
 
-        if store_result {
-            self.stack.push(return_value);
+                if store_result {
+                    self.stack.push(return_value);
+                }
+
+                Ok(())
+            }
         }
-
-        Ok(())
     }
 
     fn prepare_args(
@@ -947,34 +959,48 @@ impl Machine {
             (self.get_class(&receiver)?, Receiver::Bound(receiver))
         };
 
-        if let Receiver::Bound(receiver) = &receiver {
-            if let Some(field) = class.fields.get(member) {
-                if let Value::Object(object) = receiver {
-                    if !field.public && module_id != class.origin.module_id {
-                        return Err(RuntimeError::new(format!(
-                            "unable to access private field '{}' of class: {}",
-                            member,
-                            class.as_ref()
-                        )));
+        match &receiver {
+            Receiver::Bound(receiver) => {
+                if let Some(field) = class.fields.get(member) {
+                    if let Value::Object(object) = receiver {
+                        if !field.public && module_id != class.origin.module_id {
+                            return Err(RuntimeError::new(format!(
+                                "unable to access private field '{}' of class: {}",
+                                member,
+                                class.as_ref()
+                            )));
+                        }
+
+                        let field = object.get_field(field.id).cloned().ok_or_else(|| {
+                            RuntimeError::new(format!(
+                                "unable to get unknown field '{}' of class: {}",
+                                member,
+                                class.as_ref()
+                            ))
+                        })?;
+
+                        self.stack.push(field);
+
+                        return Ok(());
                     }
 
-                    let field = object.get_field(field.id).cloned().ok_or_else(|| {
-                        RuntimeError::new(format!(
-                            "unable to get unknown field '{}' of class: {}",
-                            member,
-                            class.as_ref()
-                        ))
-                    })?;
-
-                    self.stack.push(field);
+                    return Err(RuntimeError::new(format!(
+                        "unable to lookup field on: {}",
+                        receiver.get_type().name(),
+                    )));
+                }
+            }
+            Receiver::Unbound => {
+                if let Some(func) = class.static_methods.get(member) {
+                    self.stack.push(Value::Method(AtomRef::new(Method {
+                        receiver,
+                        func: AtomRef::clone(func),
+                        class,
+                        is_static: true,
+                    })));
 
                     return Ok(());
                 }
-
-                return Err(RuntimeError::new(format!(
-                    "unable to lookup field on: {}",
-                    receiver.get_type().name(),
-                )));
             }
         }
 
@@ -983,6 +1009,7 @@ impl Machine {
                 receiver,
                 func: AtomRef::clone(func),
                 class,
+                is_static: false,
             })));
 
             return Ok(());

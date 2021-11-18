@@ -8,62 +8,62 @@ pub extern fn rt_raise(exception);
 pub class Int {
     pub extern fn size();
     pub fn toString() -> f"{this}";
-    pub fn typeId() -> 1;
+    pub static fn typeId() -> 1;
 }
 
 pub class Float {
     pub extern fn floor();
     pub fn toString() -> f"{this}";
-    pub fn typeId() -> 2;
+    pub static fn typeId() -> 2;
 }
 
 pub class Char {
     pub fn toString() -> f"{this}";
-    pub fn typeId() -> 3;
+    pub static fn typeId() -> 3;
 }
 
 pub class Byte {
     pub fn toString() -> f"{this}";
-    pub fn typeId() -> 4;
+    pub static fn typeId() -> 4;
 }
 
 pub class Bool {
     pub fn toString() -> f"{this}";
-    pub fn typeId() -> 5;
+    pub static fn typeId() -> 5;
 }
 
 pub class Symbol {
     pub fn toString() -> f"{this}".substr(1);
-    pub fn typeId() -> 6;
+    pub static fn typeId() -> 6;
 }
 
 pub class Ref {
-    pub fn typeId() -> 7;
+    pub static fn typeId() -> 7;
 }
 
 pub class Fn {
     pub extern fn name();
-    pub fn typeId() -> 8;
+    pub static fn typeId() -> 8;
 }
 
 pub class Tuple {
-    pub fn typeId() -> 9;
+    pub static fn typeId() -> 9;
 }
 
 pub class Class {
-    pub fn typeId() -> 10;
+    pub static fn typeId() -> 10;
 }
 
 pub class Interface {
-    pub fn typeId() -> 11;
+    pub static fn typeId() -> 11;
 }
 
 pub class Closure {
-    pub fn typeId() -> 12;
+    pub static fn typeId() -> 12;
 }
 
 pub class Method {
-    pub fn typeId() -> 13;
+    pub static fn typeId() -> 13;
 }
 
 pub class String {
@@ -84,7 +84,7 @@ pub class String {
     pub extern fn repeat(n);
     pub extern fn trim();
     pub extern fn len();
-    pub fn typeId() -> 14;
+    pub static fn typeId() -> 14;
 
     pub fn toString() {
         return this;
@@ -106,7 +106,7 @@ pub class String {
 }
 
 pub class Object {
-    pub fn typeId() -> 15;
+    pub static fn typeId() -> 15;
 }
 
 pub class Array extends GetIterator {
@@ -115,12 +115,9 @@ pub class Array extends GetIterator {
     pub extern fn pop();
     pub extern fn len();
     pub extern fn clear();
-    pub fn typeId() -> 16;
-    pub fn iter() -> ArrayIterator(array: this, index: 0);
-
-    pub fn isEmpty() {
-        return this.len() == 0;
-    }
+    pub static fn typeId() -> 16;
+    pub fn iter() -> ArrayIterator.new(this);
+    pub fn isEmpty() -> this.len() == 0;
 
     pub fn append(other) {
         for {
@@ -169,7 +166,7 @@ pub class Array extends GetIterator {
 pub class Option {
     pub extern fn isSome();
     pub extern fn isNone();
-    pub fn typeId() -> 17;
+    pub static fn typeId() -> 17;
 
     pub fn unwrapOr(alt) {
         if this.isSome() {
@@ -181,24 +178,46 @@ pub class Option {
 }
 
 pub class RustObject {
-    pub fn typeId() -> 18;
+    pub static fn typeId() -> 18;
 }
 
 pub class RangeStep extends GetIterator {
     let range;
     let step;
-
-    pub fn iter() {
-        return RangeIterator(start: this.range.start, end: this.range.end, step: this.step, index: 0);
-    }
+    
+    pub static fn new(range, step) -> RangeIterator(range: range, step: step);
+    pub fn iter() -> RangeIterator.new(this.range.start, this.range.end, this.step);
 }
 
 pub class Range extends GetIterator {
     pub let start;
     pub let end;
 
-    pub fn iter() -> RangeIterator(start: this.start, end: this.end, step: 1, index: 0);
-    pub fn step(n) -> RangeStep(range: this, step: n);
+    pub fn iter() -> RangeIterator.new(this.start, this.end, 1);
+    pub fn step(n) -> RangeStep.new(this, n);
+}
+
+pub class RangeIterator {
+    let start;
+    let end;
+    let step;
+    let mut index;
+
+    pub static fn new(start, end, step) -> RangeIterator(start: start, end: end, step: step, index: 0);
+
+    pub fn next() {
+        let index = this.start + this.index;
+
+        if index >= this.end {
+            return nil;
+        }
+
+        let value = some(index);
+
+        this.index += this.step;
+
+        return value;
+    }
 }
 
 pub interface Iterable {
@@ -295,30 +314,11 @@ pub class Enum extends GetIterator {
     pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
 }
 
-pub class RangeIterator {
-    let start;
-    let end;
-    let step;
-    let mut index;
-
-    pub fn next() {
-        let index = this.start + this.index;
-
-        if index >= this.end {
-            return nil;
-        }
-
-        let value = some(index);
-
-        this.index += this.step;
-
-        return value;
-    }
-}
-
 pub class ArrayIterator {
     let array;
     let mut index;
+
+    pub static fn new(array) -> ArrayIterator(array: array, index: 0);
 
     pub fn next() {
         if this.index >= this.array.len() {

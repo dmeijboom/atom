@@ -30,6 +30,7 @@ impl<'c> Frontend<'c> {
             Function {
                 name: function.name.clone(),
                 is_extern: function.is_extern,
+                is_static: function.is_static,
                 args: function.args.clone(),
                 ..Function::default()
             },
@@ -64,6 +65,7 @@ impl<'c> Frontend<'c> {
                 Function {
                     name: function.name.clone(),
                     is_extern: function.is_extern,
+                    is_static: function.is_static,
                     args: function.args.clone(),
                     ..Function::default()
                 },

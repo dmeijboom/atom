@@ -5,11 +5,10 @@ mod encoding;
 mod io;
 mod sys;
 
-pub const DEFAULT_IMPORTS: &[&str; 19] = &[
+pub const DEFAULT_IMPORTS: &[&str; 18] = &[
     "std.core.rt_raise",
     "std.core.some",
     "std.core.println",
-    "std.map.newMap",
     // Also all basic types (for type assertions for example)
     "std.map.Map",
     "std.core.String",

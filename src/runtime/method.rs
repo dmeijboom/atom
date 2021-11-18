@@ -13,6 +13,7 @@ pub enum Receiver {
 
 #[derive(Debug)]
 pub struct Method {
+    pub is_static: bool,
     pub receiver: Receiver,
     pub func: AtomRef<Fn>,
     pub class: AtomRef<Class>,

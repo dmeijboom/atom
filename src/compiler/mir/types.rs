@@ -70,6 +70,7 @@ pub struct Function {
     pub block: Block,
     pub is_extern: bool,
     pub is_closure: bool,
+    pub is_static: bool,
     pub args: Vec<FuncArg>,
 }
 

@@ -1,5 +1,7 @@
 use std::ops::Range;
 
+use enumflags2::{bitflags, BitFlags};
+
 use crate::compiler::ir::Code;
 
 pub type Pos = Range<usize>;
@@ -356,10 +358,18 @@ pub struct FnArg {
     pub pos: Pos,
 }
 
+#[bitflags]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum Modifier {
+    Public,
+    Static,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct FnDeclStmt {
     pub name: String,
-    pub public: bool,
+    pub modifiers: BitFlags<Modifier>,
     pub args: Vec<FnArg>,
     pub body: Vec<Stmt>,
     pub comments: Vec<Comment>,

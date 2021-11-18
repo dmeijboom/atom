@@ -33,6 +33,7 @@ pub struct Class {
     pub origin: Origin,
     pub fields: IndexMap<String, Field, WyHash>,
     pub methods: HashMap<String, AtomRef<Fn>, WyHash>,
+    pub static_methods: HashMap<String, AtomRef<Fn>, WyHash>,
 }
 
 impl Display for Class {

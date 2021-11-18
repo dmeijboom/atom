@@ -119,6 +119,7 @@ impl ModuleCache {
                 })
                 .collect(),
             methods: HashMap::with_hasher(WyHash::default()),
+            static_methods: HashMap::with_hasher(WyHash::default()),
             // @TODO: shouldn't classes also have a position?
             origin: Origin::new(
                 module.id,
@@ -129,7 +130,13 @@ impl ModuleCache {
         };
 
         for (name, func) in class.methods {
-            output.methods.insert(
+            let methods = if func.is_static {
+                &mut output.static_methods
+            } else {
+                &mut output.methods
+            };
+
+            methods.insert(
                 name,
                 AtomRef::new(self.make_fn(module, func, Some(&class.name))?),
             );

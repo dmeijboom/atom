@@ -1,3 +1,5 @@
+use enumflags2::BitFlags;
+
 pub use parser::*;
 
 use crate::ast::*;
@@ -237,6 +239,25 @@ peg::parser! {
         rule stmt() -> Stmt
             = raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
 
+        rule modifier() -> Modifier
+            = "pub" { Modifier::Public }
+                / "static" { Modifier::Static }
+
+        rule modifiers() -> BitFlags<Modifier>
+            = modifier:modifier() ** __ {?
+                let mut flags = BitFlags::default();
+
+                for flag in modifier {
+                    if flags.contains(flag) {
+                        return Err("duplicate modifier");
+                    }
+
+                    flags |= flag;
+                }
+
+                Ok(flags)
+            }
+
         rule fn_arg() -> FnArg
             = start:pos() mutable:$("mut" _)? name:ident() end:pos() { FnArg { name, mutable: mutable.is_some(), pos: (start..end) } }
 
@@ -245,7 +266,7 @@ peg::parser! {
                 / "->" _ start:pos() expr:expr() end:pos() _ ";" { vec![Stmt::Return(ReturnStmt { expr, pos: (start..end) })] }
 
         rule fn_decl() -> FnDeclStmt
-            = start:pos() public:$("pub")? _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ body:fn_decl_body() end:pos() { FnDeclStmt { name, args, body, public: public.is_some(), comments: vec![], pos: (start..end) } }
+            = start:pos() modifiers:modifiers() _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ body:fn_decl_body() end:pos() { FnDeclStmt { name, args, body, modifiers, comments: vec![], pos: (start..end) } }
 
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
@@ -254,7 +275,7 @@ peg::parser! {
             = extern_fn_decl:extern_fn_decl() { Stmt::ExternFnDecl(extern_fn_decl) }
 
         rule extern_fn_decl() -> FnDeclStmt
-            = start:pos() public:$("pub")? _ "extern" __ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ");" end:pos() { FnDeclStmt { name, args, body: vec![], public: public.is_some(), comments: vec![], pos: (start..end) } }
+            = start:pos() modifiers:modifiers() _ "extern" __ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ");" end:pos() { FnDeclStmt { name, args, body: vec![], modifiers, comments: vec![], pos: (start..end) } }
 
         rule interface_fn() -> InterfaceFn
             = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
@@ -915,7 +936,7 @@ mod tests {
                 public: false,
                 funcs: vec![FnDeclStmt {
                     name: "example".to_string(),
-                    public: false,
+                    modifiers: BitFlags::default(),
                     args: vec![],
                     body: vec![],
                     comments: vec![],

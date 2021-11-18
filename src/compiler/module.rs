@@ -25,6 +25,7 @@ pub struct Function {
     pub body: IR,
     pub is_extern: bool,
     pub is_closure: bool,
+    pub is_static: bool,
     pub args: Vec<FuncArg>,
     pub location: Location,
 }

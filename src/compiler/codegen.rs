@@ -163,6 +163,7 @@ impl<'c> CodeGenerator<'c> {
                         body,
                         is_extern: false,
                         is_closure: true,
+                        is_static: false,
                         args: closure.args.clone(),
                         location: closure.block.loc.clone(),
                     },

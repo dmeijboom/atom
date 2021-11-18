@@ -1,6 +1,6 @@
 use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt,
-    InterfaceDeclStmt, Literal, LogicalOp, Stmt, TemplateComponent, Variable,
+    InterfaceDeclStmt, Literal, LogicalOp, Modifier, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::ir::Location;
 use crate::compiler::mir::scope::Tag;
@@ -240,7 +240,13 @@ impl<'c> Compiler<'c> {
                 }
 
                 ValueKind::Call(Box::new(Call::with_args(
-                    Value::new(self.loc.clone(), ValueKind::Name("newMap".to_string())),
+                    Value::new(
+                        self.loc.clone(),
+                        ValueKind::Member(Box::new(Member::new(
+                            Value::new(self.loc.clone(), ValueKind::Name("Map".to_string())),
+                            "from".to_string(),
+                        ))),
+                    ),
                     vec![Value::new(self.loc.clone(), ValueKind::Array(pairs))],
                 )))
             }
@@ -656,6 +662,7 @@ impl<'c> Compiler<'c> {
             name: fn_decl.name.to_string(),
             is_extern: false,
             is_closure: false,
+            is_static: fn_decl.modifiers.contains(Modifier::Static),
             args: map_fn_args(&fn_decl.args),
             block,
         })
@@ -667,6 +674,7 @@ impl<'c> Compiler<'c> {
             args: map_fn_args(&extern_fn_decl.args),
             is_extern: true,
             is_closure: false,
+            is_static: extern_fn_decl.modifiers.contains(Modifier::Static),
             block: Block::default(),
         })
     }
@@ -718,12 +726,18 @@ impl<'c> Compiler<'c> {
                 Stmt::FnDecl(fn_decl) => {
                     let function = self.compile_function(fn_decl, None)?;
 
-                    Decl::new(DeclKind::Function(function), fn_decl.public)
+                    Decl::new(
+                        DeclKind::Function(function),
+                        fn_decl.modifiers.contains(Modifier::Public),
+                    )
                 }
                 Stmt::ExternFnDecl(fn_decl_stmt) => {
                     let function = self.compile_extern_function(fn_decl_stmt)?;
 
-                    Decl::new(DeclKind::Function(function), fn_decl_stmt.public)
+                    Decl::new(
+                        DeclKind::Function(function),
+                        fn_decl_stmt.modifiers.contains(Modifier::Public),
+                    )
                 }
                 Stmt::ClassDecl(class_decl) => {
                     let class = self.compile_class(class_decl)?;

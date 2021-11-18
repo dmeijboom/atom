@@ -160,25 +160,38 @@ class Entry {
     let hash;
     let key;
     let value;
+    
+    pub static fn new(hash, key, value) -> Entry(hash: hash, key: key, value: value);
 }
 
 class Bucket {
     let mut entry;
     let mut next;
+    
+    pub static fn new() -> Bucket(entry: nil, next: nil);
+    pub static fn withEntry(entry) -> Bucket(entry: some(entry), next: nil);
 }
 
 pub class Map {
     let buckets;
     let mut size;
+    
+    pub fn len() -> this.size;
+    
+    pub static fn from(pairs) {
+        let map = Map(buckets: [], size: 0);
+        
+        for (key, value) in pairs {
+            map.set(key, value);
+        }
 
-    pub fn len() {
-        return this.size;
+        return map;
     }
 
     fn grow() {
         if this.size == 0 {
             for 0..5 {
-                this.buckets.push(Bucket(entry: nil, next: nil));
+                this.buckets.push(Bucket.new());
             }
         } else {
             raise "not supported";
@@ -193,7 +206,7 @@ pub class Map {
         let hash = hash(encodeKey(key), 0);
         let index = hash % this.buckets.len();
         let bucket = this.buckets.nth(index)!;
-        let entry = Entry(hash: hash, key: key, value: value);
+        let entry = Entry.new(hash, key, value);
 
         if bucket.entry.isNone() {
             this.size += 1;
@@ -216,8 +229,7 @@ pub class Map {
                 tail = tail.next!;
             }
 
-            tail.next = some(Bucket(entry: some(entry), next: nil));
-
+            tail.next = some(Bucket.withEntry(entry));
             this.size += 1;
         }
     }
@@ -249,14 +261,4 @@ pub class Map {
 
         return nil;
     }
-}
-
-pub fn newMap(pairs) {
-    let mut map = Map(buckets: [], size: 0);
-
-    for (key, value) in pairs {
-        map.set(key, value);
-    }
-
-    return map;
 }
