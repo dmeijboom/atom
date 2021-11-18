@@ -115,24 +115,34 @@ pub struct Fn {
     pub name: String,
     pub ptr: FnPtr,
     pub origin: Origin,
+    // Only used for instance methods
+    pub public: bool,
     pub args: IndexMap<String, FnArg>,
 }
 
 impl Fn {
-    pub fn native(name: String, origin: Origin, args: IndexMap<String, FnArg>, ir: IR) -> Self {
+    pub fn native(
+        name: String,
+        public: bool,
+        origin: Origin,
+        args: IndexMap<String, FnArg>,
+        ir: IR,
+    ) -> Self {
         Self {
             name,
             origin,
             args,
+            public,
             ptr: FnPtr::Native(Rc::new(ir)),
         }
     }
 
-    pub fn external(name: String, origin: Origin, func: ExternalFn) -> Self {
+    pub fn external(name: String, public: bool, origin: Origin, func: ExternalFn) -> Self {
         Self {
             name,
             origin,
             args: IndexMap::new(),
+            public,
             ptr: FnPtr::External(func),
         }
     }

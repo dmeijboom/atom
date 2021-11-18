@@ -663,6 +663,7 @@ impl<'c> Compiler<'c> {
             is_extern: false,
             is_closure: false,
             is_static: fn_decl.modifiers.contains(Modifier::Static),
+            is_public: fn_decl.modifiers.contains(Modifier::Public),
             args: map_fn_args(&fn_decl.args),
             block,
         })
@@ -675,6 +676,7 @@ impl<'c> Compiler<'c> {
             is_extern: true,
             is_closure: false,
             is_static: extern_fn_decl.modifiers.contains(Modifier::Static),
+            is_public: extern_fn_decl.modifiers.contains(Modifier::Public),
             block: Block::default(),
         })
     }

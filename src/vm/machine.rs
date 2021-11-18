@@ -960,14 +960,14 @@ impl Machine {
         };
 
         match &receiver {
-            Receiver::Bound(receiver) => {
+            Receiver::Bound(value) => {
                 if let Some(field) = class.fields.get(member) {
-                    if let Value::Object(object) = receiver {
+                    if let Value::Object(object) = value {
                         if !field.public && module_id != class.origin.module_id {
                             return Err(RuntimeError::new(format!(
-                                "unable to access private field '{}' of class: {}",
+                                "unable to access private field: {}.{}",
+                                class.as_ref(),
                                 member,
-                                class.as_ref()
                             )));
                         }
 
@@ -986,8 +986,27 @@ impl Machine {
 
                     return Err(RuntimeError::new(format!(
                         "unable to lookup field on: {}",
-                        receiver.get_type().name(),
+                        value.get_type().name(),
                     )));
+                }
+
+                if let Some(func) = class.methods.get(member) {
+                    if !func.public && module_id != class.origin.module_id {
+                        return Err(RuntimeError::new(format!(
+                            "unable to access private method: {}.{}(..)",
+                            class.as_ref(),
+                            member,
+                        )));
+                    }
+
+                    self.stack.push(Value::Method(AtomRef::new(Method {
+                        receiver,
+                        func: AtomRef::clone(func),
+                        class,
+                        is_static: false,
+                    })));
+
+                    return Ok(());
                 }
             }
             Receiver::Unbound => {
@@ -1002,17 +1021,6 @@ impl Machine {
                     return Ok(());
                 }
             }
-        }
-
-        if let Some(func) = class.methods.get(member) {
-            self.stack.push(Value::Method(AtomRef::new(Method {
-                receiver,
-                func: AtomRef::clone(func),
-                class,
-                is_static: false,
-            })));
-
-            return Ok(());
         }
 
         Err(RuntimeError::new(format!(

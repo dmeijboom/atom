@@ -69,8 +69,9 @@ pub struct Function {
     pub name: String,
     pub block: Block,
     pub is_extern: bool,
-    pub is_closure: bool,
     pub is_static: bool,
+    pub is_public: bool,
+    pub is_closure: bool,
     pub args: Vec<FuncArg>,
 }
 

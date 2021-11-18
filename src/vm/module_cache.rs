@@ -90,11 +90,17 @@ impl ModuleCache {
                 None => self.call_external_hook(&module.name, &func.name, class_name)?,
             };
 
-            return Ok(Fn::external(func.name, origin, external_func));
+            return Ok(Fn::external(
+                func.name,
+                func.is_public,
+                origin,
+                external_func,
+            ));
         }
 
         Ok(Fn::native(
             func.name,
+            func.is_public,
             origin,
             func.args
                 .into_iter()

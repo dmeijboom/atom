@@ -164,6 +164,7 @@ impl<'c> CodeGenerator<'c> {
                         is_extern: false,
                         is_closure: true,
                         is_static: false,
+                        is_public: false,
                         args: closure.args.clone(),
                         location: closure.block.loc.clone(),
                     },

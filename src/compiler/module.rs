@@ -26,6 +26,7 @@ pub struct Function {
     pub is_extern: bool,
     pub is_closure: bool,
     pub is_static: bool,
+    pub is_public: bool,
     pub args: Vec<FuncArg>,
     pub location: Location,
 }
