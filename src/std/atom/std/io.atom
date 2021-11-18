@@ -1,8 +1,7 @@
 module std.io;
 
-import std.core.Filter;
-import std.core.GetIterator;
 import std.encoding.utf8.decode;
+import std.core.{Filter, GetIterator};
 
 pub interface Readable {
     fn read();

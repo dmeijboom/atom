@@ -116,6 +116,7 @@ pub class Array extends GetIterator {
     pub extern fn len();
     pub extern fn clear();
     pub static fn typeId() -> 16;
+    
     pub fn iter() -> ArrayIterator.new(this);
     pub fn isEmpty() -> this.len() == 0;
 

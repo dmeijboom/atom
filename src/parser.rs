@@ -299,8 +299,15 @@ peg::parser! {
         rule module_stmt() -> Stmt
             = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
 
+        rule import_path() -> String
+            = path:(ident() ** ".") { path.join(".") }
+
+        rule import_path_list() -> Vec<String>
+            = path:import_path() "." _ "{" _ sub_paths:import_path() ** (_ "," _) _ "}" { sub_paths.into_iter().map(|p| format!("{}.{}", path, p)).collect() }
+                / path:import_path() { vec![path] }
+
         rule import_stmt() -> Stmt
-            = start:pos() "import" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Import(ImportStmt { name: path.join("."), pos: (start..end)} ) }
+            = start:pos() "import" __ path:import_path_list() _ ";" end:pos() { Stmt::Import(ImportStmt { path, pos: (start..end)} ) }
 
         rule top_level_stmt() -> Stmt
             = comments:comment()* stmt:(extern_fn_decl_stmt() / fn_decl_stmt() / class_decl_stmt() / mixin_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
@@ -1015,8 +1022,24 @@ mod tests {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Import(ImportStmt {
-                name: "test.this.that".to_string(),
+                path: vec!["test.this.that".to_string()],
                 pos: (0..22),
+            })),
+        )
+    }
+
+    #[test]
+    fn import_stmt_multiple_paths() {
+        let source = "import test.this.{that, things.other};";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Import(ImportStmt {
+                path: vec![
+                    "test.this.that".to_string(),
+                    "test.this.things.other".to_string(),
+                ],
+                pos: (0..38),
             })),
         )
     }

@@ -1,13 +1,14 @@
 module std.map;
 
-import std.core.some;
-import std.core.Tuple;
-import std.core.rt_raise;
-import std.core.println;
-import std.core.String;
-import std.core.Iterable;
-import std.encoding.binary.int_from_bytes;
-import std.encoding.binary.uint_from_bytes;
+import std.core.{
+    rt_raise,
+    some,
+    Tuple,
+    println,
+    String,
+    Iterable
+};
+import std.encoding.binary.{parseInt, parseUint};
 
 pub class MapIter {
     let data;
@@ -37,11 +38,11 @@ fn encodeKey(key) {
 }
 
 fn wyr8(bytes) {
-    return (Uint64)int_from_bytes(bytes);
+    return (Uint64)parseInt(bytes);
 }
 
 fn wyr4(bytes) {
-    return (Uint64)uint_from_bytes(bytes);
+    return (Uint64)parseUint(bytes);
 }
 
 fn wyr3(bytes, index) {
@@ -160,14 +161,14 @@ class Entry {
     let hash;
     let key;
     let value;
-    
+
     pub static fn new(hash, key, value) -> Entry(hash: hash, key: key, value: value);
 }
 
 class Bucket {
     let mut entry;
     let mut next;
-    
+
     pub static fn new() -> Bucket(entry: nil, next: nil);
     pub static fn withEntry(entry) -> Bucket(entry: some(entry), next: nil);
 }
@@ -175,12 +176,12 @@ class Bucket {
 pub class Map {
     let buckets;
     let mut size;
-    
+
     pub fn len() -> this.size;
-    
+
     pub static fn from(pairs) {
         let map = Map(buckets: [], size: 0);
-        
+
         for (key, value) in pairs {
             map.set(key, value);
         }

@@ -1,2 +1,2 @@
-pub extern fn uint_from_bytes(bytes);
-pub extern fn int_from_bytes(bytes);
+pub extern fn parseUint(bytes);
+pub extern fn parseInt(bytes);

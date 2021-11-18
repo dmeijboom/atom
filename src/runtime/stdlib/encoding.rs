@@ -4,8 +4,8 @@ pub mod binary {
     use crate::runtime::ExternalFn;
 
     pub const FUNCTIONS: [(&str, ExternalFn); 2] = [
-        ("uint_from_bytes", super::uint_from_bytes),
-        ("int_from_bytes", super::int_from_bytes),
+        ("parseInt", super::parse_int),
+        ("parseUint", super::parse_uint),
     ];
 }
 
@@ -23,7 +23,7 @@ fn to_fixed_array<T: Copy, const N: usize>(items: Vec<T>) -> Result<[T; N]> {
     unsafe { Ok(*(items.as_ptr() as *const [T; N])) }
 }
 
-pub fn int_from_bytes(input: Input<'_>) -> Result<Output> {
+pub fn parse_int(input: Input<'_>) -> Result<Output> {
     let data: AtomRef<Vec<Value>> = input.single()?;
     let mut bytes = vec![];
 
@@ -42,7 +42,7 @@ pub fn int_from_bytes(input: Input<'_>) -> Result<Output> {
     ))))
 }
 
-pub fn uint_from_bytes(input: Input<'_>) -> Result<Output> {
+pub fn parse_uint(input: Input<'_>) -> Result<Output> {
     let data: AtomRef<Vec<Value>> = input.single()?;
     let mut bytes = vec![];
 

@@ -203,9 +203,11 @@ impl Compiler {
 
             if let Some(index) = index {
                 if let Stmt::Import(import_stmt) = self.tree.remove(index) {
-                    self.import_name(&import_stmt.name).map_err(|e| {
-                        e.with_location(self.line_numbers_offset.get_location(&import_stmt.pos))
-                    })?;
+                    for path in import_stmt.path {
+                        self.import_name(&path).map_err(|e| {
+                            e.with_location(self.line_numbers_offset.get_location(&import_stmt.pos))
+                        })?;
+                    }
 
                     continue;
                 }
@@ -226,7 +228,11 @@ impl Compiler {
                 Stmt::ExternFnDecl(extern_fn_decl) => {
                     names.push(("external function", &extern_fn_decl.name))
                 }
-                Stmt::Import(import_stmt) => names.push(("import", &import_stmt.name)),
+                Stmt::Import(import_stmt) => {
+                    for path in import_stmt.path.iter() {
+                        names.push(("import", path))
+                    }
+                }
                 Stmt::ClassDecl(class_decl_stmt) => {
                     let mut class_names: Vec<(&str, &str)> = vec![];
 

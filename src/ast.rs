@@ -472,7 +472,7 @@ pub struct InterfaceDeclStmt {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportStmt {
-    pub name: String,
+    pub path: Vec<String>,
     pub pos: Pos,
 }
 
