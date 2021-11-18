@@ -4,7 +4,7 @@ use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
 use crate::compiler::ir::Location;
-use crate::compiler::{self, ElementKind};
+use crate::compiler::{self, ElementKind, FunctionAttr};
 use crate::runtime::{
     AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError, Value,
 };
@@ -82,7 +82,7 @@ impl ModuleCache {
             func.location,
         );
 
-        if func.is_extern {
+        if func.attr.contains(FunctionAttr::Extern) {
             let external_func = match class_name {
                 Some(class_name) => {
                     self.call_external_hook(&module.name, &func.name, Some(class_name))?
@@ -92,7 +92,7 @@ impl ModuleCache {
 
             return Ok(Fn::external(
                 func.name,
-                func.is_public,
+                func.attr.contains(FunctionAttr::Public),
                 origin,
                 external_func,
             ));
@@ -100,7 +100,7 @@ impl ModuleCache {
 
         Ok(Fn::native(
             func.name,
-            func.is_public,
+            func.attr.contains(FunctionAttr::Public),
             origin,
             func.args
                 .into_iter()
@@ -136,7 +136,7 @@ impl ModuleCache {
         };
 
         for (name, func) in class.methods {
-            let methods = if func.is_static {
+            let methods = if func.attr.contains(FunctionAttr::Static) {
                 &mut output.static_methods
             } else {
                 &mut output.methods

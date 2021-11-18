@@ -1,6 +1,6 @@
 pub use compiler::Compiler;
 pub use line_number_offset::LineNumberOffset;
-pub use module::{Class, Element, ElementKind, FuncArg, Function, Interface, Module};
+pub use module::{Class, Element, ElementKind, FuncArg, Function, FunctionAttr, Interface, Module};
 pub use result::{CompileError, Result};
 
 mod codegen;

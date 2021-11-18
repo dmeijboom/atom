@@ -1,8 +1,9 @@
 use crate::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 use crate::compiler::ir::Location;
 use crate::compiler::mir::{Local, ScopeContext};
-use crate::compiler::module::Field;
+use crate::compiler::module::{Field, FunctionAttr};
 use crate::compiler::FuncArg;
+use enumflags2::BitFlags;
 
 use super::scope::{LocalId, Scope, ScopeId};
 
@@ -68,10 +69,7 @@ pub enum DeclKind {
 pub struct Function {
     pub name: String,
     pub block: Block,
-    pub is_extern: bool,
-    pub is_static: bool,
-    pub is_public: bool,
-    pub is_closure: bool,
+    pub attr: BitFlags<FunctionAttr>,
     pub args: Vec<FuncArg>,
 }
 

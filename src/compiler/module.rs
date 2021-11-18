@@ -1,11 +1,11 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Formatter};
 
+use enumflags2::{bitflags, BitFlags};
 use indexmap::map::IndexMap;
 
-use crate::compiler::ir::{Location, IR};
-
 use crate::ast::MixinDeclStmt;
+use crate::compiler::ir::{Location, IR};
 
 #[derive(Debug, Clone, Default)]
 pub struct FuncArg {
@@ -19,14 +19,23 @@ impl FuncArg {
     }
 }
 
+#[bitflags]
+#[repr(u8)]
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FunctionAttr {
+    // Has to match `Modifier::Public`
+    Public,
+    // Has to match `Modifier::Static`
+    Static,
+    Extern,
+    Closure,
+}
+
 #[derive(Clone, Default)]
 pub struct Function {
     pub name: String,
     pub body: IR,
-    pub is_extern: bool,
-    pub is_closure: bool,
-    pub is_static: bool,
-    pub is_public: bool,
+    pub attr: BitFlags<FunctionAttr>,
     pub args: Vec<FuncArg>,
     pub location: Location,
 }

@@ -1,14 +1,16 @@
 use std::mem;
 
+use enumflags2::BitFlags;
+
 use crate::ast::LogicalOp;
 use crate::compiler::ir::{Code, Label, IR};
 use crate::compiler::mir::{
     AssignLeftHand, Block, Const, DeclKind, ForLoopMeta, Function, Mir, Scope, ScopeContext, Stmt,
     StmtKind, TemplateComponent, Terminator, Value, ValueKind,
 };
-use crate::compiler::module;
 use crate::compiler::optimizers::Optimizer;
 use crate::compiler::slugs::Slugs;
+use crate::compiler::{module, FunctionAttr};
 
 use super::module::Module;
 use super::result::{CompileError, Result};
@@ -161,10 +163,7 @@ impl<'c> CodeGenerator<'c> {
                     module::Function {
                         name: closure.name.clone(),
                         body,
-                        is_extern: false,
-                        is_closure: true,
-                        is_static: false,
-                        is_public: false,
+                        attr: BitFlags::from_flag(FunctionAttr::Closure),
                         args: closure.args.clone(),
                         location: closure.block.loc.clone(),
                     },

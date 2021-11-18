@@ -29,9 +29,7 @@ impl<'c> Frontend<'c> {
             function.name.clone(),
             Function {
                 name: function.name.clone(),
-                is_extern: function.is_extern,
-                is_static: function.is_static,
-                is_public: function.is_public,
+                attr: function.attr.clone(),
                 args: function.args.clone(),
                 ..Function::default()
             },
@@ -65,9 +63,7 @@ impl<'c> Frontend<'c> {
                 function.name.clone(),
                 Function {
                     name: function.name.clone(),
-                    is_extern: function.is_extern,
-                    is_static: function.is_static,
-                    is_public: function.is_public,
+                    attr: function.attr.clone(),
                     args: function.args.clone(),
                     ..Function::default()
                 },

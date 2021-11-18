@@ -1,3 +1,5 @@
+use enumflags2::BitFlags;
+
 use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt,
     InterfaceDeclStmt, Literal, LogicalOp, Modifier, Stmt, TemplateComponent, Variable,
@@ -7,7 +9,7 @@ use crate::compiler::mir::scope::Tag;
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
-use crate::compiler::{FuncArg, LineNumberOffset};
+use crate::compiler::{FuncArg, FunctionAttr, LineNumberOffset};
 
 use super::scope::{ForLoopMeta, LocalId, Scope, ScopeContext, ScopeGraph, ScopeId};
 use super::types::{self, *};
@@ -660,10 +662,7 @@ impl<'c> Compiler<'c> {
 
         Ok(Function {
             name: fn_decl.name.to_string(),
-            is_extern: false,
-            is_closure: false,
-            is_static: fn_decl.modifiers.contains(Modifier::Static),
-            is_public: fn_decl.modifiers.contains(Modifier::Public),
+            attr: BitFlags::from_bits_truncate(fn_decl.modifiers.bits()),
             args: map_fn_args(&fn_decl.args),
             block,
         })
@@ -673,10 +672,8 @@ impl<'c> Compiler<'c> {
         Ok(Function {
             name: extern_fn_decl.name.to_string(),
             args: map_fn_args(&extern_fn_decl.args),
-            is_extern: true,
-            is_closure: false,
-            is_static: extern_fn_decl.modifiers.contains(Modifier::Static),
-            is_public: extern_fn_decl.modifiers.contains(Modifier::Public),
+            attr: BitFlags::from_bits_truncate(extern_fn_decl.modifiers.bits())
+                | FunctionAttr::Extern,
             block: Block::default(),
         })
     }
