@@ -9,6 +9,10 @@ class Test {
     fn example() -> this.test() + this.value;
     fn foo() -> this.example() + this.test() + this.value;
 
+    static fn staticTest() -> 25;
+    static fn staticExample() -> Test.staticTest() + 25;
+    static fn staticFoo() -> Test.staticExample() + Test.staticTest() + 25;
+
     fn set() {
         this.value.set("name", "Bob");
     }
@@ -20,10 +24,14 @@ fn composition(t) {
     t.assert(10, wrapper.test.value);
 }
 
-fn methodCall(t) {
+fn instanceMethodCall(t) {
     let test = Test(value: 25);
 
     t.assert(100, test.foo());
+}
+
+fn staticMethodCall(t) {
+    t.assert(100, Test.staticFoo());
 }
 
 fn wrapReferenceType(t) {
@@ -47,7 +55,8 @@ class Late { let value; }
 pub fn classesTests() {
     return [
         composition,
-        methodCall,
+        instanceMethodCall,
+        staticMethodCall,
         wrapReferenceType,
         useBeforeDeclared
     ];
