@@ -1,39 +1,248 @@
+import std.core.Ref;
+
 pub class JSONError {
     let message;
 }
 
-pub class JSONEncoder {
-    pub fn encode(data) {
-        if data is Bool || data is Int || data is Float || data is Symbol {
-            return data.toString();
-        } else if data is Char {
-            return f"\"{data}\"";
-        } else if data is String {
-            return f"\"{data.replace("\"", "\\\"")}\"";
-        } else if data is Array {
-            let mut items = [];
+pub interface JSONSerialize {
+    fn encodeJSON();
+}
 
-            for item in data {
-                items.push(this.encode(item));
-            }
+pub class JSONDecoder {
+    let mut data;
+    let mut index;
 
-            return f"[{items.join(", ")}]";
-        } else if data is Map {
-            let mut items = [];
+    pub static fn new() -> JSONDecoder(data: nil, index: 0);
 
-            for keyValue in data {
-                items.push(f"{this.encode(keyValue.key)}: {this.encode(keyValue.value)}");
-            }
+    fn eof() -> this.index > this.data.len() - 1;
 
-            return f"\{{items.join(", ")}}";
-        } else if data is Option {
-            if data.isNone() {
-                return "null";
-            }
-
-            return this.encode(data!);
-        } else {
-            raise JSONError(message: "unsupported data type");
+    fn current() {
+        if this.eof() {
+            raise JSONError(message: "unexpected EOF");
         }
+
+        return this.data[this.index];
+    }
+
+    fn seek() -> this.data.nth(this.index + 1);
+
+    fn next() {
+        this.index += 1;
+    }
+
+    fn expect(c) {
+        let actual = this.current();
+
+        if actual != c {
+            raise JSONError(message: f"unexpected character '{actual}', expected: '{c}'");
+        }
+
+        this.next();
+
+        return c;
+    }
+
+    fn accept(c) -> this.data.nth(this.index) == some(c);
+
+    fn skipWhitespace() {
+        for {
+            match this.data.nth(this.index) {
+                some(' ') -> this.next(),
+                some('\r') -> this.next(),
+                some('\t') -> this.next(),
+                some('\n') -> this.next(),
+                else -> {
+                    break;
+                }
+            }
+        }
+    }
+
+    fn parseArray() {
+        this.expect('[');
+
+        let mut items = [];
+
+        for {
+            this.skipWhitespace();
+            items.push(this.parseItem());
+            this.skipWhitespace();
+
+            if !this.accept(',') {
+                break;
+            }
+
+            this.next();
+        }
+
+        this.expect(']');
+
+        return items;
+    }
+
+    fn parseNumber() {
+        let mut number = [];
+
+        for {
+            if this.eof() {
+                break;
+            }
+
+            let c = this.current();
+
+            if !c.toString().containsAny("0123456789") {
+                break;
+            }
+
+            number.push(c);
+            this.next();
+        }
+
+        return Int.parse(number.join(""));
+    }
+
+    fn parseString() {
+        this.expect('"');
+
+        let mut string = [];
+
+        for {
+            if this.eof() {
+                break;
+            }
+
+            let c = this.current();
+
+            if c == '"' {
+                break;
+            }
+
+            string.push(c);
+            this.next();
+        }
+
+        this.expect('"');
+
+        return string.join("");
+    }
+
+    fn parseItem() {
+        this.skipWhitespace();
+
+        let c = this.current();
+
+        match c {
+            '[' -> return this.parseArray(),
+            '{' -> return this.parseObject(),
+            '"' -> return this.parseString(),
+            else -> {
+                if c.toString().containsAny("0123456789") {
+                    return this.parseNumber();
+                } else {
+                    raise JSONError(message: f"unexpected character: '{c}'");
+                }
+            }
+        }
+    }
+
+    fn parse() {
+        let item = this.parseItem();
+
+        this.skipWhitespace();
+
+        if !this.eof() {
+            raise JSONError(message: f"unexpected trailing data: {this.data[this.index..this.data.len()].join("")}");
+        }
+
+        return item;
+    }
+
+    pub fn decode(data) {
+        this.data = data.chars();
+
+        return this.parse();
+    }
+}
+
+# Proxy class for objects that implement `JSONSerialize`
+class JSONEncoderProxy {
+    let encoder;
+
+    pub static fn new(encoder) -> JSONEncoderProxy(encoder: encoder);
+    pub fn write(s) -> this.encoder.write(s);
+    pub fn writeString(s) -> this.encoder.writeString(s);
+}
+
+pub class JSONEncoder {
+    let mut output;
+
+    pub static fn new() -> JSONEncoder(output: []);
+
+    fn write(s) {
+        this.output.push(s);
+    }
+
+    fn writeString(s) {
+        this.output.push('"');
+        this.write(s);
+        this.output.push('"');
+    }
+
+    pub fn encode(data) {
+        match typeof data {
+            Bool -> this.write(data.toString()),
+            Int -> this.write(data.toString()),
+            Float -> this.write(data.toString()),
+            Symbol -> this.writeString(data.toString()),
+            Char -> this.writeString(data.toString()),
+            String -> this.writeString(data.replace("\"", "\\\"")),
+            Array -> {
+                this.write('[');
+
+                for (i, item) in data.enum() {
+                    this.encode(item);
+
+                    if i < data.len() - 1 {
+                        this.write(',');
+                    }
+                }
+
+                this.write(']');
+            },
+            Map -> {
+                this.write('{');
+
+                for (i, keyVal) in data.enum() {
+                    let (key, value) = keyVal;
+
+                    this.encode(key);
+                    this.write(':');
+                    this.encode(value);
+
+                    if i < data.len() - 1 {
+                        this.write(',');
+                    }
+                }
+
+                this.write('}');
+            },
+            Option -> {
+                if data.isNone() {
+                    this.write("null");
+                } else {
+                    this.encode(data!);
+                }
+            },
+            Ref -> this.encode(*data),
+            else -> {
+                if data is JSONSerialize {
+                    data.encodeJSON(JSONEncoderProxy.new(this));
+                } else {
+                    raise JSONError(message: "unsupported data type");
+                }
+            }
+        }
+
+        return this.output.join("");
     }
 }

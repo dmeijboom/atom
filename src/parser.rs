@@ -4,6 +4,10 @@ pub use parser::*;
 
 use crate::ast::*;
 
+fn is_keyword(name: &str) -> bool {
+    matches!(name, "if" | "else if" | "else" | "match" | "raise" | "break" | "for" | "fn" | "class" | "interface" | "extern" | "continue" | "extends" | "mixin" | "let" | "is" | "return" | "pub")
+}
+
 peg::parser! {
     grammar parser() for str {
         rule whitespace()
@@ -19,7 +23,7 @@ peg::parser! {
             = position!()
 
         rule ident() -> String
-            = quiet!{ name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) { name.to_string() } }
+            = quiet!{ name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) {? if is_keyword(name) { Err("unexpected keyword") } else { Ok(name.to_string()) } } }
                 / expected!("identifier")
 
         rule variable() -> Variable
@@ -233,11 +237,25 @@ peg::parser! {
         rule raise_stmt() -> Stmt
             = start:pos() "raise" __ expr:expr() _ ";" end:pos() { Stmt::Raise(RaiseStmt { expr, pos: (start..end) }) }
 
+        rule match_case_body() -> Vec<Stmt>
+            = "{" _ body:stmt_list() _ "}" { body }
+                / start:pos() expr:expr() end:pos() { vec![Stmt::Expr(ExprStmt { expr, pos: (start..end) })] }
+                / start:pos() "return" __ expr:expr() end:pos() { vec![Stmt::Return(ReturnStmt { expr, pos: (start..end) })] }
+
+        rule match_case() -> MatchCase
+            = start:pos() pattern:expr() _ "->" _ body:match_case_body() end:pos() { MatchCase { pattern, body, pos: (start..end) } }
+
+        rule default_match_case() -> Vec<Stmt>
+            = start:pos() _ "," _ "else" _ "->" _ body:match_case_body() end:pos() { body }
+
+        rule match_stmt() -> Stmt
+            = start:pos() "match" __ expr:expr() _ "{" _ cases:match_case() ** (_ "," _) _ alt:default_match_case()? _ "}" end:pos() { Stmt::Match(MatchStmt { expr, cases, alt, pos: (start..end) }) }
+
         rule comment() -> Comment
             = start:pos() "#" content:$([^ '\n']+) "\n" end:pos() { Comment { content: content.trim().to_string(), pos: (start..end) } }
 
         rule stmt() -> Stmt
-            = raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
+            = match_stmt() / raise_stmt() / for_stmt() / break_stmt() / if_stmt() / return_stmt() / assign_stmt() / let_stmt() / let_decl_stmt() / expr_stmt()
 
         rule modifier() -> Modifier
             = "pub" { Modifier::Public }

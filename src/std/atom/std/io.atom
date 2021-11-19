@@ -50,19 +50,13 @@ pub mixin Reader {
         }
     }
 
-    pub fn readAllText() {
-        let bytes = this.readAll();
-
-        return decode(bytes);
-    }
+    pub fn readAllText() -> decode(this.readAll());
 }
 
 pub class LinesReader extends GetIterator {
     let readable;
 
-    pub fn iter() {
-        return LinesIter(readable: this.readable);
-    }
+    pub fn iter() -> LinesIter(readable: this.readable);
 }
 
 pub class File extends Reader {
@@ -71,9 +65,7 @@ pub class File extends Reader {
     pub extern fn size();
     pub extern fn read(max);
 
-    pub fn lines() {
-        return LinesReader(readable: this);
-    }
+    pub fn lines() -> LinesReader(readable: this);
 }
 
 extern fn openFileHandle(filename);

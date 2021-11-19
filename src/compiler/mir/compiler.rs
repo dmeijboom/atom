@@ -2,7 +2,7 @@ use enumflags2::BitFlags;
 
 use crate::ast::{
     ArithmeticOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt,
-    InterfaceDeclStmt, Literal, LogicalOp, Modifier, Stmt, TemplateComponent, Variable,
+    InterfaceDeclStmt, Literal, LogicalOp, MatchCase, Modifier, Stmt, TemplateComponent, Variable,
 };
 use crate::compiler::ir::Location;
 use crate::compiler::mir::scope::Tag;
@@ -421,12 +421,94 @@ impl<'c> Compiler<'c> {
         ))
     }
 
+    fn compile_match_case(&mut self, local_id: LocalId, case: &MatchCase) -> Result<Cond> {
+        let right = self.compile_expr(&case.pattern)?;
+        let condition = Value::new(
+            self.loc.clone(),
+            ValueKind::Comparison(Box::new(Operator::<ComparisonOp> {
+                left: Value::new(self.loc.clone(), ValueKind::Local(local_id)),
+                right,
+                op: ComparisonOp::Eq,
+            })),
+        );
+
+        let scope_id = self.enter_scope(ScopeContext::Block);
+        let block = self.compile_block(scope_id, &case.body)?;
+
+        self.exit_scope();
+
+        Ok(Cond {
+            condition,
+            block,
+            alt: None,
+        })
+    }
+
     fn compile_stmt(&mut self, root: &mut Block, stmt: &Stmt) -> Result<()> {
         self.loc = self.line_number_offset.get_location(&stmt.pos());
 
         match stmt {
             Stmt::If(if_stmt) => {
                 root.statements.push(self.compile_if_stmt(if_stmt)?);
+            }
+            Stmt::Match(match_stmt) => {
+                // First, assign the expression to a temp variable
+                let tmp = self
+                    .scope
+                    .set_local(self.slugs.get("__match__"), false, vec![])?;
+                let right = self.compile_expr(&match_stmt.expr)?;
+
+                // Then, compile the first case (or return if there are none)
+                let mut case = self.compile_match_case(
+                    tmp.id,
+                    if let Some(case) = match_stmt.cases.first() {
+                        case
+                    } else {
+                        // If there are no cases we don't have to do anything
+                        return Ok(());
+                    },
+                )?;
+                let mut current = &mut case;
+
+                // Then, transform the rest of the cases into condition statements
+                for case in match_stmt.cases.iter().skip(1) {
+                    let mut block = Block::new(self.loc.clone(), root.scope_id);
+
+                    block.statements.push(types::Stmt::new(
+                        self.loc.clone(),
+                        StmtKind::Cond(self.compile_match_case(tmp.id, case)?),
+                    ));
+
+                    current.alt = Some(block);
+                    current = current
+                        .alt
+                        .as_mut()
+                        .and_then(|block| {
+                            block.statements.first_mut().map(|stmt| {
+                                if let types::StmtKind::Cond(cond) = &mut stmt.kind {
+                                    cond
+                                } else {
+                                    unreachable!()
+                                }
+                            })
+                        })
+                        .unwrap();
+                }
+
+                // At last, if there is a final block, add it to the last case
+                if let Some(body) = &match_stmt.alt {
+                    current.alt = Some(self.compile_block(root.scope_id, body)?);
+                }
+
+                root.statements.push(types::Stmt::new(
+                    self.loc.clone(),
+                    StmtKind::Assign(Assign {
+                        left: AssignLeftHand::Local(tmp.id),
+                        right,
+                    }),
+                ));
+                root.statements
+                    .push(types::Stmt::new(self.loc.clone(), StmtKind::Cond(case)));
             }
             Stmt::For(for_stmt) => {
                 let meta = ForLoopMeta::new(self.slugs.get("loop_cont"));

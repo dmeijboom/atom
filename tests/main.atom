@@ -8,6 +8,7 @@ import locals.localsTests;
 import ifelse.ifElseTests;
 import arrays.arraysTests;
 import symbols.symbolsTests;
+import options.optionsTests;
 import strings.stringsTests;
 import classes.classesTests;
 import closures.closuresTests;
@@ -24,6 +25,7 @@ fn main() {
     tests.append(ifElseTests());
     tests.append(arraysTests());
     tests.append(symbolsTests());
+    tests.append(optionsTests());
     tests.append(classesTests());
     tests.append(stringsTests());
     tests.append(closuresTests());

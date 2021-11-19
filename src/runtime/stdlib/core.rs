@@ -6,7 +6,7 @@ pub const FUNCTIONS: [(&str, ExternalFn); 3] = [
     ("rt_raise", runtime_raise),
 ];
 
-pub const METHODS: [(&str, &str, ExternalFn); 25] = [
+pub const METHODS: [(&str, &str, ExternalFn); 26] = [
     ("Option", "isSome", option_is_some),
     ("Option", "isNone", option_is_none),
     ("String", "upper", string_upper),
@@ -22,6 +22,7 @@ pub const METHODS: [(&str, &str, ExternalFn); 25] = [
     ("String", "chars", string_chars),
     ("String", "bytes", string_bytes),
     ("String", "repeat", string_repeat),
+    ("String", "concat", string_concat),
     ("String", "trim", string_trim),
     ("String", "len", string_len),
     ("Float", "floor", float_floor),
@@ -193,6 +194,17 @@ pub fn string_repeat(mut input: Input<'_>) -> Result<Output> {
     let count: usize = input.pop_first()?;
 
     Ok(Output::new(s.repeat(count)))
+}
+
+pub fn string_concat(mut input: Input<'_>) -> Result<Output> {
+    let s: AtomRef<String> = input.take_receiver()?;
+    let other: AtomRef<String> = input.pop_first()?;
+
+    let mut out = s.unwrap_or_clone_inner();
+
+    out.push_str(other.as_str());
+
+    Ok(Output::new(out))
 }
 
 pub fn string_trim(mut input: Input<'_>) -> Result<Output> {

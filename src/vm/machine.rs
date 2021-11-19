@@ -1212,10 +1212,9 @@ impl Machine {
     fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<Option<Value>> {
         let mut i = 0;
         let mut return_addr = vec![];
-        let instructions_len = instructions.len();
 
         loop {
-            while i < instructions_len {
+            while i < instructions.len() {
                 let code = &instructions[i];
 
                 // Evaluates the instruction and optionally returns a label to jump to

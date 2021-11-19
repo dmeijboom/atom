@@ -425,6 +425,21 @@ pub struct ElseStmt {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct MatchCase {
+    pub pattern: Expr,
+    pub body: Vec<Stmt>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct MatchStmt {
+    pub expr: Expr,
+    pub cases: Vec<MatchCase>,
+    pub alt: Option<Vec<Stmt>>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub name: String,
     pub mutable: bool,
@@ -500,6 +515,7 @@ pub struct BreakStmt {
 pub enum Stmt {
     If(IfStmt),
     Else(ElseStmt),
+    Match(MatchStmt),
     For(ForStmt),
     Expr(ExprStmt),
     Let(LetStmt),
@@ -520,23 +536,24 @@ pub enum Stmt {
 impl Stmt {
     pub fn pos(&self) -> Pos {
         match self {
-            Stmt::If(if_stmt) => if_stmt.pos.clone(),
-            Stmt::Else(else_stmt) => else_stmt.pos.clone(),
-            Stmt::For(for_stmt) => for_stmt.pos.clone(),
-            Stmt::Break(break_stmt) => break_stmt.pos.clone(),
-            Stmt::Raise(raise_stmt) => raise_stmt.pos.clone(),
-            Stmt::Expr(expr_stmt) => expr_stmt.pos.clone(),
-            Stmt::Let(let_stmt) => let_stmt.pos.clone(),
-            Stmt::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),
-            Stmt::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
-            Stmt::ExternFnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
-            Stmt::Assign(assign_stmt) => assign_stmt.pos.clone(),
-            Stmt::Return(return_stmt) => return_stmt.pos.clone(),
-            Stmt::Module(module_stmt) => module_stmt.pos.clone(),
-            Stmt::Import(import_stmt) => import_stmt.pos.clone(),
-            Stmt::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
-            Stmt::MixinDecl(mixin_decl_stmt) => mixin_decl_stmt.pos.clone(),
-            Stmt::InterfaceDecl(interface_decl_stmt) => interface_decl_stmt.pos.clone(),
+            Self::If(if_stmt) => if_stmt.pos.clone(),
+            Self::Else(else_stmt) => else_stmt.pos.clone(),
+            Self::Match(match_stmt) => match_stmt.pos.clone(),
+            Self::For(for_stmt) => for_stmt.pos.clone(),
+            Self::Break(break_stmt) => break_stmt.pos.clone(),
+            Self::Raise(raise_stmt) => raise_stmt.pos.clone(),
+            Self::Expr(expr_stmt) => expr_stmt.pos.clone(),
+            Self::Let(let_stmt) => let_stmt.pos.clone(),
+            Self::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),
+            Self::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
+            Self::ExternFnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
+            Self::Assign(assign_stmt) => assign_stmt.pos.clone(),
+            Self::Return(return_stmt) => return_stmt.pos.clone(),
+            Self::Module(module_stmt) => module_stmt.pos.clone(),
+            Self::Import(import_stmt) => import_stmt.pos.clone(),
+            Self::ClassDecl(class_decl_stmt) => class_decl_stmt.pos.clone(),
+            Self::MixinDecl(mixin_decl_stmt) => mixin_decl_stmt.pos.clone(),
+            Self::InterfaceDecl(interface_decl_stmt) => interface_decl_stmt.pos.clone(),
         }
     }
 

@@ -5,26 +5,32 @@ import std.core.{
     some,
     Tuple,
     println,
+    Enum,
+    Filter,
     String,
-    Iterable
+    GetIterator
 };
 import std.encoding.binary.{parseInt, parseUint};
 
 pub class MapIter {
-    let data;
-    let keys;
+    let map;
     let mut index;
 
+    pub static fn new(map) -> MapIter(map: map, index: 0);
+
     pub fn next() {
-        if this.index >= this.keys.len() {
+        let index = this.index;
+        let item = this.map.getByIndex(this.index);
+
+        if item.isNone() {
             return nil;
         }
 
-        let key = this.keys[this.index];
-
         this.index += 1;
 
-        return some((key, this.data[key]));
+        let entry = item!;
+
+        return some((entry.key, entry.value));
     }
 }
 
