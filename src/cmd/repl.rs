@@ -33,20 +33,14 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         Value::Bool(val) => format!("{}", *val).blue(),
         Value::Symbol(symbol) => format!(":{}", String::from_utf8_lossy(&symbol.name)).blue(),
         Value::Ref(val) => format!("{}{}", "*".blue(), pretty_fmt(val)).white(),
-        Value::Fn(func) => format!("{}.{}", func.origin.module_name, func.name).blue(),
+        Value::Fn(func) => format!("{}(..)", func.name.blue()).white(),
         Value::Tuple(tuple) => {
             format!("{}{}{}", "(".blue(), pretty_fmt_items(tuple), ")".blue()).white()
         }
-        Value::Class(class) => format!("{}.{}", class.origin.module_name, class.name).blue(),
-        Value::Interface(interface) => {
-            format!("{}.{}", interface.origin.module_name, interface.name).blue()
-        }
-        Value::Closure(closure) => {
-            format!("{}.{}", closure.func.origin.module_name, closure.func.name).blue()
-        }
-        Value::Method(method) => {
-            format!("{}.{}", method.func.origin.module_name, method.func.name).blue()
-        }
+        Value::Class(class) => class.name.blue(),
+        Value::Interface(interface) => interface.name.blue(),
+        Value::Closure(closure) => format!("{}(..)", closure.func.name.blue()).white(),
+        Value::Method(method) => format!("{}(..)", method.func.name.blue()).white(),
         Value::String(val) => format!(
             "{}{}{}",
             "\"".green(),
@@ -56,7 +50,7 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         .white(),
         Value::Object(object) => format!(
             "{}({})",
-            format!("{}.{}", object.class.origin.module_name, object.class.name).blue(),
+            object.class.name.blue(),
             pretty_fmt_items(object.get_fields())
         )
         .white(),
