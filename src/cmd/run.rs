@@ -3,10 +3,9 @@ use std::path::PathBuf;
 use clap::Parser;
 
 use crate::compiler::ir::{Code, IR};
-use crate::runtime::RuntimeError;
-
 use crate::compiler::{Compiler, LineNumberOffset};
-use crate::parser;
+use crate::runtime::RuntimeError;
+use crate::syntax::parser;
 use crate::utils::Error;
 use crate::vm::Machine;
 

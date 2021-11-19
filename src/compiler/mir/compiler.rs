@@ -1,15 +1,15 @@
 use enumflags2::BitFlags;
 
-use crate::ast::{
-    ArithmeticOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt,
-    InterfaceDeclStmt, Literal, LogicalOp, MatchCase, Modifier, Stmt, TemplateComponent, Variable,
-};
 use crate::compiler::ir::Location;
 use crate::compiler::mir::scope::Tag;
 use crate::compiler::module::Field;
 use crate::compiler::result::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
 use crate::compiler::{FuncArg, FunctionAttr, LineNumberOffset};
+use crate::syntax::{
+    ArithmeticOp, ClassDeclStmt, ClosureExpr, ComparisonOp, Expr, FnArg, FnDeclStmt, IfStmt,
+    InterfaceDeclStmt, Literal, LogicalOp, MatchCase, Modifier, Stmt, TemplateComponent, Variable,
+};
 
 use super::scope::{ForLoopMeta, LocalId, Scope, ScopeContext, ScopeGraph, ScopeId};
 use super::types::{self, *};

@@ -4,8 +4,8 @@ use std::fmt::{Debug, Formatter};
 use enumflags2::{bitflags, BitFlags};
 use indexmap::map::IndexMap;
 
-use crate::ast::MixinDeclStmt;
 use crate::compiler::ir::{Location, IR};
+use crate::syntax::MixinDeclStmt;
 
 #[derive(Debug, Clone, Default)]
 pub struct FuncArg {

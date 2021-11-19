@@ -1,11 +1,30 @@
 use enumflags2::BitFlags;
 
-pub use parser::*;
+pub use self::parser::*;
 
-use crate::ast::*;
+use crate::syntax::*;
 
 fn is_keyword(name: &str) -> bool {
-    matches!(name, "if" | "else if" | "else" | "match" | "raise" | "break" | "for" | "fn" | "class" | "interface" | "extern" | "continue" | "extends" | "mixin" | "let" | "is" | "return" | "pub")
+    matches!(
+        name,
+        "if" | "else if"
+            | "else"
+            | "match"
+            | "raise"
+            | "break"
+            | "for"
+            | "fn"
+            | "class"
+            | "interface"
+            | "extern"
+            | "continue"
+            | "extends"
+            | "mixin"
+            | "let"
+            | "is"
+            | "return"
+            | "pub"
+    )
 }
 
 peg::parser! {

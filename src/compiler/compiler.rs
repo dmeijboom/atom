@@ -3,11 +3,11 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use crate::ast::Stmt;
 use crate::compiler::mir;
 use crate::compiler::optimizers::tail_call;
-use crate::parser;
 use crate::runtime::stdlib::DEFAULT_IMPORTS;
+use crate::syntax::parser;
+use crate::syntax::Stmt;
 
 use super::codegen::CodeGenerator;
 use super::filesystem::{FileSystem, FileSystemCache};

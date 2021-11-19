@@ -2,7 +2,6 @@ use std::mem;
 
 use enumflags2::BitFlags;
 
-use crate::ast::LogicalOp;
 use crate::compiler::ir::{Code, Label, IR};
 use crate::compiler::mir::{
     AssignLeftHand, Block, Const, DeclKind, ForLoopMeta, Function, Mir, Scope, ScopeContext, Stmt,
@@ -11,6 +10,7 @@ use crate::compiler::mir::{
 use crate::compiler::optimizers::Optimizer;
 use crate::compiler::slugs::Slugs;
 use crate::compiler::{module, FunctionAttr};
+use crate::syntax::LogicalOp;
 
 use super::module::Module;
 use super::result::{CompileError, Result};

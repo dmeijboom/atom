@@ -1,10 +1,10 @@
 use enumflags2::BitFlags;
 
-use crate::ast::{ArithmeticOp, ComparisonOp, LogicalOp};
 use crate::compiler::ir::Location;
 use crate::compiler::mir::{Local, ScopeContext};
 use crate::compiler::module::{Field, FunctionAttr};
 use crate::compiler::FuncArg;
+use crate::syntax::{ArithmeticOp, ComparisonOp, LogicalOp};
 
 use super::scope::{LocalId, Scope, ScopeId};
 
