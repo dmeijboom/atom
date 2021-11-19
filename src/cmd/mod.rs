@@ -2,9 +2,11 @@ use std::path::PathBuf;
 
 use clap::Parser;
 
+pub use repl::command as repl;
 pub use run::command as run;
 pub use stats::command as stats;
 
+mod repl;
 mod run;
 mod stats;
 
@@ -19,5 +21,6 @@ pub struct Opts {
 #[derive(Parser)]
 pub enum Cmd {
     Run(run::Opts),
+    Repl,
     Stats,
 }

@@ -16,6 +16,10 @@ impl Object {
         }
     }
 
+    pub fn get_fields(&self) -> &[Value] {
+        self.fields.as_ref()
+    }
+
     pub fn get_field(&self, index: usize) -> Option<&Value> {
         self.fields.get(index)
     }

@@ -7,6 +7,7 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 
 ## Features
 
+- Simple REPL
 - Dynamically typed
 - Tail call optimization
 - No null or uninitialized fields

@@ -5,7 +5,7 @@ use crate::compiler::ir::{Code, IR};
 use crate::compiler::{CompileError, Compiler, LineNumberOffset};
 use crate::error::Error;
 use crate::runtime::{RuntimeError, Value};
-use crate::syntax::parser;
+use crate::syntax::{parser, Stmt};
 use crate::vm::Machine;
 
 pub struct Options {
@@ -72,13 +72,23 @@ impl Engine {
     }
 
     pub fn run(&mut self, opts: Options, source: &str) -> Result<RunOutput, Error> {
+        let line_numbers_offset = LineNumberOffset::parse(source);
         let tree = parser::parse(source)?;
 
+        self.run_ast(opts, line_numbers_offset, tree)
+    }
+
+    pub fn run_ast(
+        &mut self,
+        opts: Options,
+        line_numbers_offset: LineNumberOffset,
+        tree: Vec<Stmt>,
+    ) -> Result<RunOutput, Error> {
         if opts.print_ast {
             println!("{:#?}", tree);
         }
 
-        let mut compiler = Compiler::new(tree, LineNumberOffset::parse(source), opts.optimize);
+        let mut compiler = Compiler::new(tree, line_numbers_offset, opts.optimize);
 
         for path in opts.module_paths {
             compiler.add_lookup_path(&path);
@@ -95,10 +105,8 @@ impl Engine {
         if opts.print_ir {
             println!("Interfaces:");
             println!("{:#?}", module.interfaces);
-
             println!("\nFunctions:");
             println!("{:#?}", module.functions);
-
             println!("\nClasses:");
             println!("{:#?}", module.classes);
         }
