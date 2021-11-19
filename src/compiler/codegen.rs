@@ -12,8 +12,8 @@ use crate::compiler::slugs::Slugs;
 use crate::compiler::{module, FunctionAttr};
 use crate::syntax::LogicalOp;
 
+use super::error::{CompileError, Result};
 use super::module::Module;
-use super::result::{CompileError, Result};
 
 pub struct CodeGenerator<'c> {
     ir: IR,
@@ -330,7 +330,7 @@ impl<'c> CodeGenerator<'c> {
                             None
                         }
                     })
-                    .ok_or_else(|| unreachable!("invalid scope for loop"))?;
+                    .expect("invalid scope for loop");
 
                 self.ir.add(Code::SetLabel(cont_label), location);
             }

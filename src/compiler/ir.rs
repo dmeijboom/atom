@@ -22,7 +22,7 @@ impl Location {
 
 impl Display for Location {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "on line {} at column {}", self.line, self.column)
+        write!(f, "{}:{}", self.line, self.column)
     }
 }
 

@@ -10,12 +10,12 @@ use crate::syntax::parser;
 use crate::syntax::Stmt;
 
 use super::codegen::CodeGenerator;
+use super::error::{CompileError, Result};
 use super::filesystem::{FileSystem, FileSystemCache};
 use super::frontend::Frontend;
 use super::line_number_offset::LineNumberOffset;
 use super::module::Module;
 use super::optimizers::{call_void, pre_compute_labels, remove_type_cast, replace_load_with_const};
-use super::result::{CompileError, Result};
 
 fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     for (i, (_, name)) in names.iter().enumerate() {
@@ -125,18 +125,20 @@ impl Compiler {
             .fs
             .read_file(&name)
             .map_err(|e| CompileError::new(format!("failed to read '{}': {}", name, e)))?;
-        let tree = parser::parse(file.source())
-            .map_err(|e| CompileError::new(format!("failed to parse module '{}': {}", name, e)))?;
         let filename = file.name().to_str().map(|filename| filename.to_string());
+        let tree = parser::parse(file.source()).map_err(|err| match filename.clone() {
+            None => err.into(),
+            Some(filename) => CompileError::from(err).with_filename(filename),
+        })?;
         let line_numbers_offset = LineNumberOffset::parse(file.source());
         let mut module = self
             .fork(name, tree, line_numbers_offset)
             .compile()
-            .map_err(|e| {
+            .map_err(|err| {
                 if let Some(filename) = filename.clone() {
-                    e.with_filename(filename)
+                    err.with_filename(filename)
                 } else {
-                    e
+                    err
                 }
             })?;
 
@@ -149,7 +151,7 @@ impl Compiler {
         let mut components = name.split('.').collect::<Vec<_>>();
 
         if components.len() < 2 {
-            return Err(CompileError::new(format!("invalid import path: {}", name,)));
+            return Err(CompileError::new(format!("invalid import path: {}", name)));
         }
 
         let name = components.pop().unwrap();
@@ -251,7 +253,7 @@ impl Compiler {
                     validate_unique(&class_names).map_err(|e| {
                         CompileError::new(format!(
                             "{} for class {}",
-                            e.message, class_decl_stmt.name
+                            e.message(), class_decl_stmt.name
                         ))
                     })?;
 

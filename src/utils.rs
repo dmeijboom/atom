@@ -88,14 +88,8 @@ pub fn display_parse_error(e: ParseError<LineCol>) {
     }
 }
 
-pub fn display_compile_error(e: CompileError) {
-    eprintln!(
-        "CompileError: {} at {}:{}:{}",
-        e.message,
-        e.filename.unwrap_or_else(|| "<unknown>".to_string()),
-        e.location.line,
-        e.location.column
-    );
+pub fn display_compile_error(err: CompileError) {
+    eprintln!("CompileError: {}", err);
 }
 
 pub fn display_runtime_error(e: RuntimeError) {
@@ -109,10 +103,10 @@ pub fn display_runtime_error(e: RuntimeError) {
         if let Some(filename) = &trace.origin.filename {
             message.push_str(&format!(
                 "  > at {}(..) in {}:{}:{}\n",
-                trace.target, filename, trace.origin.location.line, trace.origin.location.column,
+                trace.target, filename, trace.origin.location.line, trace.origin.location.column
             ));
         } else {
-            message.push_str(&format!("  > at {}(..)\n", trace.target,));
+            message.push_str(&format!("  > at {}(..)\n", trace.target));
         }
     }
 

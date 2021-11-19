@@ -3,7 +3,7 @@ use enumflags2::BitFlags;
 use crate::compiler::ir::Location;
 use crate::compiler::mir::scope::Tag;
 use crate::compiler::module::Field;
-use crate::compiler::result::{CompileError, Result};
+use crate::compiler::error::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
 use crate::compiler::{FuncArg, FunctionAttr, LineNumberOffset};
 use crate::syntax::{
