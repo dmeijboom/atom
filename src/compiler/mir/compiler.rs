@@ -1,9 +1,9 @@
 use enumflags2::BitFlags;
 
+use crate::compiler::error::{CompileError, Result};
 use crate::compiler::ir::Location;
 use crate::compiler::mir::scope::Tag;
 use crate::compiler::module::Field;
-use crate::compiler::error::{CompileError, Result};
 use crate::compiler::slugs::Slugs;
 use crate::compiler::{FuncArg, FunctionAttr, LineNumberOffset};
 use crate::syntax::{
@@ -746,6 +746,7 @@ impl<'c> Compiler<'c> {
             name: fn_decl.name.to_string(),
             attr: BitFlags::from_bits_truncate(fn_decl.modifiers.bits()),
             args: map_fn_args(&fn_decl.args),
+            loc: self.line_number_offset.get_location(&fn_decl.pos),
             block,
         })
     }
@@ -756,6 +757,7 @@ impl<'c> Compiler<'c> {
             args: map_fn_args(&extern_fn_decl.args),
             attr: BitFlags::from_bits_truncate(extern_fn_decl.modifiers.bits())
                 | FunctionAttr::Extern,
+            loc: self.line_number_offset.get_location(&extern_fn_decl.pos),
             block: Block::default(),
         })
     }

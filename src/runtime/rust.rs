@@ -2,7 +2,7 @@ use std::any::Any;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
-use super::result::{Result, RuntimeError};
+use super::error::{Result, RuntimeError};
 
 pub struct RustObject {
     any: Box<dyn Any>,

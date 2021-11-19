@@ -1,6 +1,6 @@
 use super::atom_ref::AtomRef;
 use super::class::Class;
-use super::result::Result;
+use super::error::Result;
 use super::value::Value;
 
 pub trait AtomApi {

@@ -70,6 +70,7 @@ pub enum DeclKind {
 pub struct Function {
     pub name: String,
     pub block: Block,
+    pub loc: Location,
     pub attr: BitFlags<FunctionAttr>,
     pub args: Vec<FuncArg>,
 }

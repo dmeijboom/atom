@@ -5,12 +5,12 @@ use strum_macros::EnumIter;
 use super::atom_ref::AtomRef;
 use super::class::Class;
 use super::closure::Closure;
+use super::error::{Result, RuntimeError};
 use super::int::Int;
 use super::interface::Interface;
 use super::method::Method;
 use super::object::Object;
 use super::r#fn::Fn;
-use super::result::{Result, RuntimeError};
 use super::rust::RustObject;
 use super::symbol::Symbol;
 

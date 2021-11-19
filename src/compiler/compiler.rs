@@ -253,7 +253,8 @@ impl Compiler {
                     validate_unique(&class_names).map_err(|e| {
                         CompileError::new(format!(
                             "{} for class {}",
-                            e.message(), class_decl_stmt.name
+                            e.message(),
+                            class_decl_stmt.name
                         ))
                     })?;
 

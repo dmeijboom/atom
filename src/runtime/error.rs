@@ -80,6 +80,22 @@ impl Error for RuntimeError {}
 
 impl fmt::Display for RuntimeError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.stack_trace.is_empty() {
+            writeln!(f, "Stack trace:")?;
+        }
+
+        for trace in self.stack_trace.iter() {
+            if let Some(filename) = &trace.origin.filename {
+                writeln!(
+                    f,
+                    "  > at {}(..) in {}:{}",
+                    trace.target, filename, trace.origin.location
+                )?;
+            } else {
+                writeln!(f, "  > at {}(..)", trace.target)?;
+            }
+        }
+
         match &self.kind {
             Some(kind) => write!(f, "{}: ", kind),
             None => write!(f, "RuntimeError: "),

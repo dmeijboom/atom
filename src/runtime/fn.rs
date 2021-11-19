@@ -8,8 +8,8 @@ use crate::runtime::value::Convert;
 use crate::runtime::RuntimeError;
 
 use super::api::AtomApi;
+use super::error::Result;
 use super::origin::Origin;
-use super::result::Result;
 use super::value::Value;
 
 pub struct Input<'i> {

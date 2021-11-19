@@ -88,37 +88,10 @@ pub fn display_parse_error(e: ParseError<LineCol>) {
     }
 }
 
-pub fn display_compile_error(err: CompileError) {
-    eprintln!("CompileError: {}", err);
-}
-
-pub fn display_runtime_error(e: RuntimeError) {
-    let mut message = String::new();
-
-    if !e.stack_trace.is_empty() {
-        message.push_str("Stack trace:\n");
-    }
-
-    for trace in e.stack_trace.iter() {
-        if let Some(filename) = &trace.origin.filename {
-            message.push_str(&format!(
-                "  > at {}(..) in {}:{}:{}\n",
-                trace.target, filename, trace.origin.location.line, trace.origin.location.column
-            ));
-        } else {
-            message.push_str(&format!("  > at {}(..)\n", trace.target));
-        }
-    }
-
-    message.push_str(&format!("{}", e));
-
-    eprintln!("{}", message);
-}
-
-pub fn display_error(e: Error) {
-    match e {
-        Error::Compile(e) => display_compile_error(e),
-        Error::Runtime(e) => display_runtime_error(e),
+pub fn display_error(err: Error) {
+    match err {
+        Error::Compile(err) => eprintln!("CompileError: {}", err),
+        Error::Runtime(err) => eprintln!("{}", err),
         Error::Parse(e) => display_parse_error(e),
     }
 }

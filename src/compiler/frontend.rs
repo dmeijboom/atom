@@ -1,6 +1,6 @@
+use crate::compiler::error::Result;
 use crate::compiler::mir::{Block, DeclKind, Mir, Scope, Stmt, StmtKind};
 use crate::compiler::module::Id;
-use crate::compiler::error::Result;
 use crate::compiler::{mir, Class, Element, ElementKind, Function, Interface, Module};
 
 /// Frontend implements several validations for the program and sets up the module for further processing
@@ -29,8 +29,9 @@ impl<'c> Frontend<'c> {
             function.name.clone(),
             Function {
                 name: function.name.clone(),
-                attr: function.attr.clone(),
+                attr: function.attr,
                 args: function.args.clone(),
+                location: function.loc.clone(),
                 ..Function::default()
             },
         );
@@ -63,8 +64,9 @@ impl<'c> Frontend<'c> {
                 function.name.clone(),
                 Function {
                     name: function.name.clone(),
-                    attr: function.attr.clone(),
+                    attr: function.attr,
                     args: function.args.clone(),
+                    location: function.loc.clone(),
                     ..Function::default()
                 },
             );
