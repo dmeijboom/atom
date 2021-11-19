@@ -1,8 +1,7 @@
 use std::collections::HashMap;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
-use std::ops::{Index, IndexMut, Range};
-use std::slice::{Iter, IterMut};
+use std::ops::{Deref, DerefMut, Range};
 
 #[derive(Debug, Clone, PartialEq, Hash, Default)]
 pub struct Location {
@@ -245,41 +244,6 @@ impl IR {
         }
     }
 
-    #[inline]
-    pub fn remove(&mut self, index: usize) -> Code {
-        self.codes.remove(index)
-    }
-
-    #[inline]
-    pub fn len(&self) -> usize {
-        self.codes.len()
-    }
-
-    #[inline]
-    pub fn get(&self, index: usize) -> Option<&Code> {
-        self.codes.get(index)
-    }
-
-    #[inline]
-    pub unsafe fn get_unchecked_mut(&mut self, index: usize) -> &mut Code {
-        self.codes.get_unchecked_mut(index)
-    }
-
-    #[inline]
-    pub fn slice(&self, index: usize) -> &[Code] {
-        &self.codes[index..]
-    }
-
-    #[inline]
-    pub fn iter(&self) -> Iter<Code> {
-        self.codes.iter()
-    }
-
-    #[inline]
-    pub fn iter_mut(&mut self) -> IterMut<Code> {
-        self.codes.iter_mut()
-    }
-
     pub fn append(&mut self, mut ir: IR) {
         if self.codes.is_empty() && self.locations.is_empty() {
             *self = ir;
@@ -333,17 +297,17 @@ impl IR {
     }
 }
 
-impl Index<usize> for IR {
-    type Output = Code;
+impl Deref for IR {
+    type Target = Vec<Code>;
 
-    fn index(&self, index: usize) -> &Self::Output {
-        &self.codes[index]
+    fn deref(&self) -> &Self::Target {
+        &self.codes
     }
 }
 
-impl IndexMut<usize> for IR {
-    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
-        &mut self.codes[index]
+impl DerefMut for IR {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.codes.as_mut()
     }
 }
 

@@ -54,7 +54,7 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
         let index = instructions.iter().enumerate().position(|(i, code)| {
             matches!(code, Code::LoadTarget)
                 && matches!(instructions.get(i + 1), Some(Code::Call(_)))
-                && !has_side_effects(instructions.slice(i + 2))
+                && !has_side_effects(&instructions[i + 2..])
         });
 
         if let Some(i) = index {
