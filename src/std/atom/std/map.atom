@@ -179,11 +179,12 @@ class Bucket {
     pub static fn withEntry(entry) -> Bucket(entry: some(entry), next: nil);
 }
 
-pub class Map {
+pub class Map extends GetIterator {
     let buckets;
     let mut size;
 
     pub fn len() -> this.size;
+    pub fn iter() -> MapIter.new(this);
 
     pub static fn from(pairs) {
         let map = Map(buckets: [], size: 0);
@@ -203,6 +204,36 @@ pub class Map {
         } else {
             raise "not supported";
         }
+    }
+
+    fn getByIndex(index) {
+        let mut i = index;
+
+        for bucket in this.buckets {
+            if i < 0 {
+                break;
+            }
+
+            let mut current = bucket;
+
+            for {
+                if current.entry.isSome() {
+                    if i == 0 {
+                        return current.entry;
+                    }
+
+                    i -= 1;
+                }
+
+                if current.next.isNone() {
+                    break;
+                }
+
+                current = current.next!;
+            }
+        }
+
+        return nil;
     }
 
     pub fn set(key, value) {
