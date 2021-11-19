@@ -78,7 +78,7 @@ impl fmt::Display for CompileError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "{} in {}",
+            "CompileError: {} in {}",
             self.kind,
             self.filename.as_deref().unwrap_or("<unknown>")
         )?;

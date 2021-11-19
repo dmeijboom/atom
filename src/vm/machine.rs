@@ -1293,6 +1293,10 @@ impl Machine {
         Ok(())
     }
 
+    pub fn take_result(&mut self) -> Option<Value> {
+        self.stack.try_pop()
+    }
+
     pub fn cleanup(&mut self) {
         self.call_stack.clear();
         self.stack.clear();

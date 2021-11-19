@@ -7,8 +7,8 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 
 ## Features
 
-- Tail calls
 - Dynamically typed
+- Tail call optimization
 - No null or uninitialized fields
 - Classes as first-class citizens
 - Supports 64-bit floats
@@ -17,7 +17,7 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 ## Test suite
 
 The test suite is written in atom using the `testing` module.
-To run the test suite, run `atom run --module-path ./tests -- tests/main.atom`.
+To run the test suite, run `atom run -- tests/main.atom`.
 
 ### Integers
 

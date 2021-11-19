@@ -22,6 +22,10 @@ impl Stack {
         Ok(())
     }
 
+    pub fn try_pop(&mut self) -> Option<Value> {
+        self.data.pop()
+    }
+
     pub fn pop(&mut self) -> Value {
         self.data.remove(self.data.len() - 1)
     }
