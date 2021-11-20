@@ -1,13 +1,15 @@
+use std::collections::HashMap;
+
 use colored::{ColoredString, Colorize};
 use enumflags2::BitFlags;
 use rustyline::error::ReadlineError;
 use rustyline::Editor;
 
-use crate::compiler::LineNumberOffset;
+use crate::compiler::{CompileError, LineNumberOffset};
 use crate::engine::{Engine, Options};
 use crate::error::Error;
 use crate::runtime::Value;
-use crate::syntax::{parser, Expr, FnDeclStmt, ReturnStmt, Stmt};
+use crate::syntax::{parser, FnDeclStmt, ReturnStmt, Stmt, Variable};
 
 fn pretty_fmt_items(items: &[Value]) -> ColoredString {
     let mut output = ColoredString::default();
@@ -69,61 +71,122 @@ fn pretty_fmt(value: &Value) -> ColoredString {
     }
 }
 
-fn print_result(value: Option<Value>) {
-    println!("{}", pretty_fmt(&value.unwrap_or(Value::Option(None))));
-}
-
 fn print_err(err: Error) {
     eprintln!("{}", format!("{}", err).red());
 }
 
-fn make_program(expr: Expr) -> Vec<Stmt> {
-    vec![Stmt::FnDecl(FnDeclStmt {
-        name: "main".to_string(),
-        pos: expr.pos(),
-        modifiers: BitFlags::default(),
-        args: vec![],
-        body: vec![Stmt::Return(ReturnStmt {
-            pos: expr.pos(),
-            expr,
-        })],
-        comments: vec![],
-    })]
+pub struct Repl {
+    vars: HashMap<String, Value>,
+}
+
+impl Repl {
+    fn new() -> Self {
+        Self {
+            vars: HashMap::new(),
+        }
+    }
+
+    fn make_program(&self, stmt: Stmt) -> Vec<Stmt> {
+        vec![Stmt::FnDecl(FnDeclStmt {
+            name: "main".to_string(),
+            pos: stmt.pos(),
+            modifiers: BitFlags::default(),
+            args: vec![],
+            body: vec![stmt],
+            comments: vec![],
+        })]
+    }
+
+    fn parse_input(&self, source: &str) -> Result<Stmt, Error> {
+        match parser::parse_expr(source) {
+            Ok(expr) => Ok(Stmt::Return(ReturnStmt {
+                pos: expr.pos(),
+                expr,
+            })),
+            Err(err) => Ok(parser::parse_stmt(source).map_err(|_| err)?),
+        }
+    }
+
+    fn input(&mut self, source: &str) {
+        let stmt = match self.parse_input(source) {
+            Ok(stmt) => stmt,
+            Err(err) => {
+                print_err(err);
+                return;
+            }
+        };
+
+        if let Err(err) = self.handle_input(source, stmt) {
+            print_err(err);
+        }
+    }
+
+    fn handle_input(&mut self, source: &str, stmt: Stmt) -> Result<(), Error> {
+        match stmt {
+            Stmt::Let(let_stmt) => {
+                if let Variable::Name(name) = let_stmt.var {
+                    let value = self
+                        .run_program(
+                            source,
+                            self.make_program(Stmt::Return(ReturnStmt {
+                                pos: let_stmt.value.pos(),
+                                expr: let_stmt.value,
+                            })),
+                        )?
+                        .unwrap();
+
+                    println!("{}", pretty_fmt(&value));
+
+                    self.vars.insert(name, value);
+
+                    return Ok(());
+                }
+
+                Err(Error::from(CompileError::new(
+                    "invalid left-hand assignment (only names are supported in the REPL)"
+                        .to_string(),
+                )))
+            }
+            _ => {
+                let value = self.run_program(source, self.make_program(stmt))?;
+
+                println!("{}", pretty_fmt(&value.unwrap_or(Value::Option(None))));
+
+                Ok(())
+            }
+        }
+    }
+
+    fn run_program(&self, source: &str, tree: Vec<Stmt>) -> Result<Option<Value>, Error> {
+        let mut engine = Engine::new()?;
+        let output = engine.run_ast(
+            Options {
+                capture_result: true,
+                ..Options::default()
+            },
+            LineNumberOffset::parse(source),
+            tree,
+        )?;
+
+        Ok(output.value)
+    }
 }
 
 pub fn command() -> Result<(), Error> {
+    let mut repl = Repl::new();
     let mut editor = Editor::<()>::new();
     let _ = editor.load_history(".atom_repl_history");
 
     loop {
-        match editor.readline("➜ ") {
+        match editor.readline(&"➜ ".yellow().to_string()) {
             Ok(line) => {
                 let source = line.trim();
 
-                // Try parsing an expression
-                let expr = match parser::parse_expr(source) {
-                    Ok(expr) => expr,
-                    Err(err) => {
-                        print_err(Error::from(err));
-                        continue;
-                    }
-                };
-                let mut engine = Engine::new()?;
-
-                match engine.run_ast(
-                    Options {
-                        capture_result: true,
-                        ..Options::default()
-                    },
-                    LineNumberOffset::parse(source),
-                    make_program(expr),
-                ) {
-                    Ok(output) => {
-                        print_result(output.value);
-                    }
-                    Err(err) => print_err(err),
+                if source.is_empty() {
+                    continue;
                 }
 
+                repl.input(source);
                 editor.add_history_entry(source);
             }
             Err(ReadlineError::Interrupted) | Err(ReadlineError::Eof) => break,
