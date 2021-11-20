@@ -5,7 +5,7 @@ use strum_macros::EnumIter;
 use super::atom_ref::AtomRef;
 use super::class::Class;
 use super::closure::Closure;
-use super::error::{Result, RuntimeError};
+use super::error::{ErrorKind, Result, RuntimeError};
 use super::int::Int;
 use super::interface::Interface;
 use super::method::Method;
@@ -20,12 +20,14 @@ pub trait Convert<T> {
 
 macro_rules! type_error {
     ($expected:ident, $value:expr) => {
-        RuntimeError::new(format!(
-            "expected '{}', found: {}",
-            stringify!($expected),
-            $value.get_type().name()
-        ))
-        .with_kind("TypeError".to_string())
+        RuntimeError::new(
+            ErrorKind::TypeError,
+            format!(
+                "expected '{}', found: {}",
+                stringify!($expected),
+                $value.get_type().name()
+            ),
+        )
     };
 }
 
@@ -123,7 +125,7 @@ macro_rules! make_value {
                 match name {
                     "Void" => Ok(Self::Void),
                     $(stringify!($name) => Ok(Self::$name)),+,
-                    _ => Err(RuntimeError::new(format!("unknown type: {}", name))),
+                    _ => Err(RuntimeError::new(ErrorKind::FatalError, format!("unknown type: {}", name))),
                 }
             }
         }

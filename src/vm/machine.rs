@@ -7,7 +7,7 @@ use strum::IntoEnumIterator;
 
 use crate::compiler;
 use crate::compiler::ir::{Code, Label, IR};
-use crate::runtime::stdlib;
+use crate::runtime::{stdlib, ErrorKind};
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
@@ -26,12 +26,15 @@ macro_rules! impl_op {
         $vm.stack.push(match left {
             Value::Int(val) => Value::Int(val.$opname(right.convert()?)),
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "expected '{}', found '{}' in: {}",
-                    right.get_type().name(),
-                    left.get_type().name(),
-                    stringify!($opname)
-                )));
+                return Err(RuntimeError::new(
+                    ErrorKind::TypeError,
+                    format!(
+                        "expected '{}', found '{}' in: {}",
+                        right.get_type().name(),
+                        left.get_type().name(),
+                        stringify!($opname)
+                    ),
+                ));
             }
         });
 
@@ -46,12 +49,15 @@ macro_rules! impl_op {
             Value::Int(val) => Value::Bool(val.$opname(&right.convert()?)),
             Value::Float(val) => Value::Bool(val.$opname(&right.convert()?)),
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "expected '{}', found '{}' in: {}",
-                    right.get_type().name(),
-                    left.get_type().name(),
-                    stringify!($opname)
-                )));
+                return Err(RuntimeError::new(
+                    ErrorKind::TypeError,
+                    format!(
+                        "expected '{}', found '{}' in: {}",
+                        right.get_type().name(),
+                        left.get_type().name(),
+                        stringify!($opname)
+                    ),
+                ));
             }
         });
 
@@ -66,12 +72,15 @@ macro_rules! impl_op {
             Value::Int(val) => Value::Int(val.$opname(right.convert()?)),
             Value::Float(val) => Value::Float(val.$opname(&right.convert()?)),
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "expected '{}', found '{}' in: {}",
-                    right.get_type().name(),
-                    left.get_type().name(),
-                    stringify!($opname)
-                )));
+                return Err(RuntimeError::new(
+                    ErrorKind::TypeError,
+                    format!(
+                        "expected '{}', found '{}' in: {}",
+                        right.get_type().name(),
+                        left.get_type().name(),
+                        stringify!($opname)
+                    ),
+                ));
             }
         });
 
@@ -136,10 +145,10 @@ impl Machine {
                     .get(value.get_type() as usize - 1)
                     .map(|class| AtomRef::clone(class))
                     .ok_or_else(|| {
-                        RuntimeError::new(format!(
-                            "no class found for type: {}",
-                            value.get_type().name()
-                        ))
+                        RuntimeError::new(
+                            ErrorKind::FatalError,
+                            format!("no class found for type: {}", value.get_type().name()),
+                        )
                     })
             }
         }
@@ -181,10 +190,10 @@ impl Machine {
             Value::Method(method) => {
                 self.eval_method_call(method, keywords, arg_count, store_result)
             }
-            _ => Err(RuntimeError::new(format!(
-                "type '{}' is not callable",
-                value.get_type().name()
-            ))),
+            _ => Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("type '{}' is not callable", value.get_type().name()),
+            )),
         }
     }
 
@@ -228,17 +237,23 @@ impl Machine {
         store_result: bool,
     ) -> Result<()> {
         if keywords.len() != arg_count {
-            return Err(RuntimeError::new(format!(
-                "unable to create instance of '{}' with non-keyword arguments",
-                class.as_ref()
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "unable to create instance of '{}' with non-keyword arguments",
+                    class.as_ref()
+                ),
+            ));
         }
 
         if keywords.len() != class.fields.len() {
-            return Err(RuntimeError::new(format!(
-                "unable to create instance of '{}' with incorrect number of fields",
-                class.as_ref()
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "unable to create instance of '{}' with incorrect number of fields",
+                    class.as_ref()
+                ),
+            ));
         }
 
         let mut is_sorted = true;
@@ -252,11 +267,10 @@ impl Machine {
                 continue;
             }
 
-            return Err(RuntimeError::new(format!(
-                "invalid field '{}' on {}",
-                keyword,
-                class.as_ref(),
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("invalid field '{}' on {}", keyword, class.as_ref(),),
+            ));
         }
 
         let fields = if is_sorted {
@@ -274,11 +288,10 @@ impl Machine {
                         continue;
                     }
 
-                    return Err(RuntimeError::new(format!(
-                        "invalid field '{}' on {}",
-                        name,
-                        class.as_ref(),
-                    )));
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        format!("invalid field '{}' on {}", name, class.as_ref(),),
+                    ));
                 }
             }
 
@@ -301,14 +314,20 @@ impl Machine {
         store_result: bool,
     ) -> Result<()> {
         match &method.receiver {
-            Receiver::Unbound if !method.is_static => Err(RuntimeError::new(format!(
-                "unable to call non-static '{}(..)' with unbound receiver",
-                method.as_ref()
-            ))),
-            Receiver::Bound(_) if method.is_static => Err(RuntimeError::new(format!(
-                "unable to call static '{}(..)' on instance",
-                method.as_ref()
-            ))),
+            Receiver::Unbound if !method.is_static => Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "unable to call non-static '{}(..)' with unbound receiver",
+                    method.as_ref()
+                ),
+            )),
+            Receiver::Bound(_) if method.is_static => Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "unable to call static '{}(..)' on instance",
+                    method.as_ref()
+                ),
+            )),
             _ => {
                 let return_value = self.eval_func(Target::Method(method), keywords, arg_count)?;
 
@@ -335,7 +354,10 @@ impl Machine {
                 continue;
             }
 
-            return Err(RuntimeError::new(format!("no such argument '{}'", name)));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("no such argument '{}'", name),
+            ));
         }
 
         for i in 0..args.len() {
@@ -366,12 +388,15 @@ impl Machine {
         match &func.ptr {
             FnPtr::Native(source) => {
                 if arg_count != func.args.len() {
-                    return Err(RuntimeError::new(format!(
-                        "invalid argument count for target: {}(...) (expected {}, not {})",
-                        target,
-                        func.args.len(),
-                        arg_count,
-                    )));
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        format!(
+                            "invalid argument count for target: {}(...) (expected {}, not {})",
+                            target,
+                            func.args.len(),
+                            arg_count,
+                        ),
+                    ));
                 }
 
                 let locals = if keywords.is_empty() {
@@ -409,10 +434,13 @@ impl Machine {
             }
             FnPtr::External(closure) => {
                 if !keywords.is_empty() {
-                    return Err(RuntimeError::new(format!(
-                        "unable to use keyword arguments in external target: {}(..)",
-                        target,
-                    )));
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        format!(
+                            "unable to use keyword arguments in external target: {}(..)",
+                            target,
+                        ),
+                    ));
                 }
 
                 self.call_stack.push(CallContext::new(target, vec![]));
@@ -605,10 +633,10 @@ impl Machine {
             return Ok(());
         }
 
-        Err(RuntimeError::new(format!(
-            "unable to dereference: {}",
-            value.get_type().name()
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("unable to dereference: {}", value.get_type().name()),
+        ))
     }
 
     fn eval_logical_and(&mut self) -> Result<()> {
@@ -618,12 +646,14 @@ impl Machine {
         self.stack.push(match left {
             Value::Bool(val) => Value::Bool(val && right.convert()?),
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "expected '{}', found: {}",
-                    right.get_type().name(),
-                    left.get_type().name()
+                return Err(RuntimeError::new(
+                    ErrorKind::TypeError,
+                    format!(
+                        "expected '{}', found: {}",
+                        right.get_type().name(),
+                        left.get_type().name()
+                    ),
                 ))
-                .with_kind("TypeError".to_string()))
             }
         });
 
@@ -678,11 +708,14 @@ impl Machine {
             }
             Value::Float(val) => Value::Float(val.powf(right.convert()?)),
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "invalid types: {} and {} in exponent",
-                    left.get_type().name(),
-                    right.get_type().name()
-                )))
+                return Err(RuntimeError::new(
+                    ErrorKind::TypeError,
+                    format!(
+                        "invalid types: {} and {} in exponent",
+                        left.get_type().name(),
+                        right.get_type().name()
+                    ),
+                ))
             }
         });
 
@@ -700,11 +733,14 @@ impl Machine {
                 Value::Int(val.rem(right_val))
             }
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "invalid types: {} and {} in modulus",
-                    left.get_type().name(),
-                    right.get_type().name()
-                )))
+                return Err(RuntimeError::new(
+                    ErrorKind::TypeError,
+                    format!(
+                        "invalid types: {} and {} in modulus",
+                        left.get_type().name(),
+                        right.get_type().name()
+                    ),
+                ))
             }
         });
 
@@ -760,10 +796,10 @@ impl Machine {
             return Ok(());
         }
 
-        Err(RuntimeError::new(format!(
-            "unable to assert type with: {}",
-            right,
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("unable to assert type with: {}", right,),
+        ))
     }
 
     fn eval_unwrap(&mut self) -> Result<()> {
@@ -775,7 +811,10 @@ impl Machine {
             return Ok(());
         }
 
-        Err(RuntimeError::new("unable to unwrap nil value".to_string()))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            "unable to unwrap nil value".to_string(),
+        ))
     }
 
     fn eval_cast(&mut self, type_name: &str) -> Result<()> {
@@ -823,11 +862,14 @@ impl Machine {
             Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
             Value::Bool(val) if type_name == "Int" => Value::Int(Int::Uint8(val as u8)),
             _ => {
-                return Err(RuntimeError::new(format!(
-                    "unable to cast '{}' to invalid type: {}",
-                    value.get_type().name(),
-                    type_name
-                )));
+                return Err(RuntimeError::new(
+                    ErrorKind::FatalError,
+                    format!(
+                        "unable to cast '{}' to invalid type: {}",
+                        value.get_type().name(),
+                        type_name
+                    ),
+                ));
             }
         });
 
@@ -861,10 +903,10 @@ impl Machine {
         } else if let Value::Tuple(tuple) = &value {
             tuple.as_ref()
         } else {
-            return Err(RuntimeError::new(format!(
-                "unable to index type: {}",
-                value.get_type().name()
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("unable to index type: {}", value.get_type().name()),
+            ));
         };
 
         let index_type = index.get_type();
@@ -888,6 +930,7 @@ impl Machine {
         }
 
         Err(RuntimeError::new(
+            ErrorKind::FatalError,
             format!("index out of bounds: {}", index,),
         ))
     }
@@ -905,10 +948,10 @@ impl Machine {
 
                 Ok(())
             }
-            _ => Err(RuntimeError::new(format!(
-                "unable to create a slice of type: {}",
-                value
-            ))),
+            _ => Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("unable to create a slice of type: {}", value),
+            )),
         }
     }
 
@@ -936,6 +979,7 @@ impl Machine {
                 }
 
                 Err(RuntimeError::new(
+                    ErrorKind::FatalError,
                     format!("index out of bounds: {}", index,),
                 ))
             }
@@ -944,10 +988,10 @@ impl Machine {
 
             //    Ok(())
             //}
-            _ => Err(RuntimeError::new(format!(
-                "unable to index type: {}",
-                data.get_type().name()
-            ))),
+            _ => Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("unable to index type: {}", data.get_type().name()),
+            )),
         }
     }
 
@@ -964,19 +1008,25 @@ impl Machine {
                 if let Some(field) = class.fields.get(member) {
                     if let Value::Object(object) = value {
                         if !field.public && module_id != class.origin.module_id {
-                            return Err(RuntimeError::new(format!(
-                                "unable to access private field: {}.{}",
-                                class.as_ref(),
-                                member,
-                            )));
+                            return Err(RuntimeError::new(
+                                ErrorKind::FatalError,
+                                format!(
+                                    "unable to access private field: {}.{}",
+                                    class.as_ref(),
+                                    member,
+                                ),
+                            ));
                         }
 
                         let field = object.get_field(field.id).cloned().ok_or_else(|| {
-                            RuntimeError::new(format!(
-                                "unable to get unknown field '{}' of class: {}",
-                                member,
-                                class.as_ref()
-                            ))
+                            RuntimeError::new(
+                                ErrorKind::FatalError,
+                                format!(
+                                    "unable to get unknown field '{}' of class: {}",
+                                    member,
+                                    class.as_ref()
+                                ),
+                            )
                         })?;
 
                         self.stack.push(field);
@@ -984,19 +1034,22 @@ impl Machine {
                         return Ok(());
                     }
 
-                    return Err(RuntimeError::new(format!(
-                        "unable to lookup field on: {}",
-                        value.get_type().name(),
-                    )));
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        format!("unable to lookup field on: {}", value.get_type().name(),),
+                    ));
                 }
 
                 if let Some(func) = class.methods.get(member) {
                     if !func.public && module_id != class.origin.module_id {
-                        return Err(RuntimeError::new(format!(
-                            "unable to access private method: {}.{}(..)",
-                            class.as_ref(),
-                            member,
-                        )));
+                        return Err(RuntimeError::new(
+                            ErrorKind::FatalError,
+                            format!(
+                                "unable to access private method: {}.{}(..)",
+                                class.as_ref(),
+                                member,
+                            ),
+                        ));
                     }
 
                     self.stack.push(Value::Method(AtomRef::new(Method {
@@ -1023,11 +1076,14 @@ impl Machine {
             }
         }
 
-        Err(RuntimeError::new(format!(
-            "no such field or method '{}' for: {}",
-            member,
-            class.as_ref(),
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!(
+                "no such field or method '{}' for: {}",
+                member,
+                class.as_ref(),
+            ),
+        ))
     }
 
     fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
@@ -1037,19 +1093,25 @@ impl Machine {
 
         if let Some(field) = class.fields.get(member) {
             if !field.public && module_id != class.origin.module_id {
-                return Err(RuntimeError::new(format!(
-                    "unable to access private field '{}' of class: {}",
-                    member,
-                    class.as_ref()
-                )));
+                return Err(RuntimeError::new(
+                    ErrorKind::FatalError,
+                    format!(
+                        "unable to access private field '{}' of class: {}",
+                        member,
+                        class.as_ref()
+                    ),
+                ));
             }
 
             if !field.mutable {
-                return Err(RuntimeError::new(format!(
-                    "unable to assign to immutable field '{}' of class: {}",
-                    member,
-                    class.as_ref()
-                )));
+                return Err(RuntimeError::new(
+                    ErrorKind::FatalError,
+                    format!(
+                        "unable to assign to immutable field '{}' of class: {}",
+                        member,
+                        class.as_ref()
+                    ),
+                ));
             }
 
             if let Value::Object(mut object) = object {
@@ -1058,17 +1120,19 @@ impl Machine {
                 return Ok(());
             }
 
-            return Err(RuntimeError::new(format!(
-                "unable to store member on invalid type '{}' expected Object",
-                object.get_type().name(),
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "unable to store member on invalid type '{}' expected Object",
+                    object.get_type().name(),
+                ),
+            ));
         }
 
-        Err(RuntimeError::new(format!(
-            "no such field '{}' for class: {}",
-            member,
-            class.as_ref(),
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("no such field '{}' for class: {}", member, class.as_ref(),),
+        ))
     }
 
     fn eval_load(&mut self, id: usize) -> Result<()> {
@@ -1082,16 +1146,19 @@ impl Machine {
             }
         }
 
-        Err(RuntimeError::new(format!(
-            "undefined local with id: {}",
-            id
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::UserError,
+            format!("undefined local with id: {}", id),
+        ))
     }
 
     fn eval_load_receiver(&mut self) -> Result<()> {
         let receiver = self.call_stack.current().and_then(|context| {
             context.get_receiver().ok_or_else(|| {
-                RuntimeError::new("unable to load 'this' outside of a method".to_string())
+                RuntimeError::new(
+                    ErrorKind::FatalError,
+                    "unable to load 'this' outside of a method".to_string(),
+                )
             })
         })?;
 
@@ -1136,7 +1203,12 @@ impl Machine {
             .classes
             .get_index(id)
             .map(|(_, val)| AtomRef::clone(val))
-            .ok_or_else(|| RuntimeError::new(format!("class with ID '{}' not found", id)))?;
+            .ok_or_else(|| {
+                RuntimeError::new(
+                    ErrorKind::FatalError,
+                    format!("class with ID '{}' not found", id),
+                )
+            })?;
 
         self.stack.push(Value::Class(value));
 
@@ -1149,7 +1221,12 @@ impl Machine {
             .interfaces
             .get(id)
             .map(|val| AtomRef::clone(val))
-            .ok_or_else(|| RuntimeError::new(format!("interface with ID '{}' not found", id)))?;
+            .ok_or_else(|| {
+                RuntimeError::new(
+                    ErrorKind::FatalError,
+                    format!("interface with ID '{}' not found", id),
+                )
+            })?;
 
         self.stack.push(Value::Interface(value));
 
@@ -1168,6 +1245,7 @@ impl Machine {
         }
 
         Err(RuntimeError::new(
+            ErrorKind::FatalError,
             "unable to load target outside of call".to_string(),
         ))
     }
@@ -1203,10 +1281,10 @@ impl Machine {
             }
         }
 
-        Err(RuntimeError::new(format!(
-            "unable to find label: {}",
-            search,
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("unable to find label: {}", search,),
+        ))
     }
 
     fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<Option<Value>> {

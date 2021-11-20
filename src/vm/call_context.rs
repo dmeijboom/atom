@@ -1,7 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::runtime::{
-    AtomRef, Closure, Fn, Method, Origin, Receiver, Result, RuntimeError, Trace, Value,
+    AtomRef, Closure, ErrorKind, Fn, Method, Origin, Receiver, Result, RuntimeError, Trace, Value,
 };
 
 #[derive(Debug)]
@@ -81,15 +81,15 @@ impl CallStack {
     }
 
     pub fn current(&self) -> Result<&CallContext> {
-        self.data
-            .last()
-            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
+        self.data.last().ok_or_else(|| {
+            RuntimeError::new(ErrorKind::FatalError, "expected call context".to_string())
+        })
     }
 
     pub fn current_mut(&mut self) -> Result<&mut CallContext> {
-        self.data
-            .last_mut()
-            .ok_or_else(|| RuntimeError::new("expected call context".to_string()))
+        self.data.last_mut().ok_or_else(|| {
+            RuntimeError::new(ErrorKind::FatalError, "expected call context".to_string())
+        })
     }
 
     pub fn is_empty(&self) -> bool {

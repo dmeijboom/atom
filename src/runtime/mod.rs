@@ -2,7 +2,7 @@ pub use api::AtomApi;
 pub use atom_ref::AtomRef;
 pub use class::{Class, Field};
 pub use closure::Closure;
-pub use error::{Result, RuntimeError, Trace};
+pub use error::{ErrorKind, Result, RuntimeError, Trace};
 pub use int::Int;
 pub use interface::Interface;
 pub use method::{Method, Receiver};

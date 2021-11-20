@@ -1,3 +1,4 @@
+use crate::runtime::error::ErrorKind;
 use crate::runtime::{AtomRef, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value};
 
 pub const FUNCTIONS: [(&str, ExternalFn); 3] = [
@@ -56,7 +57,10 @@ pub fn some(input: Input<'_>) -> Result<Output> {
 }
 
 pub fn runtime_raise(input: Input<'_>) -> Result<Output> {
-    Err(RuntimeError::new(format!("{}", input.args[0])))
+    Err(RuntimeError::new(
+        ErrorKind::UserError,
+        format!("{}", input.args[0]),
+    ))
 }
 
 pub fn option_is_some(mut input: Input<'_>) -> Result<Output> {
@@ -66,10 +70,10 @@ pub fn option_is_some(mut input: Input<'_>) -> Result<Output> {
         return Ok(Output::new(inner.is_some()));
     }
 
-    Err(
-        RuntimeError::new(format!("expected 'Option', found: {}", value))
-            .with_kind("TypeError".to_string()),
-    )
+    Err(RuntimeError::new(
+        ErrorKind::TypeError,
+        format!("expected 'Option', found: {}", value),
+    ))
 }
 
 pub fn option_is_none(mut input: Input<'_>) -> Result<Output> {
@@ -79,10 +83,10 @@ pub fn option_is_none(mut input: Input<'_>) -> Result<Output> {
         return Ok(Output::new(inner.is_none()));
     }
 
-    Err(
-        RuntimeError::new(format!("expected 'Option', found: {}", value))
-            .with_kind("TypeError".to_string()),
-    )
+    Err(RuntimeError::new(
+        ErrorKind::TypeError,
+        format!("expected 'Option', found: {}", value),
+    ))
 }
 
 pub fn string_upper(mut input: Input<'_>) -> Result<Output> {

@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use crate::compiler::ir::{Code, IR};
 use crate::compiler::{CompileError, Compiler, LineNumberOffset};
 use crate::error::Error;
-use crate::runtime::{RuntimeError, Value};
+use crate::runtime::{ErrorKind, RuntimeError, Value};
 use crate::syntax::{parser, Stmt};
 use crate::vm::Machine;
 
@@ -99,7 +99,10 @@ impl Engine {
             .iter()
             .find(|module| module.name == opts.module_name)
             .ok_or_else(|| {
-                Error::Runtime(RuntimeError::new("main module not found".to_string()))
+                Error::Runtime(RuntimeError::new(
+                    ErrorKind::FatalError,
+                    "main module not found".to_string(),
+                ))
             })?;
 
         if opts.print_ir {
@@ -133,6 +136,7 @@ impl Engine {
         }
 
         Err(Error::Runtime(RuntimeError::new(
+            ErrorKind::FatalError,
             "no entry point found in main module".to_string(),
         )))
     }

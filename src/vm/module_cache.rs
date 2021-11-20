@@ -6,7 +6,8 @@ use wyhash2::WyHash;
 use crate::compiler::ir::Location;
 use crate::compiler::{self, ElementKind, FunctionAttr};
 use crate::runtime::{
-    AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result, RuntimeError, Value,
+    AtomRef, Class, ErrorKind, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result,
+    RuntimeError, Value,
 };
 use crate::vm::module::ModuleId;
 
@@ -44,16 +45,22 @@ impl ModuleCache {
         }
 
         if let Some(class_name) = class_name {
-            return Err(RuntimeError::new(format!(
-                "external '{}.{}.{}(...)' not found",
-                module_name, class_name, function_name
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "external '{}.{}.{}(...)' not found",
+                    module_name, class_name, function_name
+                ),
+            ));
         }
 
-        Err(RuntimeError::new(format!(
-            "external '{}.{}(...)' not found",
-            module_name, function_name
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!(
+                "external '{}.{}(...)' not found",
+                module_name, function_name
+            ),
+        ))
     }
 
     fn make_interface(&self, module: &Module, interface: compiler::Interface) -> Interface {
@@ -192,7 +199,10 @@ impl ModuleCache {
                             module.funcs.iter().find(|func| func.name == import_name)
                         })
                         .ok_or_else(|| {
-                            RuntimeError::new(format!("unable to resolve import: {}", import_name))
+                            RuntimeError::new(
+                                ErrorKind::FatalError,
+                                format!("unable to resolve import: {}", import_name),
+                            )
                         })?;
 
                     Value::Fn(AtomRef::clone(func))
@@ -201,7 +211,10 @@ impl ModuleCache {
                     let class = origin
                         .and_then(|module| module.classes.get(&import_name))
                         .ok_or_else(|| {
-                            RuntimeError::new(format!("unable to resolve import: {}", import_name))
+                            RuntimeError::new(
+                                ErrorKind::FatalError,
+                                format!("unable to resolve import: {}", import_name),
+                            )
                         })?;
 
                     Value::Class(AtomRef::clone(class))
@@ -215,7 +228,10 @@ impl ModuleCache {
                                 .find(|interface| interface.name == import_name)
                         })
                         .ok_or_else(|| {
-                            RuntimeError::new(format!("unable to resolve import: {}", import_name))
+                            RuntimeError::new(
+                                ErrorKind::FatalError,
+                                format!("unable to resolve import: {}", import_name),
+                            )
                         })?;
 
                     Value::Interface(AtomRef::clone(interface))
@@ -235,7 +251,10 @@ impl ModuleCache {
             return Ok(module);
         }
 
-        Err(RuntimeError::new(format!("no such module with ID: {}", id)))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("no such module with ID: {}", id),
+        ))
     }
 
     pub fn get_module(&self, name: &str) -> Result<&Module> {
@@ -243,7 +262,10 @@ impl ModuleCache {
             return Ok(module);
         }
 
-        Err(RuntimeError::new(format!("no such module: {}", name)))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("no such module: {}", name),
+        ))
     }
 
     pub fn get_class(&self, module_name: &str, name: &str) -> Result<AtomRef<Class>> {
@@ -253,9 +275,9 @@ impl ModuleCache {
             return Ok(AtomRef::clone(class));
         }
 
-        Err(RuntimeError::new(format!(
-            "no such class: {}.{}",
-            module_name, name
-        )))
+        Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            format!("no such class: {}.{}", module_name, name),
+        ))
     }
 }

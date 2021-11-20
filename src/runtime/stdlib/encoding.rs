@@ -1,4 +1,6 @@
-use crate::runtime::{AtomRef, Convert, Input, Int, Output, Result, RuntimeError, Value};
+use crate::runtime::{
+    AtomRef, Convert, ErrorKind, Input, Int, Output, Result, RuntimeError, Value,
+};
 
 pub mod binary {
     use crate::runtime::ExternalFn;
@@ -17,7 +19,10 @@ pub mod utf8 {
 
 fn to_fixed_array<T: Copy, const N: usize>(items: Vec<T>) -> Result<[T; N]> {
     if items.len() != N {
-        return Err(RuntimeError::new("invalid array size".to_string()));
+        return Err(RuntimeError::new(
+            ErrorKind::FatalError,
+            "invalid array size".to_string(),
+        ));
     }
 
     unsafe { Ok(*(items.as_ptr() as *const [T; N])) }
@@ -70,6 +75,6 @@ pub fn utf8_decode(input: Input<'_>) -> Result<Output> {
     }
 
     Ok(Output::new(String::from_utf8(bytes).map_err(|e| {
-        RuntimeError::new(format!("DecodeError: {}", e))
+        RuntimeError::new(ErrorKind::FatalError, format!("{}", e))
     })?))
 }

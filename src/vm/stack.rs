@@ -1,5 +1,4 @@
-use crate::runtime::Value;
-use crate::runtime::{Result, RuntimeError};
+use crate::runtime::{ErrorKind, Result, RuntimeError, Value};
 
 pub struct Stack {
     data: Vec<Value>,
@@ -16,7 +15,10 @@ impl Stack {
 
     pub fn delete(&mut self) -> Result<()> {
         self.data.pop().ok_or_else(|| {
-            RuntimeError::new("expected element on stack (in discard)".to_string())
+            RuntimeError::new(
+                ErrorKind::FatalError,
+                "expected element on stack (in discard)".to_string(),
+            )
         })?;
 
         Ok(())
@@ -38,10 +40,10 @@ impl Stack {
         }
 
         if data_len < len {
-            return Err(RuntimeError::new(format!(
-                "expected {} elements on stack",
-                len
-            )));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("expected {} elements on stack", len),
+            ));
         }
 
         Ok(self.data.split_off(data_len - len))

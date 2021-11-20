@@ -2,6 +2,8 @@ use std::any::Any;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
+use crate::runtime::ErrorKind;
+
 use super::error::{Result, RuntimeError};
 
 pub struct RustObject {
@@ -16,17 +18,21 @@ impl RustObject {
     }
 
     pub fn try_as_ref<T: Any>(&self) -> Result<&T> {
-        self.any
-            .as_ref()
-            .downcast_ref()
-            .ok_or_else(|| RuntimeError::new("invalid type for RustObject".to_string()))
+        self.any.as_ref().downcast_ref().ok_or_else(|| {
+            RuntimeError::new(
+                ErrorKind::FatalError,
+                "invalid type for RustObject".to_string(),
+            )
+        })
     }
 
     pub fn try_as_mut<T: Any>(&mut self) -> Result<&mut T> {
-        self.any
-            .as_mut()
-            .downcast_mut()
-            .ok_or_else(|| RuntimeError::new("invalid type for RustObject".to_string()))
+        self.any.as_mut().downcast_mut().ok_or_else(|| {
+            RuntimeError::new(
+                ErrorKind::FatalError,
+                "invalid type for RustObject".to_string(),
+            )
+        })
     }
 }
 

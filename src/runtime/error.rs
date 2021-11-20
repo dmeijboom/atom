@@ -1,9 +1,29 @@
 use std::error::Error;
 use std::fmt;
+use std::fmt::{Display, Formatter};
 
 use crate::compiler::ir::Location;
 
 use super::origin::Origin;
+
+#[derive(Debug, PartialEq)]
+pub enum ErrorKind {
+    FatalError,
+    TypeError,
+    IOError,
+    UserError,
+}
+
+impl Display for ErrorKind {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            ErrorKind::FatalError => write!(f, "FatalError"),
+            ErrorKind::TypeError => write!(f, "TypeError"),
+            ErrorKind::IOError => write!(f, "IOError"),
+            ErrorKind::UserError => write!(f, "UserError"),
+        }
+    }
+}
 
 #[derive(Debug, PartialEq)]
 pub struct Trace {
@@ -13,7 +33,7 @@ pub struct Trace {
 
 #[derive(Debug, PartialEq)]
 pub struct RuntimeError {
-    pub kind: Option<String>,
+    pub kind: ErrorKind,
     pub message: String,
     pub location: Option<Location>,
     pub module_name: Option<String>,
@@ -22,9 +42,9 @@ pub struct RuntimeError {
 }
 
 impl RuntimeError {
-    pub fn new(message: String) -> Self {
+    pub fn new(kind: ErrorKind, message: String) -> Self {
         Self {
-            kind: None,
+            kind,
             message,
             location: None,
             module_name: None,
@@ -68,12 +88,6 @@ impl RuntimeError {
 
         self
     }
-
-    pub fn with_kind(mut self, kind: String) -> Self {
-        self.kind = Some(kind);
-
-        self
-    }
 }
 
 impl Error for RuntimeError {}
@@ -96,12 +110,7 @@ impl fmt::Display for RuntimeError {
             }
         }
 
-        match &self.kind {
-            Some(kind) => write!(f, "{}: ", kind),
-            None => write!(f, "RuntimeError: "),
-        }?;
-
-        write!(f, "{}", self.message)?;
+        write!(f, "{}: {}", self.kind, self.message)?;
 
         if let Some(location) = &self.location {
             if let Some(filename) = &self.filename {

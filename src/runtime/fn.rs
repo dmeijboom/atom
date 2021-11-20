@@ -5,7 +5,7 @@ use indexmap::map::IndexMap;
 
 use crate::compiler::ir::IR;
 use crate::runtime::value::Convert;
-use crate::runtime::RuntimeError;
+use crate::runtime::{ErrorKind, RuntimeError};
 
 use super::api::AtomApi;
 use super::error::Result;
@@ -38,7 +38,7 @@ impl<'i> Input<'i> {
     pub fn get_receiver(&mut self) -> Result<&Value> {
         self.api
             .get_receiver()
-            .ok_or_else(|| RuntimeError::new("missing receiver".to_string()))
+            .ok_or_else(|| RuntimeError::new(ErrorKind::FatalError, "missing receiver".to_string()))
     }
 
     pub fn take_receiver<T>(&mut self) -> Result<T>
@@ -47,7 +47,9 @@ impl<'i> Input<'i> {
     {
         self.api
             .get_receiver()
-            .ok_or_else(|| RuntimeError::new("missing receiver".to_string()))?
+            .ok_or_else(|| {
+                RuntimeError::new(ErrorKind::FatalError, "missing receiver".to_string())
+            })?
             .clone()
             .convert()
     }
@@ -57,7 +59,10 @@ impl<'i> Input<'i> {
         Value: Convert<T>,
     {
         if self.args.is_empty() {
-            return Err(RuntimeError::new("missing argument".to_string()));
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                "missing argument".to_string(),
+            ));
         }
 
         self.args.remove(0).convert()
