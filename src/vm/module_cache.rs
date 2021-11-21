@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use indexmap::map::IndexMap;
 use wyhash2::WyHash;
 
-use crate::compiler::ir::Location;
+use crate::compiler::ir::{Code, Location};
 use crate::compiler::{self, ElementKind, FunctionAttr};
 use crate::runtime::{
     AtomRef, Class, ErrorKind, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result,
@@ -108,6 +108,7 @@ impl ModuleCache {
         Ok(Fn::native(
             func.name,
             func.attr.contains(FunctionAttr::Public),
+            !func.body.iter().any(|code| code == &Code::Return),
             origin,
             func.args
                 .into_iter()

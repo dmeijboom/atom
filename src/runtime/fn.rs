@@ -120,6 +120,8 @@ pub struct Fn {
     pub name: String,
     pub ptr: FnPtr,
     pub origin: Origin,
+    // If `void` is true the function will never return a value
+    pub void: bool,
     // Only used for instance methods
     pub public: bool,
     pub args: IndexMap<String, FnArg>,
@@ -129,6 +131,7 @@ impl Fn {
     pub fn native(
         name: String,
         public: bool,
+        void: bool,
         origin: Origin,
         args: IndexMap<String, FnArg>,
         ir: IR,
@@ -138,6 +141,7 @@ impl Fn {
             origin,
             args,
             public,
+            void,
             ptr: FnPtr::Native(Rc::new(ir)),
         }
     }
@@ -148,6 +152,7 @@ impl Fn {
             origin,
             args: IndexMap::new(),
             public,
+            void: false,
             ptr: FnPtr::External(func),
         }
     }

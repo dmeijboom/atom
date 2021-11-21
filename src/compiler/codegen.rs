@@ -139,6 +139,15 @@ impl<'c> CodeGenerator<'c> {
                 self.compile_value(scope, unwrap)?;
                 self.ir.add(Code::Unwrap, location);
             }
+            ValueKind::Try(value) => {
+                let label = self.slugs.get("try_end");
+
+                self.ir
+                    .add(Code::JumpOnError(Label::new(label.clone())), location);
+                self.compile_value(scope, value)?;
+                self.ir.add(Code::StoreTryOk, location);
+                self.ir.add(Code::SetLabel(label), location);
+            }
             ValueKind::Array(values) => {
                 self.compile_values(scope, values)?;
                 self.ir.add(Code::MakeArray(values.len()), location);

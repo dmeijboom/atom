@@ -12,6 +12,7 @@ use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
+use crate::vm::global_label::GlobalLabel;
 
 use super::call_context::{CallContext, CallStack, Target};
 use super::module::ModuleId;
@@ -99,16 +100,20 @@ pub struct Machine {
     stack: Stack,
     call_stack: CallStack,
     module_cache: ModuleCache,
+    try_stack: Vec<GlobalLabel>,
     type_classes: Vec<AtomRef<Class>>,
+    goto: Option<GlobalLabel>,
 }
 
 impl Machine {
     pub fn new() -> Result<Self> {
         let mut vm = Self {
             stack: Stack::new(),
+            try_stack: vec![],
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
             type_classes: vec![],
+            goto: None,
         };
 
         vm.module_cache.add_external_hook(stdlib::hook);
@@ -197,36 +202,31 @@ impl Machine {
         }
     }
 
+    #[inline(always)]
     fn eval_closure_call(
         &mut self,
         closure: AtomRef<Closure>,
         keywords: &[String],
         arg_count: usize,
-        store_result: bool,
+        store_return_value: bool,
     ) -> Result<()> {
-        let return_value = self.eval_func(Target::Closure(closure), keywords, arg_count)?;
-
-        if store_result {
-            self.stack.push(return_value);
-        }
-
-        Ok(())
+        self.eval_func(
+            Target::Closure(closure),
+            store_return_value,
+            keywords,
+            arg_count,
+        )
     }
 
+    #[inline(always)]
     fn eval_function_call(
         &mut self,
         func: AtomRef<Fn>,
         keywords: &[String],
         arg_count: usize,
-        store_result: bool,
+        store_return_value: bool,
     ) -> Result<()> {
-        let return_value = self.eval_func(Target::Fn(func), keywords, arg_count)?;
-
-        if store_result {
-            self.stack.push(return_value);
-        }
-
-        Ok(())
+        self.eval_func(Target::Fn(func), store_return_value, keywords, arg_count)
     }
 
     fn eval_new_instance(
@@ -234,7 +234,7 @@ impl Machine {
         class: AtomRef<Class>,
         keywords: &[String],
         arg_count: usize,
-        store_result: bool,
+        store_return_value: bool,
     ) -> Result<()> {
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(
@@ -298,7 +298,7 @@ impl Machine {
             fields
         };
 
-        if store_result {
+        if store_return_value {
             self.stack
                 .push(Value::Object(AtomRef::new(Object::new(class, fields))));
         }
@@ -311,7 +311,7 @@ impl Machine {
         method: AtomRef<Method>,
         keywords: &[String],
         arg_count: usize,
-        store_result: bool,
+        store_return_value: bool,
     ) -> Result<()> {
         match &method.receiver {
             Receiver::Unbound if !method.is_static => Err(RuntimeError::new(
@@ -329,11 +329,12 @@ impl Machine {
                 ),
             )),
             _ => {
-                let return_value = self.eval_func(Target::Method(method), keywords, arg_count)?;
-
-                if store_result {
-                    self.stack.push(return_value);
-                }
+                self.eval_func(
+                    Target::Method(method),
+                    store_return_value,
+                    keywords,
+                    arg_count,
+                )?;
 
                 Ok(())
             }
@@ -374,9 +375,10 @@ impl Machine {
     fn eval_func(
         &mut self,
         target: Target,
+        store_return_value: bool,
         keywords: &[String],
         arg_count: usize,
-    ) -> Result<Value> {
+    ) -> Result<()> {
         let (func, values) = match &target {
             Target::Fn(func) => (AtomRef::clone(func), None),
             Target::Method(method) => (AtomRef::clone(&method.func), None),
@@ -417,6 +419,7 @@ impl Machine {
 
                 self.call_stack.push(CallContext::new(
                     target,
+                    store_return_value,
                     if let Some(values) = values {
                         vec![values, locals].concat()
                     } else {
@@ -425,12 +428,16 @@ impl Machine {
                 ));
 
                 let source = Rc::clone(source);
+                let result = self._eval(module_id, source);
 
-                if let Some(result) = self._eval(module_id, source)? {
-                    self.call_stack.pop();
+                self.call_stack.pop();
 
-                    return Ok(result);
+                // If the function would never return a value we have to put something on the stack
+                if store_return_value && func.void {
+                    self.stack.push(Value::Void);
                 }
+
+                result
             }
             FnPtr::External(closure) => {
                 if !keywords.is_empty() {
@@ -443,21 +450,28 @@ impl Machine {
                     ));
                 }
 
-                self.call_stack.push(CallContext::new(target, vec![]));
+                self.call_stack
+                    .push(CallContext::new(target, store_return_value, vec![]));
 
                 let values = self.stack.pop_many(arg_count)?;
+                let result = closure(Input::new(self, values));
 
-                if let Output::Value(return_value) = closure(Input::new(self, values))? {
-                    self.call_stack.pop();
+                self.call_stack.pop();
 
-                    return Ok(return_value);
+                match result {
+                    Ok(output) if store_return_value => {
+                        self.stack.push(match output {
+                            Output::Value(return_value) => return_value,
+                            Output::None => Value::Void,
+                        });
+
+                        Ok(())
+                    }
+                    Ok(_) => Ok(()),
+                    Err(err) => Err(err),
                 }
             }
-        };
-
-        self.call_stack.pop();
-
-        Ok(Value::Void)
+        }
     }
 
     fn eval_const<T: Into<Value>>(&mut self, data: T) {
@@ -536,6 +550,7 @@ impl Machine {
             Code::TailCall(arg_count) => return Ok(Flow::TailCall(*arg_count)),
             Code::Store(id) => self.eval_store(*id, false)?,
             Code::StoreMut(id) => self.eval_store(*id, true)?,
+            Code::StoreTryOk => self.eval_store_try_ok()?,
             Code::LoadIndex => self.eval_load_index(false)?,
             Code::MakeSlice => self.eval_make_slice()?,
             Code::StoreIndex => self.eval_store_index()?,
@@ -554,6 +569,12 @@ impl Machine {
             }
             Code::Jump(label) => return Ok(Flow::JumpTo(label)),
             Code::JumpIfTrue(label) => return self.eval_jump_if_true(label),
+            Code::JumpOnError(label) => {
+                self.try_stack.push(GlobalLabel::new(
+                    self.call_stack.current_id().unwrap(),
+                    label.clone(),
+                ));
+            }
         };
 
         Ok(Flow::Continue)
@@ -894,6 +915,18 @@ impl Machine {
         Ok(())
     }
 
+    fn eval_store_try_ok(&mut self) -> Result<()> {
+        self.try_stack.pop();
+
+        let return_value = self.stack.pop();
+
+        self.stack.push(Value::Tuple(
+            vec![Value::Symbol(Symbol::new("ok")), return_value].into_boxed_slice(),
+        ));
+
+        Ok(())
+    }
+
     fn eval_load_index(&mut self, push_back: bool) -> Result<()> {
         let index = self.stack.pop();
         let value = self.stack.pop();
@@ -983,11 +1016,6 @@ impl Machine {
                     format!("index out of bounds: {}", index,),
                 ))
             }
-            //Value::Map(mut map) => {
-            //    map.as_mut().insert(index, value);
-
-            //    Ok(())
-            //}
             _ => Err(RuntimeError::new(
                 ErrorKind::FatalError,
                 format!("unable to index type: {}", data.get_type().name()),
@@ -1287,12 +1315,29 @@ impl Machine {
         ))
     }
 
-    fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<Option<Value>> {
+    fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<()> {
         let mut i = 0;
         let mut return_addr = vec![];
 
         loop {
-            while i < instructions.len() {
+            'eval_loop: while i < instructions.len() {
+                // Handle global jumps to labels
+                if let Some(goto) = &self.goto {
+                    match self.call_stack.current_id() {
+                        Some(context_id) if goto.context_id == context_id => {
+                            i = match goto.label.index {
+                                Some(index) => index,
+                                None => self.find_label(&instructions, &goto.label.name)?,
+                            };
+
+                            self.goto = None;
+
+                            continue;
+                        }
+                        None | Some(_) => break 'eval_loop,
+                    }
+                }
+
                 let code = &instructions[i];
 
                 // Evaluates the instruction and optionally returns a label to jump to
@@ -1300,14 +1345,15 @@ impl Machine {
                     Ok(flow) => match flow {
                         Flow::Continue => i += 1,
                         Flow::Return(value) => {
+                            self.stack.push(value);
+
                             if let Some(addr) = return_addr.pop() {
                                 i = addr;
-                                self.stack.push(value);
 
                                 continue;
                             }
 
-                            return Ok(Some(value));
+                            break 'eval_loop;
                         }
                         Flow::JumpTo(label) => {
                             i = match label.index {
@@ -1326,11 +1372,29 @@ impl Machine {
                             continue;
                         }
                     },
-                    Err(e) => {
+                    Err(err) => {
+                        // If there is an error that is try-able, let's handle it
+                        if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
+                            if let Some(label) = self.try_stack.pop() {
+                                self.stack.push(Value::Tuple(
+                                    vec![
+                                        Value::Symbol(Symbol::new("err")),
+                                        Value::String(AtomRef::new(format!("{}", err))),
+                                    ]
+                                    .into_boxed_slice(),
+                                ));
+
+                                self.goto = Some(label);
+
+                                break 'eval_loop;
+                            }
+                        }
+
+                        // Otherwise, simply fail
                         let module = self.module_cache.get_module_by_id(module_id)?;
 
-                        if e.location.is_none() {
-                            let mut e = e.with_module(&module.name);
+                        if err.location.is_none() {
+                            let mut e = err.with_module(&module.name);
 
                             if let Some(location) = instructions.get_location(i) {
                                 e = e.with_location(location.clone());
@@ -1343,15 +1407,18 @@ impl Machine {
                             return Err(e);
                         };
 
-                        return Err(e);
+                        return Err(err);
                     }
                 };
             }
 
-            // We're finished but there is still a return-address, this means we're expected to have pushed a return-value
             if let Some(addr) = return_addr.pop() {
+                // We're finished but there is still a return-address, this means we're expected to have pushed a return-value
+                if self.call_stack.current()?.store_return_value {
+                    self.stack.push(Value::Void);
+                }
+
                 i = addr;
-                self.stack.push(Value::Void);
 
                 continue;
             }
@@ -1359,7 +1426,7 @@ impl Machine {
             break;
         }
 
-        Ok(None)
+        Ok(())
     }
 
     pub fn eval(&mut self, module: &str, instructions: IR) -> Result<()> {

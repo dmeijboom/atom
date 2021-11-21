@@ -45,11 +45,17 @@ impl Clone for Target {
 pub struct CallContext {
     pub target: Target,
     pub locals: Vec<Value>,
+    // Determines if the result should be stored on the stack or not
+    pub store_return_value: bool,
 }
 
 impl CallContext {
-    pub fn new(target: Target, locals: Vec<Value>) -> Self {
-        Self { target, locals }
+    pub fn new(target: Target, store_return_value: bool, locals: Vec<Value>) -> Self {
+        Self {
+            target,
+            store_return_value,
+            locals,
+        }
     }
 
     pub fn get_receiver(&self) -> Option<&Value> {
@@ -78,6 +84,14 @@ impl CallStack {
 
     pub fn pop(&mut self) -> Option<CallContext> {
         self.data.pop()
+    }
+
+    pub fn current_id(&self) -> Option<usize> {
+        if self.data.is_empty() {
+            return None;
+        }
+
+        Some(self.data.len() - 1)
     }
 
     pub fn current(&self) -> Result<&CallContext> {

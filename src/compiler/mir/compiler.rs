@@ -218,6 +218,17 @@ impl<'c> Compiler<'c> {
 
                 ValueKind::Unwrap(Box::new(value))
             }
+            Expr::Try(try_expr) => {
+                let value = self.compile_expr(&try_expr.expr)?;
+
+                if let ValueKind::Call(_) = &value.kind {
+                    ValueKind::Try(Box::new(value))
+                } else {
+                    return Err(CompileError::new(
+                        "unable to use try on a non-call expression".to_string(),
+                    ));
+                }
+            }
             Expr::Array(array) => {
                 let items = self.compile_items(&array.items)?;
 

@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 
 use crate::compiler::ir::{Code, IR};
-
 use crate::compiler::Module;
 
 /// Calculate the absolute offset for labels by using their name so that the vm can jump to it directly
@@ -21,7 +20,7 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
                     label.index = Some(*index);
                 }
             }
-            Code::JumpIfTrue(label) => {
+            Code::JumpIfTrue(label) | Code::JumpOnError(label) => {
                 if let Some(index) = labels.get(&label.name) {
                     label.index = Some(*index);
                 }

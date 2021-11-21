@@ -26,7 +26,7 @@ impl Display for Location {
     }
 }
 
-#[derive(Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Label {
     pub name: String,
     pub index: Option<usize>,
@@ -82,7 +82,9 @@ pub enum Code {
     SetLabel(String),
     Jump(Label),
     JumpIfTrue(Label),
+    JumpOnError(Label),
     Branch((Label, Label)),
+    StoreTryOk,
     MakeRef,
     Deref,
     LogicalAnd,
@@ -158,6 +160,7 @@ impl Code {
             Code::SetLabel(label) => format!("{}:", label),
             Code::Jump(label) => format!("  jump({})", label),
             Code::JumpIfTrue(label) => format!("  jumpIfTrue({})", label),
+            Code::JumpOnError(label) => format!("  jumpOnError({})", label),
             Code::Branch((label_a, label_b)) => {
                 format!("  branch(true: {{{}}}, false: {{{}}})", label_a, label_b)
             }
@@ -199,6 +202,7 @@ impl Code {
                 arg_count
             ),
             Code::TailCall(arg_count) => format!("  tailCall(arg_count: {})", arg_count),
+            Code::StoreTryOk => "  storeTryResult".to_string(),
             Code::Store(id) => format!("  store(id: {})", id),
             Code::StoreMut(id) => format!("  storeMut(id: {})", id),
             Code::StoreMember(name) => format!("  storeMember(name: '{}')", name),
