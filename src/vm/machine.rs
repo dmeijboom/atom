@@ -1,20 +1,20 @@
 use std::collections::BTreeMap;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
-use std::rc::Rc;
 
 use indexmap::map::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::compiler;
-use crate::compiler::ir::{Code, Label, IR};
+use crate::compiler::ir::{Code, Label};
 use crate::runtime::{stdlib, ErrorKind};
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::vm::global_label::GlobalLabel;
+use crate::vm::Module;
 
-use super::call_context::{CallContext, CallStack, Target};
+use super::call_stack::{CallStack, StackFrame, Target};
 use super::module::ModuleId;
 use super::module_cache::ModuleCache;
 use super::stack::Stack;
@@ -89,11 +89,11 @@ macro_rules! impl_op {
     }};
 }
 
-enum Flow<'i> {
+enum Flow {
     Continue,
     Return(Value),
     TailCall(usize),
-    JumpTo(&'i Label),
+    JumpTo(Label),
 }
 
 pub struct Machine {
@@ -102,7 +102,6 @@ pub struct Machine {
     module_cache: ModuleCache,
     try_stack: Vec<GlobalLabel>,
     type_classes: Vec<AtomRef<Class>>,
-    goto: Option<GlobalLabel>,
 }
 
 impl Machine {
@@ -113,12 +112,15 @@ impl Machine {
             call_stack: CallStack::new(),
             module_cache: ModuleCache::new(),
             type_classes: vec![],
-            goto: None,
         };
 
         vm.module_cache.add_external_hook(stdlib::hook);
 
         Ok(vm)
+    }
+
+    pub fn get_module(&self, name: &str) -> Option<&Module> {
+        self.module_cache.get_module(name).ok()
     }
 
     pub fn register_module(&mut self, module: compiler::Module) -> Result<()> {
@@ -171,9 +173,9 @@ impl Machine {
 
     fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
         // Reset locals, we can do this quite easily as the first n-locals are the arguments
-        let context = self.call_stack.current_mut()?;
+        let frame = self.call_stack.current_mut()?;
 
-        context.locals = self.stack.pop_many(arg_count)?;
+        frame.locals = self.stack.pop_many(arg_count)?;
 
         Ok(())
     }
@@ -388,7 +390,7 @@ impl Machine {
         };
 
         match &func.ptr {
-            FnPtr::Native(source) => {
+            FnPtr::Native(_) => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(
                         ErrorKind::FatalError,
@@ -415,9 +417,7 @@ impl Machine {
                         .collect()
                 };
 
-                let module_id = target.origin().module_id;
-
-                self.call_stack.push(CallContext::new(
+                self.call_stack.push(StackFrame::new(
                     target,
                     store_return_value,
                     if let Some(values) = values {
@@ -427,17 +427,7 @@ impl Machine {
                     },
                 ));
 
-                let source = Rc::clone(source);
-                let result = self._eval(module_id, source);
-
-                self.call_stack.pop();
-
-                // If the function would never return a value we have to put something on the stack
-                if store_return_value && func.void {
-                    self.stack.push(Value::Void);
-                }
-
-                result
+                Ok(())
             }
             FnPtr::External(closure) => {
                 if !keywords.is_empty() {
@@ -451,7 +441,7 @@ impl Machine {
                 }
 
                 self.call_stack
-                    .push(CallContext::new(target, store_return_value, vec![]));
+                    .push(StackFrame::new(target, store_return_value, vec![]));
 
                 let values = self.stack.pop_many(arg_count)?;
                 let result = closure(Input::new(self, values));
@@ -482,39 +472,47 @@ impl Machine {
         self.stack.push(Value::Byte(byte));
     }
 
-    fn eval_symbol(&mut self, name: &str) {
+    fn eval_symbol(&mut self, name: String) {
         self.stack.push(if name == "nil" {
             Value::Option(None)
         } else {
-            Value::Symbol(Symbol::new(&name))
+            Value::Symbol(Symbol::new(name))
         });
     }
 
-    fn eval_single<'i>(&mut self, module_id: ModuleId, code: &'i Code) -> Result<Flow<'i>> {
+    fn eval_single(&mut self, module_id: ModuleId) -> Result<Flow> {
+        let frame = self.call_stack.current_mut()?;
+        let code = match frame.get_current_instruction() {
+            None => return Ok(Flow::Return(Value::Void)),
+            Some(code) => code.clone(),
+        };
+
+        frame.position += 1;
+
         match code {
-            Code::ConstInt128(val) => self.eval_const(Int::Int128(*val)),
-            Code::ConstUint128(val) => self.eval_const(Int::Uint128(*val)),
-            Code::ConstInt64(val) => self.eval_const(Int::Int64(*val)),
-            Code::ConstUint64(val) => self.eval_const(Int::Uint64(*val)),
-            Code::ConstInt32(val) => self.eval_const(Int::Int32(*val)),
-            Code::ConstUint32(val) => self.eval_const(Int::Uint32(*val)),
-            Code::ConstInt16(val) => self.eval_const(Int::Int16(*val)),
-            Code::ConstUint16(val) => self.eval_const(Int::Uint16(*val)),
-            Code::ConstInt8(val) => self.eval_const(Int::Int8(*val)),
-            Code::ConstUint8(val) => self.eval_const(Int::Uint8(*val)),
-            Code::ConstBool(val) => self.eval_const(*val),
+            Code::ConstInt128(val) => self.eval_const(Int::Int128(val)),
+            Code::ConstUint128(val) => self.eval_const(Int::Uint128(val)),
+            Code::ConstInt64(val) => self.eval_const(Int::Int64(val)),
+            Code::ConstUint64(val) => self.eval_const(Int::Uint64(val)),
+            Code::ConstInt32(val) => self.eval_const(Int::Int32(val)),
+            Code::ConstUint32(val) => self.eval_const(Int::Uint32(val)),
+            Code::ConstInt16(val) => self.eval_const(Int::Int16(val)),
+            Code::ConstUint16(val) => self.eval_const(Int::Uint16(val)),
+            Code::ConstInt8(val) => self.eval_const(Int::Int8(val)),
+            Code::ConstUint8(val) => self.eval_const(Int::Uint8(val)),
+            Code::ConstBool(val) => self.eval_const(val),
             Code::ConstSymbol(name) => self.eval_symbol(name),
-            Code::ConstFloat(val) => self.eval_const(*val),
-            Code::ConstChar(val) => self.eval_const(*val),
-            Code::ConstByte(val) => self.eval_const_byte(*val),
-            Code::ConstString(val) => self.eval_const(val.clone()),
+            Code::ConstFloat(val) => self.eval_const(val),
+            Code::ConstChar(val) => self.eval_const(val),
+            Code::ConstByte(val) => self.eval_const_byte(val),
+            Code::ConstString(val) => self.eval_const(val),
             Code::MakeRange => self.eval_make_range()?,
-            Code::MakeTuple(len) => self.eval_make_tuple(*len)?,
+            Code::MakeTuple(len) => self.eval_make_tuple(len)?,
             Code::GetType => self.eval_get_type()?,
-            Code::MakeArray(len) => self.eval_make_array(*len)?,
-            Code::MakeTemplate(len) => self.eval_make_template(*len)?,
+            Code::MakeArray(len) => self.eval_make_array(len)?,
+            Code::MakeTemplate(len) => self.eval_make_template(len)?,
             Code::MakeRef => self.eval_make_ref(),
-            Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, *fn_id)?,
+            Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, fn_id)?,
             Code::Discard => self.stack.delete()?,
             Code::Return => return Ok(Flow::Return(self.stack.pop())),
             Code::Deref => self.eval_deref()?,
@@ -538,30 +536,30 @@ impl Machine {
             Code::ComparisonLte => self.eval_comparison_lte()?,
             Code::AssertIsType => self.eval_assert_is_type()?,
             Code::Unwrap => self.eval_unwrap()?,
-            Code::Cast(type_name) => self.eval_cast(type_name)?,
-            Code::Call(arg_count) => self.eval_call(&[], *arg_count, true)?,
+            Code::Cast(type_name) => self.eval_cast(&type_name)?,
+            Code::Call(arg_count) => self.eval_call(&[], arg_count, true)?,
             Code::CallKeywords((keywords, arg_count)) => {
-                self.eval_call(keywords, *arg_count, true)?
+                self.eval_call(&keywords, arg_count, true)?
             }
-            Code::CallVoid(arg_count) => self.eval_call(&[], *arg_count, false)?,
+            Code::CallVoid(arg_count) => self.eval_call(&[], arg_count, false)?,
             Code::CallKeywordsVoid((keywords, arg_count)) => {
-                self.eval_call(keywords, *arg_count, false)?
+                self.eval_call(&keywords, arg_count, false)?
             }
-            Code::TailCall(arg_count) => return Ok(Flow::TailCall(*arg_count)),
-            Code::Store(id) => self.eval_store(*id, false)?,
-            Code::StoreMut(id) => self.eval_store(*id, true)?,
+            Code::TailCall(arg_count) => return Ok(Flow::TailCall(arg_count)),
+            Code::Store(id) => self.eval_store(id, false)?,
+            Code::StoreMut(id) => self.eval_store(id, true)?,
             Code::StoreTryOk => self.eval_store_try_ok()?,
             Code::LoadIndex => self.eval_load_index(false)?,
             Code::MakeSlice => self.eval_make_slice()?,
             Code::StoreIndex => self.eval_store_index()?,
-            Code::LoadMember(member) => self.eval_load_member(module_id, member)?,
-            Code::StoreMember(member) => self.eval_store_member(module_id, member)?,
-            Code::Load(id) => self.eval_load(*id)?,
+            Code::LoadMember(member) => self.eval_load_member(module_id, &member)?,
+            Code::StoreMember(member) => self.eval_store_member(module_id, &member)?,
+            Code::Load(id) => self.eval_load(id)?,
             Code::LoadReceiver => self.eval_load_receiver()?,
-            Code::LoadGlobal(id) => self.eval_load_global(module_id, *id)?,
-            Code::LoadFn(id) => self.eval_load_fn(module_id, *id)?,
-            Code::LoadClass(id) => self.eval_load_class(module_id, *id)?,
-            Code::LoadInterface(id) => self.eval_load_interface(module_id, *id)?,
+            Code::LoadGlobal(id) => self.eval_load_global(module_id, id)?,
+            Code::LoadFn(id) => self.eval_load_fn(module_id, id)?,
+            Code::LoadClass(id) => self.eval_load_class(module_id, id)?,
+            Code::LoadInterface(id) => self.eval_load_interface(module_id, id)?,
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
@@ -572,7 +570,7 @@ impl Machine {
             Code::JumpOnError(label) => {
                 self.try_stack.push(GlobalLabel::new(
                     self.call_stack.current_id().unwrap(),
-                    label.clone(),
+                    label,
                 ));
             }
         };
@@ -899,17 +897,17 @@ impl Machine {
 
     fn eval_store(&mut self, id: usize, _is_mutable: bool) -> Result<()> {
         let value = self.stack.pop();
-        let context = self.call_stack.current_mut()?;
+        let frame = self.call_stack.current_mut()?;
 
-        if context.locals.len() == id {
-            context.locals.push(value);
+        if frame.locals.len() == id {
+            frame.locals.push(value);
         } else {
             // Insert padding if required
-            while context.locals.len() <= id {
-                context.locals.push(Value::Void);
+            while frame.locals.len() <= id {
+                frame.locals.push(Value::Void);
             }
 
-            context.locals[id] = value;
+            frame.locals[id] = value;
         }
 
         Ok(())
@@ -1165,9 +1163,9 @@ impl Machine {
 
     fn eval_load(&mut self, id: usize) -> Result<()> {
         if !self.call_stack.is_empty() {
-            let context = self.call_stack.current()?;
+            let frame = self.call_stack.current()?;
 
-            if let Some(value) = context.locals.get(id) {
+            if let Some(value) = frame.locals.get(id) {
                 self.stack.push(value.clone());
 
                 return Ok(());
@@ -1207,19 +1205,18 @@ impl Machine {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
 
         self.stack
-            .push(Value::Fn(AtomRef::clone(&current_module.funcs[id])));
+            .push(Value::Fn(AtomRef::clone(&current_module.functions[id])));
 
         Ok(())
     }
 
     fn eval_make_closure(&mut self, module_id: ModuleId, fn_id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-
-        let context = self.call_stack.current()?;
+        let frame = self.call_stack.current()?;
 
         self.stack.push(Value::Closure(AtomRef::new(Closure {
-            func: AtomRef::clone(&current_module.funcs[fn_id]),
-            values: context.locals.clone(),
+            func: AtomRef::clone(&current_module.functions[fn_id]),
+            values: frame.locals.clone(),
         })));
 
         Ok(())
@@ -1278,17 +1275,13 @@ impl Machine {
         ))
     }
 
-    fn eval_branch<'s>(
-        &mut self,
-        true_label: &'s Label,
-        false_label: &'s Label,
-    ) -> Result<&'s Label> {
+    fn eval_branch(&mut self, true_label: Label, false_label: Label) -> Result<Label> {
         let value = self.stack.pop().convert()?;
 
         Ok(if value { true_label } else { false_label })
     }
 
-    fn eval_jump_if_true<'i>(&mut self, label: &'i Label) -> Result<Flow<'i>> {
+    fn eval_jump_if_true(&mut self, label: Label) -> Result<Flow> {
         let value = self.stack.pop().convert()?;
 
         if value {
@@ -1300,8 +1293,10 @@ impl Machine {
         Ok(Flow::Continue)
     }
 
-    fn find_label(&self, instructions: &IR, search: &str) -> Result<usize> {
-        for (i, code) in instructions.iter().enumerate() {
+    fn find_label(&self, search: &str) -> Result<usize> {
+        let entrypoint = self.call_stack.current()?.get_function();
+
+        for (i, code) in entrypoint.get_instructions()?.iter().enumerate() {
             if let Code::SetLabel(label) = code {
                 if label == search {
                     return Ok(i);
@@ -1315,67 +1310,59 @@ impl Machine {
         ))
     }
 
-    fn _eval(&mut self, module_id: ModuleId, instructions: Rc<IR>) -> Result<()> {
-        let mut i = 0;
-        let mut return_addr = vec![];
+    fn jump_to_label(&mut self, label: &Label) -> Result<()> {
+        match label.index {
+            Some(index) => self.call_stack.current_mut()?.position = index,
+            None => {
+                let index = self.find_label(&label.name)?;
 
-        loop {
-            'eval_loop: while i < instructions.len() {
-                // Handle global jumps to labels
-                if let Some(goto) = &self.goto {
-                    match self.call_stack.current_id() {
-                        Some(context_id) if goto.context_id == context_id => {
-                            i = match goto.label.index {
-                                Some(index) => index,
-                                None => self.find_label(&instructions, &goto.label.name)?,
-                            };
+                self.call_stack.current_mut()?.position = index;
+            }
+        };
 
-                            self.goto = None;
+        Ok(())
+    }
 
-                            continue;
-                        }
-                        None | Some(_) => break 'eval_loop,
-                    }
-                }
-
-                let code = &instructions[i];
+    fn _eval(&mut self, module_id: ModuleId) -> Result<()> {
+        while !self.call_stack.is_empty() {
+            'eval_loop: loop {
+                // Looks up the current instruction
+                let frame = self.call_stack.current()?;
+                let entrypoint = frame.get_function();
+                let current_module_id = entrypoint.origin.module_id;
 
                 // Evaluates the instruction and optionally returns a label to jump to
-                match self.eval_single(module_id, code) {
+                match self.eval_single(current_module_id) {
                     Ok(flow) => match flow {
-                        Flow::Continue => i += 1,
+                        Flow::Continue => continue 'eval_loop,
                         Flow::Return(value) => {
-                            self.stack.push(value);
+                            let frame = self.call_stack.current()?;
 
-                            if let Some(addr) = return_addr.pop() {
-                                i = addr;
-
-                                continue;
+                            if frame.store_return_value {
+                                self.stack.push(value);
                             }
 
                             break 'eval_loop;
                         }
                         Flow::JumpTo(label) => {
-                            i = match label.index {
-                                Some(index) => index,
-                                None => self.find_label(&*instructions, &label.name)?,
-                            };
+                            self.jump_to_label(&label)?;
 
-                            continue;
+                            continue 'eval_loop;
                         }
                         Flow::TailCall(arg_count) => {
-                            return_addr.push(i + 1);
+                            let frame = self.call_stack.current_mut()?;
+                            frame.return_addr.push(frame.position);
+
                             self.eval_tail_call(arg_count)?;
+                            self.call_stack.current_mut()?.position = 0;
 
-                            i = 0;
-
-                            continue;
+                            continue 'eval_loop;
                         }
                     },
                     Err(err) => {
                         // If there is an error that is try-able, let's handle it
                         if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
-                            if let Some(label) = self.try_stack.pop() {
+                            if let Some(global_label) = self.try_stack.pop() {
                                 self.stack.push(Value::Tuple(
                                     vec![
                                         Value::Symbol(Symbol::new("err")),
@@ -1384,7 +1371,12 @@ impl Machine {
                                     .into_boxed_slice(),
                                 ));
 
-                                self.goto = Some(label);
+                                // Pop stack frames until we reach the one were looking for
+                                while self.call_stack.current_id().unwrap() != global_label.frame {
+                                    self.call_stack.pop();
+                                }
+
+                                self.jump_to_label(&global_label.label)?;
 
                                 break 'eval_loop;
                             }
@@ -1395,8 +1387,14 @@ impl Machine {
 
                         if err.location.is_none() {
                             let mut e = err.with_module(&module.name);
+                            let frame = self.call_stack.current()?;
 
-                            if let Some(location) = instructions.get_location(i) {
+                            if let Some(location) = frame
+                                .get_function()
+                                .get_instructions()
+                                .ok()
+                                .and_then(|ir| ir.get_location(frame.position - 1))
+                            {
                                 e = e.with_location(location.clone());
                             }
 
@@ -1412,27 +1410,28 @@ impl Machine {
                 };
             }
 
-            if let Some(addr) = return_addr.pop() {
-                // We're finished but there is still a return-address, this means we're expected to have pushed a return-value
-                if self.call_stack.current()?.store_return_value {
-                    self.stack.push(Value::Void);
-                }
+            // Cleanup after the call has finished
+            let frame = self.call_stack.current_mut()?;
 
-                i = addr;
+            if let Some(addr) = frame.return_addr.pop() {
+                frame.position = addr;
 
                 continue;
             }
 
-            break;
+            self.call_stack.pop();
         }
 
         Ok(())
     }
 
-    pub fn eval(&mut self, module: &str, instructions: IR) -> Result<()> {
+    pub fn eval(&mut self, module: &str, entrypoint: AtomRef<Fn>) -> Result<()> {
         let module_id = self.module_cache.get_module(module)?.id;
 
-        self._eval(module_id, Rc::new(instructions))
+        self.call_stack
+            .push(StackFrame::new(Target::Fn(entrypoint), false, vec![]));
+
+        self._eval(module_id)
             .map_err(|e| e.with_stack_trace(self.call_stack.rewind()))?;
 
         Ok(())

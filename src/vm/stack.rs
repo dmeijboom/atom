@@ -1,5 +1,6 @@
 use crate::runtime::{ErrorKind, Result, RuntimeError, Value};
 
+#[derive(Debug)]
 pub struct Stack {
     data: Vec<Value>,
 }

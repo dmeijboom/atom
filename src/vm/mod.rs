@@ -1,9 +1,9 @@
-pub use call_context::CallContext;
+pub use call_stack::StackFrame;
 pub use machine::Machine;
 pub use module::Module;
 pub use module_cache::{ExternalHook, ModuleCache};
 
-mod call_context;
+mod call_stack;
 mod global_label;
 mod machine;
 mod module;

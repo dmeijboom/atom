@@ -174,7 +174,7 @@ impl ModuleCache {
 
         for (_, func) in compiled_module.functions {
             module
-                .funcs
+                .functions
                 .push(AtomRef::new(self.make_fn(&module, func, None)?));
         }
 
@@ -197,7 +197,10 @@ impl ModuleCache {
                 ElementKind::Fn => {
                     let func = origin
                         .and_then(|module| {
-                            module.funcs.iter().find(|func| func.name == import_name)
+                            module
+                                .functions
+                                .iter()
+                                .find(|func| func.name == import_name)
                         })
                         .ok_or_else(|| {
                             RuntimeError::new(

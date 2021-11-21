@@ -1,10 +1,9 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::compiler::ir::{Code, IR};
 use crate::compiler::{CompileError, Compiler, LineNumberOffset};
 use crate::error::Error;
-use crate::runtime::{ErrorKind, RuntimeError, Value};
+use crate::runtime::{AtomRef, ErrorKind, RuntimeError, Value};
 use crate::syntax::{parser, Stmt};
 use crate::vm::Machine;
 
@@ -114,15 +113,26 @@ impl Engine {
             println!("{:#?}", module.classes);
         }
 
-        if let Some(id) = module.functions.get_index_of("main") {
-            for module in modules {
-                self.machine.register_module(module)?;
-            }
+        let module_name = module.name.clone();
 
-            self.machine.eval(
-                "main",
-                IR::with_codes(vec![Code::LoadFn(id), Code::Call(0)]),
-            )?;
+        for module in modules {
+            self.machine.register_module(module)?;
+        }
+
+        if let Some(main_module) = self.machine.get_module(&module_name) {
+            let entrypoint = main_module
+                .functions
+                .iter()
+                .find(|func| func.name == "main")
+                .ok_or_else(|| {
+                    Error::Runtime(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        "main function not found".to_string(),
+                    ))
+                })?;
+            let entrypoint = AtomRef::clone(entrypoint);
+
+            self.machine.eval("main", entrypoint)?;
 
             let output = RunOutput {
                 value: self.machine.take_result(),

@@ -1,0 +1,18 @@
+fn goodfn() {
+    return 100;
+}
+
+fn badfn() {
+    raise "fail";
+}
+
+fn recoverError(t) {
+    t.assert((:ok, 100), goodfn()?)
+        .assert((:err, "fail"), badfn()?);
+}
+
+pub fn trycatchTests() {
+    return [
+        recoverError
+    ];
+}

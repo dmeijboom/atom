@@ -3,11 +3,11 @@ use crate::compiler::ir::Label;
 #[derive(Debug)]
 pub struct GlobalLabel {
     pub label: Label,
-    pub context_id: usize,
+    pub frame: usize,
 }
 
 impl GlobalLabel {
-    pub fn new(context_id: usize, label: Label) -> Self {
-        Self { context_id, label }
+    pub fn new(frame: usize, label: Label) -> Self {
+        Self { frame, label }
     }
 }

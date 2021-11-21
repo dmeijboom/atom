@@ -1,7 +1,7 @@
 use std::mem::size_of;
 
 use crate::runtime::{AtomRef, Int, Object, Value, ValueType};
-use crate::vm::CallContext;
+use crate::vm::StackFrame;
 
 pub fn command() {
     println!("size of: ValueType: {} bytes", size_of::<ValueType>());
@@ -12,5 +12,5 @@ pub fn command() {
     );
     println!("size of: Int: {} bytes", size_of::<Int>());
     println!("size of: Object: {} bytes", size_of::<Object>());
-    println!("size of: CallContext: {} bytes", size_of::<CallContext>());
+    println!("size of: CallContext: {} bytes", size_of::<StackFrame>());
 }

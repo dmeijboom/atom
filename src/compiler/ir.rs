@@ -241,13 +241,6 @@ impl IR {
         }
     }
 
-    pub fn with_codes(codes: Vec<Code>) -> Self {
-        Self {
-            codes,
-            locations: HashMap::new(),
-        }
-    }
-
     pub fn append(&mut self, mut ir: IR) {
         if self.codes.is_empty() && self.locations.is_empty() {
             *self = ir;

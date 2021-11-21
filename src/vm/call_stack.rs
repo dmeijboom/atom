@@ -1,7 +1,9 @@
 use std::fmt::{Display, Formatter};
 
+use crate::compiler::ir::Code;
 use crate::runtime::{
-    AtomRef, Closure, ErrorKind, Fn, Method, Origin, Receiver, Result, RuntimeError, Trace, Value,
+    AtomRef, Closure, ErrorKind, Fn, FnPtr, Method, Origin, Receiver, Result, RuntimeError, Trace,
+    Value,
 };
 
 #[derive(Debug)]
@@ -42,19 +44,40 @@ impl Clone for Target {
 }
 
 #[derive(Debug)]
-pub struct CallContext {
+pub struct StackFrame {
     pub target: Target,
     pub locals: Vec<Value>,
+    // Contains a stack of addresses to return to after finishing this call (used for tail calls)
+    pub return_addr: Vec<usize>,
+    // Controls the current position in the execution flow
+    pub position: usize,
     // Determines if the result should be stored on the stack or not
     pub store_return_value: bool,
 }
 
-impl CallContext {
+impl StackFrame {
     pub fn new(target: Target, store_return_value: bool, locals: Vec<Value>) -> Self {
         Self {
             target,
+            position: 0,
             store_return_value,
             locals,
+            return_addr: vec![],
+        }
+    }
+
+    pub fn get_function(&self) -> &AtomRef<Fn> {
+        match &self.target {
+            Target::Fn(func) => func,
+            Target::Method(method) => &method.func,
+            Target::Closure(closure) => &closure.func,
+        }
+    }
+
+    pub fn get_current_instruction(&self) -> Option<&Code> {
+        match &self.get_function().ptr {
+            FnPtr::Native(ir) => ir.get(self.position),
+            _ => unreachable!(),
         }
     }
 
@@ -70,7 +93,7 @@ impl CallContext {
 }
 
 pub struct CallStack {
-    data: Vec<CallContext>,
+    data: Vec<StackFrame>,
 }
 
 impl CallStack {
@@ -78,11 +101,11 @@ impl CallStack {
         Self { data: vec![] }
     }
 
-    pub fn push(&mut self, context: CallContext) {
-        self.data.push(context);
+    pub fn push(&mut self, frame: StackFrame) {
+        self.data.push(frame);
     }
 
-    pub fn pop(&mut self) -> Option<CallContext> {
+    pub fn pop(&mut self) -> Option<StackFrame> {
         self.data.pop()
     }
 
@@ -94,13 +117,13 @@ impl CallStack {
         Some(self.data.len() - 1)
     }
 
-    pub fn current(&self) -> Result<&CallContext> {
+    pub fn current(&self) -> Result<&StackFrame> {
         self.data.last().ok_or_else(|| {
             RuntimeError::new(ErrorKind::FatalError, "expected call context".to_string())
         })
     }
 
-    pub fn current_mut(&mut self) -> Result<&mut CallContext> {
+    pub fn current_mut(&mut self) -> Result<&mut StackFrame> {
         self.data.last_mut().ok_or_else(|| {
             RuntimeError::new(ErrorKind::FatalError, "expected call context".to_string())
         })
@@ -110,7 +133,7 @@ impl CallStack {
         self.data.is_empty()
     }
 
-    pub fn last(&self) -> Option<&CallContext> {
+    pub fn last(&self) -> Option<&StackFrame> {
         self.data.last()
     }
 

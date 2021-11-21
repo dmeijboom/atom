@@ -1,5 +1,4 @@
 use std::fmt::{Debug, Display, Formatter};
-use std::rc::Rc;
 
 use indexmap::map::IndexMap;
 
@@ -92,7 +91,7 @@ pub type ExternalFn = fn(input: Input<'_>) -> Result<Output>;
 #[derive(Clone)]
 pub enum FnPtr {
     External(ExternalFn),
-    Native(Rc<IR>),
+    Native(IR),
 }
 
 impl Debug for FnPtr {
@@ -142,7 +141,7 @@ impl Fn {
             args,
             public,
             void,
-            ptr: FnPtr::Native(Rc::new(ir)),
+            ptr: FnPtr::Native(ir),
         }
     }
 
@@ -154,6 +153,16 @@ impl Fn {
             public,
             void: false,
             ptr: FnPtr::External(func),
+        }
+    }
+
+    pub fn get_instructions(&self) -> Result<&IR> {
+        match &self.ptr {
+            FnPtr::External(_) => Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                "cannot get instructions from external function".to_string(),
+            )),
+            FnPtr::Native(ir) => Ok(ir),
         }
     }
 }

@@ -9,7 +9,7 @@ pub struct Module {
     pub name: String,
     pub filename: Option<String>,
     pub globals: Vec<Value>,
-    pub funcs: Vec<AtomRef<Fn>>,
+    pub functions: Vec<AtomRef<Fn>>,
     pub interfaces: Vec<AtomRef<Interface>>,
     pub classes: IndexMap<String, AtomRef<Class>>,
 }
@@ -20,7 +20,7 @@ impl Module {
             id,
             name,
             filename,
-            funcs: vec![],
+            functions: vec![],
             globals: vec![],
             interfaces: vec![],
             classes: IndexMap::new(),

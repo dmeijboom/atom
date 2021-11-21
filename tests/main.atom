@@ -12,6 +12,7 @@ import options.optionsTests;
 import strings.stringsTests;
 import classes.classesTests;
 import closures.closuresTests;
+import trycatch.trycatchTests;
 import references.referencesTests;
 
 fn main() {
@@ -28,6 +29,7 @@ fn main() {
     tests.append(optionsTests());
     tests.append(classesTests());
     tests.append(stringsTests());
+    tests.append(trycatchTests());
     tests.append(closuresTests());
     tests.append(referencesTests());
 

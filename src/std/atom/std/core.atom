@@ -186,7 +186,7 @@ pub class RangeStep extends GetIterator {
     let range;
     let step;
 
-    pub static fn new(range, step) -> RangeIterator(range: range, step: step);
+    pub static fn new(range, step) -> RangeStep(range: range, step: step);
     pub fn iter() -> RangeIterator.new(this.range.start, this.range.end, this.step);
 }
 
