@@ -91,8 +91,7 @@ macro_rules! impl_op {
 
 enum Flow {
     Continue,
-    Return(Value),
-    TailCall(usize),
+    Return(bool),
 }
 
 pub struct Machine {
@@ -361,14 +360,12 @@ impl Machine {
         arg_count: usize,
     ) -> Result<()> {
         let (func, values) = match &target {
-            Target::Fn(func) => (AtomRef::clone(func), None),
-            Target::Method(method) => (AtomRef::clone(&method.func), None),
-            Target::Closure(closure) => {
-                (AtomRef::clone(&closure.func), Some(closure.values.clone()))
-            }
+            Target::Fn(func) => (func, None),
+            Target::Method(method) => (&method.func, None),
+            Target::Closure(closure) => (&closure.func, Some(closure.values.clone())),
         };
 
-        match &func.ptr {
+        match func.ptr {
             FnPtr::Native => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(
@@ -459,10 +456,12 @@ impl Machine {
         });
     }
 
-    fn eval_single(&mut self, module_id: ModuleId) -> Result<Flow> {
+    fn eval_current(&mut self) -> Result<Flow> {
         let frame = self.call_stack.current_mut();
-        let code = match frame.get_function().instructions.get(frame.position) {
-            None => return Ok(Flow::Return(Value::Void)),
+        let function = frame.get_function();
+        let module_id = function.origin.module_id;
+        let code = match function.instructions.get(frame.position) {
+            None => return Ok(Flow::Return(false)),
             Some(code) => code.clone(),
         };
 
@@ -493,7 +492,7 @@ impl Machine {
             Code::MakeRef => self.eval_make_ref(),
             Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, fn_id)?,
             Code::Discard => self.stack.delete()?,
-            Code::Return => return Ok(Flow::Return(self.stack.pop())),
+            Code::Return => return Ok(Flow::Return(true)),
             Code::Deref => self.eval_deref()?,
             Code::LogicalAnd => self.eval_logical_and()?,
             Code::ArithmeticAdd => self.eval_arithmetic_add()?,
@@ -524,7 +523,13 @@ impl Machine {
             Code::CallKeywordsVoid((keywords, arg_count)) => {
                 self.eval_call(&keywords, arg_count, false)?
             }
-            Code::TailCall(arg_count) => return Ok(Flow::TailCall(arg_count)),
+            Code::TailCall(arg_count) => {
+                let frame = self.call_stack.current_mut();
+                frame.return_addr.push(frame.position);
+
+                self.eval_tail_call(arg_count)?;
+                self.call_stack.current_mut().position = 0;
+            }
             Code::Store(id) => self.eval_store(id, false)?,
             Code::StoreMut(id) => self.eval_store(id, true)?,
             Code::StoreTryOk => self.eval_store_try_ok()?,
@@ -1304,20 +1309,20 @@ impl Machine {
 
     fn _eval(&mut self, module_id: ModuleId) -> Result<()> {
         while !self.call_stack.is_empty() {
-            // Looks up the current instruction
-            let frame = self.call_stack.current();
-            let entrypoint = frame.get_function();
-            let current_module_id = entrypoint.origin.module_id;
-
             // Evaluates the instruction and optionally returns a label to jump to
-            match self.eval_single(current_module_id) {
+            match self.eval_current() {
                 Ok(flow) => match flow {
                     Flow::Continue => continue,
-                    Flow::Return(value) => {
+                    Flow::Return(is_stored) => {
                         let frame = self.call_stack.current();
 
-                        if frame.store_return_value {
-                            self.stack.push(value);
+                        // Make sure the return value was pushed to the stack only if it's used
+                        if frame.store_return_value != is_stored {
+                            if frame.store_return_value {
+                                self.stack.push(Value::Void);
+                            } else {
+                                self.stack.pop();
+                            }
                         }
 
                         // Cleanup after the call has finished
@@ -1325,18 +1330,10 @@ impl Machine {
 
                         if let Some(addr) = frame.return_addr.pop() {
                             frame.position = addr;
-
                             continue;
                         }
 
                         self.call_stack.pop();
-                    }
-                    Flow::TailCall(arg_count) => {
-                        let frame = self.call_stack.current_mut();
-                        frame.return_addr.push(frame.position);
-
-                        self.eval_tail_call(arg_count)?;
-                        self.call_stack.current_mut().position = 0;
                     }
                 },
                 Err(err) => {
