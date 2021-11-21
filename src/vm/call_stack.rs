@@ -1,10 +1,7 @@
 use std::fmt::{Display, Formatter};
 
 use crate::compiler::ir::Code;
-use crate::runtime::{
-    AtomRef, Closure, ErrorKind, Fn, FnPtr, Method, Origin, Receiver, Result, RuntimeError, Trace,
-    Value,
-};
+use crate::runtime::{AtomRef, Closure, Fn, FnPtr, Method, Origin, Receiver, Trace, Value};
 
 #[derive(Debug)]
 pub enum Target {
@@ -117,16 +114,14 @@ impl CallStack {
         Some(self.data.len() - 1)
     }
 
-    pub fn current(&self) -> Result<&StackFrame> {
-        self.data.last().ok_or_else(|| {
-            RuntimeError::new(ErrorKind::FatalError, "expected call context".to_string())
-        })
+    pub fn current(&self) -> &StackFrame {
+        &self.data[self.data.len() - 1]
     }
 
-    pub fn current_mut(&mut self) -> Result<&mut StackFrame> {
-        self.data.last_mut().ok_or_else(|| {
-            RuntimeError::new(ErrorKind::FatalError, "expected call context".to_string())
-        })
+    pub fn current_mut(&mut self) -> &mut StackFrame {
+        let index = self.data.len() - 1;
+
+        &mut self.data[index]
     }
 
     pub fn is_empty(&self) -> bool {

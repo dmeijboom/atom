@@ -173,7 +173,7 @@ impl Machine {
 
     fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
         // Reset locals, we can do this quite easily as the first n-locals are the arguments
-        let frame = self.call_stack.current_mut()?;
+        let frame = self.call_stack.current_mut();
 
         frame.locals = self.stack.pop_many(arg_count)?;
 
@@ -481,7 +481,7 @@ impl Machine {
     }
 
     fn eval_single(&mut self, module_id: ModuleId) -> Result<Flow> {
-        let frame = self.call_stack.current_mut()?;
+        let frame = self.call_stack.current_mut();
         let code = match frame.get_current_instruction() {
             None => return Ok(Flow::Return(Value::Void)),
             Some(code) => code.clone(),
@@ -897,7 +897,7 @@ impl Machine {
 
     fn eval_store(&mut self, id: usize, _is_mutable: bool) -> Result<()> {
         let value = self.stack.pop();
-        let frame = self.call_stack.current_mut()?;
+        let frame = self.call_stack.current_mut();
 
         if frame.locals.len() == id {
             frame.locals.push(value);
@@ -1163,7 +1163,7 @@ impl Machine {
 
     fn eval_load(&mut self, id: usize) -> Result<()> {
         if !self.call_stack.is_empty() {
-            let frame = self.call_stack.current()?;
+            let frame = self.call_stack.current();
 
             if let Some(value) = frame.locals.get(id) {
                 self.stack.push(value.clone());
@@ -1179,13 +1179,11 @@ impl Machine {
     }
 
     fn eval_load_receiver(&mut self) -> Result<()> {
-        let receiver = self.call_stack.current().and_then(|context| {
-            context.get_receiver().ok_or_else(|| {
-                RuntimeError::new(
-                    ErrorKind::FatalError,
-                    "unable to load 'this' outside of a method".to_string(),
-                )
-            })
+        let receiver = self.call_stack.current().get_receiver().ok_or_else(|| {
+            RuntimeError::new(
+                ErrorKind::FatalError,
+                "unable to load 'this' outside of a method".to_string(),
+            )
         })?;
 
         self.stack.push(receiver.clone());
@@ -1212,7 +1210,7 @@ impl Machine {
 
     fn eval_make_closure(&mut self, module_id: ModuleId, fn_id: usize) -> Result<()> {
         let current_module = self.module_cache.get_module_by_id(module_id)?;
-        let frame = self.call_stack.current()?;
+        let frame = self.call_stack.current();
 
         self.stack.push(Value::Closure(AtomRef::new(Closure {
             func: AtomRef::clone(&current_module.functions[fn_id]),
@@ -1294,7 +1292,7 @@ impl Machine {
     }
 
     fn find_label(&self, search: &str) -> Result<usize> {
-        let entrypoint = self.call_stack.current()?.get_function();
+        let entrypoint = self.call_stack.current().get_function();
 
         for (i, code) in entrypoint.get_instructions()?.iter().enumerate() {
             if let Code::SetLabel(label) = code {
@@ -1312,11 +1310,11 @@ impl Machine {
 
     fn jump_to_label(&mut self, label: &Label) -> Result<()> {
         match label.index {
-            Some(index) => self.call_stack.current_mut()?.position = index,
+            Some(index) => self.call_stack.current_mut().position = index,
             None => {
                 let index = self.find_label(&label.name)?;
 
-                self.call_stack.current_mut()?.position = index;
+                self.call_stack.current_mut().position = index;
             }
         };
 
@@ -1327,7 +1325,7 @@ impl Machine {
         while !self.call_stack.is_empty() {
             'eval_loop: loop {
                 // Looks up the current instruction
-                let frame = self.call_stack.current()?;
+                let frame = self.call_stack.current();
                 let entrypoint = frame.get_function();
                 let current_module_id = entrypoint.origin.module_id;
 
@@ -1336,7 +1334,7 @@ impl Machine {
                     Ok(flow) => match flow {
                         Flow::Continue => continue 'eval_loop,
                         Flow::Return(value) => {
-                            let frame = self.call_stack.current()?;
+                            let frame = self.call_stack.current();
 
                             if frame.store_return_value {
                                 self.stack.push(value);
@@ -1350,11 +1348,11 @@ impl Machine {
                             continue 'eval_loop;
                         }
                         Flow::TailCall(arg_count) => {
-                            let frame = self.call_stack.current_mut()?;
+                            let frame = self.call_stack.current_mut();
                             frame.return_addr.push(frame.position);
 
                             self.eval_tail_call(arg_count)?;
-                            self.call_stack.current_mut()?.position = 0;
+                            self.call_stack.current_mut().position = 0;
 
                             continue 'eval_loop;
                         }
@@ -1387,7 +1385,7 @@ impl Machine {
 
                         if err.location.is_none() {
                             let mut e = err.with_module(&module.name);
-                            let frame = self.call_stack.current()?;
+                            let frame = self.call_stack.current();
 
                             if let Some(location) = frame
                                 .get_function()
@@ -1411,7 +1409,7 @@ impl Machine {
             }
 
             // Cleanup after the call has finished
-            let frame = self.call_stack.current_mut()?;
+            let frame = self.call_stack.current_mut();
 
             if let Some(addr) = frame.return_addr.pop() {
                 frame.position = addr;
@@ -1453,9 +1451,12 @@ impl AtomApi for Machine {
     }
 
     fn get_receiver(&self) -> Option<&Value> {
+        if self.call_stack.is_empty() {
+            return None;
+        }
+
         self.call_stack
             .current()
-            .ok()
-            .and_then(|current| current.get_receiver())
+            .get_receiver()
     }
 }
