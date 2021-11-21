@@ -143,7 +143,7 @@ impl<'c> CodeGenerator<'c> {
                 let label = self.slugs.get("try_end");
 
                 self.ir
-                    .add(Code::JumpOnError(Label::new(label.clone())), location);
+                    .add(Code::JumpOnError(Label::Name(label.clone())), location);
                 self.compile_value(scope, value)?;
                 self.ir.add(Code::StoreTryOk, location);
                 self.ir.add(Code::SetLabel(label), location);
@@ -211,7 +211,7 @@ impl<'c> CodeGenerator<'c> {
                         let label = self.slugs.get("or");
 
                         self.ir
-                            .add(Code::JumpIfTrue(Label::new(label.clone())), location);
+                            .add(Code::JumpIfTrue(Label::Name(label.clone())), location);
                         self.compile_value(scope, &logical.right)?;
                         self.ir.add(Code::SetLabel(label), location);
                     }
@@ -297,8 +297,8 @@ impl<'c> CodeGenerator<'c> {
 
                 self.ir.add(
                     Code::Branch((
-                        Label::new(if_label.clone()),
-                        Label::new(if cond.alt.is_none() {
+                        Label::Name(if_label.clone()),
+                        Label::Name(if cond.alt.is_none() {
                             cont_label.clone()
                         } else {
                             else_label.clone()
@@ -312,11 +312,11 @@ impl<'c> CodeGenerator<'c> {
 
                 if let Some(block) = &cond.alt {
                     self.ir
-                        .add(Code::Jump(Label::new(cont_label.clone())), location);
+                        .add(Code::Jump(Label::Name(cont_label.clone())), location);
                     self.ir.add(Code::SetLabel(else_label), location);
                     self.compile_block(block)?;
                     self.ir
-                        .add(Code::Jump(Label::new(cont_label.clone())), location);
+                        .add(Code::Jump(Label::Name(cont_label.clone())), location);
                 }
 
                 self.ir.add(Code::SetLabel(cont_label), location);
@@ -326,7 +326,7 @@ impl<'c> CodeGenerator<'c> {
 
                 self.ir.add(Code::SetLabel(loop_label.clone()), location);
                 self.compile_block(block)?;
-                self.ir.add(Code::Jump(Label::new(loop_label)), location);
+                self.ir.add(Code::Jump(Label::Name(loop_label)), location);
 
                 let cont_label = self
                     .mir
@@ -368,7 +368,7 @@ impl<'c> CodeGenerator<'c> {
             let cont_label = meta.continue_label.clone();
 
             self.ir
-                .add(Code::Jump(Label::new(cont_label)), Some(&block.loc));
+                .add(Code::Jump(Label::Name(cont_label)), Some(&block.loc));
         }
 
         Ok(())

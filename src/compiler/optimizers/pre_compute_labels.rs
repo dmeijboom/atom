@@ -1,38 +1,45 @@
 use std::collections::HashMap;
 
-use crate::compiler::ir::{Code, IR};
+use crate::compiler::ir::{Code, Label, IR};
 use crate::compiler::Module;
+
+macro_rules! label_name {
+    ($label:expr) => {
+        match $label {
+            Label::Name(name) => name,
+            Label::Index(_) => unreachable!(),
+        }
+    };
+}
 
 /// Calculate the absolute offset for labels by using their name so that the vm can jump to it directly
 pub fn optimize(_module: &Module, instructions: &mut IR) {
     let mut labels = HashMap::new();
 
-    for (i, code) in instructions.iter().enumerate() {
-        if let Code::SetLabel(name) = &code {
-            labels.insert(name.clone(), i);
+    'find_set_label: loop {
+        for (i, code) in instructions.iter().enumerate() {
+            if let Code::SetLabel(name) = &code {
+                labels.insert(name.clone(), i);
+                instructions.remove(i);
+
+                continue 'find_set_label;
+            }
         }
+
+        break;
     }
 
     for code in instructions.iter_mut() {
         match code {
             Code::Jump(label) => {
-                if let Some(index) = labels.get(&label.name) {
-                    label.index = Some(*index);
-                }
+                *label = Label::Index(*labels.get(label_name!(&label)).unwrap());
             }
             Code::JumpIfTrue(label) | Code::JumpOnError(label) => {
-                if let Some(index) = labels.get(&label.name) {
-                    label.index = Some(*index);
-                }
+                *label = Label::Index(*labels.get(label_name!(&label)).unwrap());
             }
             Code::Branch((true_label, false_label)) => {
-                if let Some(index) = labels.get(&true_label.name) {
-                    true_label.index = Some(*index);
-                }
-
-                if let Some(index) = labels.get(&false_label.name) {
-                    false_label.index = Some(*index);
-                }
+                *true_label = Label::Index(*labels.get(label_name!(&true_label)).unwrap());
+                *false_label = Label::Index(*labels.get(label_name!(&false_label)).unwrap());
             }
             _ => {}
         }

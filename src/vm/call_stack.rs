@@ -1,7 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use crate::compiler::ir::Code;
-use crate::runtime::{AtomRef, Closure, Fn, FnPtr, Method, Origin, Receiver, Trace, Value};
+use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Receiver, Trace, Value};
 
 #[derive(Debug)]
 pub enum Target {
@@ -71,13 +70,6 @@ impl StackFrame {
         }
     }
 
-    pub fn get_current_instruction(&self) -> Option<&Code> {
-        match &self.get_function().ptr {
-            FnPtr::Native(ir) => ir.get(self.position),
-            _ => unreachable!(),
-        }
-    }
-
     pub fn get_receiver(&self) -> Option<&Value> {
         if let Target::Method(method) = &self.target {
             if let Receiver::Bound(receiver) = &method.receiver {
@@ -90,6 +82,7 @@ impl StackFrame {
 }
 
 pub struct CallStack {
+    // Should always default to `data.len() - 1` but it's faster to store it
     data: Vec<StackFrame>,
 }
 
@@ -106,16 +99,14 @@ impl CallStack {
         self.data.pop()
     }
 
-    pub fn current_id(&self) -> Option<usize> {
-        if self.data.is_empty() {
-            return None;
-        }
-
-        Some(self.data.len() - 1)
+    pub fn current_id(&self) -> usize {
+        self.data.len() - 1
     }
 
     pub fn current(&self) -> &StackFrame {
-        &self.data[self.data.len() - 1]
+        let index = self.data.len() - 1;
+
+        &self.data[index]
     }
 
     pub fn current_mut(&mut self) -> &mut StackFrame {

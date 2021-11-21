@@ -91,14 +91,14 @@ pub type ExternalFn = fn(input: Input<'_>) -> Result<Output>;
 #[derive(Clone)]
 pub enum FnPtr {
     External(ExternalFn),
-    Native(IR),
+    Native,
 }
 
 impl Debug for FnPtr {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
             FnPtr::External(_) => write!(f, "*ExternalFn"),
-            FnPtr::Native(_) => write!(f, "*Fn"),
+            FnPtr::Native => write!(f, "*Fn"),
         }
     }
 }
@@ -118,12 +118,13 @@ impl FnArg {
 pub struct Fn {
     pub name: String,
     pub ptr: FnPtr,
-    pub origin: Origin,
     // If `void` is true the function will never return a value
     pub void: bool,
     // Only used for instance methods
     pub public: bool,
+    pub origin: Origin,
     pub args: IndexMap<String, FnArg>,
+    pub instructions: IR,
 }
 
 impl Fn {
@@ -133,7 +134,7 @@ impl Fn {
         void: bool,
         origin: Origin,
         args: IndexMap<String, FnArg>,
-        ir: IR,
+        instructions: IR,
     ) -> Self {
         Self {
             name,
@@ -141,7 +142,8 @@ impl Fn {
             args,
             public,
             void,
-            ptr: FnPtr::Native(ir),
+            ptr: FnPtr::Native,
+            instructions,
         }
     }
 
@@ -153,16 +155,7 @@ impl Fn {
             public,
             void: false,
             ptr: FnPtr::External(func),
-        }
-    }
-
-    pub fn get_instructions(&self) -> Result<&IR> {
-        match &self.ptr {
-            FnPtr::External(_) => Err(RuntimeError::new(
-                ErrorKind::FatalError,
-                "cannot get instructions from external function".to_string(),
-            )),
-            FnPtr::Native(ir) => Ok(ir),
+            instructions: IR::new(),
         }
     }
 }

@@ -8,7 +8,7 @@ fn badfn() {
 
 fn recoverError(t) {
     t.assert((:ok, 100), goodfn()?)
-        .assert((:err, "fail"), badfn()?);
+        .assert((:err, "UserError: fail"), badfn()?);
 }
 
 pub fn trycatchTests() {

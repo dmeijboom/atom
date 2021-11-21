@@ -93,7 +93,6 @@ enum Flow {
     Continue,
     Return(Value),
     TailCall(usize),
-    JumpTo(Label),
 }
 
 pub struct Machine {
@@ -184,51 +183,31 @@ impl Machine {
         &mut self,
         keywords: &[String],
         arg_count: usize,
-        store_result: bool,
+        store_return_value: bool,
     ) -> Result<()> {
         let value = self.stack.pop();
 
         match value {
-            Value::Fn(func) => self.eval_function_call(func, keywords, arg_count, store_result),
-            Value::Closure(closure) => {
-                self.eval_closure_call(closure, keywords, arg_count, store_result)
+            Value::Fn(func) => {
+                self.eval_func(Target::Fn(func), store_return_value, keywords, arg_count)
             }
-            Value::Class(class) => self.eval_new_instance(class, keywords, arg_count, store_result),
+            Value::Closure(closure) => self.eval_func(
+                Target::Closure(closure),
+                store_return_value,
+                keywords,
+                arg_count,
+            ),
+            Value::Class(class) => {
+                self.eval_new_instance(class, keywords, arg_count, store_return_value)
+            }
             Value::Method(method) => {
-                self.eval_method_call(method, keywords, arg_count, store_result)
+                self.eval_method_call(method, keywords, arg_count, store_return_value)
             }
             _ => Err(RuntimeError::new(
                 ErrorKind::FatalError,
                 format!("type '{}' is not callable", value.get_type().name()),
             )),
         }
-    }
-
-    #[inline(always)]
-    fn eval_closure_call(
-        &mut self,
-        closure: AtomRef<Closure>,
-        keywords: &[String],
-        arg_count: usize,
-        store_return_value: bool,
-    ) -> Result<()> {
-        self.eval_func(
-            Target::Closure(closure),
-            store_return_value,
-            keywords,
-            arg_count,
-        )
-    }
-
-    #[inline(always)]
-    fn eval_function_call(
-        &mut self,
-        func: AtomRef<Fn>,
-        keywords: &[String],
-        arg_count: usize,
-        store_return_value: bool,
-    ) -> Result<()> {
-        self.eval_func(Target::Fn(func), store_return_value, keywords, arg_count)
     }
 
     fn eval_new_instance(
@@ -390,7 +369,7 @@ impl Machine {
         };
 
         match &func.ptr {
-            FnPtr::Native(_) => {
+            FnPtr::Native => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(
                         ErrorKind::FatalError,
@@ -482,7 +461,7 @@ impl Machine {
 
     fn eval_single(&mut self, module_id: ModuleId) -> Result<Flow> {
         let frame = self.call_stack.current_mut();
-        let code = match frame.get_current_instruction() {
+        let code = match frame.get_function().instructions.get(frame.position) {
             None => return Ok(Flow::Return(Value::Void)),
             Some(code) => code.clone(),
         };
@@ -563,15 +542,19 @@ impl Machine {
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
-                return Ok(Flow::JumpTo(self.eval_branch(true_label, false_label)?))
+                let label = self.eval_branch(true_label, false_label)?;
+
+                self.jump_to_label(label)?;
             }
-            Code::Jump(label) => return Ok(Flow::JumpTo(label)),
-            Code::JumpIfTrue(label) => return self.eval_jump_if_true(label),
+            Code::Jump(label) => self.jump_to_label(label)?,
+            Code::JumpIfTrue(label) => {
+                if self.eval_jump_if_true()? {
+                    self.jump_to_label(label)?;
+                }
+            }
             Code::JumpOnError(label) => {
-                self.try_stack.push(GlobalLabel::new(
-                    self.call_stack.current_id().unwrap(),
-                    label,
-                ));
+                self.try_stack
+                    .push(GlobalLabel::new(self.call_stack.current_id(), label));
             }
         };
 
@@ -1279,22 +1262,20 @@ impl Machine {
         Ok(if value { true_label } else { false_label })
     }
 
-    fn eval_jump_if_true(&mut self, label: Label) -> Result<Flow> {
+    fn eval_jump_if_true(&mut self) -> Result<bool> {
         let value = self.stack.pop().convert()?;
 
         if value {
             self.stack.push(Value::Bool(value));
-
-            return Ok(Flow::JumpTo(label));
         }
 
-        Ok(Flow::Continue)
+        Ok(value)
     }
 
     fn find_label(&self, search: &str) -> Result<usize> {
         let entrypoint = self.call_stack.current().get_function();
 
-        for (i, code) in entrypoint.get_instructions()?.iter().enumerate() {
+        for (i, code) in entrypoint.instructions.iter().enumerate() {
             if let Code::SetLabel(label) = code {
                 if label == search {
                     return Ok(i);
@@ -1308,116 +1289,104 @@ impl Machine {
         ))
     }
 
-    fn jump_to_label(&mut self, label: &Label) -> Result<()> {
-        match label.index {
-            Some(index) => self.call_stack.current_mut().position = index,
-            None => {
-                let index = self.find_label(&label.name)?;
+    fn jump_to_label(&mut self, label: Label) -> Result<()> {
+        match label {
+            Label::Name(name) => {
+                let index = self.find_label(&name)?;
 
                 self.call_stack.current_mut().position = index;
             }
-        };
+            Label::Index(index) => self.call_stack.current_mut().position = index,
+        }
 
         Ok(())
     }
 
     fn _eval(&mut self, module_id: ModuleId) -> Result<()> {
         while !self.call_stack.is_empty() {
-            'eval_loop: loop {
-                // Looks up the current instruction
-                let frame = self.call_stack.current();
-                let entrypoint = frame.get_function();
-                let current_module_id = entrypoint.origin.module_id;
+            // Looks up the current instruction
+            let frame = self.call_stack.current();
+            let entrypoint = frame.get_function();
+            let current_module_id = entrypoint.origin.module_id;
 
-                // Evaluates the instruction and optionally returns a label to jump to
-                match self.eval_single(current_module_id) {
-                    Ok(flow) => match flow {
-                        Flow::Continue => continue 'eval_loop,
-                        Flow::Return(value) => {
-                            let frame = self.call_stack.current();
+            // Evaluates the instruction and optionally returns a label to jump to
+            match self.eval_single(current_module_id) {
+                Ok(flow) => match flow {
+                    Flow::Continue => continue,
+                    Flow::Return(value) => {
+                        let frame = self.call_stack.current();
 
-                            if frame.store_return_value {
-                                self.stack.push(value);
-                            }
-
-                            break 'eval_loop;
-                        }
-                        Flow::JumpTo(label) => {
-                            self.jump_to_label(&label)?;
-
-                            continue 'eval_loop;
-                        }
-                        Flow::TailCall(arg_count) => {
-                            let frame = self.call_stack.current_mut();
-                            frame.return_addr.push(frame.position);
-
-                            self.eval_tail_call(arg_count)?;
-                            self.call_stack.current_mut().position = 0;
-
-                            continue 'eval_loop;
-                        }
-                    },
-                    Err(err) => {
-                        // If there is an error that is try-able, let's handle it
-                        if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
-                            if let Some(global_label) = self.try_stack.pop() {
-                                self.stack.push(Value::Tuple(
-                                    vec![
-                                        Value::Symbol(Symbol::new("err")),
-                                        Value::String(AtomRef::new(format!("{}", err))),
-                                    ]
-                                    .into_boxed_slice(),
-                                ));
-
-                                // Pop stack frames until we reach the one were looking for
-                                while self.call_stack.current_id().unwrap() != global_label.frame {
-                                    self.call_stack.pop();
-                                }
-
-                                self.jump_to_label(&global_label.label)?;
-
-                                break 'eval_loop;
-                            }
+                        if frame.store_return_value {
+                            self.stack.push(value);
                         }
 
-                        // Otherwise, simply fail
-                        let module = self.module_cache.get_module_by_id(module_id)?;
+                        // Cleanup after the call has finished
+                        let frame = self.call_stack.current_mut();
 
-                        if err.location.is_none() {
-                            let mut e = err.with_module(&module.name);
-                            let frame = self.call_stack.current();
+                        if let Some(addr) = frame.return_addr.pop() {
+                            frame.position = addr;
 
-                            if let Some(location) = frame
-                                .get_function()
-                                .get_instructions()
-                                .ok()
-                                .and_then(|ir| ir.get_location(frame.position - 1))
-                            {
-                                e = e.with_location(location.clone());
-                            }
+                            continue;
+                        }
 
-                            if let Some(filename) = &module.filename {
-                                return Err(e.with_filename(filename.clone()));
-                            }
-
-                            return Err(e);
-                        };
-
-                        return Err(err);
+                        self.call_stack.pop();
                     }
-                };
-            }
+                    Flow::TailCall(arg_count) => {
+                        let frame = self.call_stack.current_mut();
+                        frame.return_addr.push(frame.position);
 
-            // Cleanup after the call has finished
-            let frame = self.call_stack.current_mut();
+                        self.eval_tail_call(arg_count)?;
+                        self.call_stack.current_mut().position = 0;
+                    }
+                },
+                Err(err) => {
+                    // If there is an error that is try-able, let's handle it
+                    if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
+                        if let Some(global_label) = self.try_stack.pop() {
+                            self.stack.push(Value::Tuple(
+                                vec![
+                                    Value::Symbol(Symbol::new("err")),
+                                    Value::String(AtomRef::new(format!("{}", err))),
+                                ]
+                                .into_boxed_slice(),
+                            ));
 
-            if let Some(addr) = frame.return_addr.pop() {
-                frame.position = addr;
+                            // Pop stack frames until we reach the one were looking for
+                            while self.call_stack.current_id() != global_label.frame {
+                                self.call_stack.pop();
+                            }
 
-                continue;
-            }
+                            self.jump_to_label(global_label.label)?;
 
-            self.call_stack.pop();
+                            continue;
+                        }
+                    }
+
+                    // Otherwise, simply fail
+                    let module = self.module_cache.get_module_by_id(module_id)?;
+
+                    if err.location.is_none() {
+                        let mut e = err.with_module(&module.name);
+                        let frame = self.call_stack.current();
+
+                        if let Some(location) = frame
+                            .get_function()
+                            .instructions
+                            .get_location(frame.position - 1)
+                        {
+                            e = e.with_location(location.clone());
+                        }
+
+                        if let Some(filename) = &module.filename {
+                            return Err(e.with_filename(filename.clone()));
+                        }
+
+                        return Err(e);
+                    };
+
+                    return Err(err);
+                }
+            };
         }
 
         Ok(())
@@ -1455,8 +1424,6 @@ impl AtomApi for Machine {
             return None;
         }
 
-        self.call_stack
-            .current()
-            .get_receiver()
+        self.call_stack.current().get_receiver()
     }
 }

@@ -1,4 +1,5 @@
 use std::collections::HashMap;
+use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut, Range};
@@ -27,24 +28,17 @@ impl Display for Location {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Label {
-    pub name: String,
-    pub index: Option<usize>,
-}
-
-impl Label {
-    pub fn new(name: String) -> Self {
-        Self { name, index: None }
-    }
+pub enum Label {
+    Name(String),
+    Index(usize),
 }
 
 impl Display for Label {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        if let Some(index) = self.index {
-            return write!(f, "label: '{}', index: {}", self.name, index);
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match self {
+            Label::Name(name) => write!(f, "name: '{}'", name),
+            Label::Index(index) => write!(f, "index: {}", index),
         }
-
-        write!(f, "label: '{}'", self.name)
     }
 }
 
