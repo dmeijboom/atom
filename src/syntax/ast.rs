@@ -212,13 +212,6 @@ pub struct LiteralExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct MemberCondExpr {
-    pub object: Expr,
-    pub member: String,
-    pub pos: Pos,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct MemberExpr {
     pub object: Expr,
     pub member: String,
@@ -291,7 +284,6 @@ pub enum Expr {
     TypeOf(Box<TypeOfExpr>),
     Closure(ClosureExpr),
     Member(Box<MemberExpr>),
-    MemberCond(Box<MemberCondExpr>),
     Arithmetic(Box<ArithmeticExpr>),
     Comparison(Box<ComparisonExpr>),
     Logical(Box<LogicalExpr>),
@@ -318,7 +310,6 @@ impl Expr {
             Self::TypeOf(typeof_expr) => typeof_expr.pos.clone(),
             Self::Closure(closure_expr) => closure_expr.pos.clone(),
             Self::Member(member_expr) => member_expr.pos.clone(),
-            Self::MemberCond(member_cond_expr) => member_cond_expr.pos.clone(),
             Self::Arithmetic(arithmetic_expr) => arithmetic_expr.pos.clone(),
             Self::Comparison(comparison_expr) => comparison_expr.pos.clone(),
             Self::Logical(logical_expr) => logical_expr.pos.clone(),

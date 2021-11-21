@@ -277,7 +277,6 @@ impl<'c> Compiler<'c> {
                     member: member.member.clone(),
                 }))
             }
-            Expr::MemberCond(_) => unreachable!("not implemented yet"),
             Expr::Arithmetic(arithmetic) => {
                 let left = self.compile_expr(&arithmetic.left)?;
                 let right = self.compile_expr(&arithmetic.right)?;
