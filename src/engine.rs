@@ -8,7 +8,6 @@ use crate::syntax::{parser, Stmt};
 use crate::vm::Machine;
 
 pub struct Options {
-    pub cleanup: bool,
     pub optimize: bool,
     pub print_ir: bool,
     pub print_ast: bool,
@@ -20,7 +19,6 @@ pub struct Options {
 impl Default for Options {
     fn default() -> Self {
         Self {
-            cleanup: true,
             optimize: true,
             print_ir: false,
             print_ast: false,
@@ -134,12 +132,10 @@ impl Engine {
 
             self.machine.eval("main", entrypoint)?;
 
-            let output = RunOutput {
-                value: self.machine.take_result(),
-            };
+            let mut output = RunOutput { value: None };
 
-            if opts.cleanup {
-                self.machine.cleanup();
+            if opts.capture_result {
+                output.value = self.machine.take_result();
             }
 
             return Ok(output);

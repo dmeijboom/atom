@@ -1,5 +1,5 @@
 pub use api::AtomApi;
-pub use atom_ref::AtomRef;
+pub use atom_ref::{AtomRef, WeakRef};
 pub use class::{Class, Field};
 pub use closure::Closure;
 pub use error::{ErrorKind, Result, RuntimeError, Trace};

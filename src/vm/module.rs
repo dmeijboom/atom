@@ -1,14 +1,20 @@
 use indexmap::map::IndexMap;
 
-use crate::runtime::{AtomRef, Class, Fn, Interface, Value};
+use crate::runtime::{AtomRef, Class, Fn, Interface, WeakRef};
 
 pub type ModuleId = usize;
+
+pub enum Global {
+    Fn(WeakRef<Fn>),
+    Class(WeakRef<Class>),
+    Interface(WeakRef<Interface>),
+}
 
 pub struct Module {
     pub id: ModuleId,
     pub name: String,
     pub filename: Option<String>,
-    pub globals: Vec<Value>,
+    pub globals: Vec<Global>,
     pub functions: Vec<AtomRef<Fn>>,
     pub interfaces: Vec<AtomRef<Interface>>,
     pub classes: IndexMap<String, AtomRef<Class>>,

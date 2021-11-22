@@ -12,6 +12,7 @@ use crate::runtime::{
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::vm::global_label::GlobalLabel;
+use crate::vm::module::Global;
 use crate::vm::Module;
 
 use super::call_stack::{CallStack, StackFrame, Target};
@@ -1203,8 +1204,21 @@ impl Machine {
     fn eval_load_global(&mut self, id: usize) -> Result<()> {
         let module_id = self.call_stack.current().module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
+        let value = match &current_module.globals[id] {
+            Global::Fn(func) => func.upgrade().map(Value::Fn).ok_or_else(|| {
+                RuntimeError::new(ErrorKind::FatalError, "function was dropped".to_string())
+            }),
+            Global::Class(class) => class.upgrade().map(Value::Class).ok_or_else(|| {
+                RuntimeError::new(ErrorKind::FatalError, "class was dropped".to_string())
+            }),
+            Global::Interface(interface) => {
+                interface.upgrade().map(Value::Interface).ok_or_else(|| {
+                    RuntimeError::new(ErrorKind::FatalError, "interface was dropped".to_string())
+                })
+            }
+        }?;
 
-        self.stack.push(current_module.globals[id].clone());
+        self.stack.push(value);
 
         Ok(())
     }
@@ -1432,11 +1446,6 @@ impl Machine {
 
     pub fn take_result(&mut self) -> Option<Value> {
         self.stack.try_pop()
-    }
-
-    pub fn cleanup(&mut self) {
-        self.call_stack.clear();
-        self.stack.clear();
     }
 }
 

@@ -7,9 +7,9 @@ use crate::compiler::ir::{Code, Location};
 use crate::compiler::{self, ElementKind, FunctionAttr};
 use crate::runtime::{
     AtomRef, Class, ErrorKind, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result,
-    RuntimeError, Value,
+    RuntimeError,
 };
-use crate::vm::module::ModuleId;
+use crate::vm::module::{Global, ModuleId};
 
 use super::module::Module;
 
@@ -63,8 +63,12 @@ impl ModuleCache {
         ))
     }
 
-    fn make_interface(&self, module: &Module, interface: compiler::Interface) -> Interface {
-        Interface {
+    fn make_interface(
+        &self,
+        module: &Module,
+        interface: compiler::Interface,
+    ) -> AtomRef<Interface> {
+        AtomRef::new(Interface {
             name: interface.name,
             functions: interface.methods,
             origin: Origin::new(
@@ -73,7 +77,7 @@ impl ModuleCache {
                 module.filename.clone(),
                 Location::default(),
             ),
-        }
+        })
     }
 
     fn make_fn(
@@ -81,7 +85,7 @@ impl ModuleCache {
         module: &Module,
         func: compiler::Function,
         class_name: Option<&str>,
-    ) -> Result<Fn> {
+    ) -> Result<AtomRef<Fn>> {
         let origin = Origin::new(
             module.id,
             module.name.clone(),
@@ -97,15 +101,15 @@ impl ModuleCache {
                 None => self.call_external_hook(&module.name, &func.name, class_name)?,
             };
 
-            return Ok(Fn::external(
+            return Ok(AtomRef::new(Fn::external(
                 func.name,
                 func.attr.contains(FunctionAttr::Public),
                 origin,
                 external_func,
-            ));
+            )));
         }
 
-        Ok(Fn::native(
+        Ok(AtomRef::new(Fn::native(
             func.name,
             func.attr.contains(FunctionAttr::Public),
             !func.body.iter().any(|code| code == &Code::Return),
@@ -115,10 +119,10 @@ impl ModuleCache {
                 .map(|arg| (arg.name, FnArg::new(arg.mutable)))
                 .collect(),
             func.body,
-        ))
+        )))
     }
 
-    fn make_class(&self, module: &Module, class: compiler::Class) -> Result<Class> {
+    fn make_class(&self, module: &Module, class: compiler::Class) -> Result<AtomRef<Class>> {
         let mut output = Class {
             name: class.name.clone(),
             fields: class
@@ -144,19 +148,18 @@ impl ModuleCache {
         };
 
         for (name, func) in class.methods {
-            let methods = if func.attr.contains(FunctionAttr::Static) {
-                &mut output.static_methods
+            if func.attr.contains(FunctionAttr::Static) {
+                output
+                    .static_methods
+                    .insert(name, self.make_fn(module, func, Some(&class.name))?);
             } else {
-                &mut output.methods
-            };
-
-            methods.insert(
-                name,
-                AtomRef::new(self.make_fn(module, func, Some(&class.name))?),
-            );
+                output
+                    .methods
+                    .insert(name, self.make_fn(module, func, Some(&class.name))?);
+            }
         }
 
-        Ok(output)
+        Ok(AtomRef::new(output))
     }
 
     pub fn register(&mut self, compiled_module: compiler::Module) -> Result<()> {
@@ -173,21 +176,19 @@ impl ModuleCache {
         );
 
         for (_, func) in compiled_module.functions {
-            module
-                .functions
-                .push(AtomRef::new(self.make_fn(&module, func, None)?));
+            module.functions.push(self.make_fn(&module, func, None)?);
         }
 
         for (name, class) in compiled_module.classes {
             module
                 .classes
-                .insert(name, AtomRef::new(self.make_class(&module, class)?));
+                .insert(name, self.make_class(&module, class)?);
         }
 
         module.interfaces = compiled_module
             .interfaces
             .into_iter()
-            .map(|(_, interface)| AtomRef::new(self.make_interface(&module, interface)))
+            .map(|(_, interface)| self.make_interface(&module, interface))
             .collect();
 
         // At last, register the globals
@@ -209,7 +210,7 @@ impl ModuleCache {
                             )
                         })?;
 
-                    Value::Fn(AtomRef::clone(func))
+                    Global::Fn(func.weak())
                 }
                 ElementKind::Class => {
                     let class = origin
@@ -221,7 +222,7 @@ impl ModuleCache {
                             )
                         })?;
 
-                    Value::Class(AtomRef::clone(class))
+                    Global::Class(class.weak())
                 }
                 ElementKind::Interface => {
                     let interface = origin
@@ -238,7 +239,7 @@ impl ModuleCache {
                             )
                         })?;
 
-                    Value::Interface(AtomRef::clone(interface))
+                    Global::Interface(interface.weak())
                 }
             };
 

@@ -143,8 +143,4 @@ impl CallStack {
 
         stack_trace
     }
-
-    pub fn clear(&mut self) {
-        self.data.clear();
-    }
 }
