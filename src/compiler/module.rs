@@ -48,7 +48,7 @@ impl Debug for Function {
             self.name,
             self.body
                 .iter()
-                .map(|code| format!("  {:?}", code))
+                .map(|code| format!("  {}", code.description(Some(&self.body))))
                 .collect::<Vec<_>>()
                 .join("\n")
         )

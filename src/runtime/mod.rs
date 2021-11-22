@@ -8,7 +8,7 @@ pub use interface::Interface;
 pub use method::{Method, Receiver};
 pub use object::Object;
 pub use origin::Origin;
-pub use r#fn::{ExternalFn, Fn, FnArg, FnPtr, Input, Output};
+pub use r#fn::{ExternalFn, Fn, FnArg, FnKind, Input, Output};
 pub use rust::RustObject;
 pub use symbol::Symbol;
 pub use value::{Convert, Value, ValueType};

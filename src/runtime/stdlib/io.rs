@@ -16,8 +16,8 @@ fn map_io_err(e: io::Error) -> RuntimeError {
 }
 
 pub fn open_file_handle(input: Input<'_>) -> Result<Output> {
-    let filename: AtomRef<String> = input.single()?;
-    let file = File::open(filename.as_str()).map_err(map_io_err)?;
+    let filename: String = input.single()?;
+    let file = File::open(filename).map_err(map_io_err)?;
 
     Ok(Output::new(RustObject::new(file)))
 }

@@ -8,7 +8,7 @@ use crate::compiler;
 use crate::compiler::ir::{Code, Label};
 use crate::runtime::{stdlib, ErrorKind};
 use crate::runtime::{
-    AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnPtr, Input, Int, Interface, Method,
+    AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnKind, Input, Int, Interface, Method,
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::vm::global_label::GlobalLabel;
@@ -173,6 +173,8 @@ impl Machine {
         // Reset locals, we can do this quite easily as the first n-locals are the arguments
         let frame = self.call_stack.current_mut();
 
+        frame.return_addr.push(frame.position);
+        frame.position = 0;
         frame.locals = self.stack.pop_many(arg_count)?;
 
         Ok(())
@@ -180,7 +182,7 @@ impl Machine {
 
     fn eval_call(
         &mut self,
-        keywords: &[String],
+        keywords: Option<[usize; 2]>,
         arg_count: usize,
         store_return_value: bool,
     ) -> Result<()> {
@@ -212,10 +214,16 @@ impl Machine {
     fn eval_new_instance(
         &mut self,
         class: AtomRef<Class>,
-        keywords: &[String],
+        keywords: Option<[usize; 2]>,
         arg_count: usize,
         store_return_value: bool,
     ) -> Result<()> {
+        let keywords = if let Some(keywords) = keywords {
+            keywords[0]..keywords[1]
+        } else {
+            0..0
+        };
+
         if keywords.len() != arg_count {
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
@@ -237,10 +245,13 @@ impl Machine {
         }
 
         let mut is_sorted = true;
+        let function = &self.call_stack.current().function;
 
-        for (i, keyword) in keywords.iter().enumerate() {
+        for (i, segment_id) in keywords.clone().enumerate() {
+            let keyword = function.instructions.get_data(segment_id);
+
             if let Some((field_name, _)) = class.fields.get_index(i) {
-                if is_sorted && field_name != keyword {
+                if is_sorted && field_name != keyword.as_str() {
                     is_sorted = false;
                 }
 
@@ -249,18 +260,22 @@ impl Machine {
 
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
-                format!("invalid field '{}' on {}", keyword, class.as_ref(),),
+                format!("invalid field '{}' on {}", keyword.as_str(), class.as_ref(),),
             ));
         }
 
         let fields = if is_sorted {
             self.stack.pop_many(keywords.len())?
         } else {
+            let keywords = keywords.collect::<Vec<_>>();
             let mut fields = vec![];
 
             while fields.len() < keywords.len() {
                 for (name, _) in class.fields.iter().rev() {
-                    if let Some(index) = keywords.iter().position(|keyword| keyword == name) {
+                    if let Some(index) = keywords
+                        .iter()
+                        .position(|segment_id| name == function.instructions.get_data(*segment_id))
+                    {
                         if index <= fields.len() {
                             fields.insert(index, self.stack.pop());
                         }
@@ -289,7 +304,7 @@ impl Machine {
     fn eval_method_call(
         &mut self,
         method: AtomRef<Method>,
-        keywords: &[String],
+        keywords: Option<[usize; 2]>,
         arg_count: usize,
         store_return_value: bool,
     ) -> Result<()> {
@@ -324,20 +339,23 @@ impl Machine {
     fn prepare_args(
         &self,
         mut values: Vec<Value>,
-        keywords: &[String],
+        keywords: [usize; 2],
         args: &IndexMap<String, FnArg>,
     ) -> Result<BTreeMap<usize, Value>> {
+        let function = &self.call_stack.current().function;
         let mut ordered_values = BTreeMap::new();
 
-        for name in keywords.iter() {
-            if let Some(arg_idx) = args.keys().position(|arg| arg == name) {
+        for segment_id in keywords[0]..keywords[1] {
+            let name = function.instructions.get_data(segment_id);
+
+            if let Some(arg_idx) = args.keys().position(|arg| arg == name.as_str()) {
                 ordered_values.insert(arg_idx, values.remove(0));
                 continue;
             }
 
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
-                format!("no such argument '{}'", name),
+                format!("no such argument '{}'", name.as_str()),
             ));
         }
 
@@ -356,7 +374,7 @@ impl Machine {
         &mut self,
         target: Target,
         store_return_value: bool,
-        keywords: &[String],
+        keywords: Option<[usize; 2]>,
         arg_count: usize,
     ) -> Result<()> {
         let (func, values) = match &target {
@@ -365,8 +383,8 @@ impl Machine {
             Target::Closure(closure) => (&closure.func, Some(closure.values.clone())),
         };
 
-        match func.ptr {
-            FnPtr::Native => {
+        match func.kind {
+            FnKind::Native => {
                 if arg_count != func.args.len() {
                     return Err(RuntimeError::new(
                         ErrorKind::FatalError,
@@ -379,18 +397,19 @@ impl Machine {
                     ));
                 }
 
-                let locals = if keywords.is_empty() {
-                    self.stack.pop_many(arg_count)?
-                } else {
-                    let unordered_values = self.stack.pop_many(arg_count)?;
+                let locals = match keywords {
+                    None => self.stack.pop_many(arg_count)?,
+                    Some(keywords) => {
+                        let unordered_values = self.stack.pop_many(arg_count)?;
 
-                    self.prepare_args(unordered_values, keywords, &func.args)
-                        .map_err(|e| {
-                            let message = e.message.clone();
-                            e.with_message(format!("{} in target {}(...)", message, target,))
-                        })?
-                        .into_values()
-                        .collect()
+                        self.prepare_args(unordered_values, keywords, &func.args)
+                            .map_err(|e| {
+                                let message = e.message.clone();
+                                e.with_message(format!("{} in target {}(...)", message, target,))
+                            })?
+                            .into_values()
+                            .collect()
+                    }
                 };
 
                 self.call_stack.push(StackFrame::new(
@@ -405,8 +424,8 @@ impl Machine {
 
                 Ok(())
             }
-            FnPtr::External(closure) => {
-                if !keywords.is_empty() {
+            FnKind::External(closure) => {
+                if !keywords.is_none() {
                     return Err(RuntimeError::new(
                         ErrorKind::FatalError,
                         format!(
@@ -458,9 +477,7 @@ impl Machine {
 
     fn eval_current(&mut self) -> Result<Flow> {
         let frame = self.call_stack.current_mut();
-        let function = frame.get_function();
-        let module_id = function.origin.module_id;
-        let code = match function.instructions.get(frame.position) {
+        let code = match frame.function.instructions.get(frame.position) {
             None => return Ok(Flow::Return(false)),
             Some(code) => code.clone(),
         };
@@ -490,7 +507,7 @@ impl Machine {
             Code::MakeArray(len) => self.eval_make_array(len)?,
             Code::MakeTemplate(len) => self.eval_make_template(len)?,
             Code::MakeRef => self.eval_make_ref(),
-            Code::MakeClosure(fn_id) => self.eval_make_closure(module_id, fn_id)?,
+            Code::MakeClosure(fn_id) => self.eval_make_closure(fn_id)?,
             Code::Discard => self.stack.delete()?,
             Code::Return => return Ok(Flow::Return(true)),
             Code::Deref => self.eval_deref()?,
@@ -514,36 +531,30 @@ impl Machine {
             Code::ComparisonLte => self.eval_comparison_lte()?,
             Code::AssertIsType => self.eval_assert_is_type()?,
             Code::Unwrap => self.eval_unwrap()?,
-            Code::Cast(type_name) => self.eval_cast(&type_name)?,
-            Code::Call(arg_count) => self.eval_call(&[], arg_count, true)?,
+            Code::Cast(segment_id) => self.eval_cast(segment_id)?,
+            Code::Call(arg_count) => self.eval_call(None, arg_count, true)?,
             Code::CallKeywords((keywords, arg_count)) => {
-                self.eval_call(&keywords, arg_count, true)?
+                self.eval_call(Some(keywords), arg_count, true)?
             }
-            Code::CallVoid(arg_count) => self.eval_call(&[], arg_count, false)?,
+            Code::CallVoid(arg_count) => self.eval_call(None, arg_count, false)?,
             Code::CallKeywordsVoid((keywords, arg_count)) => {
-                self.eval_call(&keywords, arg_count, false)?
+                self.eval_call(Some(keywords), arg_count, false)?
             }
-            Code::TailCall(arg_count) => {
-                let frame = self.call_stack.current_mut();
-                frame.return_addr.push(frame.position);
-
-                self.eval_tail_call(arg_count)?;
-                self.call_stack.current_mut().position = 0;
-            }
+            Code::TailCall(arg_count) => self.eval_tail_call(arg_count)?,
             Code::Store(id) => self.eval_store(id, false)?,
             Code::StoreMut(id) => self.eval_store(id, true)?,
             Code::StoreTryOk => self.eval_store_try_ok()?,
             Code::LoadIndex => self.eval_load_index(false)?,
             Code::MakeSlice => self.eval_make_slice()?,
             Code::StoreIndex => self.eval_store_index()?,
-            Code::LoadMember(member) => self.eval_load_member(module_id, &member)?,
-            Code::StoreMember(member) => self.eval_store_member(module_id, &member)?,
+            Code::LoadMember(segment_id) => self.eval_load_member(segment_id)?,
+            Code::StoreMember(segment_id) => self.eval_store_member(segment_id)?,
             Code::Load(id) => self.eval_load(id)?,
             Code::LoadReceiver => self.eval_load_receiver()?,
-            Code::LoadGlobal(id) => self.eval_load_global(module_id, id)?,
-            Code::LoadFn(id) => self.eval_load_fn(module_id, id)?,
-            Code::LoadClass(id) => self.eval_load_class(module_id, id)?,
-            Code::LoadInterface(id) => self.eval_load_interface(module_id, id)?,
+            Code::LoadGlobal(id) => self.eval_load_global(id)?,
+            Code::LoadFn(id) => self.eval_load_fn(id)?,
+            Code::LoadClass(id) => self.eval_load_class(id)?,
+            Code::LoadInterface(id) => self.eval_load_interface(id)?,
             Code::LoadTarget => self.eval_load_target()?,
             Code::SetLabel(_) => {}
             Code::Branch((true_label, false_label)) => {
@@ -620,7 +631,7 @@ impl Machine {
             .map(|value| format!("{}", value))
             .collect::<String>();
 
-        self.stack.push(Value::String(AtomRef::new(s)));
+        self.stack.push(Value::String(s));
 
         Ok(())
     }
@@ -824,7 +835,13 @@ impl Machine {
         ))
     }
 
-    fn eval_cast(&mut self, type_name: &str) -> Result<()> {
+    fn eval_cast(&mut self, segment_id: usize) -> Result<()> {
+        let type_name = self
+            .call_stack
+            .current()
+            .function
+            .instructions
+            .get_data(segment_id);
         let value = self.stack.pop();
 
         if value.get_type().name() == type_name {
@@ -1009,7 +1026,9 @@ impl Machine {
         }
     }
 
-    fn eval_load_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
+    fn eval_load_member(&mut self, segment_id: usize) -> Result<()> {
+        let frame = self.call_stack.current();
+        let member = frame.function.instructions.get_data(segment_id);
         let receiver = self.stack.pop();
         let (class, receiver) = if let Value::Class(class) = &receiver {
             (AtomRef::clone(class), Receiver::Unbound)
@@ -1021,7 +1040,7 @@ impl Machine {
             Receiver::Bound(value) => {
                 if let Some(field) = class.fields.get(member) {
                     if let Value::Object(object) = value {
-                        if !field.public && module_id != class.origin.module_id {
+                        if !field.public && frame.module_id != class.origin.module_id {
                             return Err(RuntimeError::new(
                                 ErrorKind::FatalError,
                                 format!(
@@ -1055,7 +1074,7 @@ impl Machine {
                 }
 
                 if let Some(func) = class.methods.get(member) {
-                    if !func.public && module_id != class.origin.module_id {
+                    if !func.public && frame.module_id != class.origin.module_id {
                         return Err(RuntimeError::new(
                             ErrorKind::FatalError,
                             format!(
@@ -1100,13 +1119,15 @@ impl Machine {
         ))
     }
 
-    fn eval_store_member(&mut self, module_id: ModuleId, member: &str) -> Result<()> {
+    fn eval_store_member(&mut self, segment_id: usize) -> Result<()> {
+        let frame = self.call_stack.current();
+        let member = frame.function.instructions.get_data(segment_id);
         let value = self.stack.pop();
         let object = self.stack.pop();
         let class = self.get_class(&object)?;
 
         if let Some(field) = class.fields.get(member) {
-            if !field.public && module_id != class.origin.module_id {
+            if !field.public && frame.module_id != class.origin.module_id {
                 return Err(RuntimeError::new(
                     ErrorKind::FatalError,
                     format!(
@@ -1179,7 +1200,8 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_load_global(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+    fn eval_load_global(&mut self, id: usize) -> Result<()> {
+        let module_id = self.call_stack.current().module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
 
         self.stack.push(current_module.globals[id].clone());
@@ -1187,7 +1209,8 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_load_fn(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+    fn eval_load_fn(&mut self, id: usize) -> Result<()> {
+        let module_id = self.call_stack.current().module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
 
         self.stack
@@ -1196,7 +1219,8 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_make_closure(&mut self, module_id: ModuleId, fn_id: usize) -> Result<()> {
+    fn eval_make_closure(&mut self, fn_id: usize) -> Result<()> {
+        let module_id = self.call_stack.current().module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let frame = self.call_stack.current();
 
@@ -1208,7 +1232,8 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_load_class(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
+    fn eval_load_class(&mut self, id: usize) -> Result<()> {
+        let module_id = self.call_stack.current().module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let value = current_module
             .classes
@@ -1226,8 +1251,9 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_load_interface(&mut self, module_id: ModuleId, id: usize) -> Result<()> {
-        let current_module = self.module_cache.get_module_by_id(module_id)?;
+    fn eval_load_interface(&mut self, id: usize) -> Result<()> {
+        let frame = self.call_stack.current();
+        let current_module = self.module_cache.get_module_by_id(frame.module_id)?;
         let value = current_module
             .interfaces
             .get(id)
@@ -1278,9 +1304,14 @@ impl Machine {
     }
 
     fn find_label(&self, search: &str) -> Result<usize> {
-        let entrypoint = self.call_stack.current().get_function();
-
-        for (i, code) in entrypoint.instructions.iter().enumerate() {
+        for (i, code) in self
+            .call_stack
+            .current()
+            .function
+            .instructions
+            .iter()
+            .enumerate()
+        {
             if let Code::SetLabel(label) = code {
                 if label == search {
                     return Ok(i);
@@ -1343,7 +1374,7 @@ impl Machine {
                             self.stack.push(Value::Tuple(
                                 vec![
                                     Value::Symbol(Symbol::new("err")),
-                                    Value::String(AtomRef::new(format!("{}", err))),
+                                    Value::String(format!("{}", err)),
                                 ]
                                 .into_boxed_slice(),
                             ));
@@ -1366,10 +1397,8 @@ impl Machine {
                         let mut e = err.with_module(&module.name);
                         let frame = self.call_stack.current();
 
-                        if let Some(location) = frame
-                            .get_function()
-                            .instructions
-                            .get_location(frame.position - 1)
+                        if let Some(location) =
+                            frame.function.instructions.get_location(frame.position - 1)
                         {
                             e = e.with_location(location.clone());
                         }

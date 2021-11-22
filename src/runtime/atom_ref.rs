@@ -45,6 +45,11 @@ pub struct AtomRef<T: ?Sized> {
 
 impl<T: PartialEq> PartialEq for AtomRef<T> {
     fn eq(&self, other: &Self) -> bool {
+        // If they point to the same allocation, they're equal
+        if self.ptr.as_ptr() == other.ptr.as_ptr() {
+            return true;
+        }
+
         self.as_ref().eq(other.as_ref())
     }
 }

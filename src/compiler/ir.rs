@@ -42,14 +42,6 @@ impl Display for Label {
     }
 }
 
-fn format_keywords(keywords: &[String]) -> String {
-    keywords
-        .iter()
-        .map(|name| format!("'{}'", name))
-        .collect::<Vec<_>>()
-        .join(", ")
-}
-
 #[derive(Clone, PartialEq)]
 pub enum Code {
     ConstInt128(i128),
@@ -103,11 +95,11 @@ pub enum Code {
     Unwrap,
     Discard,
     Return,
-    Cast(String),
+    Cast(usize),
     Call(usize),
-    CallKeywords((Vec<String>, usize)),
+    CallKeywords(([usize; 2], usize)),
     CallVoid(usize),
-    CallKeywordsVoid((Vec<String>, usize)),
+    CallKeywordsVoid(([usize; 2], usize)),
     TailCall(usize),
     Store(usize),
     StoreMut(usize),
@@ -122,12 +114,44 @@ pub enum Code {
     LoadIndex,
     MakeSlice,
     StoreIndex,
-    LoadMember(String),
-    StoreMember(String),
+    LoadMember(usize),
+    StoreMember(usize),
+}
+
+fn format_name(id: usize, ir: Option<&IR>) -> String {
+    format!(
+        "{}: '{}'",
+        if ir.is_some() {
+            "name".to_string()
+        } else {
+            "id".to_string()
+        },
+        ir.map(|ir| ir.get_data(id).clone())
+            .unwrap_or_else(|| id.to_string())
+    )
+}
+
+fn format_names(range: [usize; 2], ir: Option<&IR>) -> String {
+    format!(
+        "{}: [{}]",
+        if ir.is_some() {
+            "names".to_string()
+        } else {
+            "ids".to_string()
+        },
+        (range[0]..range[1])
+            .map(|id| format!(
+                "'{}'",
+                ir.map(|ir| ir.get_data(id).clone())
+                    .unwrap_or_else(|| id.to_string())
+            ))
+            .collect::<Vec<_>>()
+            .join(", ")
+    )
 }
 
 impl Code {
-    fn description(&self) -> String {
+    pub fn description(&self, ir: Option<&IR>) -> String {
         match self {
             Code::ConstInt128(val) => format!("  constInt128({})", val),
             Code::ConstUint128(val) => format!("  constUint128({})", val),
@@ -182,24 +206,28 @@ impl Code {
             Code::Unwrap => "  unwrap".to_string(),
             Code::Discard => "  discard".to_string(),
             Code::Return => "  return".to_string(),
-            Code::Cast(type_name) => format!("  cast(type_name: '{}')", type_name),
+            Code::Cast(id) => format!("  cast({})", format_name(*id, ir)),
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
-            Code::CallKeywords((keywords, arg_count)) => format!(
-                "  callKw(keywords: {}, arg_count: {})",
-                format_keywords(keywords),
-                arg_count
-            ),
+            Code::CallKeywords((keywords, arg_count)) => {
+                format!(
+                    "  callKw({}, arg_count: {})",
+                    format_names(*keywords, ir),
+                    arg_count
+                )
+            }
             Code::CallVoid(arg_count) => format!("  callVoid(arg_count: {})", arg_count),
-            Code::CallKeywordsVoid((keywords, arg_count)) => format!(
-                "  callKwVoid(keywords: {}, arg_count: {})",
-                format_keywords(keywords),
-                arg_count
-            ),
+            Code::CallKeywordsVoid((keywords, arg_count)) => {
+                format!(
+                    "  callKwVoid({}, arg_count: {})",
+                    format_names(*keywords, ir),
+                    arg_count
+                )
+            }
             Code::TailCall(arg_count) => format!("  tailCall(arg_count: {})", arg_count),
             Code::StoreTryOk => "  storeTryResult".to_string(),
             Code::Store(id) => format!("  store(id: {})", id),
             Code::StoreMut(id) => format!("  storeMut(id: {})", id),
-            Code::StoreMember(name) => format!("  storeMember(name: '{}')", name),
+            Code::StoreMember(id) => format!("  storeMember({})", format_name(*id, ir)),
             Code::LoadReceiver => "  loadSelf".to_string(),
             Code::Load(id) => format!("  load(id: {})", id),
             Code::LoadGlobal(id) => format!("  loadGlobal(id: {})", id),
@@ -210,29 +238,42 @@ impl Code {
             Code::MakeSlice => "  makeSlice".to_string(),
             Code::LoadTarget => "  loadTarget".to_string(),
             Code::StoreIndex => "  storeIndex".to_string(),
-            Code::LoadMember(name) => format!("  loadMember(name: '{}')", name),
+            Code::LoadMember(id) => format!("  loadMember({})", format_name(*id, ir)),
         }
     }
 }
 
 impl Debug for Code {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.description())
+        write!(f, "{}", self.description(None))
     }
 }
 
 #[derive(Clone, Default)]
 pub struct IR {
     codes: Vec<Code>,
+    data: Vec<String>,
     locations: HashMap<usize, Location>,
 }
 
 impl IR {
     pub fn new() -> Self {
         Self {
+            data: vec![],
             codes: vec![],
             locations: HashMap::new(),
         }
+    }
+
+    pub fn get_data(&self, id: usize) -> &String {
+        &self.data[id]
+    }
+
+    pub fn add_data(&mut self, val: String) -> usize {
+        let id = self.data.len();
+        self.data.push(val);
+
+        id
     }
 
     pub fn append(&mut self, mut ir: IR) {
@@ -244,6 +285,25 @@ impl IR {
 
         for (i, location) in ir.locations {
             self.locations.insert(self.codes.len() + i, location);
+        }
+
+        let size = self.data.len();
+
+        self.data.append(&mut ir.data.drain(0..).collect());
+
+        // Recalculate data segment IDs
+        for code in ir.codes.iter_mut() {
+            match code {
+                Code::LoadMember(id) => *id += size,
+                Code::StoreMember(id) => *id += size,
+                Code::Cast(id) => *id += size,
+                Code::CallKeywords((keywords, _)) | Code::CallKeywordsVoid((keywords, _)) => {
+                    for keyword in keywords.iter_mut() {
+                        *keyword += size;
+                    }
+                }
+                _ => {}
+            }
         }
 
         self.codes.append(&mut ir.codes);
@@ -305,7 +365,7 @@ impl DerefMut for IR {
 impl Debug for IR {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         for code in self.codes.iter() {
-            write!(f, "{:?}", code)?;
+            write!(f, "{}", code.description(Some(self)))?;
         }
 
         Ok(())

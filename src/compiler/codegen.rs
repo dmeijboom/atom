@@ -110,7 +110,10 @@ impl<'c> CodeGenerator<'c> {
             }
             ValueKind::Cast(cast) => {
                 self.compile_value(scope, &cast.value)?;
-                self.ir.add(Code::Cast(cast.dest.clone()), location);
+
+                let segment_id = self.ir.add_data(cast.dest.clone());
+
+                self.ir.add(Code::Cast(segment_id), location);
             }
             ValueKind::Call(call) => {
                 self.compile_values(scope, &call.args)?;
@@ -130,7 +133,16 @@ impl<'c> CodeGenerator<'c> {
                 let code = if call.keywords.is_empty() {
                     Code::Call(call.args.len())
                 } else {
-                    Code::CallKeywords((call.keywords.clone(), call.args.len()))
+                    let mut segment_ids = vec![];
+
+                    for keyword in call.keywords.iter() {
+                        segment_ids.push(self.ir.add_data(keyword.clone()));
+                    }
+
+                    Code::CallKeywords((
+                        [segment_ids[0], segment_ids[segment_ids.len() - 1] + 1],
+                        call.args.len(),
+                    ))
                 };
 
                 self.ir.add(code, location);
@@ -186,8 +198,10 @@ impl<'c> CodeGenerator<'c> {
             }
             ValueKind::Member(member) => {
                 self.compile_value(scope, &member.object)?;
-                self.ir
-                    .add(Code::LoadMember(member.member.clone()), location);
+
+                let segment_id = self.ir.add_data(member.member.clone());
+
+                self.ir.add(Code::LoadMember(segment_id), location);
             }
             ValueKind::Comparison(comparison) => {
                 self.compile_value(scope, &comparison.left)?;
@@ -284,8 +298,9 @@ impl<'c> CodeGenerator<'c> {
                     self.compile_value(scope, &member.object)?;
                     self.compile_value(scope, &assign.right)?;
 
-                    self.ir
-                        .add(Code::StoreMember(member.member.clone()), location);
+                    let segment_id = self.ir.add_data(member.member.clone());
+
+                    self.ir.add(Code::StoreMember(segment_id), location);
                 }
             },
             StmtKind::Cond(cond) => {

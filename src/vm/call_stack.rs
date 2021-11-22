@@ -17,6 +17,14 @@ impl Target {
             Self::Method(method) => &method.func.origin,
         }
     }
+
+    pub fn function(&self) -> &AtomRef<Fn> {
+        match &self {
+            Target::Fn(func) => func,
+            Target::Method(method) => &method.func,
+            Target::Closure(closure) => &closure.func,
+        }
+    }
 }
 
 impl Display for Target {
@@ -42,6 +50,8 @@ impl Clone for Target {
 #[derive(Debug)]
 pub struct StackFrame {
     pub target: Target,
+    pub function: AtomRef<Fn>,
+    pub module_id: usize,
     pub locals: Vec<Value>,
     // Contains a stack of addresses to return to after finishing this call (used for tail calls)
     pub return_addr: Vec<usize>,
@@ -53,20 +63,16 @@ pub struct StackFrame {
 
 impl StackFrame {
     pub fn new(target: Target, store_return_value: bool, locals: Vec<Value>) -> Self {
+        let function = AtomRef::clone(target.function());
+
         Self {
+            module_id: function.origin.module_id,
+            function,
             target,
             position: 0,
             store_return_value,
             locals,
             return_addr: vec![],
-        }
-    }
-
-    pub fn get_function(&self) -> &AtomRef<Fn> {
-        match &self.target {
-            Target::Fn(func) => func,
-            Target::Method(method) => &method.func,
-            Target::Closure(closure) => &closure.func,
         }
     }
 
@@ -127,11 +133,11 @@ impl CallStack {
         let mut stack_trace = vec![];
 
         while !self.data.is_empty() {
-            let call_context = self.data.remove(0);
+            let frame = self.data.remove(0);
 
             stack_trace.push(Trace {
-                origin: call_context.target.origin().clone(),
-                target: format!("{}", call_context.target),
+                origin: frame.target.origin().clone(),
+                target: format!("{}", frame.target),
             });
         }
 

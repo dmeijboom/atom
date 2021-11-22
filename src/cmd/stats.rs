@@ -12,5 +12,5 @@ pub fn command() {
     );
     println!("size of: Int: {} bytes", size_of::<Int>());
     println!("size of: Object: {} bytes", size_of::<Object>());
-    println!("size of: CallContext: {} bytes", size_of::<StackFrame>());
+    println!("size of: StackFrame: {} bytes", size_of::<StackFrame>());
 }

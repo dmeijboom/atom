@@ -89,16 +89,16 @@ impl Output {
 pub type ExternalFn = fn(input: Input<'_>) -> Result<Output>;
 
 #[derive(Clone)]
-pub enum FnPtr {
+pub enum FnKind {
     External(ExternalFn),
     Native,
 }
 
-impl Debug for FnPtr {
+impl Debug for FnKind {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            FnPtr::External(_) => write!(f, "*ExternalFn"),
-            FnPtr::Native => write!(f, "*Fn"),
+            FnKind::External(_) => write!(f, "*ExternalFn"),
+            FnKind::Native => write!(f, "*Fn"),
         }
     }
 }
@@ -117,7 +117,7 @@ impl FnArg {
 #[derive(Debug, Clone)]
 pub struct Fn {
     pub name: String,
-    pub ptr: FnPtr,
+    pub kind: FnKind,
     // If `void` is true the function will never return a value
     pub void: bool,
     // Only used for instance methods
@@ -142,7 +142,7 @@ impl Fn {
             args,
             public,
             void,
-            ptr: FnPtr::Native,
+            kind: FnKind::Native,
             instructions,
         }
     }
@@ -154,7 +154,7 @@ impl Fn {
             args: IndexMap::new(),
             public,
             void: false,
-            ptr: FnPtr::External(func),
+            kind: FnKind::External(func),
             instructions: IR::new(),
         }
     }

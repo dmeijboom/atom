@@ -164,7 +164,7 @@ make_value!(
     (Interface, AtomRef<Interface>),
     (Closure, AtomRef<Closure>),
     (Method, AtomRef<Method>),
-    (String, AtomRef<String>),
+    (String, String),
     (Object, AtomRef<Object>),
     (Array, AtomRef<Vec<Value>>),
     (Option, Option<Box<Value>>),
@@ -173,7 +173,6 @@ make_value!(
 
 // Setup base conversions between atom / Rust code
 
-impl_from!(String, String);
 impl_from!(Array, Vec<Value>);
 
 impl Convert<Value> for Value {
@@ -198,7 +197,7 @@ impl Clone for Value {
             Self::Class(class) => Value::Class(AtomRef::clone(class)),
             Self::Closure(closure) => Value::Closure(AtomRef::clone(closure)),
             Self::Method(method) => Value::Method(AtomRef::clone(method)),
-            Self::String(val) => Value::String(AtomRef::clone(val)),
+            Self::String(val) => Value::String(val.clone()),
             Self::Object(val) => Value::Object(AtomRef::clone(val)),
             Self::Tuple(tuple) => Value::Tuple(tuple.clone()),
             Self::Array(val) => Value::Array(AtomRef::clone(val)),
@@ -227,7 +226,7 @@ impl Display for Value {
             Self::Ref(value) => {
                 write!(f, "*{}", value.as_ref())
             }
-            Self::String(val) => write!(f, "{}", val.as_ref()),
+            Self::String(val) => write!(f, "{}", val),
             Self::Fn(func) => write!(f, "{}(...)", func.as_ref()),
             Self::Interface(interface) => write!(f, "{}", interface.as_ref()),
             Self::Class(class) => write!(f, "{}", class.as_ref()),
