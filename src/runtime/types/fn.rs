@@ -3,13 +3,7 @@ use std::fmt::{Debug, Display, Formatter};
 use indexmap::map::IndexMap;
 
 use crate::compiler::ir::IR;
-use crate::runtime::value::Convert;
-use crate::runtime::{ErrorKind, RuntimeError};
-
-use super::api::AtomApi;
-use super::error::Result;
-use super::origin::Origin;
-use super::value::Value;
+use crate::runtime::{AtomApi, Convert, ErrorKind, Origin, Result, RuntimeError, Value};
 
 pub struct Input<'i> {
     pub api: &'i dyn AtomApi,

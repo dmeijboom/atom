@@ -37,7 +37,7 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         Value::Ref(val) => format!("{}{}", "*".blue(), pretty_fmt(val)).white(),
         Value::Fn(func) => format!("{}(..)", func.name.blue()).white(),
         Value::Tuple(tuple) => {
-            format!("{}{}{}", "(".blue(), pretty_fmt_items(tuple), ")".blue()).white()
+            format!("{}{}{}", "(".blue(), pretty_fmt_items(tuple.as_ref()), ")".blue()).white()
         }
         Value::Class(class) => class.name.blue(),
         Value::Interface(interface) => interface.name.blue(),

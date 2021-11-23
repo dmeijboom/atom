@@ -48,8 +48,16 @@ macro_rules! impl_op {
         let left = $vm.stack.pop();
 
         $vm.stack.push(match left {
-            Value::Int(val) => Value::Bool(val.$opname(&right.convert()?)),
-            Value::Float(val) => Value::Bool(val.$opname(&right.convert()?)),
+            Value::Int(val) => {
+                let right: Int = right.convert()?;
+
+                Value::Bool(val.$opname(&right))
+            }
+            Value::Float(val) => {
+                let right: f64 = right.convert()?;
+
+                Value::Bool(val.$opname(&right))
+            }
             _ => {
                 return Err(RuntimeError::new(
                     ErrorKind::TypeError,
@@ -71,8 +79,16 @@ macro_rules! impl_op {
         let left = $vm.stack.pop();
 
         $vm.stack.push(match left {
-            Value::Int(val) => Value::Int(val.$opname(right.convert()?)),
-            Value::Float(val) => Value::Float(val.$opname(&right.convert()?)),
+            Value::Int(val) => {
+                let right: Int = right.convert()?;
+
+                Value::Int(val.$opname(right))
+            }
+            Value::Float(val) => {
+                let right: f64 = right.convert()?;
+
+                Value::Float(val.$opname(right))
+            }
             _ => {
                 return Err(RuntimeError::new(
                     ErrorKind::TypeError,
@@ -602,7 +618,7 @@ impl Machine {
     fn eval_make_tuple(&mut self, len: usize) -> Result<()> {
         let values = self.stack.pop_many(len)?;
 
-        self.stack.push(Value::Tuple(values.into()));
+        self.stack.push(Value::Tuple(AtomRef::from(values)));
 
         Ok(())
     }
@@ -923,10 +939,10 @@ impl Machine {
         self.try_stack.pop();
 
         let return_value = self.stack.pop();
+        let array: AtomRef<[Value]> =
+            AtomRef::new([Value::Symbol(Symbol::new("ok")), return_value]);
 
-        self.stack.push(Value::Tuple(
-            vec![Value::Symbol(Symbol::new("ok")), return_value].into_boxed_slice(),
-        ));
+        self.stack.push(Value::Tuple(array));
 
         Ok(())
     }
@@ -1385,13 +1401,12 @@ impl Machine {
                     // If there is an error that is try-able, let's handle it
                     if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
                         if let Some(global_label) = self.try_stack.pop() {
-                            self.stack.push(Value::Tuple(
-                                vec![
-                                    Value::Symbol(Symbol::new("err")),
-                                    Value::String(format!("{}", err)),
-                                ]
-                                .into_boxed_slice(),
-                            ));
+                            let array: AtomRef<[Value]> = AtomRef::new([
+                                Value::Symbol(Symbol::new("err")),
+                                Value::String(format!("{}", err)),
+                            ]);
+
+                            self.stack.push(Value::Tuple(array));
 
                             // Pop stack frames until we reach the one were looking for
                             while self.call_stack.current_id() != global_label.frame {

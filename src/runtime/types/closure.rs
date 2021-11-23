@@ -1,6 +1,6 @@
-use super::atom_ref::AtomRef;
+use crate::runtime::{AtomRef, Value};
+
 use super::r#fn::Fn;
-use super::value::Value;
 
 #[derive(Debug)]
 pub struct Closure {

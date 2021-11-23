@@ -34,20 +34,18 @@ impl Stack {
     }
 
     pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
-        let data_len = self.data.len();
-
         if len == 0 {
             return Ok(vec![]);
         }
 
-        if data_len < len {
+        if self.data.len() < len {
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
                 format!("expected {} elements on stack", len),
             ));
         }
 
-        Ok(self.data.split_off(data_len - len))
+        Ok(self.data.split_off(self.data.len() - len))
     }
 }
 

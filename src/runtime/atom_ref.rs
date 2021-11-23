@@ -1,9 +1,9 @@
 use core::mem;
-use std::alloc::{dealloc, Layout};
+use std::alloc::{alloc, dealloc, Layout};
 use std::cell::Cell;
 use std::fmt::{Debug, Formatter};
-use std::marker::PhantomData;
-use std::ops::Deref;
+use std::marker::{PhantomData, Unsize};
+use std::ops::{CoerceUnsized, Deref};
 use std::panic::{RefUnwindSafe, UnwindSafe};
 use std::ptr::{self, NonNull};
 
@@ -69,7 +69,7 @@ pub struct AtomRef<T: ?Sized> {
 
 impl<T: RefUnwindSafe + ?Sized> UnwindSafe for AtomRef<T> {}
 
-impl<T: PartialEq> PartialEq for AtomRef<T> {
+impl<T: ?Sized + PartialEq> PartialEq for AtomRef<T> {
     fn eq(&self, other: &Self) -> bool {
         // If they point to the same allocation, they're equal
         if self.ptr.as_ptr() == other.ptr.as_ptr() {
@@ -127,6 +127,45 @@ impl<T> AtomRef<T> {
     }
 }
 
+impl<T> AtomRef<[T]> {
+    fn copy_from_slice(data: &[T]) -> AtomRef<[T]> {
+        unsafe {
+            let array_layout = Layout::array::<T>(data.len()).unwrap();
+            let layout = Layout::new::<AtomRefInner<()>>()
+                .extend(array_layout)
+                .unwrap()
+                .0
+                .pad_to_align();
+            let ptr = alloc(layout);
+            let inner =
+                ptr::slice_from_raw_parts_mut(ptr as *mut T, data.len()) as *mut AtomRefInner<[T]>;
+
+            ptr::write(&mut (*inner).strong, Cell::new(1));
+            ptr::write(&mut (*inner).weak, Cell::new(1));
+
+            ptr::copy_nonoverlapping(
+                data.as_ptr(),
+                &mut (*inner).data as *mut [T] as *mut T,
+                data.len(),
+            );
+
+            Self::from_inner(NonNull::new_unchecked(inner))
+        }
+    }
+}
+
+impl<T> From<Vec<T>> for AtomRef<[T]> {
+    fn from(mut vec: Vec<T>) -> Self {
+        let atom_ref = AtomRef::copy_from_slice(&vec);
+
+        unsafe {
+            vec.set_len(0);
+        }
+
+        atom_ref
+    }
+}
+
 impl<T: Clone> AtomRef<T> {
     pub fn clone_inner(&self) -> T {
         self.as_ref().clone()
@@ -176,7 +215,9 @@ impl<T: ?Sized> Drop for AtomRef<T> {
     }
 }
 
-impl<T> AsRef<T> for AtomRef<T> {
+impl<T: ?Sized + Unsize<U>, U: ?Sized> CoerceUnsized<AtomRef<U>> for AtomRef<T> {}
+
+impl<T: ?Sized> AsRef<T> for AtomRef<T> {
     fn as_ref(&self) -> &T {
         &self.inner().data
     }
@@ -202,7 +243,7 @@ impl<T> From<T> for AtomRef<T> {
     }
 }
 
-impl<T: Debug> Debug for AtomRef<T> {
+impl<T: ?Sized + Debug> Debug for AtomRef<T> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "AtomRef<{:?}>", self.as_ref())
     }

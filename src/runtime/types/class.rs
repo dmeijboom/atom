@@ -4,8 +4,8 @@ use std::fmt::{Display, Formatter};
 use indexmap::IndexMap;
 use wyhash2::WyHash;
 
-use super::atom_ref::AtomRef;
-use super::origin::Origin;
+use crate::runtime::{AtomRef, Origin};
+
 use super::r#fn::Fn;
 
 #[derive(Debug, Clone, PartialEq)]

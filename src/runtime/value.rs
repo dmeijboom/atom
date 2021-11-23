@@ -2,17 +2,11 @@ use std::fmt::{Display, Formatter};
 
 use strum_macros::EnumIter;
 
+use crate::runtime::types::*;
+
 use super::atom_ref::AtomRef;
-use super::class::Class;
-use super::closure::Closure;
 use super::error::{ErrorKind, Result, RuntimeError};
-use super::int::Int;
-use super::interface::Interface;
-use super::method::Method;
-use super::object::Object;
-use super::r#fn::Fn;
 use super::rust::RustObject;
-use super::symbol::Symbol;
 
 pub trait Convert<T> {
     fn convert(self) -> Result<T>;
@@ -159,7 +153,7 @@ make_value!(
     (Symbol, Symbol),
     (Ref, AtomRef<Value>),
     (Fn, AtomRef<Fn>),
-    (Tuple, Box<[Value]>),
+    (Tuple, AtomRef<[Value]>),
     (Class, AtomRef<Class>),
     (Interface, AtomRef<Interface>),
     (Closure, AtomRef<Closure>),
@@ -199,7 +193,7 @@ impl Clone for Value {
             Self::Method(method) => Value::Method(AtomRef::clone(method)),
             Self::String(val) => Value::String(val.clone()),
             Self::Object(val) => Value::Object(AtomRef::clone(val)),
-            Self::Tuple(tuple) => Value::Tuple(tuple.clone()),
+            Self::Tuple(val) => Value::Tuple(AtomRef::clone(val)),
             Self::Array(val) => Value::Array(AtomRef::clone(val)),
             Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
             Self::RustObject(_) => panic!("RustObject can't be cloned"),

@@ -1,3 +1,6 @@
+#![feature(unsize)]
+#![feature(coerce_unsized)]
+
 use std::process;
 
 use clap::Parser;

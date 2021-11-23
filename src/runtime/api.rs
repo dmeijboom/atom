@@ -1,5 +1,6 @@
+use crate::runtime::Class;
+
 use super::atom_ref::AtomRef;
-use super::class::Class;
 use super::error::Result;
 use super::value::Value;
 

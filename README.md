@@ -13,7 +13,11 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 - No null or uninitialized fields
 - Classes as first-class citizens
 - Supports 64-bit floats
-- Supports 8/16/32/64/128-bit signed/unsigned integers (defaults to 32-bit signed integer)
+- Supports 8/16/32/64-bit signed/unsigned integers (defaults to 32-bit signed integer)
+
+## Known issues
+
+- Requires nightly Rust because of `CoerceUnsized`/`Unsize`
 
 ## Test suite
 

@@ -1,9 +1,9 @@
 use std::fmt::{Display, Formatter};
 
-use super::atom_ref::AtomRef;
+use crate::runtime::{AtomRef, Value};
+
 use super::class::Class;
 use super::r#fn::Fn;
-use super::value::Value;
 
 #[derive(Debug, PartialEq)]
 pub enum Receiver {

@@ -1,6 +1,6 @@
 use std::fmt::{Display, Formatter};
 
-use super::origin::Origin;
+use crate::runtime::Origin;
 
 #[derive(Debug, PartialEq)]
 pub struct Interface {
