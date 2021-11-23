@@ -35,11 +35,12 @@ fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-const STD_SOURCES: [(&str, &str); 8] = [
+const STD_SOURCES: [(&str, &str); 9] = [
     ("std.sys", include_str!("../std/atom/std/sys.atom")),
     ("std.core", include_str!("../std/atom/std/core.atom")),
     ("std.map", include_str!("../std/atom/std/map.atom")),
     ("std.io", include_str!("../std/atom/std/io.atom")),
+    ("std.math", include_str!("../std/atom/std/math.atom")),
     (
         "std.encoding.utf8",
         include_str!("../std/atom/std/encoding/utf8.atom"),
@@ -108,6 +109,7 @@ impl Compiler {
         // Core module shouldn't include the prelude as that would create an infinite loop
         if self.module.name == "std.core"
             || self.module.name == "std.map"
+            || self.module.name == "std.math"
             || self.module.name == "std.encoding.binary"
         {
             return Ok(());
