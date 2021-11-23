@@ -1,8 +1,8 @@
 use enumflags2::BitFlags;
 
-pub use self::parser::*;
-
 use crate::syntax::*;
+
+pub use self::parser::*;
 
 fn is_keyword(name: &str) -> bool {
     matches!(
@@ -65,9 +65,15 @@ peg::parser! {
                 let num = format!("{}{}", sign, value);
                 let max: i128 = num.parse().unwrap();
 
-                if max >= i32::MIN as i128 && max <= i32::MAX as i128 { Literal::Int32(max as i32) }
-                else if max >= i64::MIN as i128 && max <= i64::MAX as i128 { Literal::Int64(max as i64) }
-                else { Literal::Int128(max) }
+                if sign == "-" && max > i64::MAX as i128 {
+                    return Literal::Uint64(num.parse().unwrap());
+                }
+
+                let max = max as i64;
+
+                if max >= i32::MIN as i64 && max <= i32::MAX as i64 { Literal::Int32(max as i32) }
+                else if max >= i64::MIN as i64 && max <= i64::MAX as i64 { Literal::Int64(max as i64) }
+                else { Literal::Int64(max) }
             }
 
         rule float_lit() -> Literal

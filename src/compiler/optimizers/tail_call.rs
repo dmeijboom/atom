@@ -29,8 +29,6 @@ fn has_side_effects(codes: &[Code]) -> bool {
                 | Code::ConstByte(_)
                 | Code::ConstChar(_)
                 | Code::ConstFloat(_)
-                | Code::ConstInt128(_)
-                | Code::ConstUint128(_)
                 | Code::ConstInt64(_)
                 | Code::ConstUint64(_)
                 | Code::ConstInt32(_)

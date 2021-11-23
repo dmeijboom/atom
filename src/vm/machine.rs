@@ -502,8 +502,6 @@ impl Machine {
         frame.position += 1;
 
         match code {
-            Code::ConstInt128(val) => self.eval_const(Int::Int128(val)),
-            Code::ConstUint128(val) => self.eval_const(Int::Uint128(val)),
             Code::ConstInt64(val) => self.eval_const(Int::Int64(val)),
             Code::ConstUint64(val) => self.eval_const(Int::Uint64(val)),
             Code::ConstInt32(val) => self.eval_const(Int::Int32(val)),
@@ -870,8 +868,6 @@ impl Machine {
         self.stack.push(match value {
             Value::Int(val) if type_name == "Float" => Value::Float(val.to_float()),
             Value::Int(val) if type_name == "Byte" => Value::Byte(val.to_byte()),
-            Value::Int(val) if type_name == "Int128" => Value::Int(Int::Int128(val.into())),
-            Value::Int(val) if type_name == "Uint128" => Value::Int(Int::Uint128(val.into())),
             Value::Int(val) if type_name == "Int64" => Value::Int(Int::Int64(val.into())),
             Value::Int(val) if type_name == "Uint64" => Value::Int(Int::Uint64(val.into())),
             Value::Int(val) if type_name == "Int32" => Value::Int(Int::Int32(val.into())),
@@ -888,8 +884,6 @@ impl Machine {
                 }
             }
             Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
-            Value::Byte(val) if type_name == "Int128" => Value::Int(Int::Int128(val as i128)),
-            Value::Byte(val) if type_name == "Uint128" => Value::Int(Int::Uint128(val as u128)),
             Value::Byte(val) if type_name == "Int64" => Value::Int(Int::Int64(val as i64)),
             Value::Byte(val) if type_name == "Uint64" => Value::Int(Int::Uint64(val as u64)),
             Value::Byte(val) if type_name == "Int32" => Value::Int(Int::Int32(val as i32)),

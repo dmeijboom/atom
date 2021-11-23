@@ -58,7 +58,8 @@ fn wyr3(bytes, index) {
 }
 
 fn wymum(a, b) {
-    let r = (Uint128)a * (Uint128)b;
+    # TODO: add support for multiplying two 64-bit integers
+    let r = a * b;
 
     return ((Uint64)r, (Uint64)(r >> 64));
 }

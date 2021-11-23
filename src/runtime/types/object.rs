@@ -1,5 +1,5 @@
-use crate::runtime::{AtomRef, Value};
 use super::class::Class;
+use crate::runtime::{AtomRef, Value};
 
 #[derive(Debug)]
 pub struct Object {

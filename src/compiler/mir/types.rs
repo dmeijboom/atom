@@ -282,7 +282,6 @@ pub struct TypeAssert {
 
 #[derive(Debug)]
 pub enum Const {
-    Int128(i128),
     Int64(i64),
     Uint64(u64),
     Int32(i32),

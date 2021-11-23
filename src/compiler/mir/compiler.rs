@@ -153,7 +153,6 @@ impl<'c> Compiler<'c> {
 
         let kind = match expr {
             Expr::Literal(literal_expr) => ValueKind::Const(match &literal_expr.literal {
-                Literal::Int128(val) => Const::Int128(*val),
                 Literal::Int64(val) => Const::Int64(*val),
                 Literal::Uint64(val) => Const::Uint64(*val),
                 Literal::Int32(val) => Const::Int32(*val),

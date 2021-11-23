@@ -44,8 +44,6 @@ impl Display for Label {
 
 #[derive(Clone, PartialEq)]
 pub enum Code {
-    ConstInt128(i128),
-    ConstUint128(u128),
     ConstInt64(i64),
     ConstUint64(u64),
     ConstInt32(i32),
@@ -153,8 +151,6 @@ fn format_names(range: [usize; 2], ir: Option<&IR>) -> String {
 impl Code {
     pub fn description(&self, ir: Option<&IR>) -> String {
         match self {
-            Code::ConstInt128(val) => format!("  constInt128({})", val),
-            Code::ConstUint128(val) => format!("  constUint128({})", val),
             Code::ConstInt64(val) => format!("  constInt64({})", val),
             Code::ConstUint64(val) => format!("  constUint64({})", val),
             Code::ConstInt32(val) => format!("  constInt32({})", val),

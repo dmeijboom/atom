@@ -76,7 +76,6 @@ impl<'c> CodeGenerator<'c> {
             ValueKind::Const(val) => {
                 self.ir.add(
                     match val {
-                        Const::Int128(val) => Code::ConstInt128(*val),
                         Const::Int64(val) => Code::ConstInt64(*val),
                         Const::Uint64(val) => Code::ConstUint64(*val),
                         Const::Int32(val) => Code::ConstInt32(*val),

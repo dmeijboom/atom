@@ -7,8 +7,6 @@ use crate::runtime::{Convert, Result, Value};
 macro_rules! cast {
     ($value:expr, $typename:ident) => {
         match $value {
-            Int::Int128(val) => val as $typename,
-            Int::Uint128(val) => val as $typename,
             Int::Int64(val) => val as $typename,
             Int::Uint64(val) => val as $typename,
             Int::Int32(val) => val as $typename,
@@ -45,8 +43,6 @@ macro_rules! call_upper_bound {
             32 if signed => cast!($left, i32).$function(&cast!($right, i32)).into(),
             64 if !signed => cast!($left, u64).$function(&cast!($right, u64)).into(),
             64 if signed => cast!($left, i64).$function(&cast!($right, i64)).into(),
-            128 if !signed => cast!($left, u128).$function(&cast!($right, u128)).into(),
-            128 if signed => cast!($left, i128).$function(&cast!($right, i128)).into(),
             _ => unreachable!(),
         }
     }};
@@ -63,8 +59,6 @@ macro_rules! call_upper_bound {
             32 if signed => cast!($left, i32).$function(cast!($right, i32)).into(),
             64 if !signed => cast!($left, u64).$function(cast!($right, u64)).into(),
             64 if signed => cast!($left, i64).$function(cast!($right, i64)).into(),
-            128 if !signed => cast!($left, u128).$function(cast!($right, u128)).into(),
-            128 if signed => cast!($left, i128).$function(cast!($right, i128)).into(),
             _ => unreachable!(),
         }
     }};
@@ -100,8 +94,6 @@ macro_rules! impl_conv {
 
 #[derive(Debug, Eq, Clone, Copy)]
 pub enum Int {
-    Int128(i128),
-    Uint128(u128),
     Int64(i64),
     Uint64(u64),
     Int32(i32),
@@ -113,35 +105,34 @@ pub enum Int {
 }
 
 impl Int {
-    pub const fn to_float(self) -> f64 {
+    pub fn to_float(self) -> f64 {
         cast!(self, f64)
     }
 
-    pub const fn to_byte(self) -> u8 {
+    pub fn to_byte(self) -> u8 {
         cast!(self, u8)
     }
 
+    #[inline]
     pub const fn signed(&self) -> bool {
         matches!(
             self,
-            Int::Int8(_) | Int::Int16(_) | Int::Int32(_) | Int::Int64(_) | Int::Int128(_)
+            Int::Int8(_) | Int::Int16(_) | Int::Int32(_) | Int::Int64(_)
         )
     }
 
+    #[inline]
     pub const fn size(&self) -> u8 {
         match self {
             Int::Int8(_) | Int::Uint8(_) => 8,
             Int::Int16(_) | Int::Uint16(_) => 16,
             Int::Int32(_) | Int::Uint32(_) => 32,
             Int::Int64(_) | Int::Uint64(_) => 64,
-            Int::Int128(_) | Int::Uint128(_) => 128,
         }
     }
 
     pub fn pow(&self, exp: Int) -> Self {
         match self {
-            Int::Int128(val) => val.pow(cast!(exp, u32)).into(),
-            Int::Uint128(val) => val.pow(cast!(exp, u32)).into(),
             Int::Int64(val) => val.pow(cast!(exp, u32)).into(),
             Int::Uint64(val) => val.pow(cast!(exp, u32)).into(),
             Int::Int32(val) => val.pow(cast!(exp, u32)).into(),
@@ -172,8 +163,6 @@ impl From<usize> for Int {
     }
 }
 
-impl_conv!(Int128, i128);
-impl_conv!(Uint128, u128);
 impl_conv!(Int64, i64);
 impl_conv!(Uint64, u64);
 impl_conv!(Int32, i32);
@@ -207,8 +196,6 @@ impl Convert<usize> for Value {
 impl Display for Int {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         match self {
-            Int::Int128(val) => val.fmt(f),
-            Int::Uint128(val) => val.fmt(f),
             Int::Int64(val) => val.fmt(f),
             Int::Uint64(val) => val.fmt(f),
             Int::Int32(val) => val.fmt(f),

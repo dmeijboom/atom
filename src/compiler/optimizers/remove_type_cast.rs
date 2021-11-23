@@ -4,16 +4,7 @@ use crate::compiler::Module;
 fn is_valid_type(name: &str) -> bool {
     matches!(
         name,
-        "Uint8"
-            | "Int8"
-            | "Uint16"
-            | "Int16"
-            | "Uint32"
-            | "Int32"
-            | "Uint64"
-            | "Int64"
-            | "Uint128"
-            | "Int128"
+        "Uint8" | "Int8" | "Uint16" | "Int16" | "Uint32" | "Int32" | "Uint64" | "Int64"
     )
 }
 
@@ -47,8 +38,6 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
                 "Int32" => Code::ConstInt32(value as i32),
                 "Uint64" => Code::ConstUint64(value as u64),
                 "Int64" => Code::ConstInt64(value as i64),
-                "Uint128" => Code::ConstUint128(value as u128),
-                "Int128" => Code::ConstInt128(value as i128),
                 _ => unreachable!(),
             };
 
