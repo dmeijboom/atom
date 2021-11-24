@@ -33,7 +33,9 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         Value::Char(val) => format!("'{}'", *val).green(),
         Value::Byte(val) => format!("'{}'", *val).purple(),
         Value::Bool(val) => format!("{}", *val).blue(),
-        Value::Symbol(symbol) => format!(":{}", String::from_utf8_lossy(symbol.name.as_ref())).blue(),
+        Value::Symbol(symbol) => {
+            format!(":{}", String::from_utf8_lossy(symbol.name.as_ref())).blue()
+        }
         Value::Ref(val) => format!("{}{}", "*".blue(), pretty_fmt(val)).white(),
         Value::Fn(func) => format!("{}(..)", func.name.blue()).white(),
         Value::Tuple(tuple) => format!(

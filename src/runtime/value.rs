@@ -9,6 +9,8 @@ use super::atom_ref::AtomRef;
 use super::error::{ErrorKind, Result, RuntimeError};
 use super::rust::RustObject;
 
+pub type AtomString = AtomRef<[u8]>;
+
 pub trait Convert<T> {
     fn convert(self) -> Result<T>;
 }
@@ -159,8 +161,8 @@ make_value!(
     (Interface, AtomRef<Interface>),
     (Closure, AtomRef<Closure>),
     (Method, AtomRef<Method>),
-    (String, AtomRef<[u8]>),
-    (Object, AtomRef<Object>),
+    (String, AtomString),
+    (Object, Object),
     (Array, AtomRef<Vec<Value>>),
     (Option, Option<Box<Value>>),
     (RustObject, RustObject)
@@ -172,7 +174,7 @@ impl_from!(Array, Vec<Value>);
 
 impl<'v> Convert<&'v str> for &'v Value {
     fn convert(self) -> Result<&'v str> {
-        let s: &AtomRef<[u8]> = self.convert()?;
+        let s: &AtomString = self.convert()?;
 
         // @TODO: this is only valid for UTF-8 strings
         Ok(unsafe { mem::transmute(s.as_ref()) })
@@ -181,7 +183,7 @@ impl<'v> Convert<&'v str> for &'v Value {
 
 impl<'v> Convert<&'v str> for Value {
     fn convert(self) -> Result<&'v str> {
-        let s: AtomRef<[u8]> = self.convert()?;
+        let s: AtomString = self.convert()?;
 
         // @TODO: this is only valid for UTF-8 strings
         Ok(unsafe { mem::transmute(s.as_ref()) })
@@ -217,7 +219,7 @@ impl Clone for Value {
             Self::Closure(closure) => Value::Closure(AtomRef::clone(closure)),
             Self::Method(method) => Value::Method(AtomRef::clone(method)),
             Self::String(val) => Value::String(val.clone()),
-            Self::Object(val) => Value::Object(AtomRef::clone(val)),
+            Self::Object(val) => Value::Object(val.clone()),
             Self::Tuple(val) => Value::Tuple(AtomRef::clone(val)),
             Self::Array(val) => Value::Array(AtomRef::clone(val)),
             Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
@@ -256,7 +258,7 @@ impl Display for Value {
             Self::Closure(closure) => write!(f, "{}(...)", closure.func.as_ref()),
             Self::Method(method) => write!(f, "{}(...)", method.as_ref()),
             Self::Object(object) => {
-                let class = object.as_ref().class.as_ref();
+                let class = object.class.as_ref();
 
                 write!(
                     f,
@@ -264,13 +266,17 @@ impl Display for Value {
                     class,
                     class
                         .fields
-                        .iter()
-                        .map(|(key, field)| format!(
-                            "{}{}: {}",
-                            if field.public { "*" } else { "" },
-                            key,
-                            object.as_ref().get_field(field.id).unwrap(),
-                        ))
+                        .keys()
+                        .map(|key| {
+                            let (id, _, field) = class.fields.get_full(key).unwrap();
+
+                            format!(
+                                "{}{}: {}",
+                                if field.public { "*" } else { "" },
+                                key,
+                                object.get_field(id).unwrap(),
+                            )
+                        })
                         .collect::<Vec<String>>()
                         .join(", ")
                 )

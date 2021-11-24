@@ -3,8 +3,8 @@ use std::io;
 use std::io::Read;
 
 use crate::runtime::{
-    AtomRef, Convert, ErrorKind, ExternalFn, Input, Int, Object, Output, Result, RuntimeError,
-    RustObject, Value,
+    Convert, ErrorKind, ExternalFn, Input, Int, Object, Output, Result, RuntimeError, RustObject,
+    Value,
 };
 
 pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("openFileHandle", open_file_handle)];
@@ -23,7 +23,7 @@ pub fn open_file_handle(input: Input<'_>) -> Result<Output> {
 }
 
 pub fn file_size(mut input: Input<'_>) -> Result<Output> {
-    let object: AtomRef<Object> = input.take_receiver()?;
+    let object: Object = input.take_receiver()?;
     let fd = object.get_field(0).ok_or_else(|| {
         RuntimeError::new(
             ErrorKind::FatalError,
@@ -38,8 +38,8 @@ pub fn file_size(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn file_read(mut input: Input<'_>) -> Result<Output> {
-    let mut object: AtomRef<Object> = input.take_receiver()?;
-    let fd = object.as_mut().get_field_mut(0).ok_or_else(|| {
+    let mut object: Object = input.take_receiver()?;
+    let fd = object.get_field_mut(0).ok_or_else(|| {
         RuntimeError::new(
             ErrorKind::FatalError,
             "missing 'fd' field for std.io.File".to_string(),

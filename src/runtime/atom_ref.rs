@@ -223,7 +223,7 @@ impl<T: ?Sized> AsRef<T> for AtomRef<T> {
     }
 }
 
-impl<T> AsMut<T> for AtomRef<T> {
+impl<T: ?Sized> AsMut<T> for AtomRef<T> {
     fn as_mut(&mut self) -> &mut T {
         unsafe { &mut (*self.ptr.as_ptr()).data }
     }

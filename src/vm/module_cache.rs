@@ -128,13 +128,7 @@ impl ModuleCache {
             fields: class
                 .fields
                 .into_iter()
-                .enumerate()
-                .map(|(id, (name, field))| {
-                    (
-                        name.clone(),
-                        Field::new(id, name, field.mutable, field.public),
-                    )
-                })
+                .map(|(name, field)| (name.clone(), Field::new(name, field.mutable, field.public)))
                 .collect(),
             methods: HashMap::with_hasher(WyHash::default()),
             static_methods: HashMap::with_hasher(WyHash::default()),

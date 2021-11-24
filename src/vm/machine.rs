@@ -312,7 +312,7 @@ impl Machine {
 
         if store_return_value {
             self.stack
-                .push(Value::Object(AtomRef::new(Object::new(class, fields))));
+                .push(Value::Object(Object::new(class, AtomRef::from(fields))));
         }
 
         Ok(())
@@ -608,12 +608,10 @@ impl Machine {
             .pop()
             .convert()
             .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
-        let object = Object::new(
-            self.find_class("std.core", "Range")?,
-            vec![Value::Int(from), Value::Int(to)],
-        );
+        let fields: AtomRef<[Value]> = AtomRef::from([Value::Int(from), Value::Int(to)]);
+        let object = Object::new(self.find_class("std.core", "Range")?, fields);
 
-        self.stack.push(Value::Object(AtomRef::new(object)));
+        self.stack.push(Value::Object(object));
 
         Ok(())
     }
@@ -1055,7 +1053,7 @@ impl Machine {
 
         match &receiver {
             Receiver::Bound(value) => {
-                if let Some(field) = class.fields.get(member) {
+                if let Some((id, _, field)) = class.fields.get_full(member) {
                     if let Value::Object(object) = value {
                         if !field.public && frame.module_id != class.origin.module_id {
                             return Err(RuntimeError::new(
@@ -1068,7 +1066,7 @@ impl Machine {
                             ));
                         }
 
-                        let field = object.get_field(field.id).cloned().ok_or_else(|| {
+                        let field = object.get_field(id).cloned().ok_or_else(|| {
                             RuntimeError::new(
                                 ErrorKind::FatalError,
                                 format!(
@@ -1143,7 +1141,7 @@ impl Machine {
         let object = self.stack.pop();
         let class = self.get_class(&object)?;
 
-        if let Some(field) = class.fields.get(member) {
+        if let Some((id, _, field)) = class.fields.get_full(member) {
             if !field.public && frame.module_id != class.origin.module_id {
                 return Err(RuntimeError::new(
                     ErrorKind::FatalError,
@@ -1167,7 +1165,7 @@ impl Machine {
             }
 
             if let Value::Object(mut object) = object {
-                object.as_mut().set_field_value(field.id, value);
+                object.set_field_value(id, value);
 
                 return Ok(());
             }
@@ -1183,7 +1181,7 @@ impl Machine {
 
         Err(RuntimeError::new(
             ErrorKind::FatalError,
-            format!("no such field '{}' for class: {}", member, class.as_ref(),),
+            format!("no such field '{}' for class: {}", member, class.as_ref()),
         ))
     }
 

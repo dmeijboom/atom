@@ -1,17 +1,17 @@
 use std::ops::Deref;
 
-use crate::runtime::AtomRef;
+use crate::runtime::AtomString;
 
 /// Symbols are unique names in atom encoded as a byte slice or constant value
 #[derive(Debug, Clone, PartialEq)]
 pub struct Symbol {
-    pub name: AtomRef<[u8]>,
+    pub name: AtomString,
 }
 
 impl Symbol {
     pub fn new(name: String) -> Self {
         Self {
-            name: AtomRef::from(name.into_bytes()),
+            name: AtomString::from(name.into_bytes()),
         }
     }
 }
@@ -19,7 +19,7 @@ impl Symbol {
 impl From<&str> for Symbol {
     fn from(name: &str) -> Self {
         Self {
-            name: AtomRef::copy_from_slice(name.as_bytes()),
+            name: AtomString::copy_from_slice(name.as_bytes()),
         }
     }
 }

@@ -10,16 +10,14 @@ use super::r#fn::Fn;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field {
-    pub id: usize,
     pub name: String,
     pub mutable: bool,
     pub public: bool,
 }
 
 impl Field {
-    pub fn new(id: usize, name: String, mutable: bool, public: bool) -> Self {
+    pub fn new(name: String, mutable: bool, public: bool) -> Self {
         Self {
-            id,
             name,
             mutable,
             public,
