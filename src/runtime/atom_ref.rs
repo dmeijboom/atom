@@ -128,7 +128,7 @@ impl<T> AtomRef<T> {
 }
 
 impl<T> AtomRef<[T]> {
-    fn copy_from_slice(data: &[T]) -> AtomRef<[T]> {
+    pub fn copy_from_slice(data: &[T]) -> AtomRef<[T]> {
         unsafe {
             let array_layout = Layout::array::<T>(data.len()).unwrap();
             let layout = Layout::new::<AtomRefInner<()>>()

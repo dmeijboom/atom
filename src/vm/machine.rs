@@ -934,7 +934,7 @@ impl Machine {
 
         let return_value = self.stack.pop();
         let array: AtomRef<[Value]> =
-            AtomRef::new([Value::Symbol(Symbol::new("ok")), return_value]);
+            AtomRef::new([Value::Symbol(Symbol::from("ok")), return_value]);
 
         self.stack.push(Value::Tuple(array));
 
@@ -1396,7 +1396,7 @@ impl Machine {
                     if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
                         if let Some(global_label) = self.try_stack.pop() {
                             let array: AtomRef<[Value]> = AtomRef::new([
-                                Value::Symbol(Symbol::new("err")),
+                                Value::Symbol(Symbol::from("err")),
                                 Value::String(format!("{}", err)),
                             ]);
 
