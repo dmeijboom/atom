@@ -484,6 +484,11 @@ impl Machine {
         self.stack.push(Value::Byte(byte));
     }
 
+    fn eval_const_string(&mut self, s: String) {
+        self.stack
+            .push(Value::String(AtomRef::from(s.into_bytes())));
+    }
+
     fn eval_symbol(&mut self, name: String) {
         self.stack.push(if name == "nil" {
             Value::Option(None)
@@ -515,7 +520,7 @@ impl Machine {
             Code::ConstFloat(val) => self.eval_const(val),
             Code::ConstChar(val) => self.eval_const(val),
             Code::ConstByte(val) => self.eval_const_byte(val),
-            Code::ConstString(val) => self.eval_const(val),
+            Code::ConstString(val) => self.eval_const_string(val),
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeTuple(len) => self.eval_make_tuple(len)?,
             Code::GetType => self.eval_get_type()?,
@@ -646,7 +651,8 @@ impl Machine {
             .map(|value| format!("{}", value))
             .collect::<String>();
 
-        self.stack.push(Value::String(s));
+        self.stack
+            .push(Value::String(AtomRef::from(s.into_bytes())));
 
         Ok(())
     }
@@ -1397,7 +1403,7 @@ impl Machine {
                         if let Some(global_label) = self.try_stack.pop() {
                             let array: AtomRef<[Value]> = AtomRef::new([
                                 Value::Symbol(Symbol::from("err")),
-                                Value::String(format!("{}", err)),
+                                Value::String(AtomRef::from(format!("{}", err).into_bytes())),
                             ]);
 
                             self.stack.push(Value::Tuple(array));

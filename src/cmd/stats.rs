@@ -10,6 +10,10 @@ pub fn command() {
         "size of: AtomRef<Value>: {} bytes",
         size_of::<AtomRef<Value>>()
     );
+    println!(
+        "size of: AtomRef<[Value]>: {} bytes",
+        size_of::<AtomRef<[Value]>>()
+    );
     println!("size of: Int: {} bytes", size_of::<Int>());
     println!("size of: Object: {} bytes", size_of::<Object>());
     println!("size of: StackFrame: {} bytes", size_of::<StackFrame>());

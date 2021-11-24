@@ -1,4 +1,5 @@
 use std::fmt::{Display, Formatter};
+use std::mem;
 
 use strum_macros::EnumIter;
 
@@ -158,7 +159,7 @@ make_value!(
     (Interface, AtomRef<Interface>),
     (Closure, AtomRef<Closure>),
     (Method, AtomRef<Method>),
-    (String, String),
+    (String, AtomRef<[u8]>),
     (Object, AtomRef<Object>),
     (Array, AtomRef<Vec<Value>>),
     (Option, Option<Box<Value>>),
@@ -168,6 +169,30 @@ make_value!(
 // Setup base conversions between atom / Rust code
 
 impl_from!(Array, Vec<Value>);
+
+impl<'v> Convert<&'v str> for &'v Value {
+    fn convert(self) -> Result<&'v str> {
+        let s: &AtomRef<[u8]> = self.convert()?;
+
+        // @TODO: this is only valid for UTF-8 strings
+        Ok(unsafe { mem::transmute(s.as_ref()) })
+    }
+}
+
+impl<'v> Convert<&'v str> for Value {
+    fn convert(self) -> Result<&'v str> {
+        let s: AtomRef<[u8]> = self.convert()?;
+
+        // @TODO: this is only valid for UTF-8 strings
+        Ok(unsafe { mem::transmute(s.as_ref()) })
+    }
+}
+
+impl From<String> for Value {
+    fn from(s: String) -> Self {
+        Value::String(AtomRef::from(s.into_bytes()))
+    }
+}
 
 impl Convert<Value> for Value {
     fn convert(self) -> Result<Self> {
@@ -220,7 +245,11 @@ impl Display for Value {
             Self::Ref(value) => {
                 write!(f, "*{}", value.as_ref())
             }
-            Self::String(val) => write!(f, "{}", val),
+            Self::String(_) => {
+                let s: &str = self.convert().unwrap();
+
+                write!(f, "{}", s)
+            }
             Self::Fn(func) => write!(f, "{}(...)", func.as_ref()),
             Self::Interface(interface) => write!(f, "{}", interface.as_ref()),
             Self::Class(class) => write!(f, "{}", class.as_ref()),

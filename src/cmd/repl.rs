@@ -8,7 +8,7 @@ use rustyline::Editor;
 use crate::compiler::{CompileError, LineNumberOffset};
 use crate::engine::{Engine, Options};
 use crate::error::Error;
-use crate::runtime::Value;
+use crate::runtime::{Convert, Value};
 use crate::syntax::{parser, FnDeclStmt, ReturnStmt, Stmt, Variable};
 
 fn pretty_fmt_items(items: &[Value]) -> ColoredString {
@@ -47,13 +47,11 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         Value::Interface(interface) => interface.name.blue(),
         Value::Closure(closure) => format!("{}(..)", closure.func.name.blue()).white(),
         Value::Method(method) => format!("{}(..)", method.func.name.blue()).white(),
-        Value::String(val) => format!(
-            "{}{}{}",
-            "\"".green(),
-            val.to_string().green(),
-            "\"".green()
-        )
-        .white(),
+        Value::String(_) => {
+            let s: &str = value.convert().unwrap();
+
+            format!("{}{}{}", "\"".green(), s.green(), "\"".green()).white()
+        }
         Value::Object(object) => format!(
             "{}({})",
             object.class.name.blue(),
