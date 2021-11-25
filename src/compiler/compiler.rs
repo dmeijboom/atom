@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::RwLock;
 
 use crate::compiler::mir;
-use crate::compiler::optimizers::tail_call;
+use crate::compiler::optimizers::{remove_load_store_single_use, tail_call};
 use crate::runtime::stdlib::DEFAULT_IMPORTS;
 use crate::syntax::parser;
 use crate::syntax::Stmt;
@@ -363,6 +363,7 @@ impl Compiler {
                     tail_call::optimize,
                     call_void::optimize,
                     replace_load_with_const::optimize,
+                    remove_load_store_single_use::optimize,
                     pre_compute_labels::optimize,
                 ]
             } else {

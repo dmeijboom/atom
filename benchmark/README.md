@@ -17,7 +17,7 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | wren | 0.20s |
 | ruby | 0.22s |
 | lua | 0.28s |
-| **atom** | 0.36s |
+| **atom** | 0.47s |
 | python | 0.51s |
 | python3 | 0.55s |
 
@@ -31,7 +31,7 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | python | 0.37s |
 | python3 | 0.38s |
 | lua | 0.52s |
-| **atom** | 0.85s |
+| **atom** | 0.71s |
 
 ## Method Call
 
@@ -41,6 +41,6 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | luajit (-joff) | 0.16s |
 | ruby | 0.20s |
 | lua | 0.35s |
-| **atom** | 0.77s |
 | python3 | 0.78s |
 | python | 0.85s |
+| **atom** | 0.99s |

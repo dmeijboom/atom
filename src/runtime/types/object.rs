@@ -10,10 +10,7 @@ pub struct Object {
 
 impl Object {
     pub fn new(class: AtomRef<Class>, fields: AtomRef<[Value]>) -> Self {
-        Self {
-            class,
-            fields,
-        }
+        Self { class, fields }
     }
 
     pub fn get_fields(&self) -> &[Value] {
