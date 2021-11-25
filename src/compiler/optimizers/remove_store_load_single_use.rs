@@ -4,11 +4,9 @@ use crate::compiler::Module;
 
 /// Replace load/store instructions with constants when used only once
 pub fn optimize(_module: &Module, instructions: &mut IR) {
-    // Detect usages for locals
-    let locals_usage = parse_locals_usage(instructions);
-
     // Remove load/store instructions when a local is only loaded once after a store instruction
     loop {
+        let locals_usage = parse_locals_usage(instructions);
         let index = instructions.iter().enumerate().position(|(i, code)| {
             let id = match code {
                 Code::Store(id) | Code::StoreMut(id) => *id,

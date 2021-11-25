@@ -37,21 +37,10 @@ impl Display for Target {
     }
 }
 
-impl Clone for Target {
-    fn clone(&self) -> Self {
-        match self {
-            Self::Fn(func) => Target::Fn(AtomRef::clone(func)),
-            Self::Closure(closure) => Target::Closure(AtomRef::clone(closure)),
-            Self::Method(method) => Target::Method(AtomRef::clone(method)),
-        }
-    }
-}
-
 #[derive(Debug)]
 pub struct StackFrame {
     pub target: Target,
     pub function: AtomRef<Fn>,
-    pub module_id: usize,
     pub locals: Vec<Value>,
     // Contains a stack of addresses to return to after finishing this call (used for tail calls)
     pub return_addr: Vec<usize>,
@@ -66,7 +55,6 @@ impl StackFrame {
         let function = AtomRef::clone(target.function());
 
         Self {
-            module_id: function.origin.module_id,
             function,
             target,
             position: 0,
@@ -88,7 +76,6 @@ impl StackFrame {
 }
 
 pub struct CallStack {
-    // Should always default to `data.len() - 1` but it's faster to store it
     data: Vec<StackFrame>,
 }
 

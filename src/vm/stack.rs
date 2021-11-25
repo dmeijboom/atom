@@ -45,7 +45,13 @@ impl Stack {
             ));
         }
 
-        Ok(self.data.split_off(self.data.len() - len))
+        let mut data = Vec::with_capacity(len);
+
+        for value in self.data.drain(self.data.len() - len..) {
+            data.push(value);
+        }
+
+        Ok(data)
     }
 }
 

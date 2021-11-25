@@ -24,11 +24,9 @@ fn is_const(code: &Code) -> bool {
 
 /// Replace load/store instructions with constants when used only once
 pub fn optimize(_module: &Module, instructions: &mut IR) {
-    // Detect usages for locals
-    let locals_usage = parse_locals_usage(instructions);
-
     // Replace load/store instructions with constants or delete store instructions entirely
     loop {
+        let locals_usage = parse_locals_usage(instructions);
         let index = instructions.iter().enumerate().position(|(i, code)| {
             matches!(code, Code::Store(id) | Code::StoreMut(id) if *locals_usage.get(id).unwrap_or(&2) <= 1)
                 && is_const(&instructions[i - 1])

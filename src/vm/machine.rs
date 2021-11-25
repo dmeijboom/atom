@@ -165,7 +165,7 @@ impl Machine {
                 // We need to get `index - 1` as the Void type is omitted in the type classes cache
                 self.type_classes
                     .get(value.get_type() as usize - 1)
-                    .map(|class| AtomRef::clone(class))
+                    .map(AtomRef::clone)
                     .ok_or_else(|| {
                         RuntimeError::new(
                             ErrorKind::FatalError,
@@ -190,9 +190,15 @@ impl Machine {
         // Reset locals, we can do this quite easily as the first n-locals are the arguments
         let frame = self.call_stack.current_mut();
 
+        frame.store_return_value = true;
         frame.return_addr.push(frame.position);
         frame.position = 0;
-        frame.locals = self.stack.pop_many(arg_count)?;
+        frame.locals.truncate(arg_count);
+
+        for i in 0..arg_count {
+            // We need to push the arguments in reverse order
+            frame.locals[arg_count - (i + 1)] = self.stack.pop();
+        }
 
         Ok(())
     }
@@ -442,7 +448,7 @@ impl Machine {
                 Ok(())
             }
             FnKind::External(closure) => {
-                if !keywords.is_none() {
+                if keywords.is_some() {
                     return Err(RuntimeError::new(
                         ErrorKind::FatalError,
                         format!(
@@ -1055,7 +1061,7 @@ impl Machine {
             Receiver::Bound(value) => {
                 if let Some((id, _, field)) = class.fields.get_full(member) {
                     if let Value::Object(object) = value {
-                        if !field.public && frame.module_id != class.origin.module_id {
+                        if !field.public && frame.function.origin.module_id != class.origin.module_id {
                             return Err(RuntimeError::new(
                                 ErrorKind::FatalError,
                                 format!(
@@ -1089,7 +1095,7 @@ impl Machine {
                 }
 
                 if let Some(func) = class.methods.get(member) {
-                    if !func.public && frame.module_id != class.origin.module_id {
+                    if !func.public && frame.function.origin.module_id != class.origin.module_id {
                         return Err(RuntimeError::new(
                             ErrorKind::FatalError,
                             format!(
@@ -1142,7 +1148,7 @@ impl Machine {
         let class = self.get_class(&object)?;
 
         if let Some((id, _, field)) = class.fields.get_full(member) {
-            if !field.public && frame.module_id != class.origin.module_id {
+            if !field.public && frame.function.origin.module_id != class.origin.module_id {
                 return Err(RuntimeError::new(
                     ErrorKind::FatalError,
                     format!(
@@ -1216,7 +1222,7 @@ impl Machine {
     }
 
     fn eval_load_global(&mut self, id: usize) -> Result<()> {
-        let module_id = self.call_stack.current().module_id;
+        let module_id = self.call_stack.current().function.origin.module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let value = match &current_module.globals[id] {
             Global::Fn(func) => func.upgrade().map(Value::Fn).ok_or_else(|| {
@@ -1238,7 +1244,7 @@ impl Machine {
     }
 
     fn eval_load_fn(&mut self, id: usize) -> Result<()> {
-        let module_id = self.call_stack.current().module_id;
+        let module_id = self.call_stack.current().function.origin.module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
 
         self.stack
@@ -1248,7 +1254,7 @@ impl Machine {
     }
 
     fn eval_make_closure(&mut self, fn_id: usize) -> Result<()> {
-        let module_id = self.call_stack.current().module_id;
+        let module_id = self.call_stack.current().function.origin.module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let frame = self.call_stack.current();
 
@@ -1261,7 +1267,7 @@ impl Machine {
     }
 
     fn eval_load_class(&mut self, id: usize) -> Result<()> {
-        let module_id = self.call_stack.current().module_id;
+        let module_id = self.call_stack.current().function.origin.module_id;
         let current_module = self.module_cache.get_module_by_id(module_id)?;
         let value = current_module
             .classes
@@ -1281,11 +1287,11 @@ impl Machine {
 
     fn eval_load_interface(&mut self, id: usize) -> Result<()> {
         let frame = self.call_stack.current();
-        let current_module = self.module_cache.get_module_by_id(frame.module_id)?;
+        let current_module = self.module_cache.get_module_by_id(frame.function.origin.module_id)?;
         let value = current_module
             .interfaces
             .get(id)
-            .map(|val| AtomRef::clone(val))
+            .map(AtomRef::clone)
             .ok_or_else(|| {
                 RuntimeError::new(
                     ErrorKind::FatalError,
@@ -1389,6 +1395,7 @@ impl Machine {
 
                         if let Some(addr) = frame.return_addr.pop() {
                             frame.position = addr;
+
                             continue;
                         }
 

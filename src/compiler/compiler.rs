@@ -4,7 +4,7 @@ use std::rc::Rc;
 use std::sync::RwLock;
 
 use crate::compiler::mir;
-use crate::compiler::optimizers::{remove_load_store_single_use, tail_call};
+use crate::compiler::optimizers::{remove_store_load_single_use, tail_call};
 use crate::runtime::stdlib::DEFAULT_IMPORTS;
 use crate::syntax::parser;
 use crate::syntax::Stmt;
@@ -358,12 +358,15 @@ impl Compiler {
             &mut self.module,
             &mir,
             if self.optimize {
+                // The order of optimizations really matters
                 vec![
                     remove_type_cast::optimize,
                     tail_call::optimize,
                     call_void::optimize,
                     replace_load_with_const::optimize,
-                    remove_load_store_single_use::optimize,
+                    remove_store_load_single_use::optimize,
+                    // Should always be the latest instruction otherwise the pre-computed label index
+                    // would point to the wrong instruction
                     pre_compute_labels::optimize,
                 ]
             } else {
