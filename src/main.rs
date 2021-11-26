@@ -15,6 +15,7 @@ mod cmd;
 mod compiler;
 mod engine;
 mod error;
+mod recycle_vec;
 mod runtime;
 mod syntax;
 mod vm;

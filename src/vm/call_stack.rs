@@ -1,5 +1,6 @@
 use std::fmt::{Display, Formatter};
 
+use crate::recycle_vec::RecycleVec;
 use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Receiver, Trace, Value};
 
 #[derive(Debug)]
@@ -73,22 +74,37 @@ impl StackFrame {
 
         None
     }
+
+    pub fn reset(&mut self, target: Target, store_return_value: bool) {
+        self.position = 0;
+        self.function = AtomRef::clone(target.function());
+        self.target = target;
+        self.return_addr.truncate(0);
+        self.store_return_value = store_return_value;
+        self.locals.truncate(0);
+    }
 }
 
 pub struct CallStack {
-    data: Vec<StackFrame>,
+    data: RecycleVec<StackFrame>,
 }
 
 impl CallStack {
     pub fn new() -> Self {
-        Self { data: vec![] }
+        Self {
+            data: RecycleVec::new(),
+        }
+    }
+
+    pub fn recycle(&mut self) -> Option<StackFrame> {
+        self.data.recycle()
     }
 
     pub fn push(&mut self, frame: StackFrame) {
         self.data.push(frame);
     }
 
-    pub fn pop(&mut self) -> Option<StackFrame> {
+    pub fn pop(&mut self) {
         self.data.pop()
     }
 

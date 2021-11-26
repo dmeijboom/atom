@@ -5,11 +5,9 @@ use strum_macros::EnumIter;
 
 use crate::runtime::types::*;
 
-use super::atom_ref::{AtomRef, AtomRefMut};
+use super::atom_ref::{AtomArray, AtomRef, AtomRefMut, AtomString};
 use super::error::{ErrorKind, Result, RuntimeError};
 use super::rust::RustObject;
-
-pub type AtomString = AtomRef<[u8]>;
 
 pub trait Convert<T> {
     fn convert(self) -> Result<T>;
@@ -156,7 +154,7 @@ make_value!(
     (Symbol, Symbol),
     (Ref, AtomRef<Value>),
     (Fn, AtomRef<Fn>),
-    (Tuple, AtomRef<[Value]>),
+    (Tuple, AtomArray<Value>),
     (Class, AtomRef<Class>),
     (Interface, AtomRef<Interface>),
     (Closure, AtomRef<Closure>),

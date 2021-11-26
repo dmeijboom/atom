@@ -1,15 +1,13 @@
-use std::collections::BTreeMap;
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 
-use indexmap::map::IndexMap;
 use strum::IntoEnumIterator;
 
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
-use crate::runtime::{stdlib, unwrap_or_clone_inner, AtomRefMut, ErrorKind};
+use crate::runtime::{make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomRefMut, ErrorKind};
 use crate::runtime::{
-    AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnKind, Input, Int, Interface, Method,
-    Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
+    AtomApi, AtomRef, Class, Closure, Convert, Fn, FnKind, Input, Int, Interface, Method, Object,
+    Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::vm::global_label::GlobalLabel;
 use crate::vm::module::Global;
@@ -210,19 +208,37 @@ impl Machine {
 
         match value {
             Value::Fn(func) => {
-                self.eval_func(Target::Fn(func), store_return_value, keywords, arg_count)
+                if keywords.is_some() {
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        "keywords are not supported".to_string(),
+                    ));
+                }
+
+                self.eval_func(Target::Fn(func), store_return_value, arg_count)
             }
-            Value::Closure(closure) => self.eval_func(
-                Target::Closure(closure),
-                store_return_value,
-                keywords,
-                arg_count,
-            ),
+            Value::Closure(closure) => {
+                if keywords.is_some() {
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        "keywords are not supported".to_string(),
+                    ));
+                }
+
+                self.eval_func(Target::Closure(closure), store_return_value, arg_count)
+            }
             Value::Class(class) => {
                 self.eval_new_instance(class, keywords, arg_count, store_return_value)
             }
             Value::Method(method) => {
-                self.eval_method_call(method, keywords, arg_count, store_return_value)
+                if keywords.is_some() {
+                    return Err(RuntimeError::new(
+                        ErrorKind::FatalError,
+                        "keywords are not supported".to_string(),
+                    ));
+                }
+
+                self.eval_method_call(method, arg_count, store_return_value)
             }
             _ => Err(RuntimeError::new(
                 ErrorKind::FatalError,
@@ -326,7 +342,6 @@ impl Machine {
     fn eval_method_call(
         &mut self,
         method: AtomRef<Method>,
-        keywords: Option<[usize; 2]>,
         arg_count: usize,
         store_return_value: bool,
     ) -> Result<()> {
@@ -346,57 +361,17 @@ impl Machine {
                 ),
             )),
             _ => {
-                self.eval_func(
-                    Target::Method(method),
-                    store_return_value,
-                    keywords,
-                    arg_count,
-                )?;
+                self.eval_func(Target::Method(method), store_return_value, arg_count)?;
 
                 Ok(())
             }
         }
     }
 
-    fn prepare_args(
-        &self,
-        mut values: Vec<Value>,
-        keywords: [usize; 2],
-        args: &IndexMap<String, FnArg>,
-    ) -> Result<BTreeMap<usize, Value>> {
-        let function = &self.call_stack.current().function;
-        let mut ordered_values = BTreeMap::new();
-
-        for segment_id in keywords[0]..keywords[1] {
-            let name = function.instructions.get_data(segment_id);
-
-            if let Some(arg_idx) = args.keys().position(|arg| arg == name.as_str()) {
-                ordered_values.insert(arg_idx, values.remove(0));
-                continue;
-            }
-
-            return Err(RuntimeError::new(
-                ErrorKind::FatalError,
-                format!("no such argument '{}'", name.as_str()),
-            ));
-        }
-
-        for i in 0..args.len() {
-            if ordered_values.contains_key(&i) {
-                continue;
-            }
-
-            ordered_values.insert(i, values.remove(0));
-        }
-
-        Ok(ordered_values)
-    }
-
     fn eval_func(
         &mut self,
         target: Target,
         store_return_value: bool,
-        keywords: Option<[usize; 2]>,
         arg_count: usize,
     ) -> Result<()> {
         let (func, values) = match &target {
@@ -419,48 +394,37 @@ impl Machine {
                     ));
                 }
 
-                let mut buffer =
-                    Vec::with_capacity(func.instructions.get_locals_size().unwrap_or(arg_count));
-                let locals = match keywords {
-                    None => {
-                        self.stack.pop_many(arg_count, &mut buffer)?;
-                        buffer
-                    }
-                    Some(keywords) => {
-                        self.stack.pop_many(arg_count, &mut buffer)?;
-                        self.prepare_args(buffer, keywords, &func.args)
-                            .map_err(|e| {
-                                let message = e.message.clone();
-                                e.with_message(format!("{} in target {}(...)", message, target,))
-                            })?
-                            .into_values()
-                            .collect()
-                    }
-                };
+                let locals_size = func.instructions.get_locals_size().unwrap_or(arg_count);
 
-                self.call_stack.push(StackFrame::new(
-                    target,
-                    store_return_value,
-                    if let Some(values) = values {
-                        vec![values, locals].concat()
-                    } else {
-                        locals
-                    },
-                ));
+                match self.call_stack.recycle() {
+                    Some(mut frame) => {
+                        frame.reset(target, store_return_value);
+                        self.stack.pop_many(arg_count, &mut frame.locals)?;
+
+                        if let Some(values) = values {
+                            frame.locals = vec![values, frame.locals].concat();
+                        }
+
+                        self.call_stack.push(frame);
+                    }
+                    None => {
+                        let mut locals = Vec::with_capacity(locals_size);
+                        self.stack.pop_many(arg_count, &mut locals)?;
+
+                        let locals = if let Some(values) = values {
+                            vec![values, locals].concat()
+                        } else {
+                            locals
+                        };
+
+                        self.call_stack
+                            .push(StackFrame::new(target, store_return_value, locals));
+                    }
+                }
 
                 Ok(())
             }
             FnKind::External(closure) => {
-                if keywords.is_some() {
-                    return Err(RuntimeError::new(
-                        ErrorKind::FatalError,
-                        format!(
-                            "unable to use keyword arguments in external target: {}(..)",
-                            target,
-                        ),
-                    ));
-                }
-
                 self.call_stack
                     .push(StackFrame::new(target, store_return_value, vec![]));
 
@@ -619,7 +583,7 @@ impl Machine {
             .pop()
             .convert()
             .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
-        let fields: AtomRef<[Value]> = AtomRef::from([Value::Int(from), Value::Int(to)]);
+        let fields: AtomArray<Value> = AtomRef::from([Value::Int(from), Value::Int(to)]);
         let object = Object::new(
             self.find_class("std.core", "Range")?,
             AtomRefMut::new(fields),
@@ -632,18 +596,15 @@ impl Machine {
     }
 
     fn eval_make_tuple(&mut self, len: usize) -> Result<()> {
-        let values = unsafe {
-            let mut values = AtomRef::<[Value]>::new_uninit_slice(len);
-
+        let values = make_array(len, |array| unsafe {
             for i in 0..len {
-                AtomRef::get_mut_unchecked(&mut values)[len - (i + 1)]
-                    .as_mut_ptr()
-                    .write(self.stack.pop());
-            }
-            values.assume_init()
-        };
+                let ptr: *mut Value = array[len - (i + 1)].as_mut_ptr();
 
-        self.stack.push(Value::Tuple(values));
+                ptr.write(self.stack.pop());
+            }
+        });
+
+        self.stack.push(Value::Tuple(AtomArray::from(values)));
 
         Ok(())
     }
@@ -668,18 +629,21 @@ impl Machine {
     }
 
     fn eval_make_template(&mut self, len: usize) -> Result<()> {
-        // @TODO: optimize somehow (mem)
-        let mut buffer = Vec::with_capacity(len);
+        let mut values = Vec::with_capacity(len);
+        self.stack.pop_many(len, &mut values)?;
 
-        self.stack.pop_many(len, &mut buffer)?;
-
-        let s = buffer
+        let strings = values
             .into_iter()
-            .map(|value| format!("{}", value))
-            .collect::<String>();
+            .map(|value| value.to_string())
+            .collect::<Vec<_>>();
 
-        self.stack
-            .push(Value::String(AtomRef::from(s.into_bytes())));
+        let mut buffer = Vec::with_capacity(strings.iter().map(|s| s.len()).sum());
+
+        for string in strings {
+            buffer.append(&mut string.into_bytes());
+        }
+
+        self.stack.push(Value::String(AtomRef::from(buffer)));
 
         Ok(())
     }
@@ -966,7 +930,7 @@ impl Machine {
         self.try_stack.pop();
 
         let return_value = self.stack.pop();
-        let array: AtomRef<[Value]> =
+        let array: AtomArray<Value> =
             AtomRef::new([Value::Symbol(Symbol::from("ok")), return_value]);
 
         self.stack.push(Value::Tuple(array));
@@ -1432,7 +1396,7 @@ impl Machine {
                     // If there is an error that is try-able, let's handle it
                     if matches!(err.kind, ErrorKind::UserError | ErrorKind::IOError) {
                         if let Some(global_label) = self.try_stack.pop() {
-                            let array: AtomRef<[Value]> = AtomRef::new([
+                            let array: AtomArray<Value> = AtomRef::new([
                                 Value::Symbol(Symbol::from("err")),
                                 Value::String(AtomRef::from(format!("{}", err).into_bytes())),
                             ]);
