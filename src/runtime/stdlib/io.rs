@@ -23,8 +23,8 @@ pub fn open_file_handle(input: Input<'_>) -> Result<Output> {
 }
 
 pub fn file_size(mut input: Input<'_>) -> Result<Output> {
-    let object: Object = input.take_receiver()?;
-    let fd = object.get_field(0).ok_or_else(|| {
+    let object: AtomRefMut<Object> = input.take_receiver()?;
+    let fd = object.fields.get(0).ok_or_else(|| {
         RuntimeError::new(
             ErrorKind::FatalError,
             "missing 'fd' field for std.io.File".to_string(),
@@ -38,13 +38,8 @@ pub fn file_size(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn file_read(mut input: Input<'_>) -> Result<Output> {
-    let mut object: Object = input.take_receiver()?;
-    let fd = object.get_field_mut(0).ok_or_else(|| {
-        RuntimeError::new(
-            ErrorKind::FatalError,
-            "missing 'fd' field for std.io.File".to_string(),
-        )
-    })?;
+    let mut object: AtomRefMut<Object> = input.take_receiver()?;
+    let fd = &mut object.as_mut().fields.as_mut()[0];
     let rust_object: &mut RustObject = fd.convert()?;
     let file: &mut File = rust_object.try_as_mut()?;
 

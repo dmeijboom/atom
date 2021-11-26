@@ -313,10 +313,11 @@ impl Machine {
         };
 
         if store_return_value {
-            self.stack.push(Value::Object(Object::new(
-                class,
-                AtomRefMut::new(AtomRef::from(buffer)),
-            )));
+            self.stack
+                .push(Value::Object(AtomRefMut::new(AtomRef::new(Object::new(
+                    class,
+                    AtomRefMut::new(AtomRef::from(buffer)),
+                )))));
         }
 
         Ok(())
@@ -624,7 +625,8 @@ impl Machine {
             AtomRefMut::new(fields),
         );
 
-        self.stack.push(Value::Object(object));
+        self.stack
+            .push(Value::Object(AtomRefMut::new(AtomRef::new(object))));
 
         Ok(())
     }
@@ -1094,7 +1096,7 @@ impl Machine {
                             ));
                         }
 
-                        let field = object.get_field(id).cloned().ok_or_else(|| {
+                        let field = object.fields.get(id).cloned().ok_or_else(|| {
                             RuntimeError::new(
                                 ErrorKind::FatalError,
                                 format!(
@@ -1193,7 +1195,7 @@ impl Machine {
             }
 
             if let Value::Object(mut object) = object {
-                object.set_field_value(id, value);
+                object.as_mut().fields.as_mut()[id] = value;
 
                 return Ok(());
             }

@@ -162,7 +162,7 @@ make_value!(
     (Closure, AtomRef<Closure>),
     (Method, AtomRef<Method>),
     (String, AtomString),
-    (Object, Object),
+    (Object, AtomRefMut<Object>),
     (Array, AtomRefMut<Vec<Value>>),
     (Option, Option<Box<Value>>),
     (RustObject, RustObject)
@@ -217,7 +217,7 @@ impl Clone for Value {
             Self::Closure(closure) => Value::Closure(AtomRef::clone(closure)),
             Self::Method(method) => Value::Method(AtomRef::clone(method)),
             Self::String(val) => Value::String(val.clone()),
-            Self::Object(val) => Value::Object(val.clone()),
+            Self::Object(val) => Value::Object(AtomRefMut::clone(val)),
             Self::Tuple(val) => Value::Tuple(AtomRef::clone(val)),
             Self::Array(val) => Value::Array(AtomRefMut::clone(val)),
             Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
@@ -272,7 +272,7 @@ impl Display for Value {
                                 "{}{}: {}",
                                 if field.public { "*" } else { "" },
                                 key,
-                                object.get_field(id).unwrap(),
+                                object.fields.get(id).unwrap(),
                             )
                         })
                         .collect::<Vec<String>>()

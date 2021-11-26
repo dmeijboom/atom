@@ -377,7 +377,7 @@ impl<'c> CodeGenerator<'c> {
     }
 
     fn compile_block(&mut self, block: &Block) -> Result<()> {
-        let scope = unsafe { self.mir.scopes.get_unchecked(block.scope_id) };
+        let scope = &self.mir.scopes[block.scope_id];
 
         for stmt in block.statements.iter() {
             self.compile_stmt(scope, stmt)?;

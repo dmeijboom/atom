@@ -57,7 +57,7 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         Value::Object(object) => format!(
             "{}({})",
             object.class.name.blue(),
-            pretty_fmt_items(object.get_fields())
+            pretty_fmt_items(&object.fields)
         )
         .white(),
         Value::Array(array) => {
