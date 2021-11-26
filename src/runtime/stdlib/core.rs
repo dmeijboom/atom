@@ -1,5 +1,7 @@
 use crate::runtime::error::ErrorKind;
-use crate::runtime::{AtomRef, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value};
+use crate::runtime::{
+    AtomRef, AtomRefMut, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value,
+};
 
 pub const FUNCTIONS: [(&str, ExternalFn); 3] = [
     ("some", some),
@@ -104,22 +106,22 @@ pub fn string_split(mut input: Input<'_>) -> Result<Output> {
     let pattern: &str = input.pop_first()?;
 
     if input.args.is_empty() {
-        return Ok(Output::new(
+        return Ok(Output::new(AtomRefMut::new(AtomRef::new(
             s.split(pattern)
                 .into_iter()
                 .map(|item| Value::from(item.to_string()))
                 .collect::<Vec<_>>(),
-        ));
+        ))));
     }
 
     let count: usize = input.pop_first()?;
 
-    Ok(Output::new(
+    Ok(Output::new(AtomRefMut::new(AtomRef::new(
         s.splitn(count, pattern)
             .into_iter()
             .map(|item| Value::from(item.to_string()))
             .collect::<Vec<_>>(),
-    ))
+    ))))
 }
 
 pub fn string_starts_with(mut input: Input<'_>) -> Result<Output> {
@@ -178,17 +180,17 @@ pub fn string_replace(mut input: Input<'_>) -> Result<Output> {
 pub fn string_chars(mut input: Input<'_>) -> Result<Output> {
     let s: &str = input.take_receiver()?;
 
-    Ok(Output::new(
+    Ok(Output::new(AtomRefMut::new(AtomRef::new(
         s.chars().into_iter().map(Value::Char).collect::<Vec<_>>(),
-    ))
+    ))))
 }
 
 pub fn string_bytes(mut input: Input<'_>) -> Result<Output> {
     let s: &str = input.take_receiver()?;
 
-    Ok(Output::new(
+    Ok(Output::new(AtomRefMut::new(AtomRef::new(
         s.bytes().into_iter().map(Value::Byte).collect::<Vec<_>>(),
-    ))
+    ))))
 }
 
 pub fn string_repeat(mut input: Input<'_>) -> Result<Output> {
@@ -224,7 +226,7 @@ pub fn float_floor(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn array_remove(mut input: Input<'_>) -> Result<Output> {
-    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
+    let mut a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
     let index: usize = input.pop_first()?;
 
     if a.len() <= index {
@@ -237,7 +239,7 @@ pub fn array_remove(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn array_push(mut input: Input<'_>) -> Result<Output> {
-    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
+    let mut a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
     let item: Value = input.pop_first()?;
 
     a.as_mut().push(item);
@@ -246,13 +248,13 @@ pub fn array_push(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn array_pop(mut input: Input<'_>) -> Result<Output> {
-    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
+    let mut a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
 
     Ok(Output::new(a.as_mut().pop().map(Box::new)))
 }
 
 pub fn array_clear(mut input: Input<'_>) -> Result<Output> {
-    let mut a: AtomRef<Vec<Value>> = input.take_receiver()?;
+    let mut a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
 
     a.as_mut().clear();
 
@@ -260,7 +262,7 @@ pub fn array_clear(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn array_len(mut input: Input<'_>) -> Result<Output> {
-    let a: AtomRef<Vec<Value>> = input.take_receiver()?;
+    let a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
 
     Ok(Output::new(Int::from(a.len())))
 }

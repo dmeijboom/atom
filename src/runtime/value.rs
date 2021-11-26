@@ -5,7 +5,7 @@ use strum_macros::EnumIter;
 
 use crate::runtime::types::*;
 
-use super::atom_ref::AtomRef;
+use super::atom_ref::{AtomRef, AtomRefMut};
 use super::error::{ErrorKind, Result, RuntimeError};
 use super::rust::RustObject;
 
@@ -163,14 +163,12 @@ make_value!(
     (Method, AtomRef<Method>),
     (String, AtomString),
     (Object, Object),
-    (Array, AtomRef<Vec<Value>>),
+    (Array, AtomRefMut<Vec<Value>>),
     (Option, Option<Box<Value>>),
     (RustObject, RustObject)
 );
 
 // Setup base conversions between atom / Rust code
-
-impl_from!(Array, Vec<Value>);
 
 impl<'v> Convert<&'v str> for &'v Value {
     fn convert(self) -> Result<&'v str> {
@@ -221,7 +219,7 @@ impl Clone for Value {
             Self::String(val) => Value::String(val.clone()),
             Self::Object(val) => Value::Object(val.clone()),
             Self::Tuple(val) => Value::Tuple(AtomRef::clone(val)),
-            Self::Array(val) => Value::Array(AtomRef::clone(val)),
+            Self::Array(val) => Value::Array(AtomRefMut::clone(val)),
             Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
             Self::RustObject(_) => panic!("RustObject can't be cloned"),
         }
@@ -295,7 +293,6 @@ impl Display for Value {
                 f,
                 "[{}]",
                 array
-                    .as_ref()
                     .iter()
                     .map(|item| format!("{}", item))
                     .collect::<Vec<String>>()

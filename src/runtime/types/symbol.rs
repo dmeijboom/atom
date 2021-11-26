@@ -19,7 +19,7 @@ impl Symbol {
 impl From<&str> for Symbol {
     fn from(name: &str) -> Self {
         Self {
-            name: AtomString::copy_from_slice(name.as_bytes()),
+            name: AtomString::from(name.as_bytes()),
         }
     }
 }

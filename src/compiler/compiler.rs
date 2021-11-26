@@ -3,8 +3,6 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use crate::compiler::mir;
-use crate::compiler::optimizers::{remove_store_load_single_use, tail_call};
 use crate::runtime::stdlib::DEFAULT_IMPORTS;
 use crate::syntax::parser;
 use crate::syntax::Stmt;
@@ -14,8 +12,12 @@ use super::error::{CompileError, Result};
 use super::filesystem::{FileSystem, FileSystemCache};
 use super::frontend::Frontend;
 use super::line_number_offset::LineNumberOffset;
+use super::mir;
 use super::module::Module;
-use super::optimizers::{call_void, pre_compute_labels, remove_type_cast, replace_load_with_const};
+use super::optimizers::{
+    call_void, pre_compute_labels, remove_store_load_single_use, remove_type_cast, reorder_locals,
+    replace_load_with_const, tail_call,
+};
 
 fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     for (i, (_, name)) in names.iter().enumerate() {
@@ -365,6 +367,7 @@ impl Compiler {
                     call_void::optimize,
                     replace_load_with_const::optimize,
                     remove_store_load_single_use::optimize,
+                    reorder_locals::optimize,
                     // Should always be the latest instruction otherwise the pre-computed label index
                     // would point to the wrong instruction
                     pre_compute_labels::optimize,

@@ -7,6 +7,7 @@ pub mod call_void;
 pub mod pre_compute_labels;
 pub mod remove_store_load_single_use;
 pub mod remove_type_cast;
+pub mod reorder_locals;
 pub mod replace_load_with_const;
 pub mod tail_call;
 

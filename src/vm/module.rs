@@ -1,13 +1,13 @@
 use indexmap::map::IndexMap;
 
-use crate::runtime::{AtomRef, Class, Fn, Interface, WeakRef};
+use crate::runtime::{AtomRef, AtomWeakRef, Class, Fn, Interface};
 
 pub type ModuleId = usize;
 
 pub enum Global {
-    Fn(WeakRef<Fn>),
-    Class(WeakRef<Class>),
-    Interface(WeakRef<Interface>),
+    Fn(AtomWeakRef<Fn>),
+    Class(AtomWeakRef<Class>),
+    Interface(AtomWeakRef<Interface>),
 }
 
 pub struct Module {

@@ -17,7 +17,7 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 
 ## Known issues
 
-- Requires nightly Rust because of `CoerceUnsized`/`Unsize`
+- Requires nightly Rust because of `new_uninit`/`get_mut_unchecked`
 
 ## Test suite
 

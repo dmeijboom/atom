@@ -33,9 +33,9 @@ impl Stack {
         self.data.remove(self.data.len() - 1)
     }
 
-    pub fn pop_many(&mut self, len: usize) -> Result<Vec<Value>> {
+    pub fn pop_many(&mut self, len: usize, buffer: &mut Vec<Value>) -> Result<()> {
         if len == 0 {
-            return Ok(vec![]);
+            return Ok(());
         }
 
         if self.data.len() < len {
@@ -45,13 +45,11 @@ impl Stack {
             ));
         }
 
-        let mut data = Vec::with_capacity(len);
-
         for value in self.data.drain(self.data.len() - len..) {
-            data.push(value);
+            buffer.push(value);
         }
 
-        Ok(data)
+        Ok(())
     }
 }
 
@@ -71,13 +69,17 @@ mod tests {
         stack.push(Value::Int(Int::Uint8(40)));
         stack.push(Value::Int(Int::Uint8(50)));
 
+        let mut buffer = vec![];
+
+        stack.pop_many(3, &mut buffer).unwrap();
+
         assert_eq!(
-            stack.pop_many(3),
-            Ok(vec![
+            buffer,
+            vec![
                 Value::Int(Int::Uint8(30)),
                 Value::Int(Int::Uint8(40)),
                 Value::Int(Int::Uint8(50))
-            ])
+            ]
         );
     }
 }

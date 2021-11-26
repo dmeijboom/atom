@@ -204,7 +204,7 @@ impl ModuleCache {
                             )
                         })?;
 
-                    Global::Fn(func.weak())
+                    Global::Fn(AtomRef::downgrade(func))
                 }
                 ElementKind::Class => {
                     let class = origin
@@ -216,7 +216,7 @@ impl ModuleCache {
                             )
                         })?;
 
-                    Global::Class(class.weak())
+                    Global::Class(AtomRef::downgrade(class))
                 }
                 ElementKind::Interface => {
                     let interface = origin
@@ -233,7 +233,7 @@ impl ModuleCache {
                             )
                         })?;
 
-                    Global::Interface(interface.weak())
+                    Global::Interface(AtomRef::downgrade(interface))
                 }
             };
 

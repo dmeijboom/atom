@@ -44,8 +44,9 @@ impl Debug for Function {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "Fn {}() {{\n{}\n}}",
+            "Fn {}(locals_size={:?}) {{\n{}\n}}",
             self.name,
+            self.body.get_locals_size(),
             self.body
                 .iter()
                 .map(|code| format!("  {}", code.description(Some(&self.body))))

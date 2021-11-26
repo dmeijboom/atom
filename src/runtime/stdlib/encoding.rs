@@ -1,5 +1,5 @@
 use crate::runtime::{
-    AtomRef, Convert, ErrorKind, Input, Int, Output, Result, RuntimeError, Value,
+    AtomRefMut, Convert, ErrorKind, Input, Int, Output, Result, RuntimeError, Value,
 };
 
 pub mod binary {
@@ -29,11 +29,11 @@ fn to_fixed_array<T: Copy, const N: usize>(items: Vec<T>) -> Result<[T; N]> {
 }
 
 pub fn parse_int(input: Input<'_>) -> Result<Output> {
-    let data: AtomRef<Vec<Value>> = input.single()?;
+    let data: AtomRefMut<Vec<Value>> = input.single()?;
     let mut bytes = vec![];
 
-    for item in data.unwrap_or_clone_inner().into_iter() {
-        bytes.push(item.convert()?);
+    for item in data.iter() {
+        bytes.push(item.clone().convert()?);
     }
 
     if bytes.len() == 4 {
@@ -48,11 +48,11 @@ pub fn parse_int(input: Input<'_>) -> Result<Output> {
 }
 
 pub fn parse_uint(input: Input<'_>) -> Result<Output> {
-    let data: AtomRef<Vec<Value>> = input.single()?;
+    let data: AtomRefMut<Vec<Value>> = input.single()?;
     let mut bytes = vec![];
 
-    for item in data.unwrap_or_clone_inner().into_iter() {
-        bytes.push(item.convert()?);
+    for item in data.iter() {
+        bytes.push(item.clone().convert()?);
     }
 
     if bytes.len() == 4 {
@@ -67,11 +67,11 @@ pub fn parse_uint(input: Input<'_>) -> Result<Output> {
 }
 
 pub fn utf8_decode(input: Input<'_>) -> Result<Output> {
-    let data: AtomRef<Vec<Value>> = input.single()?;
+    let data: AtomRefMut<Vec<Value>> = input.single()?;
     let mut bytes = vec![];
 
-    for item in data.unwrap_or_clone_inner().into_iter() {
-        bytes.push(item.convert()?);
+    for item in data.iter() {
+        bytes.push(item.clone().convert()?);
     }
 
     Ok(Output::new(String::from_utf8(bytes).map_err(|e| {

@@ -1,5 +1,5 @@
-#![feature(unsize)]
-#![feature(coerce_unsized)]
+#![feature(new_uninit)]
+#![feature(get_mut_unchecked)]
 
 use std::process;
 

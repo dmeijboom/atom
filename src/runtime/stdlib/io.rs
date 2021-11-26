@@ -3,8 +3,8 @@ use std::io;
 use std::io::Read;
 
 use crate::runtime::{
-    Convert, ErrorKind, ExternalFn, Input, Int, Object, Output, Result, RuntimeError, RustObject,
-    Value,
+    AtomRef, AtomRefMut, Convert, ErrorKind, ExternalFn, Input, Int, Object, Output, Result,
+    RuntimeError, RustObject, Value,
 };
 
 pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("openFileHandle", open_file_handle)];
@@ -53,11 +53,11 @@ pub fn file_read(mut input: Input<'_>) -> Result<Output> {
 
     let max_size = file.read(&mut buffer).map_err(map_io_err)?;
 
-    Ok(Output::new(
+    Ok(Output::new(AtomRefMut::new(AtomRef::new(
         buffer
             .into_iter()
             .map(Value::Byte)
             .take(max_size)
             .collect::<Vec<_>>(),
-    ))
+    ))))
 }

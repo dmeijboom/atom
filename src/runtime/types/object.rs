@@ -1,24 +1,26 @@
-use crate::runtime::{AtomRef, Value};
+use std::ops::Deref;
+
+use crate::runtime::{AtomRef, AtomRefMut, Value};
 
 use super::class::Class;
 
 #[derive(Debug)]
 pub struct Object {
     pub class: AtomRef<Class>,
-    fields: AtomRef<[Value]>,
+    fields: AtomRefMut<[Value]>,
 }
 
 impl Object {
-    pub fn new(class: AtomRef<Class>, fields: AtomRef<[Value]>) -> Self {
+    pub fn new(class: AtomRef<Class>, fields: AtomRefMut<[Value]>) -> Self {
         Self { class, fields }
     }
 
     pub fn get_fields(&self) -> &[Value] {
-        self.fields.as_ref()
+        self.fields.deref()
     }
 
     pub fn get_field(&self, index: usize) -> Option<&Value> {
-        self.fields.as_ref().get(index)
+        self.fields.get(index)
     }
 
     pub fn get_field_mut(&mut self, index: usize) -> Option<&mut Value> {
@@ -40,7 +42,7 @@ impl Clone for Object {
     fn clone(&self) -> Self {
         Self {
             class: AtomRef::clone(&self.class),
-            fields: AtomRef::clone(&self.fields),
+            fields: AtomRefMut::clone(&self.fields),
         }
     }
 }

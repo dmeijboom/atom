@@ -60,13 +60,9 @@ fn pretty_fmt(value: &Value) -> ColoredString {
             pretty_fmt_items(object.get_fields())
         )
         .white(),
-        Value::Array(array) => format!(
-            "{}{}{}",
-            "[".blue(),
-            pretty_fmt_items(array.as_ref()),
-            "]".blue()
-        )
-        .white(),
+        Value::Array(array) => {
+            format!("{}{}{}", "[".blue(), pretty_fmt_items(&array), "]".blue()).white()
+        }
         Value::Option(value) => match value {
             Some(val) => format!("{}{}{}", "Some(".blue(), pretty_fmt(val), ")".blue()).white(),
             None => "None".blue(),

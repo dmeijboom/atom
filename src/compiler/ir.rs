@@ -250,6 +250,7 @@ pub struct IR {
     codes: Vec<Code>,
     data: Vec<String>,
     locations: HashMap<usize, Location>,
+    locals_size: Option<usize>,
 }
 
 impl IR {
@@ -258,9 +259,20 @@ impl IR {
             data: vec![],
             codes: vec![],
             locations: HashMap::new(),
+            locals_size: None,
         }
     }
 
+    #[inline]
+    pub fn get_locals_size(&self) -> Option<usize> {
+        self.locals_size
+    }
+
+    pub fn set_locals_size(&mut self, size: usize) {
+        self.locals_size = Some(size);
+    }
+
+    #[inline]
     pub fn get_data(&self, id: usize) -> &String {
         &self.data[id]
     }

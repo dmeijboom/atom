@@ -176,7 +176,13 @@ impl<'c> CodeGenerator<'c> {
 
                 self.compile_block(&closure.block)?;
 
-                let body = self.collect_instr(true);
+                let mut body = self.collect_instr(true);
+
+                if let Some(locals_size) = body.get_locals_size() {
+                    if closure.args.len() > locals_size {
+                        body.set_locals_size(closure.args.len());
+                    }
+                }
 
                 self.module.functions.insert(
                     closure.name.clone(),
@@ -391,7 +397,15 @@ impl<'c> CodeGenerator<'c> {
     fn compile_function(&mut self, function: &Function) -> Result<IR> {
         self.compile_block(&function.block)?;
 
-        Ok(self.collect_instr(true))
+        let mut ir = self.collect_instr(true);
+
+        if let Some(locals_size) = ir.get_locals_size() {
+            if function.args.len() > locals_size {
+                ir.set_locals_size(function.args.len());
+            }
+        }
+
+        Ok(ir)
     }
 
     pub fn compile(mut self) -> Result<()> {

@@ -6,7 +6,7 @@ use strum::IntoEnumIterator;
 
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
-use crate::runtime::{stdlib, ErrorKind};
+use crate::runtime::{stdlib, unwrap_or_clone_inner, AtomRefMut, ErrorKind};
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnArg, FnKind, Input, Int, Interface, Method,
     Object, Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
@@ -177,13 +177,10 @@ impl Machine {
     }
 
     fn validate_class(&self, class: &Class, interface: &Interface) -> bool {
-        for name in interface.functions.iter() {
-            if !class.methods.contains_key(name) {
-                return false;
-            }
-        }
-
-        true
+        interface
+            .functions
+            .iter()
+            .all(|name| class.methods.contains_key(name))
     }
 
     fn eval_tail_call(&mut self, arg_count: usize) -> Result<()> {
@@ -287,20 +284,21 @@ impl Machine {
             ));
         }
 
-        let fields = if is_sorted {
-            self.stack.pop_many(keywords.len())?
+        let mut buffer = Vec::with_capacity(keywords.len());
+
+        if is_sorted {
+            self.stack.pop_many(keywords.len(), &mut buffer)?;
         } else {
             let keywords = keywords.collect::<Vec<_>>();
-            let mut fields = vec![];
 
-            while fields.len() < keywords.len() {
+            while buffer.len() < keywords.len() {
                 for (name, _) in class.fields.iter().rev() {
                     if let Some(index) = keywords
                         .iter()
                         .position(|segment_id| name == function.instructions.get_data(*segment_id))
                     {
-                        if index <= fields.len() {
-                            fields.insert(index, self.stack.pop());
+                        if index <= buffer.len() {
+                            buffer.insert(index, self.stack.pop());
                         }
 
                         continue;
@@ -312,13 +310,13 @@ impl Machine {
                     ));
                 }
             }
-
-            fields
         };
 
         if store_return_value {
-            self.stack
-                .push(Value::Object(Object::new(class, AtomRef::from(fields))));
+            self.stack.push(Value::Object(Object::new(
+                class,
+                AtomRefMut::new(AtomRef::from(buffer)),
+            )));
         }
 
         Ok(())
@@ -420,12 +418,16 @@ impl Machine {
                     ));
                 }
 
+                let mut buffer =
+                    Vec::with_capacity(func.instructions.get_locals_size().unwrap_or(arg_count));
                 let locals = match keywords {
-                    None => self.stack.pop_many(arg_count)?,
+                    None => {
+                        self.stack.pop_many(arg_count, &mut buffer)?;
+                        buffer
+                    }
                     Some(keywords) => {
-                        let unordered_values = self.stack.pop_many(arg_count)?;
-
-                        self.prepare_args(unordered_values, keywords, &func.args)
+                        self.stack.pop_many(arg_count, &mut buffer)?;
+                        self.prepare_args(buffer, keywords, &func.args)
                             .map_err(|e| {
                                 let message = e.message.clone();
                                 e.with_message(format!("{} in target {}(...)", message, target,))
@@ -461,7 +463,9 @@ impl Machine {
                 self.call_stack
                     .push(StackFrame::new(target, store_return_value, vec![]));
 
-                let values = self.stack.pop_many(arg_count)?;
+                let mut values = Vec::with_capacity(arg_count);
+                self.stack.pop_many(arg_count, &mut values)?;
+
                 let result = closure(Input::new(self, values));
 
                 self.call_stack.pop();
@@ -615,7 +619,10 @@ impl Machine {
             .convert()
             .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
         let fields: AtomRef<[Value]> = AtomRef::from([Value::Int(from), Value::Int(to)]);
-        let object = Object::new(self.find_class("std.core", "Range")?, fields);
+        let object = Object::new(
+            self.find_class("std.core", "Range")?,
+            AtomRefMut::new(fields),
+        );
 
         self.stack.push(Value::Object(object));
 
@@ -623,9 +630,18 @@ impl Machine {
     }
 
     fn eval_make_tuple(&mut self, len: usize) -> Result<()> {
-        let values = self.stack.pop_many(len)?;
+        let values = unsafe {
+            let mut values = AtomRef::<[Value]>::new_uninit_slice(len);
 
-        self.stack.push(Value::Tuple(AtomRef::from(values)));
+            for i in 0..len {
+                AtomRef::get_mut_unchecked(&mut values)[len - (i + 1)]
+                    .as_mut_ptr()
+                    .write(self.stack.pop());
+            }
+            values.assume_init()
+        };
+
+        self.stack.push(Value::Tuple(values));
 
         Ok(())
     }
@@ -640,17 +656,22 @@ impl Machine {
     }
 
     fn eval_make_array(&mut self, len: usize) -> Result<()> {
-        let values = self.stack.pop_many(len)?;
+        let mut values = Vec::with_capacity(len);
 
-        self.stack.push(Value::Array(AtomRef::new(values)));
+        self.stack.pop_many(len, &mut values)?;
+        self.stack
+            .push(Value::Array(AtomRefMut::new(AtomRef::new(values))));
 
         Ok(())
     }
 
     fn eval_make_template(&mut self, len: usize) -> Result<()> {
-        let s = self
-            .stack
-            .pop_many(len)?
+        // @TODO: optimize somehow (mem)
+        let mut buffer = Vec::with_capacity(len);
+
+        self.stack.pop_many(len, &mut buffer)?;
+
+        let s = buffer
             .into_iter()
             .map(|value| format!("{}", value))
             .collect::<String>();
@@ -671,7 +692,7 @@ impl Machine {
         let value = self.stack.pop();
 
         if let Value::Ref(value) = value {
-            self.stack.push(value.unwrap_or_clone_inner());
+            self.stack.push(unwrap_or_clone_inner(value));
 
             return Ok(());
         }
@@ -955,17 +976,6 @@ impl Machine {
         let index = self.stack.pop();
         let value = self.stack.pop();
 
-        let elems = if let Value::Array(array) = &value {
-            array.as_slice()
-        } else if let Value::Tuple(tuple) = &value {
-            tuple.as_ref()
-        } else {
-            return Err(RuntimeError::new(
-                ErrorKind::FatalError,
-                format!("unable to index type: {}", value.get_type().name()),
-            ));
-        };
-
         let index_type = index.get_type();
         let index: usize = index.convert().map_err(|e| {
             e.with_message(format!(
@@ -974,7 +984,18 @@ impl Machine {
             ))
         })?;
 
-        if let Some(item) = elems.get(index) {
+        let elem = if let Value::Array(array) = &value {
+            array.get(index)
+        } else if let Value::Tuple(tuple) = &value {
+            tuple.get(index)
+        } else {
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("unable to index type: {}", value.get_type().name()),
+            ));
+        };
+
+        if let Some(item) = elem {
             let item = item.clone();
 
             if push_back {
@@ -999,9 +1020,10 @@ impl Machine {
 
         match value {
             Value::Array(array) => {
-                let data = array.as_ref()[from..to].to_vec();
+                let data = array[from..to].to_vec();
 
-                self.stack.push(Value::Array(AtomRef::new(data)));
+                self.stack
+                    .push(Value::Array(AtomRefMut::new(AtomRef::new(data))));
 
                 Ok(())
             }
@@ -1027,10 +1049,8 @@ impl Machine {
                     ))
                 })?;
 
-                let array = array.as_mut();
-
-                if array.get(index).is_some() {
-                    array[index] = value;
+                if let Some(entry) = array.as_mut().get_mut(index) {
+                    *entry = value;
 
                     return Ok(());
                 }
@@ -1061,7 +1081,9 @@ impl Machine {
             Receiver::Bound(value) => {
                 if let Some((id, _, field)) = class.fields.get_full(member) {
                     if let Value::Object(object) = value {
-                        if !field.public && frame.function.origin.module_id != class.origin.module_id {
+                        if !field.public
+                            && frame.function.origin.module_id != class.origin.module_id
+                        {
                             return Err(RuntimeError::new(
                                 ErrorKind::FatalError,
                                 format!(
@@ -1287,7 +1309,9 @@ impl Machine {
 
     fn eval_load_interface(&mut self, id: usize) -> Result<()> {
         let frame = self.call_stack.current();
-        let current_module = self.module_cache.get_module_by_id(frame.function.origin.module_id)?;
+        let current_module = self
+            .module_cache
+            .get_module_by_id(frame.function.origin.module_id)?;
         let value = current_module
             .interfaces
             .get(id)
@@ -1454,9 +1478,13 @@ impl Machine {
 
     pub fn eval(&mut self, module: &str, entrypoint: AtomRef<Fn>) -> Result<()> {
         let module_id = self.module_cache.get_module(module)?.id;
+        let locals = match entrypoint.instructions.get_locals_size() {
+            Some(size) => Vec::with_capacity(size),
+            None => vec![],
+        };
 
         self.call_stack
-            .push(StackFrame::new(Target::Fn(entrypoint), false, vec![]));
+            .push(StackFrame::new(Target::Fn(entrypoint), false, locals));
 
         self._eval(module_id)
             .map_err(|e| e.with_stack_trace(self.call_stack.rewind()))?;
