@@ -17,7 +17,7 @@ pub class MapIter {
     let map;
     let mut index;
 
-    pub static fn new(map) -> MapIter(map: map, index: 0);
+    pub static fn new(map) -> MapIter{map: map, index: 0};
 
     pub fn next() {
         let index = this.index;
@@ -163,15 +163,15 @@ class Entry {
     let key;
     let value;
 
-    pub static fn new(hash, key, value) -> Entry(hash: hash, key: key, value: value);
+    pub static fn new(hash, key, value) -> Entry{hash: hash, key: key, value: value};
 }
 
 class Bucket {
     let mut entry;
     let mut next;
 
-    pub static fn new() -> Bucket(entry: nil, next: nil);
-    pub static fn withEntry(entry) -> Bucket(entry: some(entry), next: nil);
+    pub static fn new() -> Bucket{entry: nil, next: nil};
+    pub static fn withEntry(entry) -> Bucket{entry: some(entry), next: nil};
 }
 
 pub class Map extends GetIterator {
@@ -182,7 +182,7 @@ pub class Map extends GetIterator {
     pub fn iter() -> MapIter.new(this);
 
     pub static fn from(pairs) {
-        let map = Map(buckets: [], size: 0);
+        let map = Map{buckets: [], size: 0};
 
         for (key, value) in pairs {
             map.set(key, value);

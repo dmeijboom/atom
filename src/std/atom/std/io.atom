@@ -56,7 +56,7 @@ pub mixin Reader {
 pub class LinesReader extends GetIterator {
     let readable;
 
-    pub fn iter() -> LinesIter(readable: this.readable);
+    pub fn iter() -> LinesIter{readable: this.readable};
 }
 
 pub class File extends Reader {
@@ -65,7 +65,7 @@ pub class File extends Reader {
     pub extern fn size();
     pub extern fn read(max);
 
-    pub fn lines() -> LinesReader(readable: this);
+    pub fn lines() -> LinesReader{readable: this};
 }
 
 extern fn openFileHandle(filename);

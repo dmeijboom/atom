@@ -108,7 +108,13 @@ pub struct ComparisonExpr {
 pub struct CallExpr {
     pub callee: Expr,
     pub args: Vec<Expr>,
-    pub keyword_args: Vec<KeywordArg>,
+    pub pos: Pos,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewExpr {
+    pub callee: Expr,
+    pub args: Vec<KeywordArg>,
     pub pos: Pos,
 }
 
@@ -272,6 +278,7 @@ pub struct TypeOfExpr {
 pub enum Expr {
     Literal(LiteralExpr),
     Ident(IdentExpr),
+    New(Box<NewExpr>),
     Call(Box<CallExpr>),
     Cast(Box<CastExpr>),
     Not(NotExpr),
@@ -299,6 +306,7 @@ impl Expr {
         match self {
             Self::Literal(lit_expr) => lit_expr.pos.clone(),
             Self::Ident(ident_expr) => ident_expr.pos.clone(),
+            Self::New(new_expr) => new_expr.pos.clone(),
             Self::Call(call_expr) => call_expr.pos.clone(),
             Self::Not(not_expr) => not_expr.pos.clone(),
             Self::Unwrap(unwrap_expr) => unwrap_expr.pos.clone(),

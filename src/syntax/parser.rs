@@ -207,9 +207,8 @@ peg::parser! {
             --
             "(" _ expr:expr() _ ")" { expr }
             --
-            callee:@ "(" _ keyword_args:keyword_arg() ** (_ "," _) _ "," _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args, args, pos: (callee.pos().start..end), callee }.into()) }
-            callee:@ "(" _ keyword_args:keyword_arg() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args, args: vec![], pos: (callee.pos().start..end), callee }.into()) }
-            callee:@ "(" _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ keyword_args: vec![], args, pos: (callee.pos().start..end), callee }.into()) }
+            callee:@ "{" _ args:keyword_arg() ** (_ "," _) _ "}" end:pos() { Expr::New(NewExpr{ args, pos: (callee.pos().start..end), callee }.into()) }
+            callee:@ "(" _ args:expr() ** (_ "," _) _ ")" end:pos() { Expr::Call(CallExpr{ args, pos: (callee.pos().start..end), callee }.into()) }
             --
             prefix:prefix() { prefix }
         }
@@ -576,7 +575,6 @@ mod tests {
                             pos: (0..4),
                         }),
                         args: vec![],
-                        keyword_args: vec![],
                         pos: (0..6),
                     }
                     .into()
@@ -609,7 +607,6 @@ mod tests {
                                 pos: (9..11),
                             }),
                         ],
-                        keyword_args: vec![],
                         pos: (0..12),
                     }
                     .into()
@@ -642,7 +639,6 @@ mod tests {
                                 pos: (8..10),
                             }),
                         ],
-                        keyword_args: vec![],
                         pos: (0..11),
                     }
                     .into()

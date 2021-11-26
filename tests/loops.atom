@@ -62,7 +62,7 @@ fn bindToItem(t) {
 fn customIterator(t) {
     let mut i = 0;
 
-    for n in Test() {
+    for n in Test{} {
         t.assert(10 + i, n);
 
         i += 1;

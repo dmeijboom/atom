@@ -5,16 +5,12 @@ use crate::compiler::Module;
 pub fn optimize(_module: &Module, instructions: &mut IR) {
     loop {
         let index = instructions.iter().enumerate().position(|(i, code)| {
-            matches!(code, Code::Call(_) | Code::CallKeywords(_))
-                && instructions.get(i + 1) == Some(&Code::Discard)
+            matches!(code, Code::Call(_)) && instructions.get(i + 1) == Some(&Code::Discard)
         });
 
         if let Some(i) = index {
             let replacement = match &instructions[i] {
                 Code::Call(arg_count) => Code::CallVoid(*arg_count),
-                Code::CallKeywords((keywords, arg_count)) => {
-                    Code::CallKeywordsVoid((keywords.clone(), *arg_count))
-                }
                 _ => unreachable!(),
             };
 

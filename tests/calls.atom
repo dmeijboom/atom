@@ -14,59 +14,10 @@ fn test(a, b, c) {
     return true;
 }
 
-fn testKw(one, two, three, four, five, six, seven, eight, nine, ten) {
-    if one != 1 {
-        return false;
-    }
-
-    if two != 2 {
-        return false;
-    }
-
-    if three != 3 {
-        return false;
-    }
-
-    if four != 4 {
-        return false;
-    }
-
-    if five != 5 {
-        return false;
-    }
-
-    if six != 6 {
-        return false;
-    }
-
-    if seven != 7 {
-        return false;
-    }
-
-    if eight != 8 {
-        return false;
-    }
-
-    if nine != 9 {
-        return false;
-    }
-
-    if ten != 10 {
-        return false;
-    }
-
-    return true;
-}
-
 fn simple() -> true;
 
 fn argumentOrder(t) {
     t.assertTrue(test(10, 20, 30));
-}
-
-fn keywordArgumentOrder(t) {
-    t.assertTrue(testKw(three: 3, one: 1, two: 2, 4, 5, 6, 7, 8, 9, 10));
-    t.assertTrue(testKw(two: 2, ten: 10, 1, 3, 4, 5, 6, 7, 8, 9));
 }
 
 fn noArguments(t) {
@@ -76,7 +27,6 @@ fn noArguments(t) {
 pub fn callsTests() {
     return [
         noArguments,
-        argumentOrder,
-        keywordArgumentOrder
+        argumentOrder
     ];
 }

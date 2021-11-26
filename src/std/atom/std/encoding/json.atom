@@ -12,7 +12,7 @@ pub class JSONDecoder {
     let mut data;
     let mut index;
 
-    pub static fn new() -> JSONDecoder(data: nil, index: 0);
+    pub static fn new() -> JSONDecoder{data: nil, index: 0};
 
     fn eof() -> this.index > this.data.len() - 1;
 

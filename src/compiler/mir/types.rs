@@ -181,10 +181,16 @@ pub struct Cast {
 }
 
 #[derive(Debug)]
-pub struct Call {
+pub struct New {
     pub callee: Value,
     pub args: Vec<Value>,
     pub keywords: Vec<String>,
+}
+
+#[derive(Debug)]
+pub struct Call {
+    pub callee: Value,
+    pub args: Vec<Value>,
 }
 
 impl Call {
@@ -192,16 +198,11 @@ impl Call {
         Self {
             callee,
             args: vec![],
-            keywords: vec![],
         }
     }
 
     pub fn with_args(callee: Value, args: Vec<Value>) -> Self {
-        Self {
-            callee,
-            args,
-            keywords: vec![],
-        }
+        Self { callee, args }
     }
 }
 
@@ -302,6 +303,7 @@ pub enum ValueKind {
     Receiver,
     Cast(Box<Cast>),
     Call(Box<Call>),
+    New(Box<New>),
     Unwrap(Box<Value>),
     Try(Box<Value>),
     TypeOf(Box<Value>),

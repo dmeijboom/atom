@@ -186,7 +186,7 @@ pub class RangeStep extends GetIterator {
     let range;
     let step;
 
-    pub static fn new(range, step) -> RangeStep(range: range, step: step);
+    pub static fn new(range, step) -> RangeStep{range: range, step: step};
     pub fn iter() -> RangeIterator.new(this.range.start, this.range.end, this.step);
 }
 
@@ -204,7 +204,7 @@ pub class RangeIterator {
     let step;
     let mut index;
 
-    pub static fn new(start, end, step) -> RangeIterator(start: start, end: end, step: step, index: 0);
+    pub static fn new(start, end, step) -> RangeIterator{start: start, end: end, step: step, index: 0};
 
     pub fn next() {
         let index = this.start + this.index;
@@ -226,7 +226,7 @@ pub interface Iterable {
 }
 
 pub mixin GetIterator {
-    pub fn enum() -> Enum(iterator: this.iter());
+    pub fn enum() -> Enum{iterator: this.iter()};
 
     pub fn collect() {
         let mut output = [];
@@ -262,7 +262,7 @@ pub mixin GetIterator {
         return last;
     }
 
-    pub fn filter(filter) -> Filter(iterator: this.iter(), filterFn: filter);
+    pub fn filter(filter) -> Filter{iterator: this.iter(), filterFn: filter};
 }
 
 pub class FilterIterator {
@@ -288,7 +288,7 @@ pub class Filter extends GetIterator {
     let iterator;
     let filterFn;
 
-    pub fn iter() -> FilterIterator(iterator: this.iterator, filterFn: this.filterFn);
+    pub fn iter() -> FilterIterator{iterator: this.iterator, filterFn: this.filterFn};
 }
 
 pub class EnumIter {
@@ -312,14 +312,14 @@ pub class EnumIter {
 pub class Enum extends GetIterator {
     let iterator;
 
-    pub fn iter() -> EnumIter(iterator: this.iterator, index: 0);
+    pub fn iter() -> EnumIter{iterator: this.iterator, index: 0};
 }
 
 pub class ArrayIterator {
     let array;
     let mut index;
 
-    pub static fn new(array) -> ArrayIterator(array: array, index: 0);
+    pub static fn new(array) -> ArrayIterator{array: array, index: 0};
 
     pub fn next() {
         if this.index >= this.array.len() {

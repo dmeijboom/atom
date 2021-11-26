@@ -19,13 +19,13 @@ class Test {
 }
 
 fn composition(t) {
-    let wrapper = Wrapper(test: Test(value: 10));
+    let wrapper = Wrapper{test: Test{value: 10}};
 
     t.assert(10, wrapper.test.value);
 }
 
 fn instanceMethodCall(t) {
-    let test = Test(value: 25);
+    let test = Test{value: 25};
 
     t.assert(100, test.foo());
 }
@@ -35,7 +35,7 @@ fn staticMethodCall(t) {
 }
 
 fn wrapReferenceType(t) {
-    let test = Test(value: {});
+    let test = Test{value: {}};
 
     t.assertNil(test.value.get("name"));
 
@@ -45,7 +45,7 @@ fn wrapReferenceType(t) {
 }
 
 fn useBeforeDeclared(t) {
-    let test = Late(value: 10);
+    let test = Late{value: 10};
 
     t.assert(10, test.value);
 }

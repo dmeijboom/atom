@@ -95,9 +95,7 @@ pub enum Code {
     Return,
     Cast(usize),
     Call(usize),
-    CallKeywords(([usize; 2], usize)),
     CallVoid(usize),
-    CallKeywordsVoid(([usize; 2], usize)),
     TailCall(usize),
     Store(usize),
     StoreMut(usize),
@@ -111,6 +109,7 @@ pub enum Code {
     LoadTarget,
     LoadIndex,
     MakeSlice,
+    MakeInstance(([usize; 2], usize)),
     StoreIndex,
     LoadMember(usize),
     StoreMember(usize),
@@ -204,21 +203,7 @@ impl Code {
             Code::Return => "  return".to_string(),
             Code::Cast(id) => format!("  cast({})", format_name(*id, ir)),
             Code::Call(arg_count) => format!("  call(arg_count: {})", arg_count),
-            Code::CallKeywords((keywords, arg_count)) => {
-                format!(
-                    "  callKw({}, arg_count: {})",
-                    format_names(*keywords, ir),
-                    arg_count
-                )
-            }
             Code::CallVoid(arg_count) => format!("  callVoid(arg_count: {})", arg_count),
-            Code::CallKeywordsVoid((keywords, arg_count)) => {
-                format!(
-                    "  callKwVoid({}, arg_count: {})",
-                    format_names(*keywords, ir),
-                    arg_count
-                )
-            }
             Code::TailCall(arg_count) => format!("  tailCall(arg_count: {})", arg_count),
             Code::StoreTryOk => "  storeTryResult".to_string(),
             Code::Store(id) => format!("  store(id: {})", id),
@@ -232,6 +217,13 @@ impl Code {
             Code::LoadInterface(id) => format!("  loadInterface(id: {})", id),
             Code::LoadIndex => "  loadIndex".to_string(),
             Code::MakeSlice => "  makeSlice".to_string(),
+            Code::MakeInstance((keywords, arg_count)) => {
+                format!(
+                    "  makeInstance({}, field_count: {})",
+                    format_names(*keywords, ir),
+                    arg_count
+                )
+            }
             Code::LoadTarget => "  loadTarget".to_string(),
             Code::StoreIndex => "  storeIndex".to_string(),
             Code::LoadMember(id) => format!("  loadMember({})", format_name(*id, ir)),
@@ -305,7 +297,7 @@ impl IR {
                 Code::LoadMember(id) => *id += size,
                 Code::StoreMember(id) => *id += size,
                 Code::Cast(id) => *id += size,
-                Code::CallKeywords((keywords, _)) | Code::CallKeywordsVoid((keywords, _)) => {
+                Code::MakeInstance((keywords, _)) => {
                     for keyword in keywords.iter_mut() {
                         *keyword += size;
                     }

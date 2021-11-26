@@ -174,14 +174,25 @@ impl<'c> Compiler<'c> {
                     ValueKind::Name(ident.name.clone())
                 }
             }
-            Expr::Call(call) => {
+            Expr::New(new) => {
                 let mut args = vec![];
                 let mut keywords = vec![];
 
-                for arg in call.keyword_args.iter() {
+                for arg in new.args.iter() {
                     keywords.push(arg.name.clone());
                     args.push(self.compile_expr(&arg.value)?);
                 }
+
+                let callee = self.compile_expr(&new.callee)?;
+
+                ValueKind::New(Box::new(New {
+                    callee,
+                    args,
+                    keywords,
+                }))
+            }
+            Expr::Call(call) => {
+                let mut args = vec![];
 
                 for arg in call.args.iter() {
                     args.push(self.compile_expr(arg)?);
@@ -189,11 +200,7 @@ impl<'c> Compiler<'c> {
 
                 let callee = self.compile_expr(&call.callee)?;
 
-                ValueKind::Call(Box::new(Call {
-                    callee,
-                    args,
-                    keywords,
-                }))
+                ValueKind::Call(Box::new(Call::with_args(callee, args)))
             }
             Expr::Cast(cast) => {
                 let value = self.compile_expr(&cast.expr)?;

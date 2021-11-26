@@ -198,48 +198,15 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_call(
-        &mut self,
-        keywords: Option<[usize; 2]>,
-        arg_count: usize,
-        store_return_value: bool,
-    ) -> Result<()> {
+    fn eval_call(&mut self, arg_count: usize, store_return_value: bool) -> Result<()> {
         let value = self.stack.pop();
 
         match value {
-            Value::Fn(func) => {
-                if keywords.is_some() {
-                    return Err(RuntimeError::new(
-                        ErrorKind::FatalError,
-                        "keywords are not supported".to_string(),
-                    ));
-                }
-
-                self.eval_func(Target::Fn(func), store_return_value, arg_count)
-            }
+            Value::Fn(func) => self.eval_func(Target::Fn(func), store_return_value, arg_count),
             Value::Closure(closure) => {
-                if keywords.is_some() {
-                    return Err(RuntimeError::new(
-                        ErrorKind::FatalError,
-                        "keywords are not supported".to_string(),
-                    ));
-                }
-
                 self.eval_func(Target::Closure(closure), store_return_value, arg_count)
             }
-            Value::Class(class) => {
-                self.eval_new_instance(class, keywords, arg_count, store_return_value)
-            }
-            Value::Method(method) => {
-                if keywords.is_some() {
-                    return Err(RuntimeError::new(
-                        ErrorKind::FatalError,
-                        "keywords are not supported".to_string(),
-                    ));
-                }
-
-                self.eval_method_call(method, arg_count, store_return_value)
-            }
+            Value::Method(method) => self.eval_method_call(method, arg_count, store_return_value),
             _ => Err(RuntimeError::new(
                 ErrorKind::FatalError,
                 format!("type '{}' is not callable", value.get_type().name()),
@@ -247,20 +214,11 @@ impl Machine {
         }
     }
 
-    fn eval_new_instance(
-        &mut self,
-        class: AtomRef<Class>,
-        keywords: Option<[usize; 2]>,
-        arg_count: usize,
-        store_return_value: bool,
-    ) -> Result<()> {
-        let keywords = if let Some(keywords) = keywords {
-            keywords[0]..keywords[1]
-        } else {
-            0..0
-        };
+    fn eval_new_instance(&mut self, keywords: [usize; 2], field_count: usize) -> Result<()> {
+        let class: AtomRef<Class> = self.stack.pop().convert()?;
+        let keywords = keywords[0]..keywords[1];
 
-        if keywords.len() != arg_count {
+        if keywords.len() != field_count {
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
                 format!(
@@ -328,13 +286,11 @@ impl Machine {
             }
         };
 
-        if store_return_value {
-            self.stack
-                .push(Value::Object(AtomRefMut::new(AtomRef::new(Object::new(
-                    class,
-                    AtomRefMut::new(AtomRef::from(buffer)),
-                )))));
-        }
+        self.stack
+            .push(Value::Object(AtomRefMut::new(AtomRef::new(Object::new(
+                class,
+                AtomRefMut::new(AtomRef::from(buffer)),
+            )))));
 
         Ok(())
     }
@@ -527,20 +483,17 @@ impl Machine {
             Code::AssertIsType => self.eval_assert_is_type()?,
             Code::Unwrap => self.eval_unwrap()?,
             Code::Cast(segment_id) => self.eval_cast(segment_id)?,
-            Code::Call(arg_count) => self.eval_call(None, arg_count, true)?,
-            Code::CallKeywords((keywords, arg_count)) => {
-                self.eval_call(Some(keywords), arg_count, true)?
-            }
-            Code::CallVoid(arg_count) => self.eval_call(None, arg_count, false)?,
-            Code::CallKeywordsVoid((keywords, arg_count)) => {
-                self.eval_call(Some(keywords), arg_count, false)?
-            }
+            Code::Call(arg_count) => self.eval_call(arg_count, true)?,
+            Code::CallVoid(arg_count) => self.eval_call(arg_count, false)?,
             Code::TailCall(arg_count) => self.eval_tail_call(arg_count)?,
             Code::Store(id) => self.eval_store(id, false)?,
             Code::StoreMut(id) => self.eval_store(id, true)?,
             Code::StoreTryOk => self.eval_store_try_ok()?,
             Code::LoadIndex => self.eval_load_index(false)?,
             Code::MakeSlice => self.eval_make_slice()?,
+            Code::MakeInstance((keywords, field_count)) => {
+                self.eval_new_instance(keywords, field_count)?
+            }
             Code::StoreIndex => self.eval_store_index()?,
             Code::LoadMember(segment_id) => self.eval_load_member(segment_id)?,
             Code::StoreMember(segment_id) => self.eval_store_member(segment_id)?,

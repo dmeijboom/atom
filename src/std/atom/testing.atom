@@ -17,10 +17,10 @@ pub fn runTests(tests) {
 }
 
 fn runTest(test) {
-    let testCase = TestCase(
+    let testCase = TestCase{
         hit: false,
         errors: []
-    );
+    };
 
     test(testCase);
 

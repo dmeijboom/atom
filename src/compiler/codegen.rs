@@ -129,22 +129,29 @@ impl<'c> CodeGenerator<'c> {
                     self.compile_value(scope, &call.callee)?;
                 }
 
-                let code = if call.keywords.is_empty() {
-                    Code::Call(call.args.len())
-                } else {
-                    let mut segment_ids = vec![];
+                self.ir.add(Code::Call(call.args.len()), location);
+            }
+            ValueKind::New(new) => {
+                self.compile_values(scope, &new.args)?;
+                self.compile_value(scope, &new.callee)?;
 
-                    for keyword in call.keywords.iter() {
-                        segment_ids.push(self.ir.add_data(keyword.clone()));
-                    }
+                let mut segment_ids = vec![];
 
-                    Code::CallKeywords((
-                        [segment_ids[0], segment_ids[segment_ids.len() - 1] + 1],
-                        call.args.len(),
-                    ))
-                };
+                for keyword in new.keywords.iter() {
+                    segment_ids.push(self.ir.add_data(keyword.clone()));
+                }
 
-                self.ir.add(code, location);
+                self.ir.add(
+                    Code::MakeInstance((
+                        if segment_ids.is_empty() {
+                            [0, 0]
+                        } else {
+                            [segment_ids[0], segment_ids[segment_ids.len() - 1] + 1]
+                        },
+                        new.args.len(),
+                    )),
+                    location,
+                );
             }
             ValueKind::Unwrap(unwrap) => {
                 self.compile_value(scope, unwrap)?;
