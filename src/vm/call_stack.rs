@@ -108,6 +108,7 @@ impl CallStack {
         &mut self.data[index]
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
