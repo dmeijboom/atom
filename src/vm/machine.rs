@@ -1478,7 +1478,7 @@ impl Machine {
         Ok(())
     }
 
-    pub fn eval(&mut self, module: &str, entrypoint: AtomRef<Fn>) -> Result<()> {
+    pub fn eval(&mut self, module: &str, entrypoint: AtomRef<Fn>) -> Result<Option<Value>> {
         let module_id = self.module_cache.get_module(module)?.id;
         let locals = match entrypoint.instructions.get_locals_size() {
             Some(size) => Vec::with_capacity(size),
@@ -1486,16 +1486,12 @@ impl Machine {
         };
 
         self.call_stack
-            .push(StackFrame::new(Target::Fn(entrypoint), false, locals));
+            .push(StackFrame::new(Target::Fn(entrypoint), true, locals));
 
         self._eval(module_id)
             .map_err(|e| e.with_stack_trace(self.call_stack.rewind()))?;
 
-        Ok(())
-    }
-
-    pub fn take_result(&mut self) -> Option<Value> {
-        self.stack.try_pop()
+        Ok(self.stack.try_pop())
     }
 }
 

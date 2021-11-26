@@ -129,13 +129,11 @@ impl Engine {
                     ))
                 })?;
             let entrypoint = AtomRef::clone(entrypoint);
-
-            self.machine.eval("main", entrypoint)?;
-
+            let return_value = self.machine.eval("main", entrypoint)?;
             let mut output = RunOutput { value: None };
 
             if opts.capture_result {
-                output.value = self.machine.take_result();
+                output.value = return_value;
             }
 
             return Ok(output);
