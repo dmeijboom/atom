@@ -5,7 +5,7 @@ mod encoding;
 mod io;
 mod sys;
 
-pub const DEFAULT_IMPORTS: &[&str; 16] = &[
+pub const DEFAULT_IMPORTS: &[&str; 17] = &[
     "std.core.rt_raise",
     "std.core.println",
     // Also all basic types (for type assertions for example)
@@ -13,6 +13,7 @@ pub const DEFAULT_IMPORTS: &[&str; 16] = &[
     "std.core.String",
     "std.core.Int",
     "std.core.Float",
+    "std.core.Tuple",
     "std.core.Char",
     "std.core.Byte",
     "std.core.Bool",

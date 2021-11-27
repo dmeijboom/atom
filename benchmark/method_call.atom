@@ -1,9 +1,7 @@
 class Toggle {
     let mut bool;
 
-    fn value() {
-        return this.bool;
-    }
+    fn value() -> this.bool;
 
     fn activate() {
         this.bool = !this.bool;

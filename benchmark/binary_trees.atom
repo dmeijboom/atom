@@ -1,17 +1,19 @@
 fn makeTree(value, depth) {
     if depth == 0 {
-        return (nil, value, nil);
+        return value;
     }
 
     return (makeTree((value + value) - 1, depth - 1), value, makeTree(value + value, depth - 1));
 }
 
 fn checkTree(node) {
-    if node[0] == nil {
-        return node[1];
+    if node is Tuple {
+        let (left, value, right) = node;
+
+        return value + checkTree(left) - checkTree(right);
     }
 
-    return node[1] + checkTree(node[0]) - checkTree(node[2]);
+    return node;
 }
 
 fn main() {

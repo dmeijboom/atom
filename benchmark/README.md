@@ -30,7 +30,7 @@ It's very likely that atom is an order of magnitude slower than presented here.
 | ruby | 0.24s |
 | python | 0.37s |
 | python3 | 0.38s |
-| **atom** | 0.45s |
+| **atom** | 0.44s |
 | lua | 0.52s |
 
 ## Method Call
