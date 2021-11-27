@@ -4,6 +4,8 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut, Range};
 
+use crate::runtime::{atom_string_to_str, AtomString};
+
 #[derive(Debug, Clone, PartialEq, Hash, Default)]
 pub struct Location {
     pub line: usize,
@@ -56,8 +58,8 @@ pub enum Code {
     ConstBool(bool),
     ConstFloat(f64),
     ConstChar(char),
-    ConstSymbol(String),
-    ConstString(String),
+    ConstSymbol(usize),
+    ConstString(usize),
     MakeArray(usize),
     MakeTuple(usize),
     MakeTemplate(usize),
@@ -122,7 +124,7 @@ fn format_name(id: usize, ir: Option<&IR>) -> String {
         } else {
             "id".to_string()
         },
-        ir.map(|ir| ir.get_data(id).clone())
+        ir.map(|ir| atom_string_to_str(ir.get_data(id)).to_string())
             .unwrap_or_else(|| id.to_string())
     )
 }
@@ -138,7 +140,7 @@ fn format_names(range: [usize; 2], ir: Option<&IR>) -> String {
         (range[0]..range[1])
             .map(|id| format!(
                 "'{}'",
-                ir.map(|ir| ir.get_data(id).clone())
+                ir.map(|ir| atom_string_to_str(ir.get_data(id)).to_string())
                     .unwrap_or_else(|| id.to_string())
             ))
             .collect::<Vec<_>>()
@@ -161,8 +163,8 @@ impl Code {
             Code::ConstFloat(val) => format!("  constFloat({})", val),
             Code::ConstChar(val) => format!("  constChar({})", val),
             Code::ConstByte(val) => format!("  constByte({})", val),
-            Code::ConstSymbol(name) => format!("  constSymbol({})", name),
-            Code::ConstString(val) => format!("  constString({})", val),
+            Code::ConstSymbol(id) => format!("  constSymbol({})", format_name(*id, ir)),
+            Code::ConstString(id) => format!("  constString({})", format_name(*id, ir)),
             Code::MakeArray(size) => format!("  makeArray(size: {})", size),
             Code::MakeTuple(size) => format!("  makeTuple(size: {})", size),
             Code::MakeTemplate(size) => format!("  makeTemplate(size: {})", size),
@@ -238,7 +240,7 @@ impl Debug for Code {
 #[derive(Clone, Default)]
 pub struct IR {
     codes: Vec<Code>,
-    data: Vec<String>,
+    data: Vec<AtomString>,
     locations: HashMap<usize, Location>,
     locals_size: Option<usize>,
 }
@@ -263,13 +265,13 @@ impl IR {
     }
 
     #[inline]
-    pub fn get_data(&self, id: usize) -> &String {
+    pub fn get_data(&self, id: usize) -> &AtomString {
         &self.data[id]
     }
 
-    pub fn add_data(&mut self, val: String) -> usize {
+    pub fn add_data(&mut self, val: &str) -> usize {
         let id = self.data.len();
-        self.data.push(val);
+        self.data.push(AtomString::from(val.as_bytes()));
 
         id
     }

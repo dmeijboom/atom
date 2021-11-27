@@ -112,7 +112,7 @@ pub struct Fn {
     pub public: bool,
     pub origin: Origin,
     pub args: IndexMap<String, FnArg>,
-    pub instructions: IR,
+    pub ir: IR,
 }
 
 impl Fn {
@@ -131,7 +131,7 @@ impl Fn {
             public,
             void,
             kind: FnKind::Native,
-            instructions,
+            ir: instructions,
         }
     }
 
@@ -143,7 +143,7 @@ impl Fn {
             public,
             void: false,
             kind: FnKind::External(func),
-            instructions: IR::new(),
+            ir: IR::new(),
         }
     }
 }

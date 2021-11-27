@@ -3,6 +3,7 @@ use std::mem;
 
 use strum_macros::EnumIter;
 
+use crate::runtime::atom_ref::atom_string_to_str;
 use crate::runtime::types::*;
 
 use super::atom_ref::{AtomArray, AtomRef, AtomRefMut, AtomString};
@@ -175,8 +176,7 @@ impl<'v> Convert<&'v str> for &'v Value {
     fn convert(self) -> Result<&'v str> {
         let s: &AtomString = self.convert()?;
 
-        // @TODO: this is only valid for UTF-8 strings
-        Ok(unsafe { mem::transmute(s.as_ref()) })
+        Ok(atom_string_to_str(s))
     }
 }
 
@@ -184,8 +184,7 @@ impl<'v> Convert<&'v str> for Value {
     fn convert(self) -> Result<&'v str> {
         let s: AtomString = self.convert()?;
 
-        // @TODO: this is only valid for UTF-8 strings
-        Ok(unsafe { mem::transmute(s.as_ref()) })
+        unsafe { Ok(mem::transmute(s.as_ref())) }
     }
 }
 

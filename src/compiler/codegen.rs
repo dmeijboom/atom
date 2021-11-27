@@ -74,20 +74,25 @@ impl<'c> CodeGenerator<'c> {
 
         match &value.kind {
             ValueKind::Const(val) => {
-                self.ir.add(
-                    match val {
-                        Const::Int64(val) => Code::ConstInt64(*val),
-                        Const::Uint64(val) => Code::ConstUint64(*val),
-                        Const::Int32(val) => Code::ConstInt32(*val),
-                        Const::Byte(val) => Code::ConstByte(*val),
-                        Const::Float(val) => Code::ConstFloat(*val),
-                        Const::Bool(val) => Code::ConstBool(*val),
-                        Const::Char(val) => Code::ConstChar(*val),
-                        Const::Symbol(val) => Code::ConstSymbol(val.clone()),
-                        Const::String(val) => Code::ConstString(val.clone()),
-                    },
-                    location,
-                );
+                let code = match val {
+                    Const::Int64(val) => Code::ConstInt64(*val),
+                    Const::Uint64(val) => Code::ConstUint64(*val),
+                    Const::Int32(val) => Code::ConstInt32(*val),
+                    Const::Byte(val) => Code::ConstByte(*val),
+                    Const::Float(val) => Code::ConstFloat(*val),
+                    Const::Bool(val) => Code::ConstBool(*val),
+                    Const::Char(val) => Code::ConstChar(*val),
+                    Const::Symbol(val) => {
+                        let segment_id = self.ir.add_data(val);
+                        Code::ConstSymbol(segment_id)
+                    }
+                    Const::String(val) => {
+                        let segment_id = self.ir.add_data(val);
+                        Code::ConstString(segment_id)
+                    }
+                };
+
+                self.ir.add(code, location);
             }
             ValueKind::Receiver => self.ir.add(Code::LoadReceiver, location),
             ValueKind::Local(id) => self.ir.add(Code::Load(*id), location),
@@ -110,7 +115,7 @@ impl<'c> CodeGenerator<'c> {
             ValueKind::Cast(cast) => {
                 self.compile_value(scope, &cast.value)?;
 
-                let segment_id = self.ir.add_data(cast.dest.clone());
+                let segment_id = self.ir.add_data(&cast.dest);
 
                 self.ir.add(Code::Cast(segment_id), location);
             }
@@ -138,7 +143,7 @@ impl<'c> CodeGenerator<'c> {
                 let mut segment_ids = vec![];
 
                 for keyword in new.keywords.iter() {
-                    segment_ids.push(self.ir.add_data(keyword.clone()));
+                    segment_ids.push(self.ir.add_data(&keyword));
                 }
 
                 self.ir.add(
@@ -207,7 +212,7 @@ impl<'c> CodeGenerator<'c> {
             ValueKind::Member(member) => {
                 self.compile_value(scope, &member.object)?;
 
-                let segment_id = self.ir.add_data(member.member.clone());
+                let segment_id = self.ir.add_data(&member.member);
 
                 self.ir.add(Code::LoadMember(segment_id), location);
             }
@@ -267,7 +272,9 @@ impl<'c> CodeGenerator<'c> {
                 for component in template.iter() {
                     match component {
                         TemplateComponent::String(val) => {
-                            self.ir.add(Code::ConstString(val.to_string()), location)
+                            let segment_id = self.ir.add_data(val);
+
+                            self.ir.add(Code::ConstString(segment_id), location)
                         }
                         TemplateComponent::Value(value) => self.compile_value(scope, value)?,
                     }
@@ -306,7 +313,7 @@ impl<'c> CodeGenerator<'c> {
                     self.compile_value(scope, &member.object)?;
                     self.compile_value(scope, &assign.right)?;
 
-                    let segment_id = self.ir.add_data(member.member.clone());
+                    let segment_id = self.ir.add_data(&member.member);
 
                     self.ir.add(Code::StoreMember(segment_id), location);
                 }

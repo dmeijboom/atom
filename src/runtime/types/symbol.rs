@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::runtime::AtomString;
+use crate::runtime::{atom_string_to_str, AtomString};
 
 /// Symbols are unique names in atom encoded as a byte slice or constant value
 #[derive(Debug, Clone, PartialEq)]
@@ -9,10 +9,8 @@ pub struct Symbol {
 }
 
 impl Symbol {
-    pub fn new(name: String) -> Self {
-        Self {
-            name: AtomString::from(name.into_bytes()),
-        }
+    pub fn new(name: AtomString) -> Self {
+        Self { name }
     }
 }
 
@@ -26,8 +24,7 @@ impl From<&str> for Symbol {
 
 impl AsRef<str> for Symbol {
     fn as_ref(&self) -> &str {
-        // Use of unsafe is fine as we use a String to create the symbol
-        unsafe { std::str::from_utf8_unchecked(self.name.as_ref()) }
+        atom_string_to_str(&self.name)
     }
 }
 

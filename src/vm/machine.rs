@@ -5,7 +5,8 @@ use strum::IntoEnumIterator;
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
 use crate::runtime::{
-    make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRefMut, ErrorKind,
+    atom_string_to_str, make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRefMut,
+    AtomString, ErrorKind,
 };
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnKind, Input, Int, Interface, Method, Object,
@@ -243,10 +244,10 @@ impl Machine {
         let function = &self.call_stack.current().function;
 
         for (i, segment_id) in keywords.clone().enumerate() {
-            let keyword = function.instructions.get_data(segment_id);
+            let keyword = atom_string_to_str(function.ir.get_data(segment_id));
 
             if let Some((field_name, _)) = class.fields.get_index(i) {
-                if is_sorted && field_name != keyword.as_str() {
+                if is_sorted && field_name != keyword {
                     is_sorted = false;
                 }
 
@@ -255,7 +256,7 @@ impl Machine {
 
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
-                format!("invalid field '{}' on {}", keyword.as_str(), class.as_ref(),),
+                format!("invalid field '{}' on {}", keyword, class.as_ref(),),
             ));
         }
 
@@ -268,10 +269,9 @@ impl Machine {
 
             while buffer.len() < keywords.len() {
                 for (name, _) in class.fields.iter().rev() {
-                    if let Some(index) = keywords
-                        .iter()
-                        .position(|segment_id| name == function.instructions.get_data(*segment_id))
-                    {
+                    if let Some(index) = keywords.iter().position(|segment_id| {
+                        name == atom_string_to_str(function.ir.get_data(*segment_id))
+                    }) {
                         if index <= buffer.len() {
                             buffer.insert(index, self.stack.pop());
                         }
@@ -351,7 +351,7 @@ impl Machine {
                     ));
                 }
 
-                let locals_size = func.instructions.get_locals_size().unwrap_or(arg_count);
+                let locals_size = func.ir.get_locals_size().unwrap_or(arg_count);
 
                 match self.call_stack.recycle() {
                     Some(mut frame) => {
@@ -416,22 +416,25 @@ impl Machine {
         self.stack.push(Value::Byte(byte));
     }
 
-    fn eval_const_string(&mut self, s: String) {
-        self.stack
-            .push(Value::String(AtomRef::from(s.into_bytes())));
+    fn eval_const_string(&mut self, segment_id: usize) {
+        let s = self.call_stack.current().function.ir.get_data(segment_id);
+
+        self.stack.push(Value::String(AtomString::clone(s)));
     }
 
-    fn eval_symbol(&mut self, name: String) {
-        self.stack.push(if name == "nil" {
+    fn eval_symbol(&mut self, segment_id: usize) {
+        let s = self.call_stack.current().function.ir.get_data(segment_id);
+
+        self.stack.push(if atom_string_to_str(s) == "nil" {
             Value::Nil(AtomNil {})
         } else {
-            Value::Symbol(Symbol::new(name))
+            Value::Symbol(Symbol::new(AtomString::clone(s)))
         });
     }
 
     fn eval_current(&mut self) -> Result<Flow> {
         let frame = self.call_stack.current_mut();
-        let code = match frame.function.instructions.get(frame.position) {
+        let code = match frame.function.ir.get(frame.position) {
             None => return Ok(Flow::Return(false)),
             Some(code) => code.clone(),
         };
@@ -448,11 +451,11 @@ impl Machine {
             Code::ConstInt8(val) => self.eval_const(Int::Int8(val)),
             Code::ConstUint8(val) => self.eval_const(Int::Uint8(val)),
             Code::ConstBool(val) => self.eval_const(val),
-            Code::ConstSymbol(name) => self.eval_symbol(name),
+            Code::ConstSymbol(segment_id) => self.eval_symbol(segment_id),
             Code::ConstFloat(val) => self.eval_const(val),
             Code::ConstChar(val) => self.eval_const(val),
             Code::ConstByte(val) => self.eval_const_byte(val),
-            Code::ConstString(val) => self.eval_const_string(val),
+            Code::ConstString(segment_id) => self.eval_const_string(segment_id),
             Code::MakeRange => self.eval_make_range()?,
             Code::MakeTuple(len) => self.eval_make_tuple(len)?,
             Code::GetType => self.eval_get_type()?,
@@ -788,12 +791,8 @@ impl Machine {
     }
 
     fn eval_cast(&mut self, segment_id: usize) -> Result<()> {
-        let type_name = self
-            .call_stack
-            .current()
-            .function
-            .instructions
-            .get_data(segment_id);
+        let type_name =
+            atom_string_to_str(self.call_stack.current().function.ir.get_data(segment_id));
         let value = self.stack.pop();
 
         if value.get_type().name() == type_name {
@@ -975,7 +974,7 @@ impl Machine {
 
     fn eval_load_member(&mut self, segment_id: usize) -> Result<()> {
         let frame = self.call_stack.current();
-        let member = frame.function.instructions.get_data(segment_id);
+        let member = atom_string_to_str(frame.function.ir.get_data(segment_id));
         let receiver = self.stack.pop();
 
         if let Value::Class(class) = &receiver {
@@ -1060,7 +1059,7 @@ impl Machine {
 
     fn eval_store_member(&mut self, segment_id: usize) -> Result<()> {
         let frame = self.call_stack.current();
-        let member = frame.function.instructions.get_data(segment_id);
+        let member = atom_string_to_str(frame.function.ir.get_data(segment_id));
         let value = self.stack.pop();
         let object = self.stack.pop();
         let class = self.get_class(&object)?;
@@ -1258,14 +1257,7 @@ impl Machine {
     }
 
     fn find_label(&self, search: &str) -> Result<usize> {
-        for (i, code) in self
-            .call_stack
-            .current()
-            .function
-            .instructions
-            .iter()
-            .enumerate()
-        {
+        for (i, code) in self.call_stack.current().function.ir.iter().enumerate() {
             if let Code::SetLabel(label) = code {
                 if label == search {
                     return Ok(i);
@@ -1351,9 +1343,7 @@ impl Machine {
                         let mut e = err.with_module(&module.name);
                         let frame = self.call_stack.current();
 
-                        if let Some(location) =
-                            frame.function.instructions.get_location(frame.position - 1)
-                        {
+                        if let Some(location) = frame.function.ir.get_location(frame.position - 1) {
                             e = e.with_location(location.clone());
                         }
 
@@ -1374,7 +1364,7 @@ impl Machine {
 
     pub fn eval(&mut self, module: &str, entrypoint: AtomRef<Fn>) -> Result<Option<Value>> {
         let module_id = self.module_cache.get_module(module)?.id;
-        let locals = match entrypoint.instructions.get_locals_size() {
+        let locals = match entrypoint.ir.get_locals_size() {
             Some(size) => Vec::with_capacity(size),
             None => vec![],
         };

@@ -107,16 +107,12 @@ impl<'c> Compiler<'c> {
 
                 let local = self.scope.set_local(name.clone(), mutable, vec![])?;
 
-                block
-                    .statements
-                    .push(self.build_assign_local(local, value));
+                block.statements.push(self.build_assign_local(local, value));
             }
             Variable::Tuple(names) | Variable::Array(names) => {
                 let tmp = self.scope.set_local(self.slugs.get("tmp"), false, vec![])?;
 
-                block
-                    .statements
-                    .push(self.build_assign_local(tmp, value));
+                block.statements.push(self.build_assign_local(tmp, value));
 
                 for (i, name) in names.iter().enumerate() {
                     if self.scope.get_local(name, false).is_some() {
