@@ -81,7 +81,6 @@ impl StackFrame {
         self.target = target;
         self.return_addr.truncate(0);
         self.store_return_value = store_return_value;
-        self.locals.truncate(0);
     }
 }
 
@@ -107,6 +106,11 @@ impl CallStack {
 
     #[inline]
     pub fn pop(&mut self) {
+        // We need to make sure all locals are dropped as frames will be recycled
+        if let Some(frame) = self.data.last_mut() {
+            frame.locals.truncate(0);
+        }
+
         self.data.pop()
     }
 

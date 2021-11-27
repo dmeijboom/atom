@@ -51,6 +51,11 @@ impl<T> RecycleVec<T> {
     pub fn last(&self) -> Option<&T> {
         self.items.last()
     }
+
+    #[inline]
+    pub fn last_mut(&mut self) -> Option<&mut T> {
+        self.items.last_mut()
+    }
 }
 
 impl<T> Index<usize> for RecycleVec<T> {
