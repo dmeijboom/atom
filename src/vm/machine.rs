@@ -158,14 +158,13 @@ impl Machine {
         Ok(())
     }
 
-    fn get_class(&self, value: &Value) -> Result<AtomRef<Class>> {
-        match &value {
-            Value::Object(object) => Ok(AtomRef::clone(&object.class)),
+    fn get_class<'c>(&'c self, value: &'c Value) -> Result<&'c AtomRef<Class>> {
+        match value {
+            Value::Object(object) => Ok(&object.class),
             _ => {
                 // We need to get `index - 1` as the Void type is omitted in the type classes cache
                 self.type_classes
                     .get(value.get_type() as usize - 1)
-                    .map(AtomRef::clone)
                     .ok_or_else(|| {
                         RuntimeError::new(
                             ErrorKind::FatalError,
@@ -558,16 +557,16 @@ impl Machine {
             }
         });
 
-        self.stack.push(Value::Tuple(AtomArray::from(values)));
+        self.stack.push(Value::Tuple(values));
 
         Ok(())
     }
 
     fn eval_get_type(&mut self) -> Result<()> {
         let value = self.stack.pop();
-        let class = self.get_class(&value)?;
+        let class = AtomRef::clone(self.get_class(&value)?);
 
-        self.stack.push(Value::Class(AtomRef::clone(&class)));
+        self.stack.push(Value::Class(class));
 
         Ok(())
     }
@@ -767,15 +766,17 @@ impl Machine {
         let left_class = self.get_class(&left)?;
 
         if let Value::Class(right_class) = right {
-            self.stack
-                .push(Value::Bool(left_class.as_ref() == right_class.as_ref()));
+            let equals = Value::Bool(left_class.as_ref() == right_class.as_ref());
+
+            self.stack.push(equals);
 
             return Ok(());
         }
 
         if let Value::Interface(interface) = right {
-            self.stack
-                .push(Value::Bool(self.validate_class(&left_class, &interface)));
+            let equals = Value::Bool(self.validate_class(&left_class, &interface));
+
+            self.stack.push(equals);
 
             return Ok(());
         }
@@ -976,85 +977,75 @@ impl Machine {
         let frame = self.call_stack.current();
         let member = frame.function.instructions.get_data(segment_id);
         let receiver = self.stack.pop();
-        let (class, receiver) = if let Value::Class(class) = &receiver {
-            (AtomRef::clone(class), Receiver::Unbound)
-        } else {
-            (self.get_class(&receiver)?, Receiver::Bound(receiver))
-        };
 
-        match &receiver {
-            Receiver::Bound(value) => {
-                if let Some((id, _, field)) = class.fields.get_full(member) {
-                    if let Value::Object(object) = value {
-                        if !field.public
-                            && frame.function.origin.module_id != class.origin.module_id
-                        {
-                            return Err(RuntimeError::new(
-                                ErrorKind::FatalError,
-                                format!(
-                                    "unable to access private field: {}.{}",
-                                    class.as_ref(),
-                                    member,
-                                ),
-                            ));
-                        }
+        if let Value::Class(class) = &receiver {
+            if let Some(func) = class.static_methods.get(member) {
+                self.stack.push(Value::Method(AtomRef::new(Method {
+                    receiver: Receiver::Unbound,
+                    func: AtomRef::clone(func),
+                    is_static: true,
+                })));
 
-                        let field = object.fields.get(id).cloned().ok_or_else(|| {
-                            RuntimeError::new(
-                                ErrorKind::FatalError,
-                                format!(
-                                    "unable to get unknown field '{}' of class: {}",
-                                    member,
-                                    class.as_ref()
-                                ),
-                            )
-                        })?;
+                return Ok(());
+            }
+        }
 
-                        self.stack.push(field);
+        let class = self.get_class(&receiver)?;
 
-                        return Ok(());
-                    }
-
+        if let Some((id, _, field)) = class.fields.get_full(member) {
+            if let Value::Object(object) = &receiver {
+                if !field.public && frame.function.origin.module_id != class.origin.module_id {
                     return Err(RuntimeError::new(
                         ErrorKind::FatalError,
-                        format!("unable to lookup field on: {}", value.get_type().name(),),
+                        format!(
+                            "unable to access private field: {}.{}",
+                            class.as_ref(),
+                            member,
+                        ),
                     ));
                 }
 
-                if let Some(func) = class.methods.get(member) {
-                    if !func.public && frame.function.origin.module_id != class.origin.module_id {
-                        return Err(RuntimeError::new(
-                            ErrorKind::FatalError,
-                            format!(
-                                "unable to access private method: {}.{}(..)",
-                                class.as_ref(),
-                                member,
-                            ),
-                        ));
-                    }
+                let field = object.fields.get(id).cloned().ok_or_else(|| {
+                    RuntimeError::new(
+                        ErrorKind::FatalError,
+                        format!(
+                            "unable to get unknown field '{}' of class: {}",
+                            member,
+                            class.as_ref()
+                        ),
+                    )
+                })?;
 
-                    self.stack.push(Value::Method(AtomRef::new(Method {
-                        receiver,
-                        func: AtomRef::clone(func),
-                        class,
-                        is_static: false,
-                    })));
+                self.stack.push(field);
 
-                    return Ok(());
-                }
+                return Ok(());
             }
-            Receiver::Unbound => {
-                if let Some(func) = class.static_methods.get(member) {
-                    self.stack.push(Value::Method(AtomRef::new(Method {
-                        receiver,
-                        func: AtomRef::clone(func),
-                        class,
-                        is_static: true,
-                    })));
 
-                    return Ok(());
-                }
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!("unable to lookup field on: {}", receiver.get_type().name(),),
+            ));
+        }
+
+        if let Some(func) = class.methods.get(member).map(AtomRef::clone) {
+            if !func.public && frame.function.origin.module_id != class.origin.module_id {
+                return Err(RuntimeError::new(
+                    ErrorKind::FatalError,
+                    format!(
+                        "unable to access private method: {}.{}(..)",
+                        class.as_ref(),
+                        member,
+                    ),
+                ));
             }
+
+            self.stack.push(Value::Method(AtomRef::new(Method {
+                receiver: Receiver::Bound(receiver),
+                func,
+                is_static: false,
+            })));
+
+            return Ok(());
         }
 
         Err(RuntimeError::new(

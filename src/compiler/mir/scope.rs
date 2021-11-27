@@ -14,7 +14,6 @@ pub enum Tag {
 #[derive(Debug, Clone)]
 pub struct Local {
     pub id: LocalId,
-    pub name: String,
     pub mutable: bool,
     tags: Vec<Tag>,
 }
@@ -163,7 +162,7 @@ impl ScopeGraph {
         name: String,
         mutable: bool,
         tags: Vec<Tag>,
-    ) -> Result<Local, CompileError> {
+    ) -> Result<usize, CompileError> {
         let id = self
             .walk_mut(|scope| {
                 if let ScopeContext::Function(_) = &scope.context {
@@ -181,16 +180,11 @@ impl ScopeGraph {
             })?;
 
         let scope = self.current_mut();
-        let local = Local {
-            id,
-            name,
-            mutable,
-            tags,
-        };
+        let local = Local { id, mutable, tags };
 
-        scope.locals.insert(local.name.clone(), local.clone());
+        scope.locals.insert(name, local);
 
-        Ok(local)
+        Ok(id)
     }
 
     pub fn get_local(&self, name: &str, parents: bool) -> Option<&Local> {

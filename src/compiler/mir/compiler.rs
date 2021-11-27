@@ -109,14 +109,14 @@ impl<'c> Compiler<'c> {
 
                 block
                     .statements
-                    .push(self.build_assign_local(local.id, value));
+                    .push(self.build_assign_local(local, value));
             }
             Variable::Tuple(names) | Variable::Array(names) => {
                 let tmp = self.scope.set_local(self.slugs.get("tmp"), false, vec![])?;
 
                 block
                     .statements
-                    .push(self.build_assign_local(tmp.id, value));
+                    .push(self.build_assign_local(tmp, value));
 
                 for (i, name) in names.iter().enumerate() {
                     if self.scope.get_local(name, false).is_some() {
@@ -129,11 +129,11 @@ impl<'c> Compiler<'c> {
                     let local = self.scope.set_local(name.clone(), mutable, vec![])?;
 
                     block.statements.push(self.build_assign_local(
-                        local.id,
+                        local,
                         Value::new(
                             self.loc.clone(),
                             ValueKind::Index(Box::new(Index::new(
-                                Value::new(self.loc.clone(), ValueKind::Local(tmp.id)),
+                                Value::new(self.loc.clone(), ValueKind::Local(tmp)),
                                 Value::new(
                                     self.loc.clone(),
                                     ValueKind::Const(Const::Int32(i as i32)),
@@ -471,7 +471,7 @@ impl<'c> Compiler<'c> {
 
                 // Then, compile the first case (or return if there are none)
                 let mut case = self.compile_match_case(
-                    tmp.id,
+                    tmp,
                     if let Some(case) = match_stmt.cases.first() {
                         case
                     } else {
@@ -487,7 +487,7 @@ impl<'c> Compiler<'c> {
 
                     block.statements.push(types::Stmt::new(
                         self.loc.clone(),
-                        StmtKind::Cond(self.compile_match_case(tmp.id, case)?),
+                        StmtKind::Cond(self.compile_match_case(tmp, case)?),
                     ));
 
                     current.alt = Some(block);
@@ -514,7 +514,7 @@ impl<'c> Compiler<'c> {
                 root.statements.push(types::Stmt::new(
                     self.loc.clone(),
                     StmtKind::Assign(Assign {
-                        left: AssignLeftHand::Local(tmp.id),
+                        left: AssignLeftHand::Local(tmp),
                         right,
                     }),
                 ));
@@ -531,7 +531,7 @@ impl<'c> Compiler<'c> {
                         .set_local(self.slugs.get("__iter__"), false, vec![])?;
 
                     root.statements.push(self.build_assign_local(
-                        iter.id,
+                        iter,
                         self.build_method_call(value, "iter".to_string()),
                     ));
 
@@ -544,9 +544,9 @@ impl<'c> Compiler<'c> {
                         .set_local(self.slugs.get("__item__"), false, vec![])?;
 
                     block.statements.push(self.build_assign_local(
-                        item.id,
+                        item,
                         self.build_method_call(
-                            Value::new(self.loc.clone(), ValueKind::Local(iter.id)),
+                            Value::new(self.loc.clone(), ValueKind::Local(iter)),
                             "next".to_string(),
                         ),
                     ));
@@ -564,7 +564,7 @@ impl<'c> Compiler<'c> {
                             condition: Value::new(
                                 self.loc.clone(),
                                 ValueKind::Comparison(Box::new(Operator::<ComparisonOp> {
-                                    left: Value::new(self.loc.clone(), ValueKind::Local(item.id)),
+                                    left: Value::new(self.loc.clone(), ValueKind::Local(item)),
                                     right: Value::new(
                                         self.loc.clone(),
                                         ValueKind::Const(Const::Symbol("nil".to_string())),
@@ -581,7 +581,7 @@ impl<'c> Compiler<'c> {
                     if let Some(var) = &for_stmt.alias {
                         self.compile_store_var(
                             &mut block,
-                            Value::new(self.loc.clone(), ValueKind::Local(item.id)),
+                            Value::new(self.loc.clone(), ValueKind::Local(item)),
                             false,
                             var,
                         )?;
