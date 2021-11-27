@@ -5,6 +5,8 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 
+use super::error::Result;
+
 pub type AtomRef<T> = Rc<T>;
 pub type AtomWeakRef<T> = Weak<T>;
 pub type AtomArray<T> = AtomRef<[T]>;
@@ -27,16 +29,16 @@ where
     })
 }
 
-pub fn make_array<F, T>(len: usize, creator: F) -> AtomArray<T>
+pub fn make_array<F, T>(len: usize, creator: F) -> Result<AtomArray<T>>
 where
-    F: FnOnce(&mut [MaybeUninit<T>]),
+    F: FnOnce(&mut [MaybeUninit<T>]) -> Result<()>,
 {
     unsafe {
         let mut array = AtomRef::<[T]>::new_uninit_slice(len);
 
-        creator(AtomArray::get_mut_unchecked(&mut array));
+        creator(AtomArray::get_mut_unchecked(&mut array))?;
 
-        array.assume_init()
+        Ok(array.assume_init())
     }
 }
 

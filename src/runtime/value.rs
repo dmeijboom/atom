@@ -270,15 +270,14 @@ impl Display for Value {
                     class,
                     class
                         .fields
-                        .keys()
-                        .map(|key| {
-                            let (id, _, field) = class.fields.get_full(key).unwrap();
-
+                        .iter()
+                        .enumerate()
+                        .map(|(i, field)| {
                             format!(
                                 "{}{}: {}",
                                 if field.public { "*" } else { "" },
-                                key,
-                                object.fields.get(id).unwrap(),
+                                field.name,
+                                object.fields.get(i).unwrap(),
                             )
                         })
                         .collect::<Vec<String>>()

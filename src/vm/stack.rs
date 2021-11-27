@@ -32,6 +32,8 @@ impl Stack {
     }
 
     pub fn pop(&mut self) -> Value {
+        debug_assert!(!self.data.is_empty(), "expected element on stack (in pop)");
+
         self.data.remove(self.data.len() - 1)
     }
 

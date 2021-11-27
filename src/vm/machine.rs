@@ -5,21 +5,27 @@ use strum::IntoEnumIterator;
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
 use crate::runtime::{
-    atom_string_to_str, make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRefMut,
-    AtomString, ErrorKind,
+    atom_string_to_str, AtomArray, AtomNil, AtomRefMut, AtomString, ErrorKind, make_array,
+    stdlib, unwrap_or_clone_inner,
 };
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnKind, Input, Int, Interface, Method, Object,
     Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::vm::global_label::GlobalLabel;
-use crate::vm::module::Global;
 use crate::vm::Module;
+use crate::vm::module::Global;
 
 use super::call_stack::{CallStack, StackFrame, Target};
 use super::module::ModuleId;
 use super::module_cache::ModuleCache;
 use super::stack::Stack;
+
+macro_rules! write_array_ptr {
+    ($array:expr, $index:expr, $value:expr) => {
+        ($array[$index].as_mut_ptr() as *mut Value).write($value)
+    };
+}
 
 macro_rules! impl_op {
     ($vm:expr, int_only: $opname:ident) => {{
@@ -240,57 +246,27 @@ impl Machine {
             ));
         }
 
-        let mut is_sorted = true;
         let function = &self.call_stack.current().function;
-
-        for (i, segment_id) in keywords.clone().enumerate() {
-            let keyword = atom_string_to_str(function.ir.get_data(segment_id));
-
-            if let Some((field_name, _)) = class.fields.get_index(i) {
-                if is_sorted && field_name != keyword {
-                    is_sorted = false;
-                }
-
-                continue;
-            }
-
-            return Err(RuntimeError::new(
-                ErrorKind::FatalError,
-                format!("invalid field '{}' on {}", keyword, class.as_ref(),),
-            ));
-        }
-
-        let mut buffer = Vec::with_capacity(keywords.len());
-
-        if is_sorted {
-            self.stack.pop_many(keywords.len(), &mut buffer)?;
-        } else {
-            let keywords = keywords.collect::<Vec<_>>();
-
-            while buffer.len() < keywords.len() {
-                for (name, _) in class.fields.iter().rev() {
-                    if let Some(index) = keywords.iter().position(|segment_id| {
-                        name == atom_string_to_str(function.ir.get_data(*segment_id))
-                    }) {
-                        if index <= buffer.len() {
-                            buffer.insert(index, self.stack.pop());
-                        }
-
-                        continue;
-                    }
-
-                    return Err(RuntimeError::new(
+        let fields = make_array(keywords.len(), |array| unsafe {
+            for segment_id in keywords.rev() {
+                let name = atom_string_to_str(function.ir.get_data(segment_id));
+                let (field_id, _) = class.get_field(name).ok_or_else(|| {
+                    RuntimeError::new(
                         ErrorKind::FatalError,
-                        format!("invalid field '{}' on {}", name, class.as_ref(),),
-                    ));
-                }
+                        format!("invalid field {}.{}", class.as_ref(), name),
+                    )
+                })?;
+
+                write_array_ptr!(array, field_id, self.stack.pop());
             }
-        };
+
+            Ok(())
+        })?;
 
         self.stack
             .push(Value::Object(AtomRefMut::new(AtomRef::new(Object::new(
                 class,
-                AtomRefMut::new(AtomRef::from(buffer)),
+                AtomRefMut::new(fields),
             )))));
 
         Ok(())
@@ -554,11 +530,11 @@ impl Machine {
     fn eval_make_tuple(&mut self, len: usize) -> Result<()> {
         let values = make_array(len, |array| unsafe {
             for i in 0..len {
-                let ptr: *mut Value = array[len - (i + 1)].as_mut_ptr();
-
-                ptr.write(self.stack.pop());
+                write_array_ptr!(array, len - (i + 1), self.stack.pop());
             }
-        });
+
+            Ok(())
+        })?;
 
         self.stack.push(Value::Tuple(values));
 
@@ -991,7 +967,7 @@ impl Machine {
 
         let class = self.get_class(&receiver)?;
 
-        if let Some((id, _, field)) = class.fields.get_full(member) {
+        if let Some((id, field)) = class.get_field(member) {
             if let Value::Object(object) = &receiver {
                 if !field.public && frame.function.origin.module_id != class.origin.module_id {
                     return Err(RuntimeError::new(
@@ -1064,7 +1040,7 @@ impl Machine {
         let object = self.stack.pop();
         let class = self.get_class(&object)?;
 
-        if let Some((id, _, field)) = class.fields.get_full(member) {
+        if let Some((id, field)) = class.get_field(member) {
             if !field.public && frame.function.origin.module_id != class.origin.module_id {
                 return Err(RuntimeError::new(
                     ErrorKind::FatalError,

@@ -1,3 +1,11 @@
+class Data {
+    let field1;
+    let field2;
+    let field3;
+    let field4;
+    let field5;
+}
+
 class Wrapper {
     let test;
 }
@@ -44,6 +52,35 @@ fn wrapReferenceType(t) {
     t.assert("Bob", test.value.get("name"));
 }
 
+fn classFields(t) {
+    let data = Data{
+        field1: "field1",
+        field2: "field2",
+        field3: "field3",
+        field4: "field4",
+        field5: "field5"
+    };
+    let data2 = Data{
+        field4: "field4",
+        field2: "field2",
+        field3: "field3",
+        field1: "field1",
+        field5: "field5"
+    };
+
+    t.assert("field1", data.field1)
+        .assert("field2", data.field2)
+        .assert("field3", data.field3)
+        .assert("field4", data.field4)
+        .assert("field5", data.field5);
+
+    t.assert("field1", data2.field1)
+        .assert("field2", data2.field2)
+        .assert("field3", data2.field3)
+        .assert("field4", data2.field4)
+        .assert("field5", data2.field5);
+}
+
 fn useBeforeDeclared(t) {
     let test = Late{value: 10};
 
@@ -58,6 +95,7 @@ pub fn classesTests() {
         instanceMethodCall,
         staticMethodCall,
         wrapReferenceType,
-        useBeforeDeclared
+        useBeforeDeclared,
+        classFields
     ];
 }

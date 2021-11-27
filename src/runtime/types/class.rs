@@ -1,7 +1,6 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Formatter};
 
-use indexmap::IndexMap;
 use wyhash2::WyHash;
 
 use crate::runtime::{AtomRef, Origin};
@@ -29,9 +28,21 @@ impl Field {
 pub struct Class {
     pub name: String,
     pub origin: Origin,
-    pub fields: IndexMap<String, Field, WyHash>,
+    pub fields: Vec<Field>,
     pub methods: HashMap<String, AtomRef<Fn>, WyHash>,
     pub static_methods: HashMap<String, AtomRef<Fn>, WyHash>,
+}
+
+impl Class {
+    pub fn get_field(&self, name: &str) -> Option<(usize, &Field)> {
+        for (i, field) in self.fields.iter().enumerate() {
+            if field.name == name {
+                return Some((i, field));
+            }
+        }
+
+        None
+    }
 }
 
 impl Display for Class {
