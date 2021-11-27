@@ -100,10 +100,12 @@ impl CallStack {
         self.data.recycle()
     }
 
+    #[inline]
     pub fn push(&mut self, frame: StackFrame) {
         self.data.push(frame);
     }
 
+    #[inline]
     pub fn pop(&mut self) {
         self.data.pop()
     }
@@ -124,11 +126,11 @@ impl CallStack {
         &mut self.data[index]
     }
 
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.data.is_empty()
     }
 
+    #[inline]
     pub fn last(&self) -> Option<&StackFrame> {
         self.data.last()
     }

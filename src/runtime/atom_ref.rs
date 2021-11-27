@@ -9,6 +9,7 @@ pub type AtomWeakRef<T> = Weak<T>;
 pub type AtomArray<T> = AtomRef<[T]>;
 pub type AtomString = AtomArray<u8>;
 
+#[inline]
 pub fn unwrap_or_clone_inner<T>(r: AtomRef<T>) -> T
 where
     T: Clone,
@@ -42,10 +43,12 @@ impl<T: ?Sized> AtomRefMut<T> {
         Self(r)
     }
 
+    #[inline]
     pub fn as_mut(&mut self) -> &mut T {
         unsafe { AtomRef::get_mut_unchecked(&mut self.0) }
     }
 
+    #[inline]
     pub fn clone(r: &AtomRefMut<T>) -> AtomRefMut<T> {
         AtomRefMut::new(AtomRef::clone(&r.0))
     }
@@ -66,6 +69,7 @@ impl<T: ?Sized + PartialEq> PartialEq for AtomRefMut<T> {
 impl<T: ?Sized> Deref for AtomRefMut<T> {
     type Target = T;
 
+    #[inline(always)]
     fn deref(&self) -> &Self::Target {
         self.0.deref()
     }

@@ -1,4 +1,4 @@
-use std::ops::{Deref, DerefMut};
+use std::ops::{Index, IndexMut};
 
 pub struct RecycleVec<T> {
     items: Vec<T>,
@@ -15,10 +15,12 @@ impl<T> RecycleVec<T> {
         }
     }
 
+    #[inline]
     pub fn recycle(&mut self) -> Option<T> {
         self.free.pop()
     }
 
+    #[inline]
     pub fn push(&mut self, item: T) {
         self.items.push(item);
     }
@@ -35,18 +37,34 @@ impl<T> RecycleVec<T> {
             }
         }
     }
-}
 
-impl<T> Deref for RecycleVec<T> {
-    type Target = [T];
+    #[inline]
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
 
-    fn deref(&self) -> &Self::Target {
-        &self.items
+    pub fn is_empty(&self) -> bool {
+        self.items.len() == 0
+    }
+
+    #[inline]
+    pub fn last(&self) -> Option<&T> {
+        self.items.last()
     }
 }
 
-impl<T> DerefMut for RecycleVec<T> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.items
+impl<T> Index<usize> for RecycleVec<T> {
+    type Output = T;
+
+    #[inline]
+    fn index(&self, index: usize) -> &Self::Output {
+        self.items.index(index)
+    }
+}
+
+impl<T> IndexMut<usize> for RecycleVec<T> {
+    #[inline]
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        self.items.index_mut(index)
     }
 }

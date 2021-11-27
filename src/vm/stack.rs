@@ -10,10 +10,12 @@ impl Stack {
         Self { data: vec![] }
     }
 
+    #[inline]
     pub fn push(&mut self, value: Value) {
         self.data.push(value);
     }
 
+    #[inline]
     pub fn delete(&mut self) -> Result<()> {
         self.data.pop().ok_or_else(|| {
             RuntimeError::new(

@@ -19,12 +19,3 @@ impl PartialEq for Object {
         self.class.as_ref() == other.class.as_ref() && self.fields == other.fields
     }
 }
-
-impl Clone for Object {
-    fn clone(&self) -> Self {
-        Self {
-            class: AtomRef::clone(&self.class),
-            fields: AtomRefMut::clone(&self.fields),
-        }
-    }
-}
