@@ -162,7 +162,7 @@ make_value!(
     (String, AtomString),
     (Object, AtomRefMut<Object>),
     (Array, AtomRefMut<Vec<Value>>),
-    (Option, Option<Box<Value>>),
+    (Option, Option<AtomRef<Value>>),
     (RustObject, RustObject)
 );
 
@@ -208,7 +208,7 @@ impl Clone for Value {
             Self::Byte(val) => Value::Byte(*val),
             Self::Bool(val) => Value::Bool(*val),
             Self::Symbol(name) => Value::Symbol(name.clone()),
-            Self::Option(val) => Value::Option(val.clone()),
+            Self::Option(val) => Value::Option(val.as_ref().map(AtomRef::clone)),
             Self::Ref(val) => Value::Ref(AtomRef::clone(val)),
             Self::Fn(atom_fn) => Value::Fn(AtomRef::clone(atom_fn)),
             Self::Class(class) => Value::Class(AtomRef::clone(class)),

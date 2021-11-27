@@ -55,7 +55,10 @@ pub fn println(input: Input<'_>) -> Result<Output> {
 pub fn some(input: Input<'_>) -> Result<Output> {
     let value: Value = input.single()?;
 
-    Ok(Output::new(Some(Box::new(value))))
+    Ok(Output::new(Some(match value {
+        Value::Ref(inner) => inner,
+        _ => AtomRef::new(value),
+    })))
 }
 
 pub fn runtime_raise(input: Input<'_>) -> Result<Output> {
@@ -158,7 +161,7 @@ pub fn string_find(mut input: Input<'_>) -> Result<Output> {
 
     Ok(Output::new(
         s.find(pattern)
-            .map(|index| Box::new(Value::Int(index.into()))),
+            .map(|index| AtomRef::new(Value::Int(index.into()))),
     ))
 }
 
@@ -235,7 +238,7 @@ pub fn array_remove(mut input: Input<'_>) -> Result<Output> {
 
     let item = a.as_mut().remove(index);
 
-    Ok(Output::new(Some(Box::new(item))))
+    Ok(Output::new(Some(AtomRef::new(item))))
 }
 
 pub fn array_push(mut input: Input<'_>) -> Result<Output> {
@@ -250,7 +253,7 @@ pub fn array_push(mut input: Input<'_>) -> Result<Output> {
 pub fn array_pop(mut input: Input<'_>) -> Result<Output> {
     let mut a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
 
-    Ok(Output::new(a.as_mut().pop().map(Box::new)))
+    Ok(Output::new(a.as_mut().pop().map(AtomRef::new)))
 }
 
 pub fn array_clear(mut input: Input<'_>) -> Result<Output> {

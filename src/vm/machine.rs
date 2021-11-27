@@ -786,10 +786,10 @@ impl Machine {
     }
 
     fn eval_unwrap(&mut self) -> Result<()> {
-        let value: Option<Box<Value>> = self.stack.pop().convert()?;
+        let value: Option<AtomRef<Value>> = self.stack.pop().convert()?;
 
         if let Some(value) = value {
-            self.stack.push(*value);
+            self.stack.push(unwrap_or_clone_inner(value));
 
             return Ok(());
         }
