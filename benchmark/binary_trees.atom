@@ -3,15 +3,15 @@ fn makeTree(value, depth) {
         return (nil, value, nil);
     }
 
-    return (some(makeTree((value + value) - 1, depth - 1)), value, some(makeTree(value + value, depth - 1)));
+    return (makeTree((value + value) - 1, depth - 1), value, makeTree(value + value, depth - 1));
 }
 
 fn checkTree(node) {
-    if !node[0].isSome() {
+    if node[0] == nil {
         return node[1];
     }
 
-    return node[1] + checkTree(node[0]!) - checkTree(node[2]!);
+    return node[1] + checkTree(node[0]) - checkTree(node[2]);
 }
 
 fn main() {

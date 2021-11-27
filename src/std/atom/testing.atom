@@ -67,5 +67,5 @@ pub class TestCase {
 
     pub fn assertTrue(condition) -> this.assert(true, condition);
     pub fn assertFalse(condition) -> this.assert(false, condition);
-    pub fn assertNil(result) -> this.assert(true, result.isNone());
+    pub fn assertNil(result) -> this.assert(true, result == nil);
 }

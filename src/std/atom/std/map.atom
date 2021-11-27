@@ -2,7 +2,6 @@ module std.map;
 
 import std.core.{
     rt_raise,
-    some,
     Tuple,
     println,
     Enum,
@@ -23,15 +22,15 @@ pub class MapIter {
         let index = this.index;
         let item = this.map.getByIndex(this.index);
 
-        if item.isNone() {
+        if item == nil {
             return nil;
         }
 
         this.index += 1;
 
-        let entry = item!;
+        let entry = item;
 
-        return some((entry.key, entry.value));
+        return (entry.key, entry.value);
     }
 }
 
@@ -171,7 +170,7 @@ class Bucket {
     let mut next;
 
     pub static fn new() -> Bucket{entry: nil, next: nil};
-    pub static fn withEntry(entry) -> Bucket{entry: some(entry), next: nil};
+    pub static fn withEntry(entry) -> Bucket{entry: entry, next: nil};
 }
 
 pub class Map extends GetIterator {
@@ -212,7 +211,7 @@ pub class Map extends GetIterator {
             let mut current = bucket;
 
             for {
-                if current.entry.isSome() {
+                if current.entry != nil {
                     if i == 0 {
                         return current.entry;
                     }
@@ -220,11 +219,11 @@ pub class Map extends GetIterator {
                     i -= 1;
                 }
 
-                if current.next.isNone() {
+                if current.next == nil {
                     break;
                 }
 
-                current = current.next!;
+                current = current.next;
             }
         }
 
@@ -238,31 +237,31 @@ pub class Map extends GetIterator {
 
         let hash = hash(encodeKey(key), 0);
         let index = hash % this.buckets.len();
-        let bucket = this.buckets.nth(index)!;
+        let bucket = this.buckets.nth(index);
         let entry = Entry.new(hash, key, value);
 
-        if bucket.entry.isNone() {
+        if bucket.entry == nil {
             this.size += 1;
 
-            bucket.entry = some(entry);
+            bucket.entry = entry;
         } else {
             let mut tail = bucket;
 
             for {
-                if tail.entry!.hash == hash {
-                    tail.entry = some(entry);
+                if tail.entry.hash == hash {
+                    tail.entry = entry;
 
                     return nil;
                 }
 
-                if tail.next.isNone() {
+                if tail.next == nil {
                     break;
                 }
 
-                tail = tail.next!;
+                tail = tail.next;
             }
 
-            tail.next = some(Bucket.withEntry(entry));
+            tail.next = Bucket.withEntry(entry);
             this.size += 1;
         }
     }
@@ -274,21 +273,21 @@ pub class Map extends GetIterator {
 
         let hash = hash(encodeKey(key), 0);
         let index = hash % this.buckets.len();
-        let bucket = this.buckets.nth(index)!;
+        let bucket = this.buckets.nth(index);
 
-        if bucket.entry.isSome() {
+        if bucket.entry != nil {
             let mut current = bucket;
 
             for {
-                if current.entry!.hash == hash {
-                    return some(current.entry!.value);
+                if current.entry.hash == hash {
+                    return current.entry.value;
                 }
 
-                if current.next.isNone() {
+                if current.next == nil {
                     break;
                 }
 
-                current = current.next!;
+                current = current.next;
             }
         }
 

@@ -304,7 +304,6 @@ pub enum ValueKind {
     Cast(Box<Cast>),
     Call(Box<Call>),
     New(Box<New>),
-    Unwrap(Box<Value>),
     Try(Box<Value>),
     TypeOf(Box<Value>),
     Array(Vec<Value>),

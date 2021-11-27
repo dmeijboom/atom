@@ -194,7 +194,6 @@ peg::parser! {
             left:(@) _ "*" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Mul, right }.into()) }
             left:(@) _ "/" _ right:@ { Expr::Arithmetic(ArithmeticExpr { pos: (start..right.pos().end), left, op: ArithmeticOp::Div, right }.into()) }
             --
-            expr:(@) _ "!" { Expr::Unwrap(UnwrapExpr {pos: (start..expr.pos().end), expr: expr.into()}) }
             expr:(@) _ "?" { Expr::Try(TryExpr {pos: (start..expr.pos().end), expr: expr.into()}) }
             "!" _ expr:(@) { Expr::Not(NotExpr {pos: (start..expr.pos().end), expr: expr.into() }) }
             "(" _ type_name:ident() _ ")" _ expr:(@) { Expr::Cast(CastExpr { pos: (start..expr.pos().end), type_name, expr }.into()) }
@@ -1291,13 +1290,13 @@ mod tests {
     }
 
     #[test]
-    fn unwrap_expr() {
-        let source = "10!;";
+    fn try_expr() {
+        let source = "10?;";
 
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
-                expr: Expr::Unwrap(UnwrapExpr {
+                expr: Expr::Try(TryExpr {
                     expr: Expr::Literal(LiteralExpr {
                         literal: Literal::Int32(10),
                         pos: 0..2,

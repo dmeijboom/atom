@@ -3,15 +3,9 @@ use crate::runtime::{
     AtomRef, AtomRefMut, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value,
 };
 
-pub const FUNCTIONS: [(&str, ExternalFn); 3] = [
-    ("some", some),
-    ("println", println),
-    ("rt_raise", runtime_raise),
-];
+pub const FUNCTIONS: [(&str, ExternalFn); 2] = [("println", println), ("rt_raise", runtime_raise)];
 
-pub const METHODS: [(&str, &str, ExternalFn); 26] = [
-    ("Option", "isSome", option_is_some),
-    ("Option", "isNone", option_is_none),
+pub const METHODS: [(&str, &str, ExternalFn); 24] = [
     ("String", "upper", string_upper),
     ("String", "lower", string_lower),
     ("String", "split", string_split),
@@ -52,45 +46,10 @@ pub fn println(input: Input<'_>) -> Result<Output> {
     Output::void()
 }
 
-pub fn some(input: Input<'_>) -> Result<Output> {
-    let value: Value = input.single()?;
-
-    Ok(Output::new(Some(match value {
-        Value::Ref(inner) => inner,
-        _ => AtomRef::new(value),
-    })))
-}
-
 pub fn runtime_raise(input: Input<'_>) -> Result<Output> {
     Err(RuntimeError::new(
         ErrorKind::UserError,
         format!("{}", input.args[0]),
-    ))
-}
-
-pub fn option_is_some(mut input: Input<'_>) -> Result<Output> {
-    let value = input.get_receiver()?;
-
-    if let Value::Option(inner) = value {
-        return Ok(Output::new(inner.is_some()));
-    }
-
-    Err(RuntimeError::new(
-        ErrorKind::TypeError,
-        format!("expected 'Option', found: {}", value),
-    ))
-}
-
-pub fn option_is_none(mut input: Input<'_>) -> Result<Output> {
-    let value = input.get_receiver()?;
-
-    if let Value::Option(inner) = value {
-        return Ok(Output::new(inner.is_none()));
-    }
-
-    Err(RuntimeError::new(
-        ErrorKind::TypeError,
-        format!("expected 'Option', found: {}", value),
     ))
 }
 
@@ -160,8 +119,7 @@ pub fn string_find(mut input: Input<'_>) -> Result<Output> {
     let pattern: &str = input.pop_first()?;
 
     Ok(Output::new(
-        s.find(pattern)
-            .map(|index| AtomRef::new(Value::Int(index.into()))),
+        s.find(pattern).map(|index| Value::Int(index.into())),
     ))
 }
 
@@ -238,7 +196,7 @@ pub fn array_remove(mut input: Input<'_>) -> Result<Output> {
 
     let item = a.as_mut().remove(index);
 
-    Ok(Output::new(Some(AtomRef::new(item))))
+    Ok(Output::new(item))
 }
 
 pub fn array_push(mut input: Input<'_>) -> Result<Output> {
@@ -253,7 +211,7 @@ pub fn array_push(mut input: Input<'_>) -> Result<Output> {
 pub fn array_pop(mut input: Input<'_>) -> Result<Output> {
     let mut a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
 
-    Ok(Output::new(a.as_mut().pop().map(AtomRef::new)))
+    Ok(Output::new(a.as_mut().pop()))
 }
 
 pub fn array_clear(mut input: Input<'_>) -> Result<Output> {

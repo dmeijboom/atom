@@ -148,12 +148,6 @@ pub struct IdentExpr {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct UnwrapExpr {
-    pub expr: Box<Expr>,
-    pub pos: Pos,
-}
-
-#[derive(Debug, Clone, PartialEq)]
 pub struct TryExpr {
     pub expr: Box<Expr>,
     pub pos: Pos,
@@ -283,7 +277,6 @@ pub enum Expr {
     Cast(Box<CastExpr>),
     Not(NotExpr),
     Try(TryExpr),
-    Unwrap(UnwrapExpr),
     Array(ArrayExpr),
     Tuple(TupleExpr),
     Map(MapExpr),
@@ -309,7 +302,6 @@ impl Expr {
             Self::New(new_expr) => new_expr.pos.clone(),
             Self::Call(call_expr) => call_expr.pos.clone(),
             Self::Not(not_expr) => not_expr.pos.clone(),
-            Self::Unwrap(unwrap_expr) => unwrap_expr.pos.clone(),
             Self::Try(try_expr) => try_expr.pos.clone(),
             Self::Array(array_expr) => array_expr.pos.clone(),
             Self::Tuple(tuple_expr) => tuple_expr.pos.clone(),

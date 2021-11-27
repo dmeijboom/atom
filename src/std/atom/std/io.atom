@@ -20,14 +20,14 @@ pub class LinesIter extends GetIterator {
                 return nil;
             }
 
-            if bytes.first() == some(b'\n') {
+            if bytes.first() == b'\n' {
                 break;
             }
 
             buff.push(bytes[0]);
         }
 
-        return some(decode(buff));
+        return decode(buff);
     }
 }
 

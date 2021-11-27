@@ -153,10 +153,6 @@ impl<'c> CodeGenerator<'c> {
                     location,
                 );
             }
-            ValueKind::Unwrap(unwrap) => {
-                self.compile_value(scope, unwrap)?;
-                self.ir.add(Code::Unwrap, location);
-            }
             ValueKind::Try(value) => {
                 let label = self.slugs.get("try_end");
 

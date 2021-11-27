@@ -13,6 +13,9 @@ pub trait Convert<T> {
     fn convert(self) -> Result<T>;
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct AtomNil;
+
 macro_rules! type_error {
     ($expected:ident, $value:expr) => {
         RuntimeError::new(
@@ -162,8 +165,8 @@ make_value!(
     (String, AtomString),
     (Object, AtomRefMut<Object>),
     (Array, AtomRefMut<Vec<Value>>),
-    (Option, Option<AtomRef<Value>>),
-    (RustObject, RustObject)
+    (RustObject, RustObject),
+    (Nil, AtomNil)
 );
 
 // Setup base conversions between atom / Rust code
@@ -192,6 +195,15 @@ impl From<String> for Value {
     }
 }
 
+impl From<Option<Value>> for Value {
+    fn from(value: Option<Value>) -> Self {
+        match value {
+            None => Value::Nil(AtomNil {}),
+            Some(value) => value,
+        }
+    }
+}
+
 impl Convert<Value> for Value {
     fn convert(self) -> Result<Self> {
         Ok(self)
@@ -209,7 +221,6 @@ impl Clone for Value {
             Self::Byte(val) => Value::Byte(*val),
             Self::Bool(val) => Value::Bool(*val),
             Self::Symbol(name) => Value::Symbol(name.clone()),
-            Self::Option(val) => Value::Option(val.as_ref().map(AtomRef::clone)),
             Self::Ref(val) => Value::Ref(AtomRef::clone(val)),
             Self::Fn(atom_fn) => Value::Fn(AtomRef::clone(atom_fn)),
             Self::Class(class) => Value::Class(AtomRef::clone(class)),
@@ -220,6 +231,7 @@ impl Clone for Value {
             Self::Tuple(val) => Value::Tuple(AtomRef::clone(val)),
             Self::Array(val) => Value::Array(AtomRefMut::clone(val)),
             Self::Interface(interface) => Value::Interface(AtomRef::clone(interface)),
+            Self::Nil(nil) => Self::Nil(nil.clone()),
             Self::RustObject(_) => panic!("RustObject can't be cloned"),
         }
     }
@@ -237,10 +249,6 @@ impl Display for Value {
             Self::Byte(val) => write!(f, "{}", val),
             Self::Bool(val) => write!(f, "{}", val),
             Self::Symbol(val) => write!(f, ":{}", val.as_ref()),
-            Self::Option(val) => match val {
-                None => write!(f, "Option(None)"),
-                Some(val) => write!(f, "Option({})", val),
-            },
             Self::Ref(value) => {
                 write!(f, "*{}", value.as_ref())
             }
@@ -297,6 +305,7 @@ impl Display for Value {
                     .collect::<Vec<String>>()
                     .join(", ")
             ),
+            Self::Nil(_) => write!(f, "nil"),
             Self::RustObject(rust_object) => write!(f, "{:?}", rust_object),
         }
     }

@@ -4,7 +4,9 @@ use strum::IntoEnumIterator;
 
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
-use crate::runtime::{make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomRefMut, ErrorKind};
+use crate::runtime::{
+    make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRefMut, ErrorKind,
+};
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnKind, Input, Int, Interface, Method, Object,
     Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
@@ -422,7 +424,7 @@ impl Machine {
 
     fn eval_symbol(&mut self, name: String) {
         self.stack.push(if name == "nil" {
-            Value::Option(None)
+            Value::Nil(AtomNil {})
         } else {
             Value::Symbol(Symbol::new(name))
         });
@@ -481,7 +483,6 @@ impl Machine {
             Code::ComparisonLt => self.eval_comparison_lt()?,
             Code::ComparisonLte => self.eval_comparison_lte()?,
             Code::AssertIsType => self.eval_assert_is_type()?,
-            Code::Unwrap => self.eval_unwrap()?,
             Code::Cast(segment_id) => self.eval_cast(segment_id)?,
             Code::Call(arg_count) => self.eval_call(arg_count, true)?,
             Code::CallVoid(arg_count) => self.eval_call(arg_count, false)?,
@@ -782,21 +783,6 @@ impl Machine {
         Err(RuntimeError::new(
             ErrorKind::FatalError,
             format!("unable to assert type with: {}", right,),
-        ))
-    }
-
-    fn eval_unwrap(&mut self) -> Result<()> {
-        let value: Option<AtomRef<Value>> = self.stack.pop().convert()?;
-
-        if let Some(value) = value {
-            self.stack.push(unwrap_or_clone_inner(value));
-
-            return Ok(());
-        }
-
-        Err(RuntimeError::new(
-            ErrorKind::FatalError,
-            "unable to unwrap nil value".to_string(),
         ))
     }
 

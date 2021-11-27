@@ -42,15 +42,15 @@ pub class JSONDecoder {
         return c;
     }
 
-    fn accept(c) -> this.data.nth(this.index) == some(c);
+    fn accept(c) -> this.data.nth(this.index) == c;
 
     fn skipWhitespace() {
         for {
             match this.data.nth(this.index) {
-                some(' ') -> this.next(),
-                some('\r') -> this.next(),
-                some('\t') -> this.next(),
-                some('\n') -> this.next(),
+                ' ' -> this.next(),
+                '\r' -> this.next(),
+                '\t' -> this.next(),
+                '\n' -> this.next(),
                 else -> {
                     break;
                 }
@@ -226,14 +226,8 @@ pub class JSONEncoder {
 
                 this.write('}');
             },
-            Option -> {
-                if data.isNone() {
-                    this.write("null");
-                } else {
-                    this.encode(data!);
-                }
-            },
             Ref -> this.encode(*data),
+            Nil -> this.write("null"),
             else -> {
                 if data is JSONSerialize {
                     data.encodeJSON(JSONEncoderProxy.new(this));

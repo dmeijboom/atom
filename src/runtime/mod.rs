@@ -6,7 +6,7 @@ pub use error::{ErrorKind, Result, RuntimeError, Trace};
 pub use origin::Origin;
 pub use rust::RustObject;
 pub use types::*;
-pub use value::{Convert, Value, ValueType};
+pub use value::{AtomNil, Convert, Value, ValueType};
 
 pub mod stdlib;
 

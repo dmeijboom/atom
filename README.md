@@ -10,7 +10,7 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 - Simple REPL
 - Dynamically typed
 - Tail call optimization
-- No null or uninitialized fields
+- No uninitialized fields
 - Classes as first-class citizens
 - Supports 64-bit floats
 - Supports 8/16/32/64-bit signed/unsigned integers (defaults to 32-bit signed integer)

@@ -28,12 +28,6 @@ impl<'i> Input<'i> {
         self.args
     }
 
-    pub fn get_receiver(&mut self) -> Result<&Value> {
-        self.api
-            .get_receiver()
-            .ok_or_else(|| RuntimeError::new(ErrorKind::FatalError, "missing receiver".to_string()))
-    }
-
     pub fn take_receiver<T>(&mut self) -> Result<T>
     where
         Value: Convert<T>,

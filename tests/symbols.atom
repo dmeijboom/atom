@@ -10,9 +10,9 @@ fn mapKey(t) {
         "name" => "not atom"
     };
 
-    t.assert(some("atom"), result.get(:name))
+    t.assert("atom", result.get(:name))
         .assertNil(result.get(:test))
-        .assert(some("not atom"), result.get("name"));
+        .assert("not atom", result.get("name"));
 }
 
 pub fn symbolsTests() {

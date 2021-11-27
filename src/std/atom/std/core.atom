@@ -1,7 +1,6 @@
 module std.core;
 
 pub extern fn println(values);
-pub extern fn some(value);
 
 pub extern fn rt_raise(exception);
 
@@ -125,11 +124,11 @@ pub class Array extends GetIterator {
         for {
             let item = other.remove(0);
 
-            if !item.isSome() {
+            if item == nil {
                 break;
             }
 
-            this.push(item!);
+            this.push(item);
         }
     }
 
@@ -165,21 +164,12 @@ pub class Array extends GetIterator {
     }
 }
 
-pub class Option {
-    pub extern fn isSome();
-    pub extern fn isNone();
-    pub static fn typeId() -> 17;
-
-    pub fn unwrapOr(alt) {
-        match this {
-            nil -> return alt,
-            else -> return this!
-        }
-    }
-}
-
 pub class RustObject {
     pub static fn typeId() -> 18;
+}
+
+pub class Nil {
+    pub static fn typeId() -> 19;
 }
 
 pub class RangeStep extends GetIterator {
@@ -213,7 +203,7 @@ pub class RangeIterator {
             return nil;
         }
 
-        let value = some(index);
+        let value = index;
 
         this.index += this.step;
 
@@ -242,7 +232,7 @@ pub mixin GetIterator {
         let iter = this.iter();
 
         for i in 0..index {
-            if iter.next().isNone() {
+            if iter.next() == nil {
                 return nil;
             }
         }
@@ -256,7 +246,7 @@ pub mixin GetIterator {
         let mut last = nil;
 
         for item in this {
-            last = some(item);
+            last = item;
         }
 
         return last;
@@ -273,11 +263,11 @@ pub class FilterIterator {
         for {
             let item = this.iterator.next();
 
-            if item.isNone() {
+            if item == nil {
                 return nil;
             }
 
-            if this.filterFn(item!) {
+            if this.filterFn(item) {
                 return item;
             }
         }
@@ -299,13 +289,13 @@ pub class EnumIter {
         let index = this.index;
         let item = this.iterator.next();
 
-        if item.isNone() {
+        if item == nil {
             return nil;
         }
 
         this.index += 1;
 
-        return some((index, item!));
+        return (index, item);
     }
 }
 
@@ -330,6 +320,6 @@ pub class ArrayIterator {
 
         this.index += 1;
 
-        return some(value);
+        return value;
     }
 }

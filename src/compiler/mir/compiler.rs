@@ -219,11 +219,6 @@ impl<'c> Compiler<'c> {
                     op: ComparisonOp::Eq,
                 }))
             }
-            Expr::Unwrap(unwrap) => {
-                let value = self.compile_expr(&unwrap.expr)?;
-
-                ValueKind::Unwrap(Box::new(value))
-            }
             Expr::Try(try_expr) => {
                 let value = self.compile_expr(&try_expr.expr)?;
 
@@ -566,9 +561,16 @@ impl<'c> Compiler<'c> {
                     block.statements.push(types::Stmt::new(
                         self.loc.clone(),
                         StmtKind::Cond(Cond {
-                            condition: self.build_method_call(
-                                Value::new(self.loc.clone(), ValueKind::Local(item.id)),
-                                "isNone".to_string(),
+                            condition: Value::new(
+                                self.loc.clone(),
+                                ValueKind::Comparison(Box::new(Operator::<ComparisonOp> {
+                                    left: Value::new(self.loc.clone(), ValueKind::Local(item.id)),
+                                    right: Value::new(
+                                        self.loc.clone(),
+                                        ValueKind::Const(Const::Symbol("nil".to_string())),
+                                    ),
+                                    op: ComparisonOp::Eq,
+                                })),
                             ),
                             block: exit_loop_block,
                             alt: None,
@@ -579,13 +581,7 @@ impl<'c> Compiler<'c> {
                     if let Some(var) = &for_stmt.alias {
                         self.compile_store_var(
                             &mut block,
-                            Value::new(
-                                self.loc.clone(),
-                                ValueKind::Unwrap(Box::new(Value::new(
-                                    self.loc.clone(),
-                                    ValueKind::Local(item.id),
-                                ))),
-                            ),
+                            Value::new(self.loc.clone(), ValueKind::Local(item.id)),
                             false,
                             var,
                         )?;

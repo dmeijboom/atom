@@ -41,7 +41,7 @@ fn wrapReferenceType(t) {
 
     test.set();
 
-    t.assert(some("Bob"), test.value.get("name"));
+    t.assert("Bob", test.value.get("name"));
 }
 
 fn useBeforeDeclared(t) {

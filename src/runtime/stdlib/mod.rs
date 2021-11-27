@@ -5,9 +5,8 @@ mod encoding;
 mod io;
 mod sys;
 
-pub const DEFAULT_IMPORTS: &[&str; 18] = &[
+pub const DEFAULT_IMPORTS: &[&str; 16] = &[
     "std.core.rt_raise",
-    "std.core.some",
     "std.core.println",
     // Also all basic types (for type assertions for example)
     "std.map.Map",
@@ -19,7 +18,6 @@ pub const DEFAULT_IMPORTS: &[&str; 18] = &[
     "std.core.Bool",
     "std.core.Symbol",
     "std.core.Range",
-    "std.core.Option",
     "std.core.Array",
     "std.core.Enum",
     "std.core.Iterable",

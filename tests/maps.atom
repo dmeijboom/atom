@@ -3,7 +3,7 @@ fn simple(t) {
 
     map.set("name", "atom");
 
-    t.assert("atom", map.get("name")!);
+    t.assert("atom", map.get("name"));
 }
 
 fn addValue(t) {
@@ -11,7 +11,7 @@ fn addValue(t) {
 
     map.set("0", 10);
 
-    t.assert(20, 10 + map.get("0")!);
+    t.assert(20, 10 + map.get("0"));
 }
 
 pub fn mapsTests() {

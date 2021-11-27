@@ -8,7 +8,7 @@ use rustyline::Editor;
 use crate::compiler::{CompileError, LineNumberOffset};
 use crate::engine::{Engine, Options};
 use crate::error::Error;
-use crate::runtime::{Convert, Value};
+use crate::runtime::{AtomNil, Convert, Value};
 use crate::syntax::{parser, FnDeclStmt, ReturnStmt, Stmt, Variable};
 
 fn pretty_fmt_items(items: &[Value]) -> ColoredString {
@@ -63,10 +63,7 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         Value::Array(array) => {
             format!("{}{}{}", "[".blue(), pretty_fmt_items(&array), "]".blue()).white()
         }
-        Value::Option(value) => match value {
-            Some(val) => format!("{}{}{}", "Some(".blue(), pretty_fmt(val), ")".blue()).white(),
-            None => "None".blue(),
-        },
+        Value::Nil(_) => "nil".blue(),
         _ => format!("{}", value).white(),
     }
 }
@@ -150,7 +147,7 @@ impl Repl {
             _ => {
                 let value = self.run_program(source, self.make_program(stmt))?;
 
-                println!("{}", pretty_fmt(&value.unwrap_or(Value::Option(None))));
+                println!("{}", pretty_fmt(&value.unwrap_or(Value::Nil(AtomNil {}))));
 
                 Ok(())
             }
