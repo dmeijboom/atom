@@ -3,8 +3,8 @@ use std::io;
 use std::io::Read;
 
 use crate::runtime::{
-    AtomRef, AtomRefMut, Convert, ErrorKind, ExternalFn, Input, Int, Object, Output, Result,
-    RuntimeError, RustObject, Value,
+    AtomRef, AtomRefMut, AtomString, Convert, ErrorKind, ExternalFn, Input, Int, Object, Output,
+    Result, RuntimeError, RustObject, Value,
 };
 
 pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("openFileHandle", open_file_handle)];
@@ -16,8 +16,8 @@ fn map_io_err(e: io::Error) -> RuntimeError {
 }
 
 pub fn open_file_handle(input: Input<'_>) -> Result<Output> {
-    let filename: &str = input.single()?;
-    let file = File::open(filename).map_err(map_io_err)?;
+    let filename: AtomString = input.single()?;
+    let file = File::open(filename.as_str()).map_err(map_io_err)?;
 
     Ok(Output::new(RustObject::new(file)))
 }

@@ -5,6 +5,7 @@ pub use interface::Interface;
 pub use method::{Method, Receiver};
 pub use object::Object;
 pub use r#fn::{ExternalFn, Fn, FnArg, FnKind, Input, Output};
+pub use string::AtomString;
 pub use symbol::Symbol;
 
 mod class;
@@ -14,4 +15,5 @@ mod int;
 mod interface;
 mod method;
 mod object;
+mod string;
 mod symbol;

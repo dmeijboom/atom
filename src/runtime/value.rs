@@ -1,12 +1,10 @@
 use std::fmt::{Display, Formatter};
-use std::mem;
 
 use strum_macros::EnumIter;
 
-use crate::runtime::atom_ref::atom_string_to_str;
 use crate::runtime::types::*;
 
-use super::atom_ref::{AtomArray, AtomRef, AtomRefMut, AtomString};
+use super::atom_ref::{AtomArray, AtomRef, AtomRefMut};
 use super::error::{ErrorKind, Result, RuntimeError};
 use super::rust::RustObject;
 
@@ -170,30 +168,6 @@ make_value!(
     (Nil, AtomNil)
 );
 
-// Setup base conversions between atom / Rust code
-
-impl<'v> Convert<&'v str> for &'v Value {
-    fn convert(self) -> Result<&'v str> {
-        let s: &AtomString = self.convert()?;
-
-        Ok(atom_string_to_str(s))
-    }
-}
-
-impl<'v> Convert<&'v str> for Value {
-    fn convert(self) -> Result<&'v str> {
-        let s: AtomString = self.convert()?;
-
-        unsafe { Ok(mem::transmute(s.as_ref())) }
-    }
-}
-
-impl From<String> for Value {
-    fn from(s: String) -> Self {
-        Value::String(AtomRef::from(s.into_bytes()))
-    }
-}
-
 impl From<Option<Value>> for Value {
     fn from(value: Option<Value>) -> Self {
         match value {
@@ -247,13 +221,11 @@ impl Display for Value {
             Self::Char(val) => write!(f, "{}", val),
             Self::Byte(val) => write!(f, "{}", val),
             Self::Bool(val) => write!(f, "{}", val),
-            Self::Symbol(val) => write!(f, ":{}", val.as_ref()),
+            Self::Symbol(val) => write!(f, ":{}", val.name),
             Self::Ref(value) => {
                 write!(f, "*{}", value.as_ref())
             }
-            Self::String(_) => {
-                let s: &str = self.convert().unwrap();
-
+            Self::String(s) => {
                 write!(f, "{}", s)
             }
             Self::Fn(func) => write!(f, "{}(...)", func.as_ref()),

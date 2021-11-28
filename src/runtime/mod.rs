@@ -1,7 +1,6 @@
 pub use api::AtomApi;
 pub use atom_ref::{
-    atom_string_to_str, make_array, unwrap_or_clone_inner, AtomArray, AtomRef, AtomRefMut,
-    AtomString, AtomWeakRef,
+    make_array, unwrap_or_clone_inner, AtomArray, AtomRef, AtomRefMut, AtomWeakRef,
 };
 pub use error::{ErrorKind, Result, RuntimeError, Trace};
 pub use origin::Origin;

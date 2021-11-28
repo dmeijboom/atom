@@ -1,6 +1,7 @@
 use crate::runtime::error::ErrorKind;
 use crate::runtime::{
-    AtomRef, AtomRefMut, ExternalFn, Fn, Input, Int, Output, Result, RuntimeError, Value,
+    AtomArray, AtomRef, AtomRefMut, AtomString, ExternalFn, Fn, Input, Int, Output, Result,
+    RuntimeError, Value,
 };
 
 pub const FUNCTIONS: [(&str, ExternalFn); 2] = [("println", println), ("rt_raise", runtime_raise)];
@@ -54,24 +55,27 @@ pub fn runtime_raise(input: Input<'_>) -> Result<Output> {
 }
 
 pub fn string_upper(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    Ok(Output::new(s.to_uppercase()))
+    let s: AtomString = input.take_receiver()?;
+
+    Ok(Output::new(AtomString::new(s.to_uppercase())))
 }
 
 pub fn string_lower(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    Ok(Output::new(s.to_lowercase()))
+    let s: AtomString = input.take_receiver()?;
+
+    Ok(Output::new(AtomString::new(s.to_lowercase())))
 }
 
 pub fn string_split(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
 
     if input.args.is_empty() {
         return Ok(Output::new(AtomRefMut::new(AtomRef::new(
-            s.split(pattern)
+            s.split(pattern.as_str())
                 .into_iter()
-                .map(|item| Value::from(item.to_string()))
+                .map(|item| AtomString::from(item))
+                .map(Value::from)
                 .collect::<Vec<_>>(),
         ))));
     }
@@ -79,67 +83,71 @@ pub fn string_split(mut input: Input<'_>) -> Result<Output> {
     let count: usize = input.pop_first()?;
 
     Ok(Output::new(AtomRefMut::new(AtomRef::new(
-        s.splitn(count, pattern)
+        s.splitn(count, pattern.as_str())
             .into_iter()
-            .map(|item| Value::from(item.to_string()))
+            .map(|item| Value::from(AtomString::from(item)))
             .collect::<Vec<_>>(),
     ))))
 }
 
 pub fn string_starts_with(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
 
-    Ok(Output::new(s.starts_with(pattern)))
+    Ok(Output::new(s.starts_with(pattern.as_str())))
 }
 
 pub fn string_ends_with(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
 
-    Ok(Output::new(s.ends_with(pattern)))
+    Ok(Output::new(s.ends_with(pattern.as_str())))
 }
 
 pub fn string_contains(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
 
-    Ok(Output::new(s.contains(pattern)))
+    Ok(Output::new(s.contains(pattern.as_str())))
 }
 
 pub fn string_count(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
 
-    Ok(Output::new(Int::from(s.matches(pattern).count())))
+    Ok(Output::new(Int::from(s.matches(pattern.as_str()).count())))
 }
 
 pub fn string_find(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
 
     Ok(Output::new(
-        s.find(pattern).map(|index| Value::Int(index.into())),
+        s.find(pattern.as_str())
+            .map(|index| Value::Int(index.into())),
     ))
 }
 
 pub fn string_substr(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
+    let s: AtomString = input.take_receiver()?;
     let index: usize = input.pop_first()?;
+    let array: AtomArray<u8> = AtomArray::from(&s.as_bytes()[index..]);
 
-    Ok(Output::new(s[index..].to_string()))
+    Ok(Output::new(AtomString::from(array)))
 }
 
 pub fn string_replace(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let pattern: &str = input.pop_first()?;
-    let replacement: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let pattern: AtomString = input.pop_first()?;
+    let replacement: AtomString = input.pop_first()?;
 
-    Ok(Output::new(s.replace(pattern, replacement)))
+    Ok(Output::new(AtomString::new(
+        s.replace(pattern.as_str(), replacement.as_str()),
+    )))
 }
 
 pub fn string_chars(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
+    let s: AtomString = input.take_receiver()?;
 
     Ok(Output::new(AtomRefMut::new(AtomRef::new(
         s.chars().into_iter().map(Value::Char).collect::<Vec<_>>(),
@@ -147,7 +155,7 @@ pub fn string_chars(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn string_bytes(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
+    let s: AtomString = input.take_receiver()?;
 
     Ok(Output::new(AtomRefMut::new(AtomRef::new(
         s.bytes().into_iter().map(Value::Byte).collect::<Vec<_>>(),
@@ -155,27 +163,29 @@ pub fn string_bytes(mut input: Input<'_>) -> Result<Output> {
 }
 
 pub fn string_repeat(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
+    let s: AtomString = input.take_receiver()?;
     let count: usize = input.pop_first()?;
 
-    Ok(Output::new(s.repeat(count)))
+    Ok(Output::new(AtomString::new(s.repeat(count))))
 }
 
 pub fn string_concat(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
-    let other: &str = input.pop_first()?;
+    let s: AtomString = input.take_receiver()?;
+    let other: AtomString = input.pop_first()?;
 
-    Ok(Output::new([s, other].concat()))
+    Ok(Output::new(AtomString::new(
+        [s.as_str(), other.as_str()].concat(),
+    )))
 }
 
 pub fn string_trim(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
+    let s: AtomString = input.take_receiver()?;
 
-    Ok(Output::new(s.trim().to_string()))
+    Ok(Output::new(AtomString::from(s.trim())))
 }
 
 pub fn string_len(mut input: Input<'_>) -> Result<Output> {
-    let s: &str = input.take_receiver()?;
+    let s: AtomString = input.take_receiver()?;
 
     Ok(Output::new(Int::from(s.len())))
 }
@@ -231,10 +241,10 @@ pub fn array_len(mut input: Input<'_>) -> Result<Output> {
 pub fn fn_name(mut input: Input<'_>) -> Result<Output> {
     let func: AtomRef<Fn> = input.take_receiver()?;
 
-    Ok(Output::new(format!(
+    Ok(Output::new(AtomString::new(format!(
         "{}.{}",
         func.origin.module_name, func.name
-    )))
+    ))))
 }
 
 pub fn int_size(mut input: Input<'_>) -> Result<Output> {

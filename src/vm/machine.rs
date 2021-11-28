@@ -5,16 +5,16 @@ use strum::IntoEnumIterator;
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
 use crate::runtime::{
-    atom_string_to_str, AtomArray, AtomNil, AtomRefMut, AtomString, ErrorKind, make_array,
-    stdlib, unwrap_or_clone_inner,
+    make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRefMut, AtomString,
+    ErrorKind,
 };
 use crate::runtime::{
     AtomApi, AtomRef, Class, Closure, Convert, Fn, FnKind, Input, Int, Interface, Method, Object,
     Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
 };
 use crate::vm::global_label::GlobalLabel;
-use crate::vm::Module;
 use crate::vm::module::Global;
+use crate::vm::Module;
 
 use super::call_stack::{CallStack, StackFrame, Target};
 use super::module::ModuleId;
@@ -249,7 +249,7 @@ impl Machine {
         let function = &self.call_stack.current().function;
         let fields = make_array(keywords.len(), |array| unsafe {
             for segment_id in keywords.rev() {
-                let name = atom_string_to_str(function.ir.get_data(segment_id));
+                let name = function.ir.get_data(segment_id);
                 let (field_id, _) = class.get_field(name).ok_or_else(|| {
                     RuntimeError::new(
                         ErrorKind::FatalError,
@@ -401,7 +401,7 @@ impl Machine {
     fn eval_symbol(&mut self, segment_id: usize) {
         let s = self.call_stack.current().function.ir.get_data(segment_id);
 
-        self.stack.push(if atom_string_to_str(s) == "nil" {
+        self.stack.push(if s == "nil" {
             Value::Nil(AtomNil {})
         } else {
             Value::Symbol(Symbol::new(AtomString::clone(s)))
@@ -575,7 +575,8 @@ impl Machine {
             buffer.append(&mut string.into_bytes());
         }
 
-        self.stack.push(Value::String(AtomRef::from(buffer)));
+        self.stack
+            .push(Value::String(AtomString::from(AtomRef::from(buffer))));
 
         Ok(())
     }
@@ -767,8 +768,7 @@ impl Machine {
     }
 
     fn eval_cast(&mut self, segment_id: usize) -> Result<()> {
-        let type_name =
-            atom_string_to_str(self.call_stack.current().function.ir.get_data(segment_id));
+        let type_name = self.call_stack.current().function.ir.get_data(segment_id);
         let value = self.stack.pop();
 
         if value.get_type().name() == type_name {
@@ -950,11 +950,11 @@ impl Machine {
 
     fn eval_load_member(&mut self, segment_id: usize) -> Result<()> {
         let frame = self.call_stack.current();
-        let member = atom_string_to_str(frame.function.ir.get_data(segment_id));
+        let member = frame.function.ir.get_data(segment_id);
         let receiver = self.stack.pop();
 
         if let Value::Class(class) = &receiver {
-            if let Some(func) = class.static_methods.get(member) {
+            if let Some(func) = class.static_methods.get(member.as_str()) {
                 self.stack.push(Value::Method(AtomRef::new(Method {
                     receiver: Receiver::Unbound,
                     func: AtomRef::clone(func),
@@ -1002,7 +1002,7 @@ impl Machine {
             ));
         }
 
-        if let Some(func) = class.methods.get(member).map(AtomRef::clone) {
+        if let Some(func) = class.methods.get(member.as_str()).map(AtomRef::clone) {
             if !func.public && frame.function.origin.module_id != class.origin.module_id {
                 return Err(RuntimeError::new(
                     ErrorKind::FatalError,
@@ -1035,7 +1035,7 @@ impl Machine {
 
     fn eval_store_member(&mut self, segment_id: usize) -> Result<()> {
         let frame = self.call_stack.current();
-        let member = atom_string_to_str(frame.function.ir.get_data(segment_id));
+        let member = frame.function.ir.get_data(segment_id);
         let value = self.stack.pop();
         let object = self.stack.pop();
         let class = self.get_class(&object)?;
@@ -1296,7 +1296,7 @@ impl Machine {
                         if let Some(global_label) = self.try_stack.pop() {
                             let array: AtomArray<Value> = AtomRef::new([
                                 Value::Symbol(Symbol::from("err")),
-                                Value::String(AtomRef::from(format!("{}", err).into_bytes())),
+                                Value::String(AtomString::new(format!("{}", err))),
                             ]);
 
                             self.stack.push(Value::Tuple(array));

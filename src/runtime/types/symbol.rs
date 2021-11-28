@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use crate::runtime::{atom_string_to_str, AtomString};
+use crate::runtime::types::string::AtomString;
 
 /// Symbols are unique names in atom encoded as a byte slice or constant value
 #[derive(Debug, Clone, PartialEq)]
@@ -17,21 +17,16 @@ impl Symbol {
 impl From<&str> for Symbol {
     fn from(name: &str) -> Self {
         Self {
-            name: AtomString::from(name.as_bytes()),
+            name: AtomString::from(name),
         }
-    }
-}
-
-impl AsRef<str> for Symbol {
-    fn as_ref(&self) -> &str {
-        atom_string_to_str(&self.name)
     }
 }
 
 impl Deref for Symbol {
     type Target = str;
 
+    #[inline]
     fn deref(&self) -> &Self::Target {
-        self.as_ref()
+        self.name.deref()
     }
 }

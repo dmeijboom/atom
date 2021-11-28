@@ -1,6 +1,5 @@
 use crate::compiler::ir::{Code, IR};
 use crate::compiler::Module;
-use crate::runtime::atom_string_to_str;
 
 fn is_valid_type(name: &str) -> bool {
     matches!(
@@ -13,7 +12,7 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
     loop {
         let index = instructions.iter().enumerate().position(|(i, code)| {
             matches!(code, Code::ConstInt32(_))
-                && matches!(instructions.get(i + 1), Some(Code::Cast(id)) if is_valid_type(atom_string_to_str(instructions.get_data(*id))))
+                && matches!(instructions.get(i + 1), Some(Code::Cast(id)) if is_valid_type(instructions.get_data(*id)))
         });
 
         if let Some(i) = index {
@@ -30,7 +29,7 @@ pub fn optimize(_module: &Module, instructions: &mut IR) {
                 unreachable!()
             };
 
-            *code = match atom_string_to_str(&type_name) {
+            *code = match type_name.as_str() {
                 "Uint8" => Code::ConstUint8(value as u8),
                 "Int8" => Code::ConstInt8(value as i8),
                 "Uint16" => Code::ConstUint16(value as u16),

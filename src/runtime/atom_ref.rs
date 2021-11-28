@@ -1,6 +1,5 @@
 use std::borrow::Borrow;
 use std::fmt::{Debug, Formatter};
-use std::mem;
 use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
@@ -10,12 +9,6 @@ use super::error::Result;
 pub type AtomRef<T> = Rc<T>;
 pub type AtomWeakRef<T> = Weak<T>;
 pub type AtomArray<T> = AtomRef<[T]>;
-pub type AtomString = AtomArray<u8>;
-
-pub fn atom_string_to_str(s: &AtomString) -> &str {
-    // This should be safe, because the AtomString is guaranteed to be valid UTF-8
-    unsafe { mem::transmute(s.as_ref()) }
-}
 
 #[inline]
 pub fn unwrap_or_clone_inner<T>(r: AtomRef<T>) -> T

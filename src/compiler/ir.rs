@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut, Range};
 
-use crate::runtime::{atom_string_to_str, AtomString};
+use crate::runtime::AtomString;
 
 #[derive(Debug, Clone, PartialEq, Hash, Default)]
 pub struct Location {
@@ -124,7 +124,7 @@ fn format_name(id: usize, ir: Option<&IR>) -> String {
         } else {
             "id".to_string()
         },
-        ir.map(|ir| atom_string_to_str(ir.get_data(id)).to_string())
+        ir.map(|ir| ir.get_data(id).to_string())
             .unwrap_or_else(|| id.to_string())
     )
 }
@@ -140,7 +140,7 @@ fn format_names(range: [usize; 2], ir: Option<&IR>) -> String {
         (range[0]..range[1])
             .map(|id| format!(
                 "'{}'",
-                ir.map(|ir| atom_string_to_str(ir.get_data(id)).to_string())
+                ir.map(|ir| ir.get_data(id).to_string())
                     .unwrap_or_else(|| id.to_string())
             ))
             .collect::<Vec<_>>()
@@ -271,7 +271,8 @@ impl IR {
 
     pub fn add_data(&mut self, val: &str) -> usize {
         let id = self.data.len();
-        self.data.push(AtomString::from(val.as_bytes()));
+
+        self.data.push(AtomString::from(val));
 
         id
     }

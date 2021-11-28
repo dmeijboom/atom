@@ -1,5 +1,5 @@
 use crate::runtime::{
-    AtomRefMut, Convert, ErrorKind, Input, Int, Output, Result, RuntimeError, Value,
+    AtomRefMut, AtomString, Convert, ErrorKind, Input, Int, Output, Result, RuntimeError, Value,
 };
 
 pub mod binary {
@@ -74,7 +74,8 @@ pub fn utf8_decode(input: Input<'_>) -> Result<Output> {
         bytes.push(item.clone().convert()?);
     }
 
-    Ok(Output::new(String::from_utf8(bytes).map_err(|e| {
-        RuntimeError::new(ErrorKind::FatalError, format!("{}", e))
-    })?))
+    let s = String::from_utf8(bytes)
+        .map_err(|e| RuntimeError::new(ErrorKind::FatalError, format!("{}", e)))?;
+
+    Ok(Output::new(AtomString::new(s)))
 }
