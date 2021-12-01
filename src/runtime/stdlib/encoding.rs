@@ -1,20 +1,21 @@
-use crate::runtime::{
-    AtomRefMut, AtomString, Convert, ErrorKind, Input, Int, Output, Result, RuntimeError, Value,
-};
+use crate::runtime::types::{AtomRefMut, AtomString, Input, Int, Value};
+use crate::runtime::{Convert, ErrorKind, Result, RuntimeError};
 
 pub mod binary {
-    use crate::runtime::ExternalFn;
+    use crate::runtime::macros::wrap_fn;
+    use crate::runtime::types::ExternalFn;
 
     pub const FUNCTIONS: [(&str, ExternalFn); 2] = [
-        ("parseInt", super::parse_int),
-        ("parseUint", super::parse_uint),
+        ("parseInt", wrap_fn!(super::parse_int)),
+        ("parseUint", wrap_fn!(super::parse_uint)),
     ];
 }
 
 pub mod utf8 {
-    use crate::runtime::ExternalFn;
+    use crate::runtime::macros::wrap_fn;
+    use crate::runtime::types::ExternalFn;
 
-    pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("decode", super::utf8_decode)];
+    pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("decode", wrap_fn!(super::utf8_decode))];
 }
 
 fn to_fixed_array<T: Copy, const N: usize>(items: Vec<T>) -> Result<[T; N]> {
@@ -28,8 +29,8 @@ fn to_fixed_array<T: Copy, const N: usize>(items: Vec<T>) -> Result<[T; N]> {
     unsafe { Ok(*(items.as_ptr() as *const [T; N])) }
 }
 
-pub fn parse_int(input: Input<'_>) -> Result<Output> {
-    let data: AtomRefMut<Vec<Value>> = input.single()?;
+pub fn parse_int(mut input: Input<'_>) -> Result<impl Into<Value>> {
+    let data: AtomRefMut<Vec<Value>> = input.take_arg()?;
     let mut bytes = vec![];
 
     for item in data.iter() {
@@ -37,18 +38,18 @@ pub fn parse_int(input: Input<'_>) -> Result<Output> {
     }
 
     if bytes.len() == 4 {
-        return Ok(Output::new(Int::from(i32::from_ne_bytes(
-            to_fixed_array::<_, 4>(bytes)?,
-        ))));
+        return Ok(Int::from(i32::from_ne_bytes(to_fixed_array::<_, 4>(
+            bytes,
+        )?)));
     }
 
-    Ok(Output::new(Int::from(i64::from_ne_bytes(
-        to_fixed_array::<_, 8>(bytes)?,
-    ))))
+    Ok(Int::from(i64::from_ne_bytes(to_fixed_array::<_, 8>(
+        bytes,
+    )?)))
 }
 
-pub fn parse_uint(input: Input<'_>) -> Result<Output> {
-    let data: AtomRefMut<Vec<Value>> = input.single()?;
+pub fn parse_uint(mut input: Input<'_>) -> Result<impl Into<Value>> {
+    let data: AtomRefMut<Vec<Value>> = input.take_arg()?;
     let mut bytes = vec![];
 
     for item in data.iter() {
@@ -56,18 +57,18 @@ pub fn parse_uint(input: Input<'_>) -> Result<Output> {
     }
 
     if bytes.len() == 4 {
-        return Ok(Output::new(Int::from(u32::from_ne_bytes(
-            to_fixed_array::<_, 4>(bytes)?,
-        ))));
+        return Ok(Int::from(u32::from_ne_bytes(to_fixed_array::<_, 4>(
+            bytes,
+        )?)));
     }
 
-    Ok(Output::new(Int::from(u64::from_ne_bytes(
-        to_fixed_array::<_, 8>(bytes)?,
-    ))))
+    Ok(Int::from(u64::from_ne_bytes(to_fixed_array::<_, 8>(
+        bytes,
+    )?)))
 }
 
-pub fn utf8_decode(input: Input<'_>) -> Result<Output> {
-    let data: AtomRefMut<Vec<Value>> = input.single()?;
+pub fn utf8_decode(mut input: Input<'_>) -> Result<impl Into<Value>> {
+    let data: AtomRefMut<Vec<Value>> = input.take_arg()?;
     let mut bytes = vec![];
 
     for item in data.iter() {
@@ -77,5 +78,5 @@ pub fn utf8_decode(input: Input<'_>) -> Result<Output> {
     let s = String::from_utf8(bytes)
         .map_err(|e| RuntimeError::new(ErrorKind::FatalError, format!("{}", e)))?;
 
-    Ok(Output::new(AtomString::new(s)))
+    Ok(AtomString::new(s))
 }

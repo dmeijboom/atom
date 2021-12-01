@@ -1,4 +1,4 @@
-use crate::runtime::ExternalFn;
+use crate::runtime::types::ExternalFn;
 
 mod core;
 mod encoding;

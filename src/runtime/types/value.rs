@@ -3,17 +3,7 @@ use std::fmt::{Display, Formatter};
 use strum_macros::EnumIter;
 
 use crate::runtime::types::*;
-
-use super::atom_ref::{AtomArray, AtomRef, AtomRefMut};
-use super::error::{ErrorKind, Result, RuntimeError};
-use super::rust::RustObject;
-
-pub trait Convert<T> {
-    fn convert(self) -> Result<T>;
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct AtomNil;
+use crate::runtime::{Convert, ErrorKind, Result, RuntimeError};
 
 macro_rules! type_error {
     ($expected:ident, $value:expr) => {
@@ -174,6 +164,12 @@ impl From<Option<Value>> for Value {
             None => Value::Nil(AtomNil {}),
             Some(value) => value,
         }
+    }
+}
+
+impl From<()> for Value {
+    fn from(_: ()) -> Self {
+        Value::Void
     }
 }
 

@@ -4,7 +4,7 @@ use std::fmt::{Debug, Display, Formatter};
 use std::hash::Hash;
 use std::ops::{Deref, DerefMut, Range};
 
-use crate::runtime::AtomString;
+use crate::runtime::types::AtomString;
 
 #[derive(Debug, Clone, PartialEq, Hash, Default)]
 pub struct Location {

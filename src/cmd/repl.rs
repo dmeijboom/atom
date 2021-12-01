@@ -8,7 +8,7 @@ use rustyline::Editor;
 use crate::compiler::{CompileError, LineNumberOffset};
 use crate::engine::{Engine, Options};
 use crate::error::Error;
-use crate::runtime::{AtomNil, Value};
+use crate::runtime::types::{AtomNil, Value};
 use crate::syntax::{parser, FnDeclStmt, ReturnStmt, Stmt, Variable};
 
 fn pretty_fmt_items(items: &[Value]) -> ColoredString {

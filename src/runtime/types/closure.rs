@@ -1,6 +1,4 @@
-use crate::runtime::{AtomRef, Value};
-
-use super::r#fn::Fn;
+use crate::runtime::types::{AtomRef, Fn, Value};
 
 #[derive(Debug)]
 pub struct Closure {

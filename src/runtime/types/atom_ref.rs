@@ -4,7 +4,7 @@ use std::mem::MaybeUninit;
 use std::ops::Deref;
 use std::rc::{Rc, Weak};
 
-use super::error::Result;
+use crate::runtime::Result;
 
 pub type AtomRef<T> = Rc<T>;
 pub type AtomWeakRef<T> = Weak<T>;

@@ -2,7 +2,8 @@ use std::cmp::Ordering;
 use std::fmt::{Display, Formatter};
 use std::ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub};
 
-use crate::runtime::{Convert, Result, Value};
+use crate::runtime::types::Value;
+use crate::runtime::{Convert, Result};
 
 macro_rules! cast {
     ($value:expr, $typename:ident) => {

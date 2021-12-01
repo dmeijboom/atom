@@ -4,14 +4,11 @@ use strum::IntoEnumIterator;
 
 use crate::compiler;
 use crate::compiler::ir::{Code, Label};
-use crate::runtime::{
-    make_array, stdlib, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRefMut, AtomString,
-    ErrorKind,
+use crate::runtime::types::{
+    make_array, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRef, AtomRefMut, AtomString, Class,
+    Closure, Fn, FnKind, Input, Int, Interface, Method, Object, Receiver, Symbol, Value, ValueType,
 };
-use crate::runtime::{
-    AtomApi, AtomRef, Class, Closure, Convert, Fn, FnKind, Input, Int, Interface, Method, Object,
-    Output, Receiver, Result, RuntimeError, Symbol, Value, ValueType,
-};
+use crate::runtime::{stdlib, AtomApi, Convert, ErrorKind, Result, RuntimeError};
 use crate::vm::global_label::GlobalLabel;
 use crate::vm::module::Global;
 use crate::vm::Module;
@@ -369,11 +366,8 @@ impl Machine {
                 self.call_stack.pop();
 
                 match result {
-                    Ok(output) if store_return_value => {
-                        self.stack.push(match output {
-                            Output::Value(return_value) => return_value,
-                            Output::None => Value::Void,
-                        });
+                    Ok(return_value) if store_return_value => {
+                        self.stack.push(return_value);
 
                         Ok(())
                     }
@@ -402,7 +396,7 @@ impl Machine {
         let s = self.call_stack.current().function.ir.get_data(segment_id);
 
         self.stack.push(if s == "nil" {
-            Value::Nil(AtomNil {})
+            Value::Nil(AtomNil)
         } else {
             Value::Symbol(Symbol::new(AtomString::clone(s)))
         });

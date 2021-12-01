@@ -1,4 +1,5 @@
-use crate::runtime::{ErrorKind, Result, RuntimeError, Value};
+use crate::runtime::types::Value;
+use crate::runtime::{ErrorKind, Result, RuntimeError};
 
 #[derive(Debug)]
 pub struct Stack {
@@ -59,7 +60,7 @@ impl Stack {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::{Int, Value};
+    use crate::runtime::types::{Int, Value};
 
     use super::Stack;
 

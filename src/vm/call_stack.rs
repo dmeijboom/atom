@@ -1,7 +1,8 @@
 use std::fmt::{Display, Formatter};
 
 use crate::recycle_vec::RecycleVec;
-use crate::runtime::{AtomRef, Closure, Fn, Method, Origin, Receiver, Trace, Value};
+use crate::runtime::types::{AtomRef, Closure, Fn, Method, Receiver, Value};
+use crate::runtime::{Origin, Trace};
 
 #[derive(Debug)]
 pub enum Target {

@@ -1,6 +1,6 @@
 use indexmap::map::IndexMap;
 
-use crate::runtime::{AtomRef, AtomWeakRef, Class, Fn, Interface};
+use crate::runtime::types::{AtomRef, AtomWeakRef, Class, Fn, Interface};
 
 pub type ModuleId = usize;
 

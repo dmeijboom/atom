@@ -3,7 +3,7 @@ use std::hash::Hash;
 use std::ops::Deref;
 use std::{fmt, mem};
 
-use crate::runtime::AtomArray;
+use super::atom_ref::AtomArray;
 
 /// AtomString implements a UTF-8 encoded immutable string
 #[derive(Debug, PartialEq, Eq, Hash)]

@@ -3,9 +3,8 @@ use std::fmt::{Display, Formatter};
 
 use wyhash2::WyHash;
 
-use crate::runtime::{AtomRef, Origin};
-
-use super::r#fn::Fn;
+use crate::runtime::types::{AtomRef, Fn};
+use crate::runtime::Origin;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field {

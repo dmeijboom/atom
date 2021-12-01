@@ -3,7 +3,8 @@ use std::path::PathBuf;
 
 use crate::compiler::{CompileError, Compiler, LineNumberOffset};
 use crate::error::Error;
-use crate::runtime::{AtomRef, ErrorKind, RuntimeError, Value};
+use crate::runtime::types::{AtomRef, Value};
+use crate::runtime::{ErrorKind, RuntimeError};
 use crate::syntax::{parser, Stmt};
 use crate::vm::Machine;
 

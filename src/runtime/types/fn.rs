@@ -3,7 +3,8 @@ use std::fmt::{Debug, Display, Formatter};
 use indexmap::map::IndexMap;
 
 use crate::compiler::ir::IR;
-use crate::runtime::{AtomApi, Convert, ErrorKind, Origin, Result, RuntimeError, Value};
+use crate::runtime::types::Value;
+use crate::runtime::{AtomApi, Convert, ErrorKind, Origin, Result, RuntimeError};
 
 pub struct Input<'i> {
     pub api: &'i dyn AtomApi,
@@ -13,19 +14,6 @@ pub struct Input<'i> {
 impl<'i> Input<'i> {
     pub fn new(api: &'i dyn AtomApi, args: Vec<Value>) -> Self {
         Self { api, args }
-    }
-
-    pub fn single<T>(self) -> Result<T>
-    where
-        Value: Convert<T>,
-    {
-        let mut args = self.take_args();
-
-        args.swap_remove(0).convert()
-    }
-
-    pub fn take_args(self) -> Vec<Value> {
-        self.args
     }
 
     pub fn take_receiver<T>(&mut self) -> Result<T>
@@ -41,7 +29,7 @@ impl<'i> Input<'i> {
             .convert()
     }
 
-    pub fn pop_first<T>(&mut self) -> Result<T>
+    pub fn take_arg<T>(&mut self) -> Result<T>
     where
         Value: Convert<T>,
     {
@@ -56,25 +44,7 @@ impl<'i> Input<'i> {
     }
 }
 
-pub enum Output {
-    Value(Value),
-    None,
-}
-
-impl Output {
-    pub fn new<T>(value: T) -> Self
-    where
-        Value: From<T>,
-    {
-        Self::Value(value.into())
-    }
-
-    pub fn void() -> Result<Self> {
-        Ok(Self::None)
-    }
-}
-
-pub type ExternalFn = fn(input: Input<'_>) -> Result<Output>;
+pub type ExternalFn = fn(input: Input<'_>) -> Result<Value>;
 
 #[derive(Clone)]
 pub enum FnKind {

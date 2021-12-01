@@ -5,10 +5,8 @@ use wyhash2::WyHash;
 
 use crate::compiler::ir::{Code, Location};
 use crate::compiler::{self, ElementKind, FunctionAttr};
-use crate::runtime::{
-    AtomRef, Class, ErrorKind, ExternalFn, Field, Fn, FnArg, Interface, Origin, Result,
-    RuntimeError,
-};
+use crate::runtime::types::{AtomRef, Class, ExternalFn, Field, Fn, FnArg, Interface};
+use crate::runtime::{ErrorKind, Origin, Result, RuntimeError};
 use crate::vm::module::{Global, ModuleId};
 
 use super::module::Module;

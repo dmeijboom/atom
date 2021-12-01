@@ -2,9 +2,7 @@ use std::any::Any;
 use std::fmt;
 use std::fmt::{Debug, Formatter};
 
-use crate::runtime::ErrorKind;
-
-use super::error::{Result, RuntimeError};
+use crate::runtime::{ErrorKind, Result, RuntimeError};
 
 pub struct RustObject {
     any: Box<dyn Any>,

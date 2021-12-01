@@ -1,11 +1,13 @@
 use std::process;
 
-use crate::runtime::{ErrorKind, ExternalFn, Input, Int, Output, Result, RuntimeError};
+use crate::runtime::macros::wrap_fn;
+use crate::runtime::types::{ExternalFn, Input, Int};
+use crate::runtime::{ErrorKind, Result, RuntimeError};
 
-pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("exit", exit)];
+pub const FUNCTIONS: [(&str, ExternalFn); 1] = [("exit", wrap_fn!(exit))];
 
-pub fn exit(input: Input<'_>) -> Result<Output> {
-    let exit_code: Int = input.single()?;
+pub fn exit(mut input: Input<'_>) -> Result<()> {
+    let exit_code: Int = input.take_arg()?;
     let exit_code: i32 = match exit_code {
         Int::Int32(val) => val,
         _ => {

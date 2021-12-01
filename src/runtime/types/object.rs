@@ -1,6 +1,4 @@
-use crate::runtime::{AtomRef, AtomRefMut, Value};
-
-use super::class::Class;
+use crate::runtime::types::{AtomRef, AtomRefMut, Class, Value};
 
 #[derive(Debug)]
 pub struct Object {
