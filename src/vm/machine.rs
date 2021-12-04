@@ -50,8 +50,7 @@ macro_rules! impl_op {
                 return Err(RuntimeError::new(
                     ErrorKind::TypeError,
                     format!(
-                        "expected '{}', found '{}' in: {}",
-                        right.get_type().name(),
+                        "expected Int or Uint, found '{}' in: {}",
                         left.get_type().name(),
                         stringify!($opname)
                     ),

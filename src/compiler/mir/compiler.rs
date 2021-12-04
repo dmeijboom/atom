@@ -427,17 +427,28 @@ impl<'c> Compiler<'c> {
         ))
     }
 
-    fn compile_match_case(&mut self, local_id: LocalId, case: &MatchCase) -> Result<Cond> {
-        let right = self.compile_expr(&case.pattern)?;
-        let condition = Value::new(
+    fn build_match_cond(&mut self, local_id: LocalId, expr: &Expr) -> Result<Value> {
+        Ok(Value::new(
             self.loc.clone(),
-            ValueKind::Comparison(Box::new(Operator::<ComparisonOp> {
-                left: Value::new(self.loc.clone(), ValueKind::Local(local_id)),
-                right,
-                op: ComparisonOp::Eq,
-            })),
-        );
+            match expr {
+                Expr::Arithmetic(arithmetic) if arithmetic.op == ArithmeticOp::BitOr => {
+                    ValueKind::Logical(Box::new(Operator::<LogicalOp> {
+                        left: self.build_match_cond(local_id, &arithmetic.left)?,
+                        right: self.build_match_cond(local_id, &arithmetic.right)?,
+                        op: LogicalOp::Or,
+                    }))
+                }
+                pattern => ValueKind::Comparison(Box::new(Operator::<ComparisonOp> {
+                    left: Value::new(self.loc.clone(), ValueKind::Local(local_id)),
+                    right: self.compile_expr(pattern)?,
+                    op: ComparisonOp::Eq,
+                })),
+            },
+        ))
+    }
 
+    fn compile_match_case(&mut self, local_id: LocalId, case: &MatchCase) -> Result<Cond> {
+        let condition = self.build_match_cond(local_id, &case.pattern)?;
         let scope_id = self.enter_scope(ScopeContext::Block);
         let block = self.compile_block(scope_id, &case.body)?;
 

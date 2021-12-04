@@ -47,10 +47,7 @@ pub class JSONDecoder {
     fn skipWhitespace() {
         for {
             match this.data.nth(this.index) {
-                ' ' -> this.next(),
-                '\r' -> this.next(),
-                '\t' -> this.next(),
-                '\n' -> this.next(),
+                ' ' | '\r' | '\t' | '\n' -> this.next(),
                 else -> {
                     break;
                 }
@@ -190,11 +187,7 @@ pub class JSONEncoder {
 
     pub fn encode(data) {
         match typeof data {
-            Bool -> this.write(data.toString()),
-            Int -> this.write(data.toString()),
-            Float -> this.write(data.toString()),
-            Symbol -> this.writeString(data.toString()),
-            Char -> this.writeString(data.toString()),
+            Bool | Int | Uint | Float | Symbol | Char -> this.write(data.toString()),
             String -> this.writeString(data.replace("\"", "\\\"")),
             Array -> {
                 this.write('[');
