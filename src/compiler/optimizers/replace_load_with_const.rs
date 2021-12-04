@@ -5,14 +5,8 @@ use crate::compiler::Module;
 fn is_const(code: &Code) -> bool {
     matches!(
         code,
-        Code::ConstUint8(_)
-            | Code::ConstUint16(_)
-            | Code::ConstUint32(_)
-            | Code::ConstUint64(_)
-            | Code::ConstInt8(_)
-            | Code::ConstInt16(_)
-            | Code::ConstInt32(_)
-            | Code::ConstInt64(_)
+        Code::ConstInt(_)
+            | Code::ConstUint(_)
             | Code::ConstBool(_)
             | Code::ConstByte(_)
             | Code::ConstChar(_)

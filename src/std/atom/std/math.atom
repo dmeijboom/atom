@@ -1,7 +1,7 @@
 # based on `Math.mul64` in Golang it's math/bits package
 pub fn mul64(a, b) {
-    let x = (Uint64)a;
-    let y = (Uint64)b;
+    let x = (Uint)a;
+    let y = (Uint)b;
 
     let mask32 = 4294967295;
 
@@ -17,7 +17,7 @@ pub fn mul64(a, b) {
     w1 += x0 * y1;
 
     let hi = x1*y1 + w2 + (w1 >> 32);
-    let lo = (Uint64)((Uint32)x) * (Uint32)y;
+    let lo = x.truncate(32) * y.truncate(32);
 
     return (hi, lo);
 }

@@ -3,7 +3,6 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::RwLock;
 
-use crate::runtime::stdlib::DEFAULT_IMPORTS;
 use crate::syntax::parser;
 use crate::syntax::Stmt;
 
@@ -37,7 +36,7 @@ fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
     Ok(())
 }
 
-const STD_SOURCES: [(&str, &str); 9] = [
+const STD_SOURCES: [(&str, &str); 10] = [
     ("std.sys", include_str!("../std/atom/std/sys.atom")),
     ("std.core", include_str!("../std/atom/std/core.atom")),
     ("std.map", include_str!("../std/atom/std/map.atom")),
@@ -56,6 +55,7 @@ const STD_SOURCES: [(&str, &str); 9] = [
         include_str!("../std/atom/std/encoding/json.atom"),
     ),
     ("testing", include_str!("../std/atom/testing.atom")),
+    ("__prelude", include_str!("../std/atom/prelude.atom")),
 ];
 
 pub struct Compiler {
@@ -91,6 +91,32 @@ impl Compiler {
         self.fs.add_path(path.as_ref().to_path_buf());
     }
 
+    fn merge_module(&mut self, mut module: Module) {
+        for (key, mixin_stmt) in module.mixins.drain() {
+            self.module.mixins.insert(key, mixin_stmt);
+        }
+
+        for (key, element) in module.imports.drain(..) {
+            self.module.imports.insert(key, element);
+        }
+
+        for (name, class) in module.classes.drain(..) {
+            self.module.classes.insert(name, class);
+        }
+
+        for (name, interface) in module.interfaces.drain(..) {
+            self.module.interfaces.insert(name, interface);
+        }
+
+        for (name, function) in module.functions.drain(..) {
+            self.module.functions.insert(name, function);
+        }
+
+        for (name, element) in module.exports.drain() {
+            self.module.exports.insert(name, element);
+        }
+    }
+
     fn fork(
         &self,
         module_name: String,
@@ -107,9 +133,10 @@ impl Compiler {
         }
     }
 
-    fn setup_prelude(&mut self) -> Result<()> {
+    fn prelude_pass(&mut self) -> Result<()> {
         // Core module shouldn't include the prelude as that would create an infinite loop
-        if self.module.name == "std.core"
+        if self.module.name == "__prelude"
+            || self.module.name == "std.core"
             || self.module.name == "std.map"
             || self.module.name == "std.math"
             || self.module.name == "std.encoding.binary"
@@ -117,9 +144,9 @@ impl Compiler {
             return Ok(());
         }
 
-        for name in DEFAULT_IMPORTS {
-            self.import_name(name)?;
-        }
+        let prelude = self.parse_and_compile("__prelude".to_string())?;
+
+        self.merge_module(prelude);
 
         Ok(())
     }
@@ -140,10 +167,12 @@ impl Compiler {
             .compile()
             .map_err(|err| {
                 if let Some(filename) = filename.clone() {
-                    err.with_filename(filename)
-                } else {
-                    err
+                    if err.filename.is_none() {
+                        return err.with_filename(filename);
+                    }
                 }
+
+                err
             })?;
 
         module.filename = filename;
@@ -345,7 +374,7 @@ impl Compiler {
 
     pub fn compile(mut self) -> Result<Module> {
         self.module_name_pass()?;
-        self.setup_prelude()?;
+        self.prelude_pass()?;
         self.name_validation_pass()?;
         self.imports_pass()?;
         self.mixins_pass()?;

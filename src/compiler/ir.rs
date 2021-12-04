@@ -46,14 +46,8 @@ impl Display for Label {
 
 #[derive(Clone, PartialEq)]
 pub enum Code {
-    ConstInt64(i64),
-    ConstUint64(u64),
-    ConstInt32(i32),
-    ConstUint32(u32),
-    ConstInt16(i16),
-    ConstUint16(u16),
-    ConstInt8(i8),
-    ConstUint8(u8),
+    ConstInt(i64),
+    ConstUint(u64),
     ConstByte(u8),
     ConstBool(bool),
     ConstFloat(f64),
@@ -151,14 +145,8 @@ fn format_names(range: [usize; 2], ir: Option<&IR>) -> String {
 impl Code {
     pub fn description(&self, ir: Option<&IR>) -> String {
         match self {
-            Code::ConstInt64(val) => format!("  constInt64({})", val),
-            Code::ConstUint64(val) => format!("  constUint64({})", val),
-            Code::ConstInt32(val) => format!("  constInt32({})", val),
-            Code::ConstUint32(val) => format!("  constUint32({})", val),
-            Code::ConstInt16(val) => format!("  constInt16({})", val),
-            Code::ConstUint16(val) => format!("  constUint16({})", val),
-            Code::ConstInt8(val) => format!("  constInt8({})", val),
-            Code::ConstUint8(val) => format!("  constUint8({})", val),
+            Code::ConstInt(val) => format!("  constInt({})", val),
+            Code::ConstUint(val) => format!("  constUint({})", val),
             Code::ConstBool(val) => format!("  constBool({})", val),
             Code::ConstFloat(val) => format!("  constFloat({})", val),
             Code::ConstChar(val) => format!("  constChar({})", val),

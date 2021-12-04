@@ -60,7 +60,7 @@ impl Stack {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::types::{Int, Value};
+    use crate::runtime::types::Value;
 
     use super::Stack;
 
@@ -68,23 +68,16 @@ mod tests {
     fn test_pop_many() {
         let mut stack = Stack::new();
 
-        stack.push(Value::Int(Int::Uint8(10)));
-        stack.push(Value::Int(Int::Uint8(20)));
-        stack.push(Value::Int(Int::Uint8(30)));
-        stack.push(Value::Int(Int::Uint8(40)));
-        stack.push(Value::Int(Int::Uint8(50)));
+        stack.push(Value::Int(10));
+        stack.push(Value::Int(20));
+        stack.push(Value::Int(30));
+        stack.push(Value::Int(40));
+        stack.push(Value::Int(50));
 
         let mut buffer = vec![];
 
         stack.pop_many(3, &mut buffer).unwrap();
 
-        assert_eq!(
-            buffer,
-            vec![
-                Value::Int(Int::Uint8(30)),
-                Value::Int(Int::Uint8(40)),
-                Value::Int(Int::Uint8(50))
-            ]
-        );
+        assert_eq!(buffer, vec![Value::Int(30), Value::Int(40), Value::Int(50)]);
     }
 }

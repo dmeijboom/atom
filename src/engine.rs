@@ -57,10 +57,18 @@ impl Engine {
         self.run(opts, &source).map_err(|err| {
             if let Some(filename) = display_name {
                 if let Error::Compile(err) = err {
+                    if err.filename.is_some() {
+                        return Error::Compile(err);
+                    }
+
                     return Error::Compile(err.with_filename(filename));
                 }
 
                 if let Error::Runtime(err) = err {
+                    if err.filename.is_some() {
+                        return Error::Runtime(err);
+                    }
+
                     return Error::Runtime(err.with_filename(filename));
                 }
             }

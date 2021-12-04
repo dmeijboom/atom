@@ -75,9 +75,8 @@ impl<'c> CodeGenerator<'c> {
         match &value.kind {
             ValueKind::Const(val) => {
                 let code = match val {
-                    Const::Int64(val) => Code::ConstInt64(*val),
-                    Const::Uint64(val) => Code::ConstUint64(*val),
-                    Const::Int32(val) => Code::ConstInt32(*val),
+                    Const::Int(val) => Code::ConstInt(*val),
+                    Const::Uint(val) => Code::ConstUint(*val),
                     Const::Byte(val) => Code::ConstByte(*val),
                     Const::Float(val) => Code::ConstFloat(*val),
                     Const::Bool(val) => Code::ConstBool(*val),

@@ -3,7 +3,6 @@ pub use atom_ref::{
 };
 pub use class::{Class, Field};
 pub use closure::Closure;
-pub use int::Int;
 pub use interface::Interface;
 pub use method::{Method, Receiver};
 pub use object::Object;
@@ -20,7 +19,6 @@ mod atom_ref;
 mod class;
 mod closure;
 mod r#fn;
-mod int;
 mod interface;
 mod method;
 mod object;

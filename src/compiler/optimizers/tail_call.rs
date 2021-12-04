@@ -1,5 +1,4 @@
 use crate::compiler::ir::{Code, IR};
-
 use crate::compiler::Module;
 
 fn has_side_effects(codes: &[Code]) -> bool {
@@ -29,14 +28,8 @@ fn has_side_effects(codes: &[Code]) -> bool {
                 | Code::ConstByte(_)
                 | Code::ConstChar(_)
                 | Code::ConstFloat(_)
-                | Code::ConstInt64(_)
-                | Code::ConstUint64(_)
-                | Code::ConstInt32(_)
-                | Code::ConstUint32(_)
-                | Code::ConstInt16(_)
-                | Code::ConstUint16(_)
-                | Code::ConstInt8(_)
-                | Code::ConstUint8(_)
+                | Code::ConstInt(_)
+                | Code::ConstUint(_)
                 | Code::Discard
         ) {
             return true;

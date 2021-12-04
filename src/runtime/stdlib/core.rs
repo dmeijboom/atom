@@ -1,6 +1,6 @@
 use crate::runtime::macros::wrap_fn;
 use crate::runtime::types::{
-    AtomArray, AtomNil, AtomRef, AtomRefMut, AtomString, ExternalFn, Fn, Input, Int, Value,
+    AtomArray, AtomNil, AtomRef, AtomRefMut, AtomString, ExternalFn, Fn, Input, Value,
 };
 use crate::runtime::{ErrorKind, Result, RuntimeError};
 
@@ -9,7 +9,7 @@ pub const FUNCTIONS: [(&str, ExternalFn); 2] = [
     ("rt_raise", wrap_fn!(runtime_raise)),
 ];
 
-pub const METHODS: [(&str, &str, ExternalFn); 24] = [
+pub const METHODS: [(&str, &str, ExternalFn); 25] = [
     ("String", "upper", wrap_fn!(string_upper)),
     ("String", "lower", wrap_fn!(string_lower)),
     ("String", "split", wrap_fn!(string_split)),
@@ -33,7 +33,8 @@ pub const METHODS: [(&str, &str, ExternalFn); 24] = [
     ("Array", "len", wrap_fn!(array_len)),
     ("Array", "clear", wrap_fn!(array_clear)),
     ("Fn", "name", wrap_fn!(fn_name)),
-    ("Int", "size", wrap_fn!(int_size)),
+    ("Int", "truncate", wrap_fn!(int_truncate)),
+    ("Uint", "truncate", wrap_fn!(uint_truncate)),
 ];
 
 pub fn println(input: Input<'_>) -> Result<()> {
@@ -120,16 +121,14 @@ pub fn string_count(mut input: Input<'_>) -> Result<Value> {
     let s: AtomString = input.take_receiver()?;
     let pattern: AtomString = input.take_arg()?;
 
-    Ok(Int::from(s.matches(pattern.as_str()).count()).into())
+    Ok(s.matches(pattern.as_str()).count().into())
 }
 
-pub fn string_find(mut input: Input<'_>) -> Result<Value> {
+pub fn string_find(mut input: Input<'_>) -> Result<impl Into<Value>> {
     let s: AtomString = input.take_receiver()?;
     let pattern: AtomString = input.take_arg()?;
 
-    Ok(s.find(pattern.as_str())
-        .map(|index| Value::Int(index.into()))
-        .into())
+    Ok(s.find(pattern.as_str()).map(Value::from))
 }
 
 pub fn string_substr(mut input: Input<'_>) -> Result<Value> {
@@ -186,10 +185,10 @@ pub fn string_trim(mut input: Input<'_>) -> Result<Value> {
     Ok(AtomString::from(s.trim()).into())
 }
 
-pub fn string_len(mut input: Input<'_>) -> Result<Value> {
+pub fn string_len(mut input: Input<'_>) -> Result<impl Into<Value>> {
     let s: AtomString = input.take_receiver()?;
 
-    Ok(Int::from(s.len()).into())
+    Ok(s.len())
 }
 
 pub fn float_floor(mut input: Input<'_>) -> Result<Value> {
@@ -234,10 +233,10 @@ pub fn array_clear(mut input: Input<'_>) -> Result<Value> {
     Ok(().into())
 }
 
-pub fn array_len(mut input: Input<'_>) -> Result<Value> {
+pub fn array_len(mut input: Input<'_>) -> Result<impl Into<Value>> {
     let a: AtomRefMut<Vec<Value>> = input.take_receiver()?;
 
-    Ok(Int::from(a.len()).into())
+    Ok(a.len())
 }
 
 pub fn fn_name(mut input: Input<'_>) -> Result<Value> {
@@ -246,8 +245,42 @@ pub fn fn_name(mut input: Input<'_>) -> Result<Value> {
     Ok(AtomString::new(format!("{}.{}", func.origin.module_name, func.name)).into())
 }
 
-pub fn int_size(mut input: Input<'_>) -> Result<Value> {
-    let i: Int = input.take_receiver()?;
+pub fn int_truncate(mut input: Input<'_>) -> Result<impl Into<Value>> {
+    let val: i64 = input.take_receiver()?;
+    let size: i64 = input.take_arg()?;
 
-    Ok(Int::from(i.size()).into())
+    Ok(match size {
+        8 => (val as i8) as i64,
+        16 => (val as i16) as i64,
+        32 => (val as i32) as i64,
+        _ => {
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "invalid size '{}' for truncate (should be either 8, 16 or 32)",
+                    size
+                ),
+            ))
+        }
+    })
+}
+
+pub fn uint_truncate(mut input: Input<'_>) -> Result<impl Into<Value>> {
+    let val: u64 = input.take_receiver()?;
+    let size: i64 = input.take_arg()?;
+
+    Ok(match size {
+        8 => (val as u8) as u64,
+        16 => (val as u16) as u64,
+        32 => (val as u32) as u64,
+        _ => {
+            return Err(RuntimeError::new(
+                ErrorKind::FatalError,
+                format!(
+                    "invalid size '{}' for truncate (should be either 8, 16 or 32)",
+                    size
+                ),
+            ))
+        }
+    })
 }

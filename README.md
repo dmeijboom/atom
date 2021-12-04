@@ -13,7 +13,7 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 - No uninitialized fields
 - Classes as first-class citizens
 - Supports 64-bit floats
-- Supports 8/16/32/64-bit signed/unsigned integers (defaults to 32-bit signed integer)
+- Supports 64-bit signed and unsigned integers (defaults to 64-bit signed integer)
 
 ## Known issues
 
@@ -23,12 +23,6 @@ It's written in Rust, uses a bytecode compiler and is designed to be performant,
 
 The test suite is written in atom using the `testing` module.
 To run the test suite, run `atom run -- tests/main.atom`.
-
-### Integers
-
-Integer literals default to 32-bit signed integers unless that doesn't fit.
-On integer operations both sides are cast to the upper bound.
-This means in following program: `(Uint8)10 + (Uint64)20000` the `Uint8` value of `10` will be cast to a `Uint64` before the add operation.
 
 ## Project Status
 

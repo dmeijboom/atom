@@ -1,6 +1,6 @@
 use std::mem::size_of;
 
-use crate::runtime::types::{AtomArray, AtomRef, Int, Object, Value, ValueType};
+use crate::runtime::types::{AtomArray, AtomRef, Object, Value, ValueType};
 use crate::vm::StackFrame;
 
 pub fn command() {
@@ -14,7 +14,6 @@ pub fn command() {
         "size of: AtomArray<Value>: {} bytes",
         size_of::<AtomArray<Value>>()
     );
-    println!("size of: Int: {} bytes", size_of::<Int>());
     println!("size of: Object: {} bytes", size_of::<Object>());
     println!("size of: StackFrame: {} bytes", size_of::<StackFrame>());
 }

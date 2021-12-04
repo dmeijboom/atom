@@ -6,7 +6,7 @@ use crate::compiler;
 use crate::compiler::ir::{Code, Label};
 use crate::runtime::types::{
     make_array, unwrap_or_clone_inner, AtomArray, AtomNil, AtomRef, AtomRefMut, AtomString, Class,
-    Closure, Fn, FnKind, Input, Int, Interface, Method, Object, Receiver, Symbol, Value, ValueType,
+    Closure, Fn, FnKind, Input, Interface, Method, Object, Receiver, Symbol, Value, ValueType,
 };
 use crate::runtime::{stdlib, AtomApi, Convert, ErrorKind, Result, RuntimeError};
 use crate::vm::global_label::GlobalLabel;
@@ -17,6 +17,14 @@ use super::call_stack::{CallStack, StackFrame, Target};
 use super::module::ModuleId;
 use super::module_cache::ModuleCache;
 use super::stack::Stack;
+
+#[derive(PartialEq, PartialOrd)]
+enum NumberType {
+    Int,
+    Uint,
+    Float,
+    Unknown,
+}
 
 macro_rules! write_array_ptr {
     ($array:expr, $index:expr, $value:expr) => {
@@ -30,7 +38,14 @@ macro_rules! impl_op {
         let left = $vm.stack.pop();
 
         $vm.stack.push(match left {
-            Value::Int(val) => Value::Int(val.$opname(right.convert()?)),
+            Value::Int(val) => {
+                let right: i64 = right.convert()?;
+                Value::Int(val.$opname(&right))
+            }
+            Value::Uint(val) => {
+                let right: u64 = right.convert()?;
+                Value::Uint(val.$opname(&right))
+            }
             _ => {
                 return Err(RuntimeError::new(
                     ErrorKind::TypeError,
@@ -53,13 +68,15 @@ macro_rules! impl_op {
 
         $vm.stack.push(match left {
             Value::Int(val) => {
-                let right: Int = right.convert()?;
-
+                let right: i64 = right.convert()?;
+                Value::Bool(val.$opname(&right))
+            }
+            Value::Uint(val) => {
+                let right: u64 = right.convert()?;
                 Value::Bool(val.$opname(&right))
             }
             Value::Float(val) => {
                 let right: f64 = right.convert()?;
-
                 Value::Bool(val.$opname(&right))
             }
             _ => {
@@ -84,13 +101,15 @@ macro_rules! impl_op {
 
         $vm.stack.push(match left {
             Value::Int(val) => {
-                let right: Int = right.convert()?;
-
+                let right: i64 = right.convert()?;
                 Value::Int(val.$opname(right))
+            }
+            Value::Uint(val) => {
+                let right: u64 = right.convert()?;
+                Value::Uint(val.$opname(right))
             }
             Value::Float(val) => {
                 let right: f64 = right.convert()?;
-
                 Value::Float(val.$opname(right))
             }
             _ => {
@@ -412,14 +431,8 @@ impl Machine {
         frame.position += 1;
 
         match code {
-            Code::ConstInt64(val) => self.eval_const(Int::Int64(val)),
-            Code::ConstUint64(val) => self.eval_const(Int::Uint64(val)),
-            Code::ConstInt32(val) => self.eval_const(Int::Int32(val)),
-            Code::ConstUint32(val) => self.eval_const(Int::Uint32(val)),
-            Code::ConstInt16(val) => self.eval_const(Int::Int16(val)),
-            Code::ConstUint16(val) => self.eval_const(Int::Uint16(val)),
-            Code::ConstInt8(val) => self.eval_const(Int::Int8(val)),
-            Code::ConstUint8(val) => self.eval_const(Int::Uint8(val)),
+            Code::ConstInt(val) => self.eval_const(Value::Int(val)),
+            Code::ConstUint(val) => self.eval_const(Value::Uint(val)),
             Code::ConstBool(val) => self.eval_const(val),
             Code::ConstSymbol(segment_id) => self.eval_symbol(segment_id),
             Code::ConstFloat(val) => self.eval_const(val),
@@ -448,8 +461,8 @@ impl Machine {
             Code::ArithmeticBitXor => self.eval_arithmetic_bit_xor()?,
             Code::ArithmeticBitShiftLeft => self.eval_arithmetic_bit_shift_left()?,
             Code::ArithmeticBitShiftRight => self.eval_arithmetic_bit_shift_right()?,
-            Code::ComparisonEq => self.eval_comparison_eq(),
-            Code::ComparisonNeq => self.eval_comparison_neq(),
+            Code::ComparisonEq => self.eval_comparison_eq()?,
+            Code::ComparisonNeq => self.eval_comparison_neq()?,
             Code::ComparisonGt => self.eval_comparison_gt()?,
             Code::ComparisonGte => self.eval_comparison_gte()?,
             Code::ComparisonLt => self.eval_comparison_lt()?,
@@ -499,12 +512,12 @@ impl Machine {
     }
 
     fn eval_make_range(&mut self) -> Result<()> {
-        let to: Int = self
+        let to: i64 = self
             .stack
             .pop()
             .convert()
             .map_err(|e: RuntimeError| e.with_context("unable to construct Range"))?;
-        let from: Int = self
+        let from: i64 = self
             .stack
             .pop()
             .convert()
@@ -659,9 +672,14 @@ impl Machine {
 
         self.stack.push(match left {
             Value::Int(val) => {
-                let right_val: Int = right.convert()?;
+                let right_val: u64 = right.convert()?;
 
-                Value::Int(val.pow(right_val))
+                Value::Int(val.pow(right_val as u32))
+            }
+            Value::Uint(val) => {
+                let right_val: u64 = right.convert()?;
+
+                Value::Uint(val.pow(right_val as u32))
             }
             Value::Float(val) => Value::Float(val.powf(right.convert()?)),
             _ => {
@@ -685,9 +703,14 @@ impl Machine {
 
         self.stack.push(match left {
             Value::Int(val) => {
-                let right_val: Int = right.convert()?;
+                let right_val: i64 = right.convert()?;
 
                 Value::Int(val.rem(right_val))
+            }
+            Value::Uint(val) => {
+                let right_val: u64 = right.convert()?;
+
+                Value::Uint(val.rem(right_val))
             }
             _ => {
                 return Err(RuntimeError::new(
@@ -704,18 +727,63 @@ impl Machine {
         Ok(())
     }
 
-    fn eval_comparison_eq(&mut self) {
+    fn eval_is_eq(&mut self) -> Result<bool> {
         let right = self.stack.pop();
         let left = self.stack.pop();
 
-        self.stack.push(Value::Bool(left.eq(&right)));
+        let left_num_id = match &left {
+            Value::Int(_) => NumberType::Int,
+            Value::Uint(_) => NumberType::Uint,
+            Value::Float(_) => NumberType::Float,
+            _ => NumberType::Unknown,
+        };
+        let right_num_id = match &right {
+            Value::Int(_) => NumberType::Int,
+            Value::Uint(_) => NumberType::Uint,
+            Value::Float(_) => NumberType::Float,
+            _ => NumberType::Unknown,
+        };
+        let upper_bound = if left_num_id > right_num_id {
+            left_num_id
+        } else {
+            right_num_id
+        };
+
+        Ok(match upper_bound {
+            NumberType::Int => {
+                let left: i64 = left.convert()?;
+                let right: i64 = right.convert()?;
+
+                left == right
+            }
+            NumberType::Uint => {
+                let left: u64 = left.convert()?;
+                let right: u64 = right.convert()?;
+
+                left == right
+            }
+            NumberType::Float => {
+                let left: f64 = left.convert()?;
+                let right: f64 = right.convert()?;
+
+                left == right
+            }
+            NumberType::Unknown => left.eq(&right),
+        })
     }
 
-    fn eval_comparison_neq(&mut self) {
-        let right = self.stack.pop();
-        let left = self.stack.pop();
+    fn eval_comparison_eq(&mut self) -> Result<()> {
+        let result = self.eval_is_eq()?;
+        self.stack.push(Value::Bool(result));
 
-        self.stack.push(Value::Bool(left.ne(&right)));
+        Ok(())
+    }
+
+    fn eval_comparison_neq(&mut self) -> Result<()> {
+        let result = self.eval_is_eq()?;
+        self.stack.push(Value::Bool(!result));
+
+        Ok(())
     }
 
     fn eval_comparison_gt(&mut self) -> Result<()> {
@@ -772,36 +840,23 @@ impl Machine {
         }
 
         self.stack.push(match value {
-            Value::Int(val) if type_name == "Float" => Value::Float(val.to_float()),
-            Value::Int(val) if type_name == "Byte" => Value::Byte(val.to_byte()),
-            Value::Int(val) if type_name == "Int64" => Value::Int(Int::Int64(val.into())),
-            Value::Int(val) if type_name == "Uint64" => Value::Int(Int::Uint64(val.into())),
-            Value::Int(val) if type_name == "Int32" => Value::Int(Int::Int32(val.into())),
-            Value::Int(val) if type_name == "Uint32" => Value::Int(Int::Uint32(val.into())),
-            Value::Int(val) if type_name == "Int16" => Value::Int(Int::Int16(val.into())),
-            Value::Int(val) if type_name == "Uint16" => Value::Int(Int::Uint16(val.into())),
-            Value::Int(val) if type_name == "Int8" => Value::Int(Int::Int8(val.into())),
-            Value::Int(val) if type_name == "Uint8" => Value::Int(Int::Uint8(val.into())),
+            Value::Int(val) if type_name == "Float" => Value::Float(val as f64),
+            Value::Int(val) if type_name == "Byte" => Value::Byte(val as u8),
+            Value::Int(val) if type_name == "Uint" => Value::Uint(val as u64),
+            Value::Uint(val) if type_name == "Int" => Value::Int(val as i64),
             Value::Float(val) if type_name == "Int" => {
-                if val.is_sign_negative() {
-                    Value::Int(Int::Int64(val as i64))
+                if val.is_sign_positive() {
+                    Value::Int(val as i64)
                 } else {
-                    Value::Int(Int::Uint64(val as u64))
+                    Value::Uint(val as u64)
                 }
             }
             Value::Char(val) if type_name == "Byte" => Value::Byte(val as u8),
-            Value::Byte(val) if type_name == "Int64" => Value::Int(Int::Int64(val as i64)),
-            Value::Byte(val) if type_name == "Uint64" => Value::Int(Int::Uint64(val as u64)),
-            Value::Byte(val) if type_name == "Int32" => Value::Int(Int::Int32(val as i32)),
-            Value::Byte(val) if type_name == "Uint32" => Value::Int(Int::Uint32(val as u32)),
-            Value::Byte(val) if type_name == "Int16" => Value::Int(Int::Int16(val as i16)),
-            Value::Byte(val) if type_name == "Uint16" => Value::Int(Int::Uint16(val as u16)),
-            Value::Byte(val) if type_name == "Int8" => Value::Int(Int::Int8(val as i8)),
-            Value::Byte(val) if type_name == "Uint8" || type_name == "Int" => {
-                Value::Int(Int::Uint8(val))
-            }
+            Value::Byte(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Byte(val) if type_name == "Uint" => Value::Uint(val as u64),
             Value::Byte(val) if type_name == "Char" => Value::Char(val as char),
-            Value::Bool(val) if type_name == "Int" => Value::Int(Int::Uint8(val as u8)),
+            Value::Bool(val) if type_name == "Int" => Value::Int(val as i64),
+            Value::Bool(val) if type_name == "Uint" => Value::Uint(val as u64),
             _ => {
                 return Err(RuntimeError::new(
                     ErrorKind::FatalError,
@@ -932,7 +987,7 @@ impl Machine {
 
                 Err(RuntimeError::new(
                     ErrorKind::FatalError,
-                    format!("index out of bounds: {}", index,),
+                    format!("index out of bounds: {}", index),
                 ))
             }
             _ => Err(RuntimeError::new(

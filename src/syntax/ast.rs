@@ -193,9 +193,8 @@ pub struct MapExpr {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Literal {
-    Int64(i64),
-    Uint64(u64),
-    Int32(i32),
+    Int(i64),
+    Uint(u64),
     Byte(u8),
     Float(f64),
     Bool(bool),

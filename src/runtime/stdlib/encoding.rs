@@ -1,4 +1,4 @@
-use crate::runtime::types::{AtomRefMut, AtomString, Input, Int, Value};
+use crate::runtime::types::{AtomRefMut, AtomString, Input, Value};
 use crate::runtime::{Convert, ErrorKind, Result, RuntimeError};
 
 pub mod binary {
@@ -38,14 +38,10 @@ pub fn parse_int(mut input: Input<'_>) -> Result<impl Into<Value>> {
     }
 
     if bytes.len() == 4 {
-        return Ok(Int::from(i32::from_ne_bytes(to_fixed_array::<_, 4>(
-            bytes,
-        )?)));
+        return Ok(i32::from_ne_bytes(to_fixed_array::<_, 4>(bytes)?) as i64);
     }
 
-    Ok(Int::from(i64::from_ne_bytes(to_fixed_array::<_, 8>(
-        bytes,
-    )?)))
+    Ok(i64::from_ne_bytes(to_fixed_array::<_, 8>(bytes)?))
 }
 
 pub fn parse_uint(mut input: Input<'_>) -> Result<impl Into<Value>> {
@@ -57,14 +53,10 @@ pub fn parse_uint(mut input: Input<'_>) -> Result<impl Into<Value>> {
     }
 
     if bytes.len() == 4 {
-        return Ok(Int::from(u32::from_ne_bytes(to_fixed_array::<_, 4>(
-            bytes,
-        )?)));
+        return Ok(u32::from_ne_bytes(to_fixed_array::<_, 4>(bytes)?) as u64);
     }
 
-    Ok(Int::from(u64::from_ne_bytes(to_fixed_array::<_, 8>(
-        bytes,
-    )?)))
+    Ok(u64::from_ne_bytes(to_fixed_array::<_, 8>(bytes)?))
 }
 
 pub fn utf8_decode(mut input: Input<'_>) -> Result<impl Into<Value>> {

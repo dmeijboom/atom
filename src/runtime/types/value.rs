@@ -33,10 +33,34 @@ macro_rules! impl_convert {
         impl Convert<$rust_type> for Value {
             fn convert(self) -> Result<$rust_type> {
                 match self {
-                    // @TODO: convert it to the right 'Int' type based on it's requirements
-                    Self::Float(val) => Ok(Int::Int64(val as i64)),
                     Self::Int(val) => Ok(val),
+                    Self::Uint(val) => Ok(val as i64),
+                    Self::Float(val) => Ok(val as i64),
                     _ => Err(type_error!(Int, self)),
+                }
+            }
+        }
+
+        impl Convert<usize> for Value {
+            fn convert(self) -> Result<usize> {
+                match self {
+                    Self::Int(val) => Ok(val as usize),
+                    Self::Uint(val) => Ok(val as usize),
+                    Self::Float(val) if val.is_sign_negative() => Ok(val as usize),
+                    _ => Err(type_error!(Int, self)),
+                }
+            }
+        }
+    };
+
+    (Uint, $rust_type:ty) => {
+        impl Convert<$rust_type> for Value {
+            fn convert(self) -> Result<$rust_type> {
+                match self {
+                    Self::Int(val) => Ok(val as u64),
+                    Self::Uint(val) => Ok(val),
+                    Self::Float(val) if val.is_sign_positive() => Ok(val as u64),
+                    _ => Err(type_error!(Uint, self)),
                 }
             }
         }
@@ -46,8 +70,9 @@ macro_rules! impl_convert {
         impl Convert<$rust_type> for Value {
             fn convert(self) -> Result<$rust_type> {
                 match self {
+                    Self::Int(val) => Ok(val as f64),
+                    Self::Uint(val) => Ok(val as f64),
                     Self::Float(val) => Ok(val),
-                    Self::Int(val) => Ok(val.to_float()),
                     _ => Err(type_error!(Float, self)),
                 }
             }
@@ -138,7 +163,8 @@ macro_rules! make_value {
 }
 
 make_value!(
-    (Int, Int),
+    (Int, i64),
+    (Uint, u64),
     (Float, f64),
     (Char, char),
     (Byte, u8),
@@ -157,6 +183,12 @@ make_value!(
     (RustObject, RustObject),
     (Nil, AtomNil)
 );
+
+impl From<usize> for Value {
+    fn from(size: usize) -> Self {
+        Value::Uint(size as u64)
+    }
+}
 
 impl From<Option<Value>> for Value {
     fn from(value: Option<Value>) -> Self {
@@ -185,6 +217,7 @@ impl Clone for Value {
         match self {
             Self::Void => Self::Void,
             Self::Int(val) => Value::Int(*val),
+            Self::Uint(val) => Value::Uint(*val),
             Self::Float(val) => Value::Float(*val),
             Self::Char(val) => Value::Char(*val),
             Self::Byte(val) => Value::Byte(*val),
@@ -213,6 +246,7 @@ impl Display for Value {
         match self {
             Self::Void => write!(f, "!"),
             Self::Int(val) => write!(f, "{}", val),
+            Self::Uint(val) => write!(f, "{}", val),
             Self::Float(val) => write!(f, "{}", val),
             Self::Char(val) => write!(f, "{}", val),
             Self::Byte(val) => write!(f, "{}", val),

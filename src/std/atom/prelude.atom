@@ -1,0 +1,11 @@
+import std.core.{
+    rt_raise, println,
+
+    String, Int, Uint,
+    Float, Tuple, Char,
+    Byte, Bool, Symbol,
+    Range, Array, Enum,
+    Iterable, RangeIterator,
+    ArrayIterator
+};
+import std.map.Map;

@@ -29,6 +29,7 @@ fn pretty_fmt(value: &Value) -> ColoredString {
     match value {
         Value::Void => "!".yellow(),
         Value::Int(val) => format!("{}", *val).purple(),
+        Value::Uint(val) => format!("{}", *val).purple(),
         Value::Float(val) => format!("{}", *val).purple(),
         Value::Char(val) => format!("'{}'", *val).green(),
         Value::Byte(val) => format!("'{}'", *val).purple(),

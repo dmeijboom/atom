@@ -44,17 +44,17 @@ fn encodeKey(key) {
 }
 
 fn wyr8(bytes) {
-    return (Uint64)parseInt(bytes);
+    return (Uint)parseInt(bytes);
 }
 
 fn wyr4(bytes) {
-    return (Uint64)parseUint(bytes);
+    return parseUint(bytes);
 }
 
 fn wyr3(bytes, index) {
-    return (Uint64)bytes[0] << 16
-        | (Uint64)bytes[index >> 1] << 8
-        | (Uint64)bytes[index - 1];
+    return (Uint)bytes[0] << 16
+        | (Uint)bytes[index >> 1] << 8
+        | (Uint)bytes[index - 1];
 }
 
 fn wymix(a, b) {
@@ -69,7 +69,7 @@ pub fn wyseed(bytes, mut seed) {
     let wyp2 = 0x8ebc6af09c88c6e3;
     let wyp3 = 0x589965cc75374cc3;
 
-    seed = (Uint64)seed ^ wyp0;
+    seed = seed ^ wyp0;
 
     if bytes.len() <= 16 {
         if bytes.len() <= 8 {

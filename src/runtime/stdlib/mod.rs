@@ -5,27 +5,6 @@ mod encoding;
 mod io;
 mod sys;
 
-pub const DEFAULT_IMPORTS: &[&str; 17] = &[
-    "std.core.rt_raise",
-    "std.core.println",
-    // Also all basic types (for type assertions for example)
-    "std.map.Map",
-    "std.core.String",
-    "std.core.Int",
-    "std.core.Float",
-    "std.core.Tuple",
-    "std.core.Char",
-    "std.core.Byte",
-    "std.core.Bool",
-    "std.core.Symbol",
-    "std.core.Range",
-    "std.core.Array",
-    "std.core.Enum",
-    "std.core.Iterable",
-    "std.core.RangeIterator",
-    "std.core.ArrayIterator",
-];
-
 pub fn hook(module: &str, name: &str, class_name: Option<&str>) -> Option<ExternalFn> {
     match class_name {
         None => match module {

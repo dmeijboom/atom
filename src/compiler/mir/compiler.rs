@@ -132,7 +132,7 @@ impl<'c> Compiler<'c> {
                                 Value::new(self.loc.clone(), ValueKind::Local(tmp)),
                                 Value::new(
                                     self.loc.clone(),
-                                    ValueKind::Const(Const::Int32(i as i32)),
+                                    ValueKind::Const(Const::Uint(i as u64)),
                                 ),
                             ))),
                         ),
@@ -149,9 +149,8 @@ impl<'c> Compiler<'c> {
 
         let kind = match expr {
             Expr::Literal(literal_expr) => ValueKind::Const(match &literal_expr.literal {
-                Literal::Int64(val) => Const::Int64(*val),
-                Literal::Uint64(val) => Const::Uint64(*val),
-                Literal::Int32(val) => Const::Int32(*val),
+                Literal::Int(val) => Const::Int(*val),
+                Literal::Uint(val) => Const::Uint(*val),
                 Literal::Byte(val) => Const::Byte(*val),
                 Literal::Float(val) => Const::Float(*val),
                 Literal::Bool(val) => Const::Bool(*val),

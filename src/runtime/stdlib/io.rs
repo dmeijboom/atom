@@ -4,7 +4,7 @@ use std::io::Read;
 
 use crate::runtime::macros::wrap_fn;
 use crate::runtime::types::{
-    AtomRef, AtomRefMut, AtomString, ExternalFn, Input, Int, Object, RustObject, Value,
+    AtomRef, AtomRefMut, AtomString, ExternalFn, Input, Object, RustObject, Value,
 };
 use crate::runtime::{Convert, ErrorKind, Result, RuntimeError};
 
@@ -37,7 +37,7 @@ pub fn file_size(mut input: Input<'_>) -> Result<impl Into<Value>> {
     let file: &File = rust_object.try_as_ref()?;
     let meta = file.metadata().map_err(map_io_err)?;
 
-    Ok(Int::from(meta.len()))
+    Ok(meta.len())
 }
 
 pub fn file_read(mut input: Input<'_>) -> Result<impl Into<Value>> {
