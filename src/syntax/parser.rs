@@ -42,7 +42,8 @@ peg::parser! {
             = position!()
 
         rule ident() -> String
-            = quiet!{ name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) {? if is_keyword(name) { Err("unexpected keyword") } else { Ok(name.to_string()) } } }
+            = "`" name:$([^ '`']+) "`" { name.to_string() }
+                / quiet!{ name:$(['a'..='z' | 'A'..='Z' | '_']['a'..='z' | 'A'..='Z' | '0'..='9' | '_']*) {? if is_keyword(name) { Err("unexpected keyword") } else { Ok(name.to_string()) } } }
                 / expected!("identifier")
 
         rule variable() -> Variable
@@ -387,6 +388,7 @@ mod tests {
     #[test_case("hello_world", 0..11; "with underscore")]
     #[test_case("hello1994", 0..9; "with numeric chars")]
     #[test_case("_test", 0..5; "starting with an underscore")]
+    #[test_case("`fn`", 0..4; "raw identifier")]
     fn ident_expr(name: &str, pos: Pos) {
         let source = format!("{};", name);
 
@@ -394,7 +396,7 @@ mod tests {
             parse_single(&source),
             Ok(Stmt::Expr(ExprStmt {
                 expr: Expr::Ident(IdentExpr {
-                    name: name.to_string(),
+                    name: name.replace("`", ""),
                     pos: pos.clone(),
                 }),
                 pos: (pos.start..pos.end + 1),
