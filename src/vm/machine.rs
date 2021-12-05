@@ -815,7 +815,7 @@ impl Machine {
         }
 
         if let Value::Interface(interface) = right {
-            let equals = Value::Bool(self.validate_class(&left_class, &interface));
+            let equals = Value::Bool(self.validate_class(left_class, &interface));
 
             self.stack.push(equals);
 

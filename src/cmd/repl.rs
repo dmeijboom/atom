@@ -60,7 +60,7 @@ fn pretty_fmt(value: &Value) -> ColoredString {
         )
         .white(),
         Value::Array(array) => {
-            format!("{}{}{}", "[".blue(), pretty_fmt_items(&array), "]".blue()).white()
+            format!("{}{}{}", "[".blue(), pretty_fmt_items(array), "]".blue()).white()
         }
         Value::Nil(_) => "nil".blue(),
         _ => format!("{}", value).white(),

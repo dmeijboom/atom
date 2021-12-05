@@ -13,7 +13,7 @@ pub fn exit(mut input: Input<'_>) -> Result<()> {
         _ => {
             return Err(RuntimeError::new(
                 ErrorKind::FatalError,
-                format!("invalid value for exit-code"),
+                "invalid value for exit-code".to_string(),
             ))
         }
     };

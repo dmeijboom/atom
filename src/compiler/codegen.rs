@@ -142,7 +142,7 @@ impl<'c> CodeGenerator<'c> {
                 let mut segment_ids = vec![];
 
                 for keyword in new.keywords.iter() {
-                    segment_ids.push(self.ir.add_data(&keyword));
+                    segment_ids.push(self.ir.add_data(keyword));
                 }
 
                 self.ir.add(
