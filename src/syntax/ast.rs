@@ -361,6 +361,7 @@ pub struct FnArg {
 pub enum Modifier {
     Public,
     Static,
+    Extern,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -452,7 +453,6 @@ pub struct ClassDeclStmt {
     pub extends: Vec<String>,
     pub fields: Vec<Field>,
     pub funcs: Vec<FnDeclStmt>,
-    pub extern_funcs: Vec<FnDeclStmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
 }
@@ -462,7 +462,6 @@ pub struct MixinDeclStmt {
     pub name: String,
     pub public: bool,
     pub funcs: Vec<FnDeclStmt>,
-    pub extern_funcs: Vec<FnDeclStmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
 }
@@ -520,7 +519,6 @@ pub enum Stmt {
     Raise(RaiseStmt),
     LetDecl(LetDeclStmt),
     FnDecl(FnDeclStmt),
-    ExternFnDecl(FnDeclStmt),
     Assign(AssignStmt),
     Return(ReturnStmt),
     Import(ImportStmt),
@@ -543,7 +541,6 @@ impl Stmt {
             Self::Let(let_stmt) => let_stmt.pos.clone(),
             Self::LetDecl(let_decl_stmt) => let_decl_stmt.pos.clone(),
             Self::FnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
-            Self::ExternFnDecl(fn_decl_stmt) => fn_decl_stmt.pos.clone(),
             Self::Assign(assign_stmt) => assign_stmt.pos.clone(),
             Self::Return(return_stmt) => return_stmt.pos.clone(),
             Self::Module(module_stmt) => module_stmt.pos.clone(),

@@ -709,7 +709,6 @@ impl<'c> Compiler<'c> {
             | Stmt::Import(_)
             | Stmt::FnDecl(_)
             | Stmt::Module(_)
-            | Stmt::ExternFnDecl(_)
             | Stmt::ClassDecl(_)
             | Stmt::MixinDecl(_)
             | Stmt::InterfaceDecl(_) => {}
@@ -769,13 +768,12 @@ impl<'c> Compiler<'c> {
         })
     }
 
-    fn compile_extern_function(&mut self, extern_fn_decl: &FnDeclStmt) -> Result<Function> {
+    fn compile_extern_function(&mut self, fn_decl: &FnDeclStmt) -> Result<Function> {
         Ok(Function {
-            name: extern_fn_decl.name.to_string(),
-            args: map_fn_args(&extern_fn_decl.args),
-            attr: BitFlags::from_bits_truncate(extern_fn_decl.modifiers.bits())
-                | FunctionAttr::Extern,
-            loc: self.line_number_offset.get_location(&extern_fn_decl.pos),
+            name: fn_decl.name.to_string(),
+            args: map_fn_args(&fn_decl.args),
+            attr: BitFlags::from_bits_truncate(fn_decl.modifiers.bits()) | FunctionAttr::Extern,
+            loc: self.line_number_offset.get_location(&fn_decl.pos),
             block: Block::default(),
         })
     }
@@ -802,12 +800,14 @@ impl<'c> Compiler<'c> {
 
         let mut methods = Vec::new();
 
-        for extern_fn_decl in class_decl.extern_funcs.iter() {
-            methods.push(self.compile_extern_function(extern_fn_decl)?);
-        }
-
         for fn_decl in class_decl.funcs.iter() {
-            methods.push(self.compile_function(fn_decl, Some(&class_decl.name))?);
+            let function = if fn_decl.modifiers.contains(Modifier::Extern) {
+                self.compile_extern_function(fn_decl)
+            } else {
+                self.compile_function(fn_decl, Some(&class_decl.name))
+            }?;
+
+            methods.push(function);
         }
 
         self.exit_scope();
@@ -825,19 +825,15 @@ impl<'c> Compiler<'c> {
         for stmt in tree {
             let decl = match stmt {
                 Stmt::FnDecl(fn_decl) => {
-                    let function = self.compile_function(fn_decl, None)?;
+                    let function = if fn_decl.modifiers.contains(Modifier::Extern) {
+                        self.compile_extern_function(fn_decl)
+                    } else {
+                        self.compile_function(fn_decl, None)
+                    }?;
 
                     Decl::new(
                         DeclKind::Function(function),
                         fn_decl.modifiers.contains(Modifier::Public),
-                    )
-                }
-                Stmt::ExternFnDecl(fn_decl_stmt) => {
-                    let function = self.compile_extern_function(fn_decl_stmt)?;
-
-                    Decl::new(
-                        DeclKind::Function(function),
-                        fn_decl_stmt.modifiers.contains(Modifier::Public),
                     )
                 }
                 Stmt::ClassDecl(class_decl) => {

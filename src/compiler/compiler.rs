@@ -260,9 +260,6 @@ impl Compiler {
         for stmt in self.tree.iter() {
             match stmt {
                 Stmt::FnDecl(fn_decl_stmt) => names.push(("function", &fn_decl_stmt.name)),
-                Stmt::ExternFnDecl(extern_fn_decl) => {
-                    names.push(("external function", &extern_fn_decl.name))
-                }
                 Stmt::Import(import_stmt) => {
                     for path in import_stmt.path.iter() {
                         names.push(("import", path))
@@ -277,10 +274,6 @@ impl Compiler {
 
                     for func in class_decl_stmt.funcs.iter() {
                         class_names.push(("function", &func.name));
-                    }
-
-                    for external_func in class_decl_stmt.extern_funcs.iter() {
-                        class_names.push(("external function", &external_func.name));
                     }
 
                     validate_unique(&class_names).map_err(|e| {
@@ -335,9 +328,6 @@ impl Compiler {
                         .ok_or_else(|| CompileError::new(format!("no such mixin: {}", name)))?;
 
                     class_decl_stmt.funcs.append(&mut mixin.funcs.clone());
-                    class_decl_stmt
-                        .extern_funcs
-                        .append(&mut mixin.extern_funcs.clone());
                 }
             }
         }

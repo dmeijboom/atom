@@ -17,6 +17,7 @@ fn is_keyword(name: &str) -> bool {
             | "class"
             | "interface"
             | "extern"
+            | "static"
             | "continue"
             | "extends"
             | "mixin"
@@ -282,6 +283,7 @@ peg::parser! {
         rule modifier() -> Modifier
             = "pub" { Modifier::Public }
                 / "static" { Modifier::Static }
+                / "extern" { Modifier::Extern }
 
         rule modifiers() -> BitFlags<Modifier>
             = modifier:modifier() ** __ {?
@@ -304,18 +306,26 @@ peg::parser! {
         rule fn_decl_body() -> Vec<Stmt>
             = "{" _ body:stmt_list() _ "}" { body }
                 / "->" _ start:pos() expr:expr() end:pos() _ ";" { vec![Stmt::Return(ReturnStmt { expr, pos: (start..end) })] }
+                / ";" { vec![] }
 
         rule fn_decl() -> FnDeclStmt
-            = start:pos() modifiers:modifiers() _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ body:fn_decl_body() end:pos() { FnDeclStmt { name, args, body, modifiers, comments: vec![], pos: (start..end) } }
+            = start:pos() modifiers:modifiers() _ "fn" __ name:ident() _ "(" _ args:fn_arg() ** (_ "," _) _ ")" _ body:fn_decl_body() end:pos() {?
+                if modifiers.contains(Modifier::Extern) && !body.is_empty() {
+                    return Err("extern functions without a body");
+                }
+
+                Ok(FnDeclStmt {
+                    name,
+                    args,
+                    body,
+                    modifiers,
+                    comments: vec![],
+                    pos: start..end
+                })
+            }
 
         rule fn_decl_stmt() -> Stmt
             = fn_decl:fn_decl() { Stmt::FnDecl(fn_decl) }
-
-        rule extern_fn_decl_stmt() -> Stmt
-            = extern_fn_decl:extern_fn_decl() { Stmt::ExternFnDecl(extern_fn_decl) }
-
-        rule extern_fn_decl() -> FnDeclStmt
-            = start:pos() modifiers:modifiers() _ "extern" __ "fn" __ name:ident() _ "(" args:fn_arg() ** (_ "," _) ");" end:pos() { FnDeclStmt { name, args, body: vec![], modifiers, comments: vec![], pos: (start..end) } }
 
         rule interface_fn() -> InterfaceFn
             = start:pos() "fn" __ name:ident() _ "()" _ ";" end:pos() { InterfaceFn { name, pos: (start..end) } }
@@ -331,10 +341,10 @@ peg::parser! {
             = __ "extends" __ names:ident() ** (_ "," _) { names }
 
         rule class_decl_stmt() -> Stmt
-            = start:pos() public:$("pub" __)? _ "class" __ name:ident() extends:class_extends()? _ "{" _ fields:field() ** _ _ extern_funcs:extern_fn_decl() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), extends: extends.unwrap_or_default(), fields, extern_funcs, funcs, comments: vec![], pos: (start..end) }) }
+            = start:pos() public:$("pub" __)? _ "class" __ name:ident() extends:class_extends()? _ "{" _ fields:field() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::ClassDecl(ClassDeclStmt { name, public: public.is_some(), extends: extends.unwrap_or_default(), fields, funcs, comments: vec![], pos: (start..end) }) }
 
         rule mixin_decl_stmt() -> Stmt
-            = start:pos() public:$("pub" __)? _ "mixin" __ name:ident() _ "{" _ extern_funcs:extern_fn_decl() ** _ _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::MixinDecl(MixinDeclStmt { name, public: public.is_some(), extern_funcs, funcs, comments: vec![], pos: (start..end) }) }
+            = start:pos() public:$("pub" __)? _ "mixin" __ name:ident() _ "{" _ funcs:fn_decl() ** _ _ "}" end:pos() { Stmt::MixinDecl(MixinDeclStmt { name, public: public.is_some(), funcs, comments: vec![], pos: (start..end) }) }
 
         rule module_stmt() -> Stmt
             = start:pos() "module" __ path:(ident() ** ".") _ ";" end:pos() { Stmt::Module(ModuleStmt { name: path.join("."), pos: (start..end)} ) }
@@ -350,7 +360,7 @@ peg::parser! {
             = start:pos() "import" __ path:import_path_list() _ ";" end:pos() { Stmt::Import(ImportStmt { path, pos: (start..end)} ) }
 
         rule top_level_stmt() -> Stmt
-            = comments:comment()* stmt:(extern_fn_decl_stmt() / fn_decl_stmt() / class_decl_stmt() / mixin_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
+            = comments:comment()* stmt:(fn_decl_stmt() / class_decl_stmt() / mixin_decl_stmt() / interface_decl_stmt() / module_stmt() / import_stmt()) { stmt.with_comments(comments) }
 
         rule stmt_list() -> Vec<Stmt>
             = (_ comment())* _ stmt:stmt() ** _ { stmt }
@@ -1059,7 +1069,6 @@ mod tests {
                     },
                 ],
                 funcs: vec![],
-                extern_funcs: vec![],
                 comments: vec![],
                 pos: (0..41),
             })),
@@ -1083,7 +1092,6 @@ mod tests {
                     comments: vec![],
                     pos: 13..28,
                 },],
-                extern_funcs: vec![],
                 comments: vec![],
                 pos: (0..30),
             })),
@@ -1349,7 +1357,6 @@ mod tests {
                 fields: vec![],
                 funcs: vec![],
                 extends: vec![],
-                extern_funcs: vec![],
                 comments: vec![Comment {
                     content: "test".to_string(),
                     pos: 0..7,
