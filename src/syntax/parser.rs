@@ -387,7 +387,7 @@ mod tests {
     #[test_case("hello_world", 0..11; "with underscore")]
     #[test_case("hello1994", 0..9; "with numeric chars")]
     #[test_case("_test", 0..5; "starting with an underscore")]
-    fn test_ident_expr(name: &str, pos: Pos) {
+    fn ident_expr(name: &str, pos: Pos) {
         let source = format!("{};", name);
 
         assert_eq!(
@@ -407,7 +407,8 @@ mod tests {
     #[test_case("-1029;", Literal::Int(-1029), 0..5; "signed int")]
     #[test_case("10_000;", Literal::Int(10000), 0..6; "unsigned int with underscore for readability")]
     #[test_case("-1_000;", Literal::Int(-1000), 0..6; "signed int with underscore for readability")]
-    fn test_int_literals(source: &str, literal: Literal, pos: Pos) {
+    #[test_case("9223372036854775808;", Literal::Uint(9223372036854775808), 0..19; "auto-detect unsigned it when out of range")]
+    fn int_literals(source: &str, literal: Literal, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
@@ -425,7 +426,7 @@ mod tests {
     #[test_case("-10.29;", -10.29, 0..6; "signed float")]
     #[test_case("10_000.43;", 10000.43, 0..9; "unsigned float with underscore for readability")]
     #[test_case("-1_000.1;", -1000.1, 0..8; "signed float with underscore for readability")]
-    fn test_float_literals(source: &str, value: f64, pos: Pos) {
+    fn float_literals(source: &str, value: f64, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
@@ -440,7 +441,7 @@ mod tests {
 
     #[test_case("true;", true, 0..4; "value true")]
     #[test_case("false;", false, 0..5; "value false")]
-    fn test_bool_literal(source: &str, value: bool, pos: Pos) {
+    fn bool_literal(source: &str, value: bool, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
@@ -453,11 +454,41 @@ mod tests {
         );
     }
 
+    #[test_case("f\"hello world\";", vec![TemplateComponent::String("hello world".to_string())], 0..14; "without interpolation")]
+    #[test_case("f\"hello{10 + 1} world\";", vec![
+        TemplateComponent::String("hello".to_string()),
+        TemplateComponent::Expr(Expr::Arithmetic(Box::new(ArithmeticExpr {
+            left: Expr::Literal(LiteralExpr {
+                literal: Literal::Int(10),
+                pos: 8..10
+            }),
+            right: Expr::Literal(LiteralExpr {
+                literal: Literal::Int(1),
+                pos: 13..14
+            }),
+            op: ArithmeticOp::Add,
+            pos: 8..14
+        }))),
+        TemplateComponent::String(" world".to_string()),
+    ], 0..22; "with a string and an expr")]
+    pub fn template_string(source: &str, components: Vec<TemplateComponent>, pos: Pos) {
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Template(TemplateExpr {
+                    components,
+                    pos: pos.clone()
+                }),
+                pos: 0..pos.end + 1
+            }))
+        )
+    }
+
     #[test_case("\"hello world\";", "hello world", 0..13; "simple string")]
     #[test_case("\"hello \\\"world\";", "hello \"world", 0..15; "string with escaped char")]
     #[test_case("\"hi \\u{0060}\";", "hi `", 0..13; "string with unicode char")]
     #[test_case("\"hi \\n\";", "hi \n", 0..7; "string with escaped newline")]
-    fn test_string_literal(source: &str, value: &str, pos: Pos) {
+    fn string_literal(source: &str, value: &str, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
@@ -473,7 +504,7 @@ mod tests {
     #[test_case("b'x';", b'x', 0..4; "simple byte")]
     #[test_case("b'\n';", b'\n', 0..4; "newline byte")]
     #[test_case("b'\\u{0060}';", b'`', 0..11; "unicode byte")]
-    fn test_byte_literal(source: &str, value: u8, pos: Pos) {
+    fn byte_literal(source: &str, value: u8, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
@@ -490,7 +521,7 @@ mod tests {
     #[test_case("'\n';", '\n', 0..3; "newline char")]
     #[test_case("'😃';", '😃', 0..6; "emoji char")]
     #[test_case("'\\u{0060}';", '`', 0..10; "unicode char")]
-    fn test_char_literal(source: &str, value: char, pos: Pos) {
+    fn char_literal(source: &str, value: char, pos: Pos) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Expr(ExprStmt {
@@ -510,12 +541,12 @@ mod tests {
     #[test_case("'tx';"; "char with more than one character")]
     #[test_case("'t;"; "unterminated char")]
     #[test_case("\"hello;"; "unterminated string")]
-    fn test_invalid_syntax(source: &str) {
-        assert_eq!(parse_single(source).is_err(), true, "parsing should fail");
+    fn invalid_syntax(source: &str) {
+        assert!(parse_single(source).is_err(), "parsing should fail");
     }
 
     #[test]
-    fn test_make_ref() {
+    fn make_ref() {
         let source = "&100;";
 
         assert_eq!(
@@ -537,7 +568,7 @@ mod tests {
     }
 
     #[test]
-    fn test_deref() {
+    fn deref() {
         let source = "*100;";
 
         assert_eq!(
@@ -559,7 +590,7 @@ mod tests {
     }
 
     #[test]
-    fn test_call_expr_no_args() {
+    fn call_expr_no_args() {
         let source = "test();";
 
         assert_eq!(
@@ -582,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn test_call_expr_with_args() {
+    fn call_expr_with_args() {
         let source = "test(10, hi);";
 
         assert_eq!(
@@ -614,7 +645,7 @@ mod tests {
     }
 
     #[test]
-    fn test_call_expr_callee_int_with_args() {
+    fn call_expr_callee_int_with_args() {
         let source = "200(10, hi);";
 
         assert_eq!(
@@ -647,7 +678,7 @@ mod tests {
 
     #[test_case("||", LogicalOp::Or; "or")]
     #[test_case("&&", LogicalOp::And; "and")]
-    fn test_logical_expr(op_name: &str, op: LogicalOp) {
+    fn logical_expr(op_name: &str, op: LogicalOp) {
         let source = format!("1 {} 2;", op_name);
 
         assert_eq!(
@@ -679,7 +710,7 @@ mod tests {
     #[test_case(">=", ComparisonOp::Gte; "greater than or equal")]
     #[test_case("<", ComparisonOp::Lt; "less than")]
     #[test_case("<=", ComparisonOp::Lte; "less than or equal")]
-    fn test_comparison_expr(op_name: &str, op: ComparisonOp) {
+    fn comparison_expr(op_name: &str, op: ComparisonOp) {
         let width = op_name.len();
         let source = format!("1 {} 2;", op_name);
 
@@ -713,7 +744,7 @@ mod tests {
     #[test_case("*", ArithmeticOp::Mul; "multiplication")]
     #[test_case("**", ArithmeticOp::Exp; "exponent")]
     #[test_case("/", ArithmeticOp::Div; "division")]
-    fn test_arithmetic_expr(op_name: &str, op: ArithmeticOp) {
+    fn arithmetic_expr(op_name: &str, op: ArithmeticOp) {
         let width = op_name.len();
         let source = format!("1 {} 2;", op_name);
 
@@ -742,7 +773,7 @@ mod tests {
 
     #[test_case("let current_year = 2021;", false, ((19..23), (0..24)); "immutable let stmt")]
     #[test_case("let mut current_year = 2021;", true, ((23..27), (0..28)); "mutable let stmt")]
-    fn test_let_stmt(source: &str, mutable: bool, pos: (Pos, Pos)) {
+    fn let_stmt(source: &str, mutable: bool, pos: (Pos, Pos)) {
         assert_eq!(
             parse_single(source),
             Ok(Stmt::Let(LetStmt {
@@ -758,7 +789,7 @@ mod tests {
     }
 
     #[test]
-    fn test_assign_stmt_decl() {
+    fn assign_stmt_decl() {
         let source = "current_year = 100;";
 
         assert_eq!(
@@ -779,7 +810,7 @@ mod tests {
     }
 
     #[test]
-    fn test_let_stmt_decl() {
+    fn let_stmt_decl() {
         let source = "let current_year;";
 
         assert_eq!(
@@ -792,7 +823,7 @@ mod tests {
     }
 
     #[test]
-    fn test_array() {
+    fn array() {
         let source = "[2021, \"hello\"];";
 
         assert_eq!(
@@ -817,7 +848,7 @@ mod tests {
     }
 
     #[test]
-    fn test_map() {
+    fn map() {
         let source = "{\"num\" => 2021, \"word\" => \"hello\"};";
 
         assert_eq!(
@@ -867,6 +898,46 @@ mod tests {
                     pos: 7..9,
                 }),
                 pos: 0..10,
+            }))
+        );
+    }
+
+    #[test]
+    fn match_stmt() {
+        let source = "match 10 {
+            10 -> \"ten\",
+            else -> \"other\"
+        }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Match(MatchStmt {
+                expr: Expr::Literal(LiteralExpr {
+                    literal: Literal::Int(10),
+                    pos: 6..8,
+                }),
+                cases: vec![MatchCase {
+                    pattern: Expr::Literal(LiteralExpr {
+                        literal: Literal::Int(10),
+                        pos: 23..25,
+                    }),
+                    body: vec![Stmt::Expr(ExprStmt {
+                        expr: Expr::Literal(LiteralExpr {
+                            literal: Literal::String("ten".to_string()),
+                            pos: 29..34,
+                        }),
+                        pos: 29..34
+                    })],
+                    pos: 23..34,
+                },],
+                alt: Some(vec![Stmt::Expr(ExprStmt {
+                    expr: Expr::Literal(LiteralExpr {
+                        literal: Literal::String("other".to_string()),
+                        pos: 56..63,
+                    }),
+                    pos: 56..63
+                })]),
+                pos: 0..73,
             }))
         );
     }
@@ -927,6 +998,31 @@ mod tests {
                     })
                     .into()
                 ),
+            }))
+        );
+    }
+
+    #[test]
+    fn interface_stmt() {
+        let source = "interface Test { fn test(); fn example(); }";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::InterfaceDecl(InterfaceDeclStmt {
+                name: "Test".to_string(),
+                public: false,
+                functions: vec![
+                    InterfaceFn {
+                        name: "test".to_string(),
+                        pos: 17..27,
+                    },
+                    InterfaceFn {
+                        name: "example".to_string(),
+                        pos: 28..41,
+                    }
+                ],
+                comments: vec![],
+                pos: 0..43
             }))
         );
     }
@@ -1303,6 +1399,40 @@ mod tests {
                     pos: 0..2,
                 }),
                 pos: 0..4,
+            }))
+        );
+    }
+
+    #[test]
+    fn closure_alt_expr() {
+        let source = "|mut arg1, arg2| 10;";
+
+        assert_eq!(
+            parse_single(source),
+            Ok(Stmt::Expr(ExprStmt {
+                expr: Expr::Closure(ClosureExpr {
+                    args: vec![
+                        FnArg {
+                            name: "arg1".to_string(),
+                            mutable: true,
+                            pos: 1..9,
+                        },
+                        FnArg {
+                            name: "arg2".to_string(),
+                            mutable: false,
+                            pos: 11..15,
+                        },
+                    ],
+                    body: vec![Stmt::Return(ReturnStmt {
+                        expr: Expr::Literal(LiteralExpr {
+                            literal: Literal::Int(10),
+                            pos: 17..19,
+                        }),
+                        pos: 17..19,
+                    })],
+                    pos: 0..19,
+                }),
+                pos: 0..20,
             }))
         );
     }

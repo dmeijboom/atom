@@ -73,3 +73,66 @@ impl<T> IndexMut<usize> for RecycleVec<T> {
         self.items.index_mut(index)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::RecycleVec;
+
+    #[test]
+    fn test_empty() {
+        let vec = RecycleVec::<usize>::new();
+
+        assert!(vec.is_empty());
+        assert_eq!(vec.len(), 0);
+    }
+
+    #[test]
+    fn test_vec_like() {
+        let mut vec = RecycleVec::<usize>::new();
+
+        vec.push(1);
+        vec.push(2);
+        vec.push(3);
+
+        assert!(!vec.is_empty());
+        assert_eq!(vec.len(), 3);
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec[1], 2);
+        assert_eq!(vec[2], 3);
+        assert_eq!(vec.last(), Some(&3));
+
+        vec[1] = 100;
+
+        assert_eq!(vec[1], 100);
+
+        vec.pop();
+        vec.pop();
+
+        assert_eq!(vec.len(), 1);
+        assert_eq!(vec[0], 1);
+        assert_eq!(vec.last(), Some(&1));
+
+        if let Some(i) = vec.last_mut() {
+            *i = 200;
+        }
+
+        assert_eq!(vec[0], 200);
+        assert_eq!(vec.remove(0), 200);
+        assert_eq!(vec.len(), 0);
+        assert!(vec.is_empty());
+    }
+
+    #[test]
+    fn test_recycle() {
+        let mut vec = RecycleVec::<usize>::new();
+
+        vec.push(1);
+        vec.push(2);
+        vec.push(3);
+
+        vec.pop();
+
+        assert_eq!(vec.recycle(), Some(3));
+        assert_eq!(vec.recycle(), None);
+    }
+}
