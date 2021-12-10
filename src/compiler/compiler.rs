@@ -3,13 +3,13 @@ use std::path::Path;
 use std::rc::Rc;
 use std::sync::RwLock;
 
+use crate::compiler::validator::Validator;
 use crate::syntax::parser;
 use crate::syntax::Stmt;
 
 use super::codegen::CodeGenerator;
 use super::error::{CompileError, Result};
 use super::filesystem::{FileSystem, FileSystemCache};
-use super::frontend::Frontend;
 use super::line_number_offset::LineNumberOffset;
 use super::mir;
 use super::module::Module;
@@ -17,24 +17,6 @@ use super::optimizers::{
     call_void, pre_compute_labels, remove_store_load_single_use, remove_type_cast, reorder_locals,
     replace_load_with_const, tail_call,
 };
-
-fn validate_unique(names: &[(&str, &str)]) -> Result<()> {
-    for (i, (_, name)) in names.iter().enumerate() {
-        let other = names
-            .iter()
-            .enumerate()
-            .find(|(other_index, (_, other_name))| *other_index != i && name == other_name);
-
-        if let Some((_, (typename, name))) = other {
-            return Err(CompileError::new(format!(
-                "unable to redefine {}: {}",
-                typename, name
-            )));
-        }
-    }
-
-    Ok(())
-}
 
 const STD_SOURCES: [(&str, &str); 10] = [
     ("std.sys", include_str!("../std/atom/std/sys.atom")),
@@ -217,6 +199,13 @@ impl Compiler {
 
             return Ok(());
         } else if let Some(mixin) = module.mixins.get(name) {
+            if !mixin.public {
+                return Err(CompileError::new(format!(
+                    "unable to import private mixin: {}",
+                    name
+                )));
+            }
+
             // As mixins are being used at compile time we need to import them instead of delegating that to the vm
             self.module.mixins.insert(mixin.name.clone(), mixin.clone());
 
@@ -252,48 +241,6 @@ impl Compiler {
         }
 
         Ok(())
-    }
-
-    fn name_validation_pass(&self) -> Result<()> {
-        let mut names: Vec<(&str, &str)> = vec![];
-
-        for stmt in self.tree.iter() {
-            match stmt {
-                Stmt::FnDecl(fn_decl_stmt) => names.push(("function", &fn_decl_stmt.name)),
-                Stmt::Import(import_stmt) => {
-                    for path in import_stmt.path.iter() {
-                        names.push(("import", path))
-                    }
-                }
-                Stmt::ClassDecl(class_decl_stmt) => {
-                    let mut class_names: Vec<(&str, &str)> = vec![];
-
-                    for field in class_decl_stmt.fields.iter() {
-                        class_names.push(("field", &field.name));
-                    }
-
-                    for func in class_decl_stmt.funcs.iter() {
-                        class_names.push(("function", &func.name));
-                    }
-
-                    validate_unique(&class_names).map_err(|e| {
-                        CompileError::new(format!(
-                            "{} for class {}",
-                            e.message(),
-                            class_decl_stmt.name
-                        ))
-                    })?;
-
-                    names.push(("class", &class_decl_stmt.name))
-                }
-                Stmt::InterfaceDecl(interface_decl_stmt) => {
-                    names.push(("interface", &interface_decl_stmt.name))
-                }
-                _ => {}
-            }
-        }
-
-        validate_unique(&names)
     }
 
     fn mixins_pass(&mut self) -> Result<()> {
@@ -362,18 +309,21 @@ impl Compiler {
         Ok(())
     }
 
+    fn validation_pass(&mut self) -> Result<()> {
+        Validator::new(&self.line_numbers_offset).validate(&mut self.tree)
+    }
+
     pub fn compile(mut self) -> Result<Module> {
         self.module_name_pass()?;
         self.prelude_pass()?;
-        self.name_validation_pass()?;
+        self.validation_pass()?;
         self.imports_pass()?;
         self.mixins_pass()?;
 
         let compiler = mir::Compiler::new(&self.line_numbers_offset);
         let mir = compiler.compile(&self.tree)?;
 
-        let frontend = Frontend::new(&mut self.module, &mir);
-        frontend.compile()?;
+        mir::Validator::new(&mut self.module, &mir).compile()?;
 
         let backend = CodeGenerator::new(
             &mut self.module,

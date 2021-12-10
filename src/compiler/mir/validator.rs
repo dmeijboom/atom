@@ -1,15 +1,15 @@
 use crate::compiler::error::Result;
-use crate::compiler::mir::{Block, DeclKind, Mir, Scope, Stmt, StmtKind};
+use crate::compiler::mir::{DeclKind, Mir};
 use crate::compiler::module::Id;
 use crate::compiler::{mir, Class, Element, ElementKind, Function, Interface, Module};
 
-/// Frontend implements several validations for the program and sets up the module for further processing
-pub struct Frontend<'c> {
+/// Implements several validations for the program and sets up the module for further processing
+pub struct Validator<'c> {
     mir: &'c Mir,
     module: &'c mut Module,
 }
 
-impl<'c> Frontend<'c> {
+impl<'c> Validator<'c> {
     pub fn new(module: &'c mut Module, mir: &'c Mir) -> Self {
         Self { module, mir }
     }
@@ -95,38 +95,6 @@ impl<'c> Frontend<'c> {
         );
     }
 
-    fn walk_stmt(&mut self, _scope: &'c Scope, stmt: &Stmt) -> Result<()> {
-        match &stmt.kind {
-            StmtKind::Assign(_assign) => {}
-            StmtKind::Cond(cond) => {
-                self.walk_block(&cond.block)?;
-
-                if let Some(block) = &cond.alt {
-                    self.walk_block(block)?;
-                }
-            }
-            StmtKind::Loop(block) => self.walk_block(block)?,
-            StmtKind::Eval(_value) => {}
-            StmtKind::Return(_value) => {}
-        }
-
-        Ok(())
-    }
-
-    fn walk_block(&mut self, block: &Block) -> Result<()> {
-        let scope = &self.mir.scopes[block.scope_id];
-
-        for stmt in block.statements.iter() {
-            self.walk_stmt(scope, stmt)?;
-        }
-
-        Ok(())
-    }
-
-    fn walk_function(&mut self, function: &mir::Function) -> Result<()> {
-        self.walk_block(&function.block)
-    }
-
     pub fn compile(mut self) -> Result<()> {
         // Register global types early
         for decl in self.mir.program.iter() {
@@ -134,18 +102,6 @@ impl<'c> Frontend<'c> {
                 DeclKind::Function(function) => self.register_function(function, decl.public),
                 DeclKind::Class(class) => self.register_class(class, decl.public),
                 DeclKind::Interface(interface) => self.register_interface(interface, decl.public),
-            }
-        }
-
-        for decl in self.mir.program.iter() {
-            match &decl.kind {
-                DeclKind::Class(class) => {
-                    for method in class.methods.iter() {
-                        self.walk_function(method)?;
-                    }
-                }
-                DeclKind::Function(function) => self.walk_function(function)?,
-                _ => continue,
             }
         }
 

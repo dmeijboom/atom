@@ -63,13 +63,6 @@ impl CompileError {
 
         self
     }
-
-    pub fn message(&self) -> String {
-        match &self.kind {
-            ErrorKind::Compile(message) => message.clone(),
-            ErrorKind::Parse(_) => format!("{}", self.kind),
-        }
-    }
 }
 
 impl Error for CompileError {}

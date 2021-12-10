@@ -3,6 +3,8 @@ use std::ops::Range;
 use enumflags2::{bitflags, BitFlags};
 
 use crate::compiler::ir::Code;
+use crate::syntax::visitor::Visitable;
+use crate::syntax::Visitor;
 
 pub type Pos = Range<usize>;
 
@@ -17,6 +19,21 @@ pub enum Variable {
     Name(String),
     Tuple(Vec<String>),
     Array(Vec<String>),
+}
+
+impl<E> Visitable<E> for Variable {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        match self {
+            Variable::Name(name) => visitor.visit_name(name),
+            Variable::Tuple(names) | Variable::Array(names) => {
+                for name in names.iter_mut() {
+                    visitor.visit_name(name)?;
+                }
+
+                Ok(())
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -96,12 +113,28 @@ pub struct TypeAssertExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for TypeAssertExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.left)?;
+        visitor.visit_expr(&mut self.right)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ComparisonExpr {
     pub left: Expr,
     pub right: Expr,
     pub op: ComparisonOp,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for ComparisonExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.left)?;
+        visitor.visit_expr(&mut self.right)?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -111,6 +144,18 @@ pub struct CallExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for CallExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.callee)?;
+
+        for arg in self.args.iter_mut() {
+            visitor.visit_expr(arg)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewExpr {
     pub callee: Expr,
@@ -118,11 +163,32 @@ pub struct NewExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for NewExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.callee)?;
+
+        for arg in self.args.iter_mut() {
+            visitor.visit_keyword_arg(arg)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct CastExpr {
     pub type_name: String,
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for CastExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)?;
+        visitor.visit_name(&mut self.type_name)?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -133,6 +199,15 @@ pub struct ArithmeticExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ArithmeticExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.left)?;
+        visitor.visit_expr(&mut self.right)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LogicalExpr {
     pub left: Expr,
@@ -141,10 +216,25 @@ pub struct LogicalExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for LogicalExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.left)?;
+        visitor.visit_expr(&mut self.right)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct IdentExpr {
     pub name: String,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for IdentExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -153,10 +243,22 @@ pub struct TryExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for TryExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(self.expr.as_mut())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NotExpr {
     pub expr: Box<Expr>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for NotExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -165,10 +267,30 @@ pub struct ArrayExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ArrayExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        for item in self.items.iter_mut() {
+            visitor.visit_expr(item)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TupleExpr {
     pub items: Vec<Expr>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for TupleExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        for item in self.items.iter_mut() {
+            visitor.visit_expr(item)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -178,6 +300,13 @@ pub struct KeywordArg {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for KeywordArg {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)?;
+        visitor.visit_expr(&mut self.value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct KeyValue {
     pub key: Expr,
@@ -185,10 +314,27 @@ pub struct KeyValue {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for KeyValue {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.key)?;
+        visitor.visit_expr(&mut self.value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MapExpr {
     pub key_values: Vec<KeyValue>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for MapExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        for key_value in self.key_values.iter_mut() {
+            visitor.visit_key_value(key_value)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -209,11 +355,24 @@ pub struct LiteralExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for LiteralExpr {
+    fn accept(&mut self, _visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MemberExpr {
     pub object: Expr,
     pub member: String,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for MemberExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.object)?;
+        visitor.visit_name(&mut self.member)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -223,11 +382,25 @@ pub struct IndexExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for IndexExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.object)?;
+        visitor.visit_expr(&mut self.index)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RangeExpr {
     pub from: Expr,
     pub to: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for RangeExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.from)?;
+        visitor.visit_expr(&mut self.to)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -236,10 +409,22 @@ pub struct MakeRefExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for MakeRefExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct DerefExpr {
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for DerefExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -254,6 +439,20 @@ pub struct TemplateExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for TemplateExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        for component in self.components.iter_mut() {
+            match component {
+                // @TODO: call `self.visit_string()` here?
+                TemplateComponent::String(_) => continue,
+                TemplateComponent::Expr(e) => visitor.visit_expr(e)?,
+            }
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ClosureExpr {
     pub args: Vec<FnArg>,
@@ -261,10 +460,26 @@ pub struct ClosureExpr {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ClosureExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        for arg in self.args.iter_mut() {
+            visitor.visit_fn_arg(arg)?;
+        }
+
+        visitor.visit_stmt_list(&mut self.body)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct TypeOfExpr {
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for TypeOfExpr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -322,16 +537,57 @@ impl Expr {
     }
 }
 
+impl<E> Visitable<E> for Expr {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        match self {
+            Expr::Literal(literal_expr) => visitor.visit_literal_expr(literal_expr),
+            Expr::Ident(ident_expr) => visitor.visit_ident_expr(ident_expr),
+            Expr::New(new_expr) => visitor.visit_new_expr(new_expr),
+            Expr::Call(call_expr) => visitor.visit_call_expr(call_expr),
+            Expr::Cast(cast_expr) => visitor.visit_cast_expr(cast_expr),
+            Expr::Not(not_expr) => visitor.visit_not_expr(not_expr),
+            Expr::Try(try_expr) => visitor.visit_try_expr(try_expr),
+            Expr::Array(array_expr) => visitor.visit_array_expr(array_expr),
+            Expr::Tuple(tuple_expr) => visitor.visit_tuple_expr(tuple_expr),
+            Expr::Map(map_expr) => visitor.visit_map_expr(map_expr),
+            Expr::TypeOf(typeof_expr) => visitor.visit_typeof_expr(typeof_expr),
+            Expr::Closure(closure_expr) => visitor.visit_closure_expr(closure_expr),
+            Expr::Member(member_expr) => visitor.visit_member_expr(member_expr),
+            Expr::Arithmetic(arithmetic_expr) => visitor.visit_arithmetic_expr(arithmetic_expr),
+            Expr::Comparison(comparison_expr) => visitor.visit_comparison_expr(comparison_expr),
+            Expr::Logical(logical_expr) => visitor.visit_logical_expr(logical_expr),
+            Expr::MakeRef(make_ref_expr) => visitor.visit_make_ref_expr(make_ref_expr),
+            Expr::Deref(deref_expr) => visitor.visit_deref_expr(deref_expr),
+            Expr::Index(index_expr) => visitor.visit_index_expr(index_expr),
+            Expr::Range(range_expr) => visitor.visit_range_expr(range_expr),
+            Expr::Template(template_expr) => visitor.visit_template_expr(template_expr),
+            Expr::TypeAssert(type_assert_expr) => visitor.visit_type_assert_expr(type_assert_expr),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ExprStmt {
     pub expr: Expr,
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ExprStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct RaiseStmt {
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for RaiseStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -342,10 +598,23 @@ pub struct LetStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for LetStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_var(&mut self.var)?;
+        visitor.visit_expr(&mut self.value)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct LetDeclStmt {
     pub name: String,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for LetDeclStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -353,6 +622,12 @@ pub struct FnArg {
     pub name: String,
     pub mutable: bool,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for FnArg {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)
+    }
 }
 
 #[bitflags]
@@ -372,6 +647,18 @@ pub struct FnDeclStmt {
     pub body: Vec<Stmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for FnDeclStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)?;
+
+        for arg in self.args.iter_mut() {
+            visitor.visit_fn_arg(arg)?;
+        }
+
+        visitor.visit_stmt_list(&mut self.body)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -402,10 +689,23 @@ impl AssignStmt {
     }
 }
 
+impl<E> Visitable<E> for AssignStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.left)?;
+        visitor.visit_expr(&mut self.right)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ReturnStmt {
     pub expr: Expr,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for ReturnStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -416,10 +716,29 @@ pub struct IfStmt {
     pub body: Vec<Stmt>,
 }
 
+impl<E> Visitable<E> for IfStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.cond)?;
+        visitor.visit_stmt_list(&mut self.body)?;
+
+        if let Some(alt) = self.alt.as_mut() {
+            visitor.visit_stmt(alt)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ElseStmt {
     pub pos: Pos,
     pub body: Vec<Stmt>,
+}
+
+impl<E> Visitable<E> for ElseStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_stmt_list(&mut self.body)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -427,6 +746,15 @@ pub struct MatchCase {
     pub pattern: Expr,
     pub body: Vec<Stmt>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for MatchCase {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.pattern)?;
+        visitor.visit_stmt_list(&mut self.body)?;
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -437,6 +765,22 @@ pub struct MatchStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for MatchStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_expr(&mut self.expr)?;
+
+        for case in self.cases.iter_mut() {
+            visitor.visit_match_case(case)?;
+        }
+
+        if let Some(alt) = self.alt.as_mut() {
+            visitor.visit_stmt_list(alt)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Field {
     pub name: String,
@@ -444,6 +788,18 @@ pub struct Field {
     pub public: bool,
     pub value: Option<Expr>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for Field {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)?;
+
+        if let Some(value) = self.value.as_mut() {
+            visitor.visit_expr(value)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -457,6 +813,22 @@ pub struct ClassDeclStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ClassDeclStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)?;
+
+        for field in self.fields.iter_mut() {
+            visitor.visit_class_field(field)?;
+        }
+
+        for fn_decl_stmt in self.funcs.iter_mut() {
+            visitor.visit_fn_decl_stmt(fn_decl_stmt)?;
+        }
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct MixinDeclStmt {
     pub name: String,
@@ -464,6 +836,18 @@ pub struct MixinDeclStmt {
     pub funcs: Vec<FnDeclStmt>,
     pub comments: Vec<Comment>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for MixinDeclStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)?;
+
+        for fn_decl_stmt in self.funcs.iter_mut() {
+            visitor.visit_fn_decl_stmt(fn_decl_stmt)?;
+        }
+
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -481,16 +865,34 @@ pub struct InterfaceDeclStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for InterfaceDeclStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ImportStmt {
     pub path: Vec<String>,
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ImportStmt {
+    fn accept(&mut self, _visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct ModuleStmt {
     pub name: String,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for ModuleStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        visitor.visit_name(&mut self.name)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -501,10 +903,32 @@ pub struct ForStmt {
     pub pos: Pos,
 }
 
+impl<E> Visitable<E> for ForStmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        if let Some(alias) = self.alias.as_mut() {
+            visitor.visit_var(alias)?;
+        }
+
+        if let Some(expr) = self.expr.as_mut() {
+            visitor.visit_expr(expr)?;
+        }
+
+        visitor.visit_stmt_list(&mut self.body)?;
+
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct BreakStmt {
     pub label: Option<String>,
     pub pos: Pos,
+}
+
+impl<E> Visitable<E> for BreakStmt {
+    fn accept(&mut self, _visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -570,5 +994,31 @@ impl Stmt {
         }
 
         self
+    }
+}
+
+impl<E> Visitable<E> for Stmt {
+    fn accept(&mut self, visitor: &mut impl Visitor<Error = E>) -> Result<(), E> {
+        match self {
+            Stmt::If(if_stmt) => visitor.visit_if_stmt(if_stmt),
+            Stmt::Else(else_stmt) => visitor.visit_else_stmt(else_stmt),
+            Stmt::Match(match_stmt) => visitor.visit_match_stmt(match_stmt),
+            Stmt::For(for_stmt) => visitor.visit_for_stmt(for_stmt),
+            Stmt::Expr(expr_stmt) => visitor.visit_expr_stmt(expr_stmt),
+            Stmt::Let(let_stmt) => visitor.visit_let_stmt(let_stmt),
+            Stmt::Break(break_stmt) => visitor.visit_break_stmt(break_stmt),
+            Stmt::Raise(raise_stmt) => visitor.visit_raise_stmt(raise_stmt),
+            Stmt::LetDecl(let_decl_stmt) => visitor.visit_let_decl_stmt(let_decl_stmt),
+            Stmt::FnDecl(fn_decl_stmt) => visitor.visit_fn_decl_stmt(fn_decl_stmt),
+            Stmt::Assign(assign_stmt) => visitor.visit_assign_stmt(assign_stmt),
+            Stmt::Return(return_stmt) => visitor.visit_return_stmt(return_stmt),
+            Stmt::Import(import_stmt) => visitor.visit_import_stmt(import_stmt),
+            Stmt::Module(module_stmt) => visitor.visit_module_stmt(module_stmt),
+            Stmt::ClassDecl(class_decl_stmt) => visitor.visit_class_decl_stmt(class_decl_stmt),
+            Stmt::MixinDecl(mixin_decl_stmt) => visitor.visit_mixin_decl_stmt(mixin_decl_stmt),
+            Stmt::InterfaceDecl(interface_decl_stmt) => {
+                visitor.visit_interface_decl_stmt(interface_decl_stmt)
+            }
+        }
     }
 }
