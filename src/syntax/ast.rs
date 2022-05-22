@@ -92,7 +92,7 @@ impl Literal {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum LiteralKind {
     Int(i64),
     Float(f64),

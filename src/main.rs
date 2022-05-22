@@ -1,10 +1,14 @@
+mod compiler;
+mod module;
 mod syntax;
 
+use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
 
 use clap::Parser as ClapParser;
 
+use compiler::Compiler;
 use syntax::Parser;
 
 #[derive(ClapParser)]
@@ -25,6 +29,10 @@ enum Cmd {
     Compile(CompileOpts),
 }
 
+fn pretty_print<T: Debug>(input: T) {
+    println!("{}", format!("{:#?}", input).replace("    ", "  "));
+}
+
 fn main() {
     let opts = Opts::parse();
 
@@ -32,9 +40,17 @@ fn main() {
         Cmd::Compile(opts) => {
             let source = fs::read_to_string(opts.filename).expect("failed to read file");
             let parser = Parser::new(&source);
-            let nodes = parser.parse().expect("parse failed");
+            let program = parser.parse().expect("parse failed");
 
-            println!("{:#?}", nodes);
+            println!("AST:");
+            pretty_print(&program);
+
+            let module = Compiler::new()
+                .compile(program)
+                .expect("compilation failed");
+
+            println!("Module:");
+            pretty_print(&module);
         }
     }
 }
