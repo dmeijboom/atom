@@ -1,2 +1,0 @@
-pub extern fn parseUint(bytes);
-pub extern fn parseInt(bytes);

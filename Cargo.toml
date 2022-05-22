@@ -1,28 +1,12 @@
 [package]
 name = "atom"
-version = "0.2.0-beta.0"
+version = "0.3.0"
 edition = "2021"
 
 [profile.release]
 panic = "abort"
 debug = true
 
-# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
-
 [dependencies]
-peg = "^0.7"
-colored = "^2"
-strum = "^0.22"
-indexmap = "^1"
-wyhash2 = "^0.2"
-test-case = "^1"
-rustyline = "^9"
-lazy_static = "^1"
-enumflags2 = "^0.7"
-strum_macros = "^0.21"
-snmalloc-rs = { version = "^0.2", optional = true }
-clap = { version = "3.0.0-rc.4", features = ["derive"] }
-
-[features]
-default = ["snmalloc"]
-snmalloc = ["snmalloc-rs"]
+logos = "0.12.0"
+clap = { version = "3.1.18", features = ["derive"] }

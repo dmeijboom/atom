@@ -1,7 +1,0 @@
-import std.map.hash;
-
-fn main() {
-    for i in 0..100 {
-        hash("Hello World".repeat(i).bytes(), i);
-    }
-}

@@ -1,3 +1,0 @@
-module std.encoding.utf8;
-
-pub extern fn decode(content);
