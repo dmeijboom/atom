@@ -1,3 +1,4 @@
+mod codegen;
 mod compiler;
 mod module;
 mod syntax;
@@ -5,9 +6,14 @@ mod syntax;
 use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
+use std::process::Command;
 
+use anyhow::{anyhow, Context, Result};
 use clap::Parser as ClapParser;
+use inkwell::context;
+use temp_dir::TempDir;
 
+use codegen::CodeGenerator;
 use compiler::Compiler;
 use syntax::Parser;
 
@@ -21,6 +27,8 @@ struct Opts {
 #[derive(ClapParser)]
 struct CompileOpts {
     filename: PathBuf,
+    #[clap(short)]
+    output: Option<PathBuf>,
 }
 
 #[derive(ClapParser)]
@@ -33,24 +41,49 @@ fn pretty_print<T: Debug>(input: T) {
     println!("{}", format!("{:#?}", input).replace("    ", "  "));
 }
 
-fn main() {
+fn main() -> Result<()> {
     let opts = Opts::parse();
 
     match opts.cmd {
         Cmd::Compile(opts) => {
-            let source = fs::read_to_string(opts.filename).expect("failed to read file");
+            let source = fs::read_to_string(opts.filename).context("failed to read file")?;
             let parser = Parser::new(&source);
-            let program = parser.parse().expect("parse failed");
+            let program = parser.parse()?;
 
-            println!("AST:");
+            println!("-- AST --");
             pretty_print(&program);
 
-            let module = Compiler::new()
-                .compile(program)
-                .expect("compilation failed");
+            let module = Compiler::new().compile(program)?;
 
-            println!("Module:");
+            println!("\n-- module --");
             pretty_print(&module);
+
+            let ctx = context::Context::create();
+            let codegen = CodeGenerator::new(&ctx, module);
+            let buffer = codegen.generate().context("code generation failed")?;
+
+            let build_dir = TempDir::new()?;
+
+            fs::write(build_dir.child("program.o"), buffer.as_slice())
+                .context("failed to write to object file")?;
+
+            let status = Command::new("gcc")
+                .arg("-o")
+                .arg(build_dir.child("program"))
+                .arg(build_dir.child("program.o"))
+                .spawn()?
+                .wait()?;
+
+            if !status.success() {
+                return Err(anyhow!("linking failed"));
+            }
+
+            fs::rename(
+                build_dir.child("program"),
+                opts.output.unwrap_or_else(|| PathBuf::from("program")),
+            )?;
+
+            Ok(())
         }
     }
 }

@@ -36,7 +36,21 @@ pub enum NodeKind {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct FnSig {}
+pub struct Type {
+    pub name: String,
+}
+
+impl Type {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub struct FnSig {
+    pub params: Vec<Type>,
+    pub return_type: Option<Type>,
+}
 
 #[derive(Debug, PartialEq)]
 pub struct FnDef {
@@ -59,6 +73,7 @@ impl Stmt {
 
 #[derive(Debug, PartialEq)]
 pub enum StmtKind {
+    Return(Expr),
     Expr(Expr),
     ExprEnd(Expr),
 }

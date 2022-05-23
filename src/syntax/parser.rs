@@ -2,8 +2,8 @@ use std::mem;
 
 use crate::syntax::lexer::StringToken;
 use crate::syntax::{
-    Error, Expr, ExprKind, FnDef, FnSig, Literal, LiteralKind, Node, NodeKind, Scanner, Stmt,
-    StmtKind, Token,
+    Error, Expr, ExprKind, FnDef, FnSig, Literal, LiteralKind, Node, NodeKind,
+    Scanner, Stmt, StmtKind, Token, Type,
 };
 
 type Result<T> = std::result::Result<T, Error>;
@@ -15,7 +15,13 @@ macro_rules! expect {
         if !matches!(token, Some($token)) {
             return Err(Error::new(
                 $scanner.span(),
-                format!("unexpected token: {:?}", token),
+                format!(
+                    "unexpected token '{}', expected '{:?}'",
+                    token
+                        .map(|t| format!("{:?}", t))
+                        .unwrap_or_else(|| "EOF".to_string()),
+                    stringify!($token),
+                ),
             ));
         }
 
@@ -30,8 +36,14 @@ macro_rules! expect {
             _ => {
                 return Err(Error::new(
                     $scanner.span(),
-                    format!("unexpected token: {:?}", token),
-                ))
+                    format!(
+                        "unexpected token '{}', expected '{}'",
+                        token
+                            .map(|t| format!("{:?}", t))
+                            .unwrap_or_else(|| "EOF".to_string()),
+                        stringify!($token),
+                    ),
+                ));
             }
         }
     }};
@@ -158,18 +170,77 @@ impl<'s> Parser<'s> {
         Ok(stmts)
     }
 
+    fn parse_type(&mut self) -> Result<Type> {
+        let name = expect!(withValue self.scanner, Token::Ident);
+        Ok(Type::new(name))
+    }
+
+    fn parse_fn_sig(&mut self) -> Result<FnSig> {
+        let mut params = vec![];
+
+        let token = self.scanner.peek();
+
+        match token {
+            Some(Token::Ident(_)) => loop {
+                let ty = self.parse_type()?;
+
+                params.push(ty);
+
+                if !accept!(self.scanner, Token::Separator) {
+                    break;
+                }
+
+                self.scanner.advance();
+            },
+            Some(Token::ParentLeft) => {
+                expect!(self.scanner, Token::ParentLeft);
+                expect!(self.scanner, Token::ParentRight);
+            }
+            _ => {
+                let token = token
+                    .map(|t| format!("{:?}", t))
+                    .unwrap_or_else(|| "EOF".to_string());
+
+                return Err(Error::new(
+                    self.scanner.span(),
+                    format!("unexpected token '{}' in fn signature", token),
+                ));
+            }
+        }
+
+        let mut return_type = None;
+
+        if accept!(self.scanner, Token::ResultType) {
+            self.scanner.advance();
+
+            return_type = Some(self.parse_type()?);
+        }
+
+        Ok(FnSig {
+            params,
+            return_type,
+        })
+    }
+
     fn parse_fn(&mut self) -> Result<FnDef> {
+        let mut sig = FnSig {
+            params: vec![],
+            return_type: None,
+        };
+
         expect!(self.scanner, Token::Fn);
         let name = expect!(withValue self.scanner, Token::Ident);
+
+        if accept!(self.scanner, Token::TypeSeparator) {
+            self.scanner.advance();
+            sig = self.parse_fn_sig()?;
+        }
+
         expect!(self.scanner, Token::BracketLeft);
         let body = self.parse_body()?;
         expect!(self.scanner, Token::BracketRight);
 
-        Ok(FnDef {
-            name,
-            sig: FnSig {},
-            body,
-        })
+        Ok(FnDef { name, sig, body })
     }
 
     pub fn parse(mut self) -> Result<Vec<Node>> {

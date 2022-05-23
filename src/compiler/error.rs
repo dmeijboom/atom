@@ -17,7 +17,7 @@ impl Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "ParseError: {} at {}", self.message, self.span)
+        write!(f, "CompileError: {}", self.message)
     }
 }
 
