@@ -125,24 +125,25 @@ impl<'s> Parser<'s> {
     }
 
     fn term(&mut self) -> Result<Expr> {
+        let span = self.scanner.span();
+
         match self.scanner.advance() {
             Some(Token::BeginString) => {
-                make_lit!(self.scanner.span(), String, self.string()?)
+                make_lit!(span, String, self.string()?)
             }
-            Some(Token::Int(i)) => make_lit!(self.scanner.span(), Int, i),
-            Some(Token::Float(f)) => make_lit!(self.scanner.span(), Float, f),
+            Some(Token::True) => make_lit!(span, Bool, true),
+            Some(Token::False) => make_lit!(span, Bool, false),
+            Some(Token::Int(i)) => make_lit!(span, Int, i),
+            Some(Token::Float(f)) => make_lit!(span, Float, f),
             Some(Token::Error) => Err(Error::new(
-                self.scanner.span(),
+                span,
                 format!("{} in expr", self.scanner.error_description()),
             )),
             Some(token) => Err(Error::new(
-                self.scanner.span(),
+                span,
                 format!("unexpected token '{:?}' in expr", token),
             )),
-            None => Err(Error::new(
-                self.scanner.span(),
-                "unexpected EOF in expr".to_string(),
-            )),
+            None => Err(Error::new(span, "unexpected EOF in expr".to_string())),
         }
     }
 
@@ -297,7 +298,6 @@ impl<'s> Parser<'s> {
 
         if accept!(self.scanner, Token::ResultType) {
             self.scanner.advance();
-
             return_type = Some(self.ty()?);
         }
 
@@ -333,14 +333,99 @@ impl<'s> Parser<'s> {
 
         while let Some(token) = self.scanner.peek() {
             match token {
-                Token::Fn => nodes.push(Node::new(
-                    self.scanner.span(),
-                    NodeKind::FnDef(self.func()?),
-                )),
-                _ => unimplemented!(),
+                Token::Fn => {
+                    let begin = self.scanner.span();
+                    let fn_def = self.func()?;
+
+                    nodes.push(Node::new(
+                        begin.ends(&self.scanner.span()),
+                        NodeKind::FnDef(fn_def),
+                    ));
+                }
+                _ => {
+                    let msg = format!("unexpected token: {:?}", token);
+                    return Err(Error::new(self.scanner.span(), msg));
+                }
             }
         }
 
         Ok(nodes)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use test_case::test_case;
+
+    use super::*;
+    use crate::frontend::syntax::Span;
+
+    fn parse(input: &str) -> Result<Vec<Node>> {
+        Parser::new(input).parse()
+    }
+
+    macro_rules! span {
+        ($begin:literal $end:literal $line:literal $column:literal) => {
+            Span {
+                begin: $begin,
+                end: $end,
+                line: $line,
+                column: $column,
+            }
+        };
+    }
+
+    #[test]
+    fn test_no_global_expr() {
+        assert_eq!(
+            parse("10;"),
+            Err(Error::new(
+                span!(0 2 1 0),
+                "unexpected token: Int(10)".to_string()
+            ))
+        )
+    }
+
+    #[test]
+    fn test_empty_fn() {
+        assert_eq!(
+            parse("fn main {}"),
+            Ok(vec![Node::new(
+                span!(0 9 1 0),
+                NodeKind::FnDef(FnDef {
+                    name: "main".to_string(),
+                    sig: FnSig::default(),
+                    body: vec![]
+                })
+            )])
+        );
+    }
+
+    #[test_case("100", LiteralKind::Int(100); "int")]
+    #[test_case("10_000", LiteralKind::Int(10000); "int with separator")]
+    #[test_case("14.59221", LiteralKind::Float(14.59221); "float")]
+    #[test_case(".59221", LiteralKind::Float(0.59221); "float shorthand syntax")]
+    #[test_case("true", LiteralKind::Bool(true); "bool true")]
+    #[test_case("false", LiteralKind::Bool(false); "bool false")]
+    fn test_literal(source: &str, kind: LiteralKind) {
+        let size = source.len();
+
+        assert_eq!(
+            parse(&format!("fn main {{ {} }}", source)),
+            Ok(vec![Node::new(
+                Span::new(1, 0, 0, 11 + size),
+                NodeKind::FnDef(FnDef {
+                    name: "main".to_string(),
+                    sig: FnSig::default(),
+                    body: vec![Stmt::new(
+                        Span::new(1, 10, 10, 10 + size),
+                        StmtKind::Expr(Expr::new(
+                            Span::new(1, 10, 10, 10 + size),
+                            ExprKind::Literal(Literal::new(Span::new(1, 10, 10, 10 + size), kind,))
+                        ))
+                    )]
+                })
+            )])
+        );
     }
 }

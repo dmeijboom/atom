@@ -11,5 +11,6 @@ debug = true
 logos = "0.12.0"
 anyhow = "1.0.57"
 temp-dir = "0.1.11"
+test-case = "2.1.0"
 inkwell = "0.1.0-beta.4"
 clap = { version = "3.1.18", features = ["derive"] }

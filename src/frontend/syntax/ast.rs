@@ -14,6 +14,22 @@ pub struct Span {
     pub column: usize,
 }
 
+impl Span {
+    pub fn new(line: usize, column: usize, begin: usize, end: usize) -> Self {
+        Self {
+            line,
+            column,
+            begin,
+            end,
+        }
+    }
+
+    pub fn ends(mut self, other: &Span) -> Self {
+        self.end = other.begin;
+        self
+    }
+}
+
 impl Display for Span {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
@@ -58,7 +74,7 @@ impl Type {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 pub struct FnSig {
     pub params: Vec<Type>,
     pub return_type: Option<Type>,
@@ -141,6 +157,7 @@ impl Literal {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LiteralKind {
     Int(i64),
+    Bool(bool),
     Float(f64),
     String(String),
 }
@@ -149,6 +166,7 @@ impl InferType for LiteralKind {
     fn infer_type(&self) -> types::Type {
         match self {
             LiteralKind::Int(_) => types::INT,
+            LiteralKind::Bool(_) => types::BOOL,
             LiteralKind::Float(_) => types::FLOAT,
             LiteralKind::String(_) => types::STRING,
         }

@@ -117,6 +117,12 @@ pub enum Token {
     #[token("**")]
     Exp,
 
+    #[token("true")]
+    True,
+
+    #[token("false")]
+    False,
+
     #[token("return")]
     Return,
 

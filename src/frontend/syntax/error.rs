@@ -3,7 +3,7 @@ use std::fmt::{Display, Formatter};
 
 use crate::frontend::syntax::Span;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub struct Error {
     pub span: Span,
     pub message: String,
