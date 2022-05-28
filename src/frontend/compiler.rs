@@ -1,10 +1,10 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
-use crate::frontend::compiler::{Error, ScopeList};
-use crate::frontend::compiler::scope::ScopeKind;
+use crate::frontend::scope::{ScopeKind, ScopeList};
 use crate::frontend::syntax::{
     self, BinaryOp, Expr, ExprKind, FnDef, InferType, Node, NodeKind, Span, StmtKind,
 };
 use crate::frontend::types::{self, Numeric, Type};
+use crate::frontend::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
