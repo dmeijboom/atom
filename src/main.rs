@@ -12,7 +12,7 @@ use inkwell::context;
 use temp_dir::TempDir;
 
 use backend::CodeGen;
-use frontend::{Compiler, syntax::Parser};
+use frontend::{syntax::Parser, Compiler};
 
 #[derive(ClapParser)]
 #[clap(about = "atom")]
@@ -24,6 +24,8 @@ struct Opts {
 #[derive(ClapParser)]
 struct CompileOpts {
     filename: PathBuf,
+    #[clap(long)]
+    check: bool,
     #[clap(short)]
     output: Option<PathBuf>,
 }
@@ -58,6 +60,10 @@ fn main() -> Result<()> {
             let ctx = context::Context::create();
             let codegen = CodeGen::new(&ctx, module);
             let buffer = codegen.generate().context("code generation failed")?;
+
+            if opts.check {
+                return Ok(());
+            }
 
             let build_dir = TempDir::new()?;
 
