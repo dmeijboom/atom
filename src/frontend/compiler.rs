@@ -146,9 +146,9 @@ impl Compiler {
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
         let return_type = if let Some(ty) = fn_def.sig.return_type {
-            self.compile_type(&span, ty)?
+            Some(self.compile_type(&span, ty)?)
         } else {
-            types::VOID
+            None
         };
 
         self.scopes.enter(ScopeKind::Fn);
@@ -187,18 +187,19 @@ impl Compiler {
         self.scopes.exit();
 
         let inferred_return_type = inferred_return_type.unwrap_or(types::VOID);
-
-        if return_type != inferred_return_type {
-            return error!(
-                span,
-                "invalid return type '{}' for '{}(...)' (expected: {})",
-                inferred_return_type,
-                fn_def.name,
-                return_type
-            );
-        }
-
-        let return_type = self.to_concrete_type(&return_type)?;
+        let return_type = self.to_concrete_type(&match return_type {
+            Some(return_type) if return_type != inferred_return_type => {
+                return error!(
+                    span,
+                    "invalid return type '{}' for '{}(...)' (expected: {})",
+                    inferred_return_type,
+                    fn_def.name,
+                    return_type
+                );
+            }
+            Some(return_type) => return_type,
+            None => inferred_return_type,
+        })?;
 
         self.module.funcs.push(Fn {
             name: fn_def.name,
