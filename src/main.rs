@@ -1,7 +1,5 @@
-mod codegen;
-mod compiler;
-mod module;
-mod syntax;
+mod backend;
+mod frontend;
 
 use std::fmt::Debug;
 use std::fs;
@@ -13,9 +11,8 @@ use clap::Parser as ClapParser;
 use inkwell::context;
 use temp_dir::TempDir;
 
-use codegen::CodeGenerator;
-use compiler::Compiler;
-use syntax::Parser;
+use backend::CodeGen;
+use frontend::{Compiler, syntax::Parser};
 
 #[derive(ClapParser)]
 #[clap(about = "atom")]
@@ -59,7 +56,7 @@ fn main() -> Result<()> {
             pretty_print(&module);
 
             let ctx = context::Context::create();
-            let codegen = CodeGenerator::new(&ctx, module);
+            let codegen = CodeGen::new(&ctx, module);
             let buffer = codegen.generate().context("code generation failed")?;
 
             let build_dir = TempDir::new()?;

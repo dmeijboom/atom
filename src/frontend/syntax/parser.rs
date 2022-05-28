@@ -1,7 +1,7 @@
 use std::mem;
 
-use crate::syntax::lexer::StringToken;
-use crate::syntax::{
+use crate::frontend::syntax::lexer::StringToken;
+use crate::frontend::syntax::{
     Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, Literal, LiteralKind, Node, NodeKind,
     Scanner, Stmt, StmtKind, Token, Type,
 };

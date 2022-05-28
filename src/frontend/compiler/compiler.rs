@@ -1,11 +1,10 @@
-use crate::compiler::scope::ScopeKind;
-use crate::compiler::types::{Numeric, Type};
-use crate::compiler::{types, Error, ScopeList};
-use crate::module;
-use crate::module::{Block, Fn, Instr, InstrKind, Module, Terminator};
-use crate::syntax::{
+use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
+use crate::frontend::compiler::{Error, ScopeList};
+use crate::frontend::compiler::scope::ScopeKind;
+use crate::frontend::syntax::{
     self, BinaryOp, Expr, ExprKind, FnDef, InferType, Node, NodeKind, Span, StmtKind,
 };
+use crate::frontend::types::{self, Numeric, Type};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -121,17 +120,17 @@ impl Compiler {
         }
     }
 
-    fn to_concrete_type(&self, ty: &Type) -> Result<module::Type> {
+    fn to_concrete_type(&self, ty: &Type) -> Result<LlvmType> {
         match_types!(
             ty,
-            types::INT8 => module::Type::Int8,
-            types::INT16 => module::Type::Int16,
-            types::INT => module::Type::Int32,
-            types::INT64 => module::Type::Int64,
-            types::FLOAT => module::Type::Float32,
-            types::FLOAT64 => module::Type::Float64,
-            types::BOOL => module::Type::Int1,
-            types::VOID => module::Type::Void
+            types::INT8 => LlvmType::Int8,
+            types::INT16 => LlvmType::Int16,
+            types::INT => LlvmType::Int32,
+            types::INT64 => LlvmType::Int64,
+            types::FLOAT => LlvmType::Float32,
+            types::FLOAT64 => LlvmType::Float64,
+            types::BOOL => LlvmType::Int1,
+            types::VOID => LlvmType::Void
         );
 
         Err(Error::new(Span::default(), format!("invalid type: {}", ty)))

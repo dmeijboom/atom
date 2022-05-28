@@ -1,7 +1,7 @@
 use std::error;
 use std::fmt::{Display, Formatter};
 
-use crate::syntax::Span;
+use crate::frontend::syntax::Span;
 
 #[derive(Debug)]
 pub struct Error {

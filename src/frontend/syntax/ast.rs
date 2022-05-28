@@ -1,5 +1,6 @@
-use crate::compiler::types;
 use std::fmt::{Debug, Display, Formatter};
+
+use crate::frontend::types;
 
 pub trait InferType {
     fn infer_type(&self) -> types::Type;

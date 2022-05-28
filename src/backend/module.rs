@@ -1,4 +1,4 @@
-use crate::syntax::{LiteralKind, Span};
+use crate::frontend::syntax::{LiteralKind, Span};
 
 #[derive(Debug, Clone)]
 pub enum Type {

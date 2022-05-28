@@ -9,8 +9,8 @@ use inkwell::types::FunctionType;
 use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::OptimizationLevel;
 
-use crate::module::{self, Fn, InstrKind, Terminator, Type};
-use crate::syntax::LiteralKind;
+use crate::backend::{module, Fn, InstrKind, Terminator, Type};
+use crate::frontend::syntax::LiteralKind;
 
 macro_rules! pop_binary {
     ($stack:ident as int) => {{
@@ -31,13 +31,13 @@ macro_rules! pop_binary {
     }};
 }
 
-pub struct CodeGenerator<'ctx> {
+pub struct CodeGen<'ctx> {
     module: module::Module,
     context: &'ctx Context,
     llvm_module: Module<'ctx>,
 }
 
-impl<'ctx> CodeGenerator<'ctx> {
+impl<'ctx> CodeGen<'ctx> {
     pub fn new(context: &'ctx Context, module: module::Module) -> Self {
         Self {
             llvm_module: context.create_module(&module.name),

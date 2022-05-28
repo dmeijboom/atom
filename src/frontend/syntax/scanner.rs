@@ -1,7 +1,7 @@
 use logos::{Lexer, Logos, Source};
 
-use crate::syntax::lexer::{LexerExtras, StringToken, Token};
-use crate::syntax::Span;
+use crate::frontend::syntax::lexer::{LexerExtras, StringToken, Token};
+use crate::frontend::syntax::Span;
 
 pub struct Scanner<'s, T: Logos<'s> = Token> {
     lexer: Lexer<'s, T>,
