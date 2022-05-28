@@ -13,7 +13,17 @@ use crate::module::{self, Fn, InstrKind, Terminator, Type};
 use crate::syntax::LiteralKind;
 
 macro_rules! pop_binary {
-    ($stack:expr) => {{
+    ($stack:ident as int) => {{
+        let (lhs, rhs) = pop_binary!($stack);
+        (lhs.into_int_value(), rhs.into_int_value())
+    }};
+
+    ($stack:ident as float) => {{
+        let (lhs, rhs) = pop_binary!($stack);
+        (lhs.into_float_value(), rhs.into_float_value())
+    }};
+
+    ($stack:ident) => {{
         let rhs = $stack.pop().unwrap();
         let lhs = $stack.pop().unwrap();
 
@@ -74,40 +84,42 @@ impl<'ctx> CodeGenerator<'ctx> {
                         _ => unimplemented!(),
                     },
                     InstrKind::IntAdd => {
-                        let (lhs, rhs) = pop_binary!(stack);
-
-                        BasicValueEnum::IntValue(builder.build_int_add(
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "int_add",
-                        ))
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(builder.build_int_add(lhs, rhs, "int_add"))
                     }
                     InstrKind::IntSub => {
-                        let (lhs, rhs) = pop_binary!(stack);
-
-                        BasicValueEnum::IntValue(builder.build_int_sub(
-                            lhs.into_int_value(),
-                            rhs.into_int_value(),
-                            "int_sub",
-                        ))
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(builder.build_int_sub(lhs, rhs, "int_sub"))
+                    }
+                    InstrKind::IntMul => {
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(builder.build_int_mul(lhs, rhs, "int_mul"))
+                    }
+                    InstrKind::IntSDiv => {
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(builder.build_int_signed_div(lhs, rhs, "int_sdiv"))
+                    }
+                    InstrKind::IntUDiv => {
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(
+                            builder.build_int_unsigned_div(lhs, rhs, "int_udiv"),
+                        )
                     }
                     InstrKind::FloatAdd => {
-                        let (lhs, rhs) = pop_binary!(stack);
-
-                        BasicValueEnum::FloatValue(builder.build_float_add(
-                            lhs.into_float_value(),
-                            rhs.into_float_value(),
-                            "float_add",
-                        ))
+                        let (lhs, rhs) = pop_binary!(stack as float);
+                        BasicValueEnum::FloatValue(builder.build_float_add(lhs, rhs, "float_add"))
                     }
                     InstrKind::FloatSub => {
-                        let (lhs, rhs) = pop_binary!(stack);
-
-                        BasicValueEnum::FloatValue(builder.build_float_sub(
-                            lhs.into_float_value(),
-                            rhs.into_float_value(),
-                            "float_sub",
-                        ))
+                        let (lhs, rhs) = pop_binary!(stack as float);
+                        BasicValueEnum::FloatValue(builder.build_float_sub(lhs, rhs, "float_sub"))
+                    }
+                    InstrKind::FloatMul => {
+                        let (lhs, rhs) = pop_binary!(stack as float);
+                        BasicValueEnum::FloatValue(builder.build_float_mul(lhs, rhs, "float_mul"))
+                    }
+                    InstrKind::FloatDiv => {
+                        let (lhs, rhs) = pop_binary!(stack as float);
+                        BasicValueEnum::FloatValue(builder.build_float_div(lhs, rhs, "float_div"))
                     }
                 };
 

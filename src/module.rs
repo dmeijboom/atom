@@ -39,8 +39,13 @@ pub enum InstrKind {
     Const(LiteralKind),
     IntAdd,
     IntSub,
+    IntMul,
+    IntSDiv,
+    IntUDiv,
     FloatAdd,
     FloatSub,
+    FloatMul,
+    FloatDiv,
 }
 
 #[derive(Debug, Default, Clone)]

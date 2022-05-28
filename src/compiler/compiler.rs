@@ -1,9 +1,11 @@
 use crate::compiler::scope::ScopeKind;
-use crate::compiler::types::Type;
+use crate::compiler::types::{Numeric, Type};
 use crate::compiler::{types, Error, ScopeList};
 use crate::module;
 use crate::module::{Block, Fn, Instr, InstrKind, Module, Terminator};
-use crate::syntax::{self, BinaryOp, Expr, ExprKind, FnDef, InferType, Node, NodeKind, Span, StmtKind};
+use crate::syntax::{
+    self, BinaryOp, Expr, ExprKind, FnDef, InferType, Node, NodeKind, Span, StmtKind,
+};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -81,24 +83,34 @@ impl Compiler {
                     );
                 }
 
-                let instr_kind = if lhs.is_int() {
-                    match binary.op {
+                let instr_kind = match lhs.attr.numeric {
+                    Some(Numeric::Int { signed, .. }) => match binary.op {
                         BinaryOp::Add => InstrKind::IntAdd,
                         BinaryOp::Sub => InstrKind::IntSub,
+                        BinaryOp::Mul => InstrKind::IntMul,
+                        BinaryOp::Div => {
+                            if signed {
+                                InstrKind::IntSDiv
+                            } else {
+                                InstrKind::IntUDiv
+                            }
+                        }
                         _ => unimplemented!(),
-                    }
-                } else if lhs.is_float() {
-                    match binary.op {
+                    },
+                    Some(Numeric::Float { .. }) => match binary.op {
                         BinaryOp::Add => InstrKind::FloatAdd,
                         BinaryOp::Sub => InstrKind::FloatSub,
+                        BinaryOp::Mul => InstrKind::FloatMul,
+                        BinaryOp::Div => InstrKind::FloatDiv,
                         _ => unimplemented!(),
-                    }
-                } else {
-                    return error!(
+                    },
+                    _ => {
+                        return error!(
                         expr.span,
                         "invalid non-numeric type for binary expression: {} (should be numeric)",
                         lhs
-                    );
+                    )
+                    }
                 };
 
                 block.body.push(Instr::new(expr.span, instr_kind));

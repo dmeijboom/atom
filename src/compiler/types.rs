@@ -24,16 +24,22 @@ macro_rules! static_types {
 }
 
 #[derive(PartialEq)]
+pub enum Numeric {
+    Int { size: usize, signed: bool },
+    Float { size: usize },
+}
+
+#[derive(PartialEq)]
 pub struct TypeAttr {
     pub primitive: bool,
-    pub numeric: bool,
+    pub numeric: Option<Numeric>,
 }
 
 impl Default for TypeAttr {
     fn default() -> Self {
         Self {
             primitive: true,
-            numeric: false,
+            numeric: None,
         }
     }
 }
@@ -47,19 +53,19 @@ pub struct Type {
 }
 
 static_types!(
-    (Bool BOOL false),
-    (String STRING false),
-    (Int8 INT8 true),
-    (Int16 INT16 true),
-    (Int INT true),
-    (Int64 INT64 true),
-    (Uint8 UINT8 true),
-    (Uint16 UINT16 true),
-    (Uint UINT true),
-    (Uint64 UINT64 true),
-    (Float FLOAT true),
-    (Float64 FLOAT64 true),
-    (Void VOID false)
+    (Bool BOOL None),
+    (String STRING None),
+    (Int8 INT8 Some(Numeric::Int { size: 8, signed: true })),
+    (Int16 INT16 Some(Numeric::Int { size: 16, signed: true })),
+    (Int INT Some(Numeric::Int { size: 32, signed: true })),
+    (Int64 INT64 Some(Numeric::Int { size: 64, signed: true })),
+    (Uint8 UINT8 Some(Numeric::Int { size: 8, signed: false })),
+    (Uint16 UINT16 Some(Numeric::Int { size: 16, signed: false })),
+    (Uint UINT Some(Numeric::Int { size: 32, signed: false })),
+    (Uint64 UINT64 Some(Numeric::Int { size: 64, signed: false })),
+    (Float FLOAT Some(Numeric::Float { size: 32 })),
+    (Float64 FLOAT64 Some(Numeric::Float { size: 64 })),
+    (Void VOID None)
 );
 
 impl Type {
@@ -69,21 +75,6 @@ impl Type {
             args: vec![],
             attr: TypeAttr::default(),
         }
-    }
-}
-
-impl Type {
-    #[inline]
-    pub fn is_int(&self) -> bool {
-        matches!(
-            *self.name.as_ref(),
-            "Int8" | "Int16" | "Int" | "Int32" | "Int64"
-        )
-    }
-
-    #[inline]
-    pub fn is_float(&self) -> bool {
-        matches!(*self.name.as_ref(), "Float" | "Float64")
     }
 }
 
