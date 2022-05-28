@@ -101,6 +101,7 @@ impl Stmt {
 
 #[derive(Debug, PartialEq)]
 pub enum StmtKind {
+    Let(String, Expr),
     Return(Expr),
     Expr(Expr),
     ExprEnd(Expr),
@@ -138,6 +139,7 @@ pub struct Binary {
 
 #[derive(Debug, PartialEq)]
 pub enum ExprKind {
+    Ident(String),
     Literal(Literal),
     Binary(Box<Binary>),
 }

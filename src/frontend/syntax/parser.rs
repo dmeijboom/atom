@@ -128,6 +128,7 @@ impl<'s> Parser<'s> {
         let span = self.scanner.span();
 
         match self.scanner.advance() {
+            Some(Token::Ident(name)) => Ok(Expr::new(span, ExprKind::Ident(name))),
             Some(Token::BeginString) => {
                 make_lit!(span, String, self.string()?)
             }
@@ -227,11 +228,25 @@ impl<'s> Parser<'s> {
         Ok(Stmt::new(span, StmtKind::Return(expr)))
     }
 
+    fn let_stmt(&mut self) -> Result<Stmt> {
+        let span = self.scanner.span();
+        self.scanner.advance();
+        let name = expect!(withValue self.scanner, Token::Ident);
+        expect!(self.scanner, Token::Assign);
+        let expr = self.expr()?;
+        expect!(self.scanner, Token::End);
+
+        Ok(Stmt::new(span, StmtKind::Let(name, expr)))
+    }
+
     fn body(&mut self) -> Result<Vec<Stmt>> {
         let mut stmts = vec![];
 
         while let Some(token) = self.scanner.peek() {
             match token {
+                Token::Let => {
+                    stmts.push(self.let_stmt()?);
+                }
                 Token::Return => {
                     stmts.push(self.return_stmt()?);
                 }

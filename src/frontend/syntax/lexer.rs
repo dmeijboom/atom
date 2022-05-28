@@ -148,7 +148,7 @@ pub enum Token {
     Separator,
 
     #[token("=")]
-    Eq,
+    Assign,
 
     #[token("$")]
     Dollar,

@@ -60,6 +60,15 @@ impl Compiler {
 
     fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<Type> {
         match expr.kind {
+            ExprKind::Ident(name) => {
+                let (local, idx) = self.scopes.head().local(&name).ok_or_else(|| {
+                    Error::new(expr.span.clone(), format!("no such name: {}", name))
+                })?;
+
+                block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
+
+                Ok(local.ty.clone())
+            }
             ExprKind::Literal(literal) => {
                 let ty = literal.kind.infer_type();
 
@@ -136,7 +145,7 @@ impl Compiler {
         Err(Error::new(Span::default(), format!("invalid type: {}", ty)))
     }
 
-    fn compile_type(&mut self, span: &Span, ty: syntax::Type) -> Result<Type> {
+    fn compile_type(&mut self, span: &Span, ty: &syntax::Type) -> Result<Type> {
         if let Some(ty) = Type::from_name(&ty.name) {
             return Ok(ty);
         }
@@ -146,7 +155,7 @@ impl Compiler {
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
         let return_type = if let Some(ty) = fn_def.sig.return_type {
-            Some(self.compile_type(&span, ty)?)
+            Some(self.compile_type(&span, &ty)?)
         } else {
             None
         };
@@ -169,6 +178,15 @@ impl Compiler {
                     inferred_return_type = Some(ty);
                     block.term = Some(Terminator::Return);
                 }
+                StmtKind::Let(name, expr) => {
+                    let ty = self.compile_expr(&mut block, expr)?;
+                    let scope = self.scopes.head_mut();
+                    let idx = scope.declare(name, ty)?;
+
+                    block
+                        .body
+                        .push(Instr::new(stmt.span, InstrKind::Store(idx)));
+                }
                 StmtKind::Expr(expr) => {
                     let ty = self.compile_expr(&mut block, expr)?;
 
@@ -184,8 +202,7 @@ impl Compiler {
             }
         }
 
-        self.scopes.exit();
-
+        let scope = self.scopes.exit();
         let inferred_return_type = inferred_return_type.unwrap_or(types::VOID);
         let return_type = self.to_concrete_type(&match return_type {
             Some(return_type) if return_type != inferred_return_type => {
@@ -201,10 +218,17 @@ impl Compiler {
             None => inferred_return_type,
         })?;
 
+        let mut locals = Vec::with_capacity(scope.locals().len());
+
+        for local in scope.locals() {
+            locals.push(self.to_concrete_type(&local.ty)?);
+        }
+
         self.module.funcs.push(Fn {
             name: fn_def.name,
             body: vec![block],
             return_type,
+            locals,
         });
 
         Ok(())

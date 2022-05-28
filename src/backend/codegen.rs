@@ -5,7 +5,7 @@ use inkwell::module::Module;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
-use inkwell::types::FunctionType;
+use inkwell::types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::OptimizationLevel;
 
@@ -46,17 +46,42 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn make_type(&self, ty: &Type) -> AnyTypeEnum<'ctx> {
+        match ty {
+            Type::Float32 => self.context.f32_type().as_any_type_enum(),
+            Type::Float64 => self.context.f64_type().as_any_type_enum(),
+            Type::Int8 => self.context.i8_type().as_any_type_enum(),
+            Type::Int16 => self.context.i16_type().as_any_type_enum(),
+            Type::Int32 => self.context.i32_type().as_any_type_enum(),
+            Type::Int64 => self.context.i64_type().as_any_type_enum(),
+            Type::Void => self.context.void_type().as_any_type_enum(),
+            _ => unimplemented!(),
+        }
+    }
+
+    fn make_basic_type(&self, ty: &Type) -> BasicTypeEnum<'ctx> {
+        match self.make_type(ty) {
+            AnyTypeEnum::ArrayType(ty) => ty.as_basic_type_enum(),
+            AnyTypeEnum::FloatType(ty) => ty.as_basic_type_enum(),
+            AnyTypeEnum::IntType(ty) => ty.as_basic_type_enum(),
+            AnyTypeEnum::PointerType(ty) => ty.as_basic_type_enum(),
+            AnyTypeEnum::StructType(ty) => ty.as_basic_type_enum(),
+            AnyTypeEnum::VectorType(ty) => ty.as_basic_type_enum(),
+            _ => unreachable!("invalid basic type"),
+        }
+    }
+
     fn fn_type(&self, ty: &Type, params: &[&Type]) -> FunctionType<'ctx> {
         let params = &[];
 
-        match ty {
-            Type::Float32 => self.context.f32_type().fn_type(params, false),
-            Type::Float64 => self.context.f64_type().fn_type(params, false),
-            Type::Int8 => self.context.i8_type().fn_type(params, false),
-            Type::Int16 => self.context.i16_type().fn_type(params, false),
-            Type::Int32 => self.context.i32_type().fn_type(params, false),
-            Type::Int64 => self.context.i64_type().fn_type(params, false),
-            Type::Void => self.context.void_type().fn_type(params, false),
+        match self.make_type(ty) {
+            AnyTypeEnum::ArrayType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::FloatType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::IntType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::PointerType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::StructType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::VectorType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::VoidType(ty) => ty.fn_type(params, false),
             _ => unimplemented!(),
         }
     }
@@ -70,6 +95,11 @@ impl<'ctx> CodeGen<'ctx> {
         builder.position_at_end(block);
 
         let mut stack: Vec<BasicValueEnum> = vec![];
+        let mut locals = vec![];
+
+        for (idx, ty) in func.locals.iter().enumerate() {
+            locals.push(builder.build_alloca(self.make_basic_type(ty), &format!("local{}", idx)));
+        }
 
         for block in func.body.iter() {
             for instr in block.body.iter() {
@@ -120,6 +150,15 @@ impl<'ctx> CodeGen<'ctx> {
                     InstrKind::FloatDiv => {
                         let (lhs, rhs) = pop_binary!(stack as float);
                         BasicValueEnum::FloatValue(builder.build_float_div(lhs, rhs, "float_div"))
+                    }
+                    InstrKind::Load(idx) => {
+                        builder.build_load(locals[*idx], &format!("load{}", idx))
+                    }
+                    InstrKind::Store(idx) => {
+                        let value = stack.pop().unwrap();
+                        builder.build_store(locals[*idx], value);
+
+                        continue;
                     }
                 };
 

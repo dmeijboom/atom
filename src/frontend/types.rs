@@ -23,13 +23,13 @@ macro_rules! static_types {
     };
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub enum Numeric {
     Int { size: usize, signed: bool },
     Float { size: usize },
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, Clone)]
 pub struct TypeAttr {
     pub primitive: bool,
     pub numeric: Option<Numeric>,
@@ -46,6 +46,7 @@ impl Default for TypeAttr {
 
 type TypeName = Cow<'static, &'static str>;
 
+#[derive(Clone)]
 pub struct Type {
     pub name: TypeName,
     pub attr: TypeAttr,
