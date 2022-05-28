@@ -2,7 +2,7 @@
 mod compiler;
 mod error;
 mod scope;
-mod types;
+pub mod types;
 
 pub use compiler::Compiler;
 pub use error::Error;

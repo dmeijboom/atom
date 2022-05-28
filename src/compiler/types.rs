@@ -105,6 +105,10 @@ impl Display for Type {
             write!(f, " {}", arg)?;
         }
 
-        write!(f, ">")
+        if !self.args.is_empty() {
+            write!(f, ">")?;
+        }
+
+        Ok(())
     }
 }

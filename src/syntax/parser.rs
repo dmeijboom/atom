@@ -217,11 +217,23 @@ impl<'s> Parser<'s> {
         self.additive()
     }
 
+    fn return_stmt(&mut self) -> Result<Stmt> {
+        let span = self.scanner.span();
+        self.scanner.advance();
+        let expr = self.expr()?;
+        expect!(self.scanner, Token::End);
+
+        Ok(Stmt::new(span, StmtKind::Return(expr)))
+    }
+
     fn body(&mut self) -> Result<Vec<Stmt>> {
         let mut stmts = vec![];
 
         while let Some(token) = self.scanner.peek() {
             match token {
+                Token::Return => {
+                    stmts.push(self.return_stmt()?);
+                }
                 Token::BracketRight => break,
                 _ => {
                     let span = self.scanner.span();

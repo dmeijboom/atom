@@ -1,7 +1,8 @@
+use crate::compiler::types;
 use std::fmt::{Debug, Display, Formatter};
 
 pub trait InferType {
-    fn infer_type(&self) -> Option<Type>;
+    fn infer_type(&self) -> types::Type;
 }
 
 #[derive(Clone, Default, PartialEq)]
@@ -144,11 +145,11 @@ pub enum LiteralKind {
 }
 
 impl InferType for LiteralKind {
-    fn infer_type(&self) -> Option<Type> {
-        Some(match self {
-            LiteralKind::Int(_) => Type::new("int".to_string()),
-            LiteralKind::Float(_) => Type::new("float".to_string()),
-            LiteralKind::String(_) => Type::new("string".to_string()),
-        })
+    fn infer_type(&self) -> types::Type {
+        match self {
+            LiteralKind::Int(_) => types::INT,
+            LiteralKind::Float(_) => types::FLOAT,
+            LiteralKind::String(_) => types::STRING,
+        }
     }
 }

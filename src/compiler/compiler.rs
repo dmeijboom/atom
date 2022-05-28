@@ -3,9 +3,7 @@ use crate::compiler::types::Type;
 use crate::compiler::{types, Error, ScopeList};
 use crate::module;
 use crate::module::{Block, Fn, Instr, InstrKind, Module, Terminator};
-use crate::syntax::{
-    self, BinaryOp, Expr, ExprKind, FnDef, LiteralKind, Node, NodeKind, Span, StmtKind,
-};
+use crate::syntax::{self, BinaryOp, Expr, ExprKind, FnDef, InferType, Node, NodeKind, Span, StmtKind};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -62,11 +60,7 @@ impl Compiler {
     fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<Type> {
         match expr.kind {
             ExprKind::Literal(literal) => {
-                let ty = match &literal.kind {
-                    LiteralKind::Int(_) => types::INT,
-                    LiteralKind::Float(_) => types::FLOAT,
-                    _ => unimplemented!(),
-                };
+                let ty = literal.kind.infer_type();
 
                 block
                     .body
@@ -79,13 +73,12 @@ impl Compiler {
                 let rhs = self.compile_expr(block, binary.right)?;
 
                 if lhs != rhs {
-                    return Err(Error::new(
+                    return error!(
                         expr.span,
-                        format!(
-                            "invalid type for binary expression: {} and {} (should be the equal)",
-                            lhs, rhs
-                        ),
-                    ));
+                        "invalid type for binary expression: {} and {} (should be the equal)",
+                        lhs,
+                        rhs
+                    );
                 }
 
                 let instr_kind = if lhs.is_int() {
@@ -101,13 +94,11 @@ impl Compiler {
                         _ => unimplemented!(),
                     }
                 } else {
-                    return Err(Error::new(
+                    return error!(
                         expr.span,
-                        format!(
-                            "invalid non-numeric type for binary expression: {} (should be numeric)",
-                            lhs
-                        ),
-                    ));
+                        "invalid non-numeric type for binary expression: {} (should be numeric)",
+                        lhs
+                    );
                 };
 
                 block.body.push(Instr::new(expr.span, instr_kind));
@@ -134,17 +125,17 @@ impl Compiler {
         Err(Error::new(Span::default(), format!("invalid type: {}", ty)))
     }
 
-    fn compile_type(&mut self, span: Span, ty: syntax::Type) -> Result<Type> {
+    fn compile_type(&mut self, span: &Span, ty: syntax::Type) -> Result<Type> {
         if let Some(ty) = Type::from_name(&ty.name) {
             return Ok(ty);
         }
 
-        error!(span, "unknown type: {}", ty.name)
+        error!(span.clone(), "unknown type: {}", ty.name)
     }
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
         let return_type = if let Some(ty) = fn_def.sig.return_type {
-            self.compile_type(span, ty)?
+            self.compile_type(&span, ty)?
         } else {
             types::VOID
         };
@@ -153,23 +144,25 @@ impl Compiler {
 
         let mut block = Block::default();
         let body_len = fn_def.body.len();
+        let mut inferred_return_type = None;
 
         for (i, stmt) in fn_def.body.into_iter().enumerate() {
+            if block.term.is_some() {
+                break;
+            }
+
             match stmt.kind {
                 StmtKind::Return(expr) => {
-                    let span = expr.span.clone();
-                    let _ty = self.compile_expr(&mut block, expr)?;
+                    let ty = self.compile_expr(&mut block, expr)?;
 
-                    if block.term.is_some() {
-                        return error!(span, "block already terminated");
-                    }
-
+                    inferred_return_type = Some(ty);
                     block.term = Some(Terminator::Return);
                 }
                 StmtKind::Expr(expr) => {
-                    let _ty = self.compile_expr(&mut block, expr)?;
+                    let ty = self.compile_expr(&mut block, expr)?;
 
                     if i == body_len - 1 && block.term.is_none() {
+                        inferred_return_type = Some(ty);
                         block.term = Some(Terminator::Return);
                     }
                 }
@@ -181,6 +174,18 @@ impl Compiler {
         }
 
         self.scopes.exit();
+
+        let inferred_return_type = inferred_return_type.unwrap_or(types::VOID);
+
+        if return_type != inferred_return_type {
+            return error!(
+                span,
+                "invalid return type '{}' for '{}(...)' (expected: {})",
+                inferred_return_type,
+                fn_def.name,
+                return_type
+            );
+        }
 
         let return_type = self.to_concrete_type(&return_type)?;
 

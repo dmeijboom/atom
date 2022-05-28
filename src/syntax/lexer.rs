@@ -117,6 +117,9 @@ pub enum Token {
     #[token("**")]
     Exp,
 
+    #[token("return")]
+    Return,
+
     #[token("fn")]
     Fn,
 
