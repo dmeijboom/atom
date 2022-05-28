@@ -1,6 +1,10 @@
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
-#[derive(Debug, Clone, PartialEq)]
+pub trait InferType {
+    fn infer_type(&self) -> Option<Type>;
+}
+
+#[derive(Clone, Default, PartialEq)]
 pub struct Span {
     pub begin: usize,
     pub end: usize,
@@ -12,9 +16,15 @@ impl Display for Span {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}:{}[{}..{}]",
+            "{}:{} [{}..{}]",
             self.line, self.column, self.begin, self.end
         )
+    }
+}
+
+impl Debug for Span {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Span ({})", self)
     }
 }
 
@@ -91,8 +101,27 @@ impl Expr {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum BinaryOp {
+    Mul,
+    Div,
+    Add,
+    Sub,
+    BitShiftLeft,
+    BitShiftRight,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Binary {
+    pub span: Span,
+    pub op: BinaryOp,
+    pub left: Expr,
+    pub right: Expr,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ExprKind {
     Literal(Literal),
+    Binary(Box<Binary>),
 }
 
 #[derive(Debug, PartialEq)]
@@ -112,4 +141,14 @@ pub enum LiteralKind {
     Int(i64),
     Float(f64),
     String(String),
+}
+
+impl InferType for LiteralKind {
+    fn infer_type(&self) -> Option<Type> {
+        Some(match self {
+            LiteralKind::Int(_) => Type::new("int".to_string()),
+            LiteralKind::Float(_) => Type::new("float".to_string()),
+            LiteralKind::String(_) => Type::new("string".to_string()),
+        })
+    }
 }

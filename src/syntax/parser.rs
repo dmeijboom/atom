@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::syntax::lexer::StringToken;
 use crate::syntax::{
-    Error, Expr, ExprKind, FnDef, FnSig, Literal, LiteralKind, Node, NodeKind,
+    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, Literal, LiteralKind, Node, NodeKind,
     Scanner, Stmt, StmtKind, Token, Type,
 };
 
@@ -65,6 +65,23 @@ macro_rules! make_lit {
     };
 }
 
+macro_rules! make_bin {
+    ($expr:expr, $right:expr, $op:ident) => {
+        $expr = Expr::new(
+            $expr.span.clone(),
+            ExprKind::Binary(
+                Binary {
+                    span: $expr.span.clone(),
+                    op: BinaryOp::$op,
+                    left: $expr,
+                    right: $right,
+                }
+                .into(),
+            ),
+        )
+    };
+}
+
 pub struct Parser<'s> {
     scanner: Scanner<'s>,
 }
@@ -76,9 +93,7 @@ impl<'s> Parser<'s> {
         }
     }
 
-    fn parse_string(&mut self) -> Result<String> {
-        expect!(self.scanner, Token::BeginString);
-
+    fn string(&mut self) -> Result<String> {
         let mut scanner = Scanner::new("");
         mem::swap(&mut scanner, &mut self.scanner);
 
@@ -86,8 +101,6 @@ impl<'s> Parser<'s> {
         let mut s = String::new();
 
         while let Some(token) = scanner.advance() {
-            println!("{:#?}", token);
-
             match token {
                 StringToken::Text => s.push_str(scanner.text()),
                 StringToken::Escaped(c) => s.push(c),
@@ -111,40 +124,100 @@ impl<'s> Parser<'s> {
         ))
     }
 
-    fn parse_expr(&mut self) -> Result<Expr> {
-        match self.scanner.peek() {
+    fn term(&mut self) -> Result<Expr> {
+        match self.scanner.advance() {
             Some(Token::BeginString) => {
-                make_lit!(self.scanner.span(), String, self.parse_string()?)
+                make_lit!(self.scanner.span(), String, self.string()?)
             }
-            Some(Token::Int(i)) => {
-                let val = *i;
-                self.scanner.advance();
-                make_lit!(self.scanner.span(), Int, val)
-            }
-            Some(Token::Float(f)) => {
-                let val = *f;
-                self.scanner.advance();
-                make_lit!(self.scanner.span(), Float, val)
-            }
+            Some(Token::Int(i)) => make_lit!(self.scanner.span(), Int, i),
+            Some(Token::Float(f)) => make_lit!(self.scanner.span(), Float, f),
+            Some(Token::Error) => Err(Error::new(
+                self.scanner.span(),
+                format!("{} in expr", self.scanner.error_description()),
+            )),
+            Some(token) => Err(Error::new(
+                self.scanner.span(),
+                format!("unexpected token '{:?}' in expr", token),
+            )),
             None => Err(Error::new(
                 self.scanner.span(),
                 "unexpected EOF in expr".to_string(),
             )),
-            Some(Token::Error) => {
-                return Err(Error::new(
-                    self.scanner.span(),
-                    format!("{} in expr", self.scanner.error_description()),
-                ));
-            }
-            Some(token) => {
-                let message = format!("unexpected token '{:?}' in expr", token);
-
-                Err(Error::new(self.scanner.span(), message))
-            }
         }
     }
 
-    fn parse_body(&mut self) -> Result<Vec<Stmt>> {
+    fn bitwise_shift(&mut self) -> Result<Expr> {
+        let mut expr = self.term()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::ShiftLeft) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, BitShiftLeft);
+                }
+                Some(Token::ShiftRight) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, BitShiftRight);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn multiplicative(&mut self) -> Result<Expr> {
+        let mut expr = self.bitwise_shift()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Mul) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.bitwise_shift()?, Mul);
+                }
+                Some(Token::Div) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.bitwise_shift()?, Div);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn additive(&mut self) -> Result<Expr> {
+        let mut expr = self.multiplicative()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Add) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.multiplicative()?, Add);
+                }
+                Some(Token::Sub) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.multiplicative()?, Sub);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    #[inline]
+    fn expr(&mut self) -> Result<Expr> {
+        self.additive()
+    }
+
+    fn body(&mut self) -> Result<Vec<Stmt>> {
         let mut stmts = vec![];
 
         while let Some(token) = self.scanner.peek() {
@@ -152,7 +225,7 @@ impl<'s> Parser<'s> {
                 Token::BracketRight => break,
                 _ => {
                     let span = self.scanner.span();
-                    let expr = self.parse_expr()?;
+                    let expr = self.expr()?;
 
                     stmts.push(Stmt::new(
                         span,
@@ -170,19 +243,19 @@ impl<'s> Parser<'s> {
         Ok(stmts)
     }
 
-    fn parse_type(&mut self) -> Result<Type> {
+    fn ty(&mut self) -> Result<Type> {
         let name = expect!(withValue self.scanner, Token::Ident);
         Ok(Type::new(name))
     }
 
-    fn parse_fn_sig(&mut self) -> Result<FnSig> {
+    fn fn_sig(&mut self) -> Result<FnSig> {
         let mut params = vec![];
 
         let token = self.scanner.peek();
 
         match token {
             Some(Token::Ident(_)) => loop {
-                let ty = self.parse_type()?;
+                let ty = self.ty()?;
 
                 params.push(ty);
 
@@ -213,7 +286,7 @@ impl<'s> Parser<'s> {
         if accept!(self.scanner, Token::ResultType) {
             self.scanner.advance();
 
-            return_type = Some(self.parse_type()?);
+            return_type = Some(self.ty()?);
         }
 
         Ok(FnSig {
@@ -222,7 +295,7 @@ impl<'s> Parser<'s> {
         })
     }
 
-    fn parse_fn(&mut self) -> Result<FnDef> {
+    fn func(&mut self) -> Result<FnDef> {
         let mut sig = FnSig {
             params: vec![],
             return_type: None,
@@ -233,11 +306,11 @@ impl<'s> Parser<'s> {
 
         if accept!(self.scanner, Token::TypeSeparator) {
             self.scanner.advance();
-            sig = self.parse_fn_sig()?;
+            sig = self.fn_sig()?;
         }
 
         expect!(self.scanner, Token::BracketLeft);
-        let body = self.parse_body()?;
+        let body = self.body()?;
         expect!(self.scanner, Token::BracketRight);
 
         Ok(FnDef { name, sig, body })
@@ -250,7 +323,7 @@ impl<'s> Parser<'s> {
             match token {
                 Token::Fn => nodes.push(Node::new(
                     self.scanner.span(),
-                    NodeKind::FnDef(self.parse_fn()?),
+                    NodeKind::FnDef(self.func()?),
                 )),
                 _ => unimplemented!(),
             }

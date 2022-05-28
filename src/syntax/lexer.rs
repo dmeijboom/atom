@@ -96,6 +96,27 @@ where
 #[derive(Logos, Debug, PartialEq)]
 #[logos(extras = LexerExtras)]
 pub enum Token {
+    #[token("<<")]
+    ShiftLeft,
+
+    #[token(">>")]
+    ShiftRight,
+
+    #[token("+")]
+    Add,
+
+    #[token("-")]
+    Sub,
+
+    #[token("*")]
+    Mul,
+
+    #[token("/")]
+    Div,
+
+    #[token("**")]
+    Exp,
+
     #[token("fn")]
     Fn,
 

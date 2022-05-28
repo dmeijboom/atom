@@ -1,12 +1,23 @@
-use std::str::FromStr;
-
 use crate::compiler::scope::ScopeKind;
-use crate::compiler::{Error, ScopeList};
-use crate::module::{BasicType, Block, Fn, Instr, InstrKind, Module, Terminator, Type};
-use crate::syntax;
-use crate::syntax::{Expr, ExprKind, FnDef, LiteralKind, Node, NodeKind, Span, StmtKind};
+use crate::compiler::types::Type;
+use crate::compiler::{types, Error, ScopeList};
+use crate::module;
+use crate::module::{Block, Fn, Instr, InstrKind, Module, Terminator};
+use crate::syntax::{
+    self, BinaryOp, Expr, ExprKind, FnDef, LiteralKind, Node, NodeKind, Span, StmtKind,
+};
 
 type Result<T> = std::result::Result<T, Error>;
+
+macro_rules! match_types {
+    ($ty:expr, $($atom_type:expr => $llvm_type:expr),+) => {
+        $(
+            if $ty == &$atom_type {
+                return Ok($llvm_type);
+            }
+        )+
+    };
+}
 
 macro_rules! error {
     ($span: expr, $($arg:tt)*) => {
@@ -52,8 +63,8 @@ impl Compiler {
         match expr.kind {
             ExprKind::Literal(literal) => {
                 let ty = match &literal.kind {
-                    LiteralKind::Int(_) => Type::Basic(BasicType::Int),
-                    LiteralKind::Float(_) => Type::Basic(BasicType::Float),
+                    LiteralKind::Int(_) => types::INT,
+                    LiteralKind::Float(_) => types::FLOAT,
                     _ => unimplemented!(),
                 };
 
@@ -63,28 +74,79 @@ impl Compiler {
 
                 Ok(ty)
             }
+            ExprKind::Binary(binary) => {
+                let lhs = self.compile_expr(block, binary.left)?;
+                let rhs = self.compile_expr(block, binary.right)?;
+
+                if lhs != rhs {
+                    return Err(Error::new(
+                        expr.span,
+                        format!(
+                            "invalid type for binary expression: {} and {} (should be the equal)",
+                            lhs, rhs
+                        ),
+                    ));
+                }
+
+                let instr_kind = if lhs.is_int() {
+                    match binary.op {
+                        BinaryOp::Add => InstrKind::IntAdd,
+                        BinaryOp::Sub => InstrKind::IntSub,
+                        _ => unimplemented!(),
+                    }
+                } else if lhs.is_float() {
+                    match binary.op {
+                        BinaryOp::Add => InstrKind::FloatAdd,
+                        BinaryOp::Sub => InstrKind::FloatSub,
+                        _ => unimplemented!(),
+                    }
+                } else {
+                    return Err(Error::new(
+                        expr.span,
+                        format!(
+                            "invalid non-numeric type for binary expression: {} (should be numeric)",
+                            lhs
+                        ),
+                    ));
+                };
+
+                block.body.push(Instr::new(expr.span, instr_kind));
+
+                Ok(lhs)
+            }
+            _ => unimplemented!(),
         }
+    }
+
+    fn to_concrete_type(&self, ty: &Type) -> Result<module::Type> {
+        match_types!(
+            ty,
+            types::INT8 => module::Type::Int8,
+            types::INT16 => module::Type::Int16,
+            types::INT => module::Type::Int32,
+            types::INT64 => module::Type::Int64,
+            types::FLOAT => module::Type::Float32,
+            types::FLOAT64 => module::Type::Float64,
+            types::BOOL => module::Type::Int1,
+            types::VOID => module::Type::Void
+        );
+
+        Err(Error::new(Span::default(), format!("invalid type: {}", ty)))
     }
 
     fn compile_type(&mut self, span: Span, ty: syntax::Type) -> Result<Type> {
-        if let Ok(ty) = BasicType::from_str(&ty.name) {
-            return Ok(Type::Basic(ty));
+        if let Some(ty) = Type::from_name(&ty.name) {
+            return Ok(ty);
         }
 
-        match ty.name {
-            _ => error!(span, "unknown type: {}", ty.name),
-        }
+        error!(span, "unknown type: {}", ty.name)
     }
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
-        let mut func = Fn {
-            name: fn_def.name,
-            body: vec![],
-            return_type: if let Some(ty) = fn_def.sig.return_type {
-                self.compile_type(span, ty)?
-            } else {
-                Type::Basic(BasicType::Void)
-            },
+        let return_type = if let Some(ty) = fn_def.sig.return_type {
+            self.compile_type(span, ty)?
+        } else {
+            types::VOID
         };
 
         self.scopes.enter(ScopeKind::Fn);
@@ -96,17 +158,7 @@ impl Compiler {
             match stmt.kind {
                 StmtKind::Return(expr) => {
                     let span = expr.span.clone();
-                    let ty = self.compile_expr(&mut block, expr)?;
-
-                    if ty != func.return_type {
-                        return error!(
-                            span,
-                            "invalid return type '{}' for function '{}' (expected '{}')",
-                            ty,
-                            func.name,
-                            func.return_type,
-                        );
-                    }
+                    let _ty = self.compile_expr(&mut block, expr)?;
 
                     if block.term.is_some() {
                         return error!(span, "block already terminated");
@@ -115,20 +167,9 @@ impl Compiler {
                     block.term = Some(Terminator::Return);
                 }
                 StmtKind::Expr(expr) => {
-                    let span = expr.span.clone();
-                    let ty = self.compile_expr(&mut block, expr)?;
+                    let _ty = self.compile_expr(&mut block, expr)?;
 
                     if i == body_len - 1 && block.term.is_none() {
-                        if ty != func.return_type {
-                            return error!(
-                                span,
-                                "invalid return type '{}' for function '{}' (expected '{}')",
-                                ty,
-                                func.name,
-                                func.return_type,
-                            );
-                        }
-
                         block.term = Some(Terminator::Return);
                     }
                 }
@@ -141,8 +182,13 @@ impl Compiler {
 
         self.scopes.exit();
 
-        func.body.push(block);
-        self.module.funcs.push(func);
+        let return_type = self.to_concrete_type(&return_type)?;
+
+        self.module.funcs.push(Fn {
+            name: fn_def.name,
+            body: vec![block],
+            return_type,
+        });
 
         Ok(())
     }

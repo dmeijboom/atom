@@ -75,15 +75,6 @@ impl<'s, T: Logos<'s, Extras = LexerExtras>> Scanner<'s, T> {
             column: self.lexer.extras.column,
         }
     }
-
-    #[inline]
-    pub fn error_description(&mut self) -> String {
-        if let Some(err) = self.lexer.extras.error.take() {
-            return format!("{}", err);
-        }
-
-        "unexpected error".to_string()
-    }
 }
 
 impl<'s, T: Logos<'s, Source = str, Extras = LexerExtras>> Scanner<'s, T> {
@@ -93,5 +84,13 @@ impl<'s, T: Logos<'s, Source = str, Extras = LexerExtras>> Scanner<'s, T> {
         self.lexer.extras.apply(self.text());
 
         token
+    }
+
+    pub fn error_description(&mut self) -> String {
+        if let Some(err) = self.lexer.extras.error.take() {
+            return format!("{}", err);
+        }
+
+        format!("unexpected error in token: {}", self.lexer.slice())
     }
 }

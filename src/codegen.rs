@@ -12,6 +12,15 @@ use inkwell::OptimizationLevel;
 use crate::module::{self, Fn, InstrKind, Terminator, Type};
 use crate::syntax::LiteralKind;
 
+macro_rules! pop_binary {
+    ($stack:expr) => {{
+        let rhs = $stack.pop().unwrap();
+        let lhs = $stack.pop().unwrap();
+
+        (lhs, rhs)
+    }};
+}
+
 pub struct CodeGenerator<'ctx> {
     module: module::Module,
     context: &'ctx Context,
@@ -31,16 +40,14 @@ impl<'ctx> CodeGenerator<'ctx> {
         let params = &[];
 
         match ty {
-            Type::Basic(basic_type) => match basic_type {
-                module::BasicType::Float => self.context.f32_type().fn_type(params, false),
-                module::BasicType::Float64 => self.context.f64_type().fn_type(params, false),
-                module::BasicType::Int8 => self.context.i8_type().fn_type(params, false),
-                module::BasicType::Int16 => self.context.i16_type().fn_type(params, false),
-                module::BasicType::Int => self.context.i32_type().fn_type(params, false),
-                module::BasicType::Int64 => self.context.i64_type().fn_type(params, false),
-                module::BasicType::Void => self.context.void_type().fn_type(params, false),
-                _ => unimplemented!(),
-            },
+            Type::Float32 => self.context.f32_type().fn_type(params, false),
+            Type::Float64 => self.context.f64_type().fn_type(params, false),
+            Type::Int8 => self.context.i8_type().fn_type(params, false),
+            Type::Int16 => self.context.i16_type().fn_type(params, false),
+            Type::Int32 => self.context.i32_type().fn_type(params, false),
+            Type::Int64 => self.context.i64_type().fn_type(params, false),
+            Type::Void => self.context.void_type().fn_type(params, false),
+            _ => unimplemented!(),
         }
     }
 
@@ -52,11 +59,11 @@ impl<'ctx> CodeGenerator<'ctx> {
 
         builder.position_at_end(block);
 
-        let mut stack = vec![];
+        let mut stack: Vec<BasicValueEnum> = vec![];
 
         for block in func.body.iter() {
             for instr in block.body.iter() {
-                stack.push(match &instr.kind {
+                let value = match &instr.kind {
                     InstrKind::Const(literal) => match literal {
                         LiteralKind::Int(val) => BasicValueEnum::IntValue(
                             self.context.i32_type().const_int(*val as u64, *val < 0),
@@ -66,7 +73,45 @@ impl<'ctx> CodeGenerator<'ctx> {
                         }
                         _ => unimplemented!(),
                     },
-                });
+                    InstrKind::IntAdd => {
+                        let (lhs, rhs) = pop_binary!(stack);
+
+                        BasicValueEnum::IntValue(builder.build_int_add(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            "int_add",
+                        ))
+                    }
+                    InstrKind::IntSub => {
+                        let (lhs, rhs) = pop_binary!(stack);
+
+                        BasicValueEnum::IntValue(builder.build_int_sub(
+                            lhs.into_int_value(),
+                            rhs.into_int_value(),
+                            "int_sub",
+                        ))
+                    }
+                    InstrKind::FloatAdd => {
+                        let (lhs, rhs) = pop_binary!(stack);
+
+                        BasicValueEnum::FloatValue(builder.build_float_add(
+                            lhs.into_float_value(),
+                            rhs.into_float_value(),
+                            "float_add",
+                        ))
+                    }
+                    InstrKind::FloatSub => {
+                        let (lhs, rhs) = pop_binary!(stack);
+
+                        BasicValueEnum::FloatValue(builder.build_float_sub(
+                            lhs.into_float_value(),
+                            rhs.into_float_value(),
+                            "float_sub",
+                        ))
+                    }
+                };
+
+                stack.push(value);
             }
 
             match block.term {
@@ -80,7 +125,7 @@ impl<'ctx> CodeGenerator<'ctx> {
 
     pub fn generate(self) -> Result<MemoryBuffer> {
         for func in self.module.funcs.iter() {
-            self.generate_fn(&func);
+            self.generate_fn(func);
         }
 
         self.llvm_module
@@ -97,7 +142,7 @@ impl<'ctx> CodeGenerator<'ctx> {
             .to_string_lossy()
             .split('-')
             .next()
-            .and_then(|t| Target::from_name(t))
+            .and_then(Target::from_name)
             .unwrap();
         let machine = target
             .create_target_machine(
@@ -110,8 +155,8 @@ impl<'ctx> CodeGenerator<'ctx> {
             )
             .unwrap();
 
-        Ok(machine
+        machine
             .write_to_memory_buffer(&self.llvm_module, FileType::Object)
-            .map_err(|e| anyhow!("failed to write to memory buffer: {}", e))?)
+            .map_err(|e| anyhow!("failed to write to memory buffer: {}", e))
     }
 }
