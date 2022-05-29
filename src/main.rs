@@ -1,12 +1,12 @@
 mod backend;
 mod frontend;
+mod gcc;
 
 use std::fmt::Debug;
 use std::fs;
 use std::path::PathBuf;
-use std::process::Command;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use clap::Parser as ClapParser;
 use inkwell::context;
 use temp_dir::TempDir;
@@ -75,16 +75,11 @@ fn main() -> Result<()> {
             fs::write(build_dir.child("program.o"), buffer.as_slice())
                 .context("failed to write to object file")?;
 
-            let status = Command::new("gcc")
-                .arg("-o")
-                .arg(build_dir.child("program"))
-                .arg(build_dir.child("program.o"))
-                .spawn()?
-                .wait()?;
-
-            if !status.success() {
-                return Err(anyhow!("linking failed"));
-            }
+            gcc::compile(
+                build_dir.child("program.o"),
+                build_dir.child("program"),
+                true,
+            )?;
 
             fs::rename(
                 build_dir.child("program"),

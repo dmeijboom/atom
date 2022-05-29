@@ -1,9 +1,9 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
-use crate::frontend::scope::{Scope, ScopeKind, ScopeList};
+use crate::frontend::scope::Scope;
 use crate::frontend::syntax::{BinaryOp, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
-use crate::frontend::{Error, Node};
+use crate::frontend::Error;
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -100,7 +100,6 @@ impl Compiler {
 
                 block.body.push(Instr::new(expr.span, kind));
             }
-            _ => unimplemented!(),
         }
 
         Ok(())
@@ -149,7 +148,6 @@ impl Compiler {
                 StmtKind::Expr(expr) => {
                     self.compile_expr(&mut block, expr)?;
                 }
-                _ => unimplemented!(),
             }
         }
 

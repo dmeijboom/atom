@@ -1,4 +1,4 @@
-use crate::frontend::scope::{Scope, ScopeKind, ScopeList};
+use crate::frontend::scope::{ScopeKind, ScopeList};
 use crate::frontend::syntax::{InferType, Span};
 use crate::frontend::typed_ast::*;
 use crate::frontend::{syntax, types, Error, Node, Type};
@@ -73,7 +73,6 @@ impl Analyzer {
                     ExprKind::Binary(binary.op, lhs.into(), rhs.into()),
                 )
             }
-            _ => unimplemented!(),
         })
     }
 
@@ -140,7 +139,6 @@ impl Analyzer {
                         StmtKind::Expr(expr),
                     ));
                 }
-                _ => unimplemented!(),
             }
         }
 
@@ -176,7 +174,6 @@ impl Analyzer {
                     let kind = NodeKind::FnDef(self.analyze_fn(&node.span, fn_def)?);
                     self.nodes.push(Node::new(node.span, kind));
                 }
-                _ => unimplemented!(),
             }
         }
 
