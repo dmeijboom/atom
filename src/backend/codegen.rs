@@ -167,10 +167,10 @@ impl<'ctx> CodeGen<'ctx> {
 
             match block.term {
                 Some(Terminator::Return) => {
-                    builder.build_return(stack.pop().as_ref().map(|v| v as &dyn BasicValue));
+                    builder.build_return(stack.pop().as_ref().map(|v| v as &dyn BasicValue))
                 }
-                None => {}
-            }
+                None => builder.build_return(None),
+            };
         }
     }
 
