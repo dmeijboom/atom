@@ -157,11 +157,11 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::ShiftLeft) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, BitShiftLeft);
+                    make_bin!(expr, self.term()?, ShiftLeft);
                 }
                 Some(Token::ShiftRight) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, BitShiftRight);
+                    make_bin!(expr, self.term()?, ShiftRight);
                 }
                 _ => break,
             }

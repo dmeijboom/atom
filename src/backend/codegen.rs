@@ -135,6 +135,22 @@ impl<'ctx> CodeGen<'ctx> {
                             builder.build_int_unsigned_div(lhs, rhs, "int_udiv"),
                         )
                     }
+                    InstrKind::IntShl => {
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(builder.build_left_shift(lhs, rhs, "int_shl"))
+                    }
+                    InstrKind::IntSShr => {
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(
+                            builder.build_right_shift(lhs, rhs, true, "int_sshr"),
+                        )
+                    }
+                    InstrKind::IntUShr => {
+                        let (lhs, rhs) = pop_binary!(stack as int);
+                        BasicValueEnum::IntValue(
+                            builder.build_right_shift(lhs, rhs, false, "int_ushr"),
+                        )
+                    }
                     InstrKind::FloatAdd => {
                         let (lhs, rhs) = pop_binary!(stack as float);
                         BasicValueEnum::FloatValue(builder.build_float_add(lhs, rhs, "float_add"))

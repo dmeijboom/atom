@@ -1,6 +1,7 @@
 use crate::frontend::scope::{ScopeKind, ScopeList};
-use crate::frontend::syntax::{InferType, Span};
+use crate::frontend::syntax::{BinaryOp, InferType, Span};
 use crate::frontend::typed_ast::*;
+use crate::frontend::types::Numeric;
 use crate::frontend::{syntax, types, Error, Node, Type};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -48,6 +49,17 @@ impl Analyzer {
             syntax::ExprKind::Binary(binary) => {
                 let lhs = self.analyze_expr(binary.left)?;
                 let rhs = self.analyze_expr(binary.right)?;
+
+                if matches!(binary.op, BinaryOp::ShiftLeft | BinaryOp::ShiftRight)
+                    && !matches!(lhs.ty.attr.numeric, Some(Numeric::Int { .. }))
+                {
+                    return error!(
+                        expr.span,
+                        "invalid types for binary shift expression: {} and {} (should be Int)",
+                        lhs.ty,
+                        rhs.ty
+                    );
+                }
 
                 if lhs.ty != rhs.ty {
                     return error!(

@@ -126,8 +126,8 @@ pub enum BinaryOp {
     Div,
     Add,
     Sub,
-    BitShiftLeft,
-    BitShiftRight,
+    ShiftLeft,
+    ShiftRight,
 }
 
 #[derive(Debug, PartialEq)]

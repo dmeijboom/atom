@@ -83,7 +83,14 @@ impl Compiler {
                                 InstrKind::IntUDiv
                             }
                         }
-                        _ => unimplemented!(),
+                        BinaryOp::ShiftLeft => InstrKind::IntShl,
+                        BinaryOp::ShiftRight => {
+                            if signed {
+                                InstrKind::IntSShr
+                            } else {
+                                InstrKind::IntUShr
+                            }
+                        }
                     },
                     Some(Numeric::Float { .. }) => match op {
                         BinaryOp::Add => InstrKind::FloatAdd,
