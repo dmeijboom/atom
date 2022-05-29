@@ -1,4 +1,4 @@
-use crate::frontend::syntax::{LiteralKind, Span};
+use crate::frontend::syntax::Span;
 
 #[derive(Debug)]
 pub enum Type {
@@ -36,7 +36,6 @@ impl Instr {
 
 #[derive(Debug)]
 pub enum InstrKind {
-    Const(LiteralKind),
     IntAdd,
     IntSub,
     IntMul,
@@ -51,6 +50,10 @@ pub enum InstrKind {
     FloatDiv,
     Load(usize),
     Store(usize),
+    ConstInt(i64),
+    ConstUint(u64),
+    ConstBool(bool),
+    ConstFloat(f64),
 }
 
 #[derive(Debug, Default)]

@@ -10,7 +10,6 @@ use inkwell::values::{BasicValue, BasicValueEnum};
 use inkwell::OptimizationLevel;
 
 use crate::backend::{module, Fn, InstrKind, Terminator, Type};
-use crate::frontend::syntax::LiteralKind;
 
 macro_rules! pop_binary {
     ($stack:ident as int) => {{
@@ -54,6 +53,7 @@ impl<'ctx> CodeGen<'ctx> {
             Type::Int16 => self.context.i16_type().as_any_type_enum(),
             Type::Int32 => self.context.i32_type().as_any_type_enum(),
             Type::Int64 => self.context.i64_type().as_any_type_enum(),
+            Type::Int1 => self.context.custom_width_int_type(1).as_any_type_enum(),
             Type::Void => self.context.void_type().as_any_type_enum(),
             _ => unimplemented!(),
         }
@@ -104,15 +104,20 @@ impl<'ctx> CodeGen<'ctx> {
         for block in func.body.iter() {
             for instr in block.body.iter() {
                 let value = match &instr.kind {
-                    InstrKind::Const(literal) => match literal {
-                        LiteralKind::Int(val) => BasicValueEnum::IntValue(
-                            self.context.i32_type().const_int(*val as u64, *val < 0),
-                        ),
-                        LiteralKind::Float(val) => {
-                            BasicValueEnum::FloatValue(self.context.f32_type().const_float(*val))
-                        }
-                        _ => unimplemented!(),
-                    },
+                    InstrKind::ConstInt(val) => BasicValueEnum::IntValue(
+                        self.context.i32_type().const_int(*val as u64, false),
+                    ),
+                    InstrKind::ConstUint(val) => {
+                        BasicValueEnum::IntValue(self.context.i32_type().const_int(*val, true))
+                    }
+                    InstrKind::ConstFloat(val) => {
+                        BasicValueEnum::FloatValue(self.context.f32_type().const_float(*val as f64))
+                    }
+                    InstrKind::ConstBool(val) => BasicValueEnum::IntValue(
+                        self.context
+                            .custom_width_int_type(1)
+                            .const_int(if *val { 1 } else { 0 }, false),
+                    ),
                     InstrKind::IntAdd => {
                         let (lhs, rhs) = pop_binary!(stack as int);
                         BasicValueEnum::IntValue(builder.build_int_add(lhs, rhs, "int_add"))

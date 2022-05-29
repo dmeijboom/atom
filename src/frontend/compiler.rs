@@ -1,6 +1,6 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
 use crate::frontend::scope::Scope;
-use crate::frontend::syntax::{BinaryOp, Span};
+use crate::frontend::syntax::{BinaryOp, LiteralKind, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
 use crate::frontend::Error;
@@ -66,9 +66,27 @@ impl Compiler {
                 block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
             }
             ExprKind::Literal(literal) => {
-                block
-                    .body
-                    .push(Instr::new(expr.span, InstrKind::Const(literal)));
+                match literal {
+                    LiteralKind::Int(val) => {
+                        let signed = matches!(expr.ty.attr.numeric, Some(Numeric::Int { signed, .. }) if signed);
+
+                        block.body.push(Instr::new(
+                            expr.span,
+                            if signed {
+                                InstrKind::ConstInt(val)
+                            } else {
+                                InstrKind::ConstUint(val as u64)
+                            },
+                        ));
+                    }
+                    LiteralKind::Bool(val) => block
+                        .body
+                        .push(Instr::new(expr.span, InstrKind::ConstBool(val))),
+                    LiteralKind::Float(val) => block
+                        .body
+                        .push(Instr::new(expr.span, InstrKind::ConstFloat(val))),
+                    LiteralKind::String(_) => unimplemented!(),
+                }
             }
             ExprKind::Binary(op, lhs, rhs) => {
                 let kind = match lhs.ty.attr.numeric {
