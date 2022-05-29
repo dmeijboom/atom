@@ -260,12 +260,8 @@ impl<'s> Parser<'s> {
 
         while let Some(token) = self.scanner.peek() {
             match token {
-                Token::Let => {
-                    stmts.push(self.let_stmt()?);
-                }
-                Token::Return => {
-                    stmts.push(self.return_stmt()?);
-                }
+                Token::Let => stmts.push(self.let_stmt()?),
+                Token::Return => stmts.push(self.return_stmt()?),
                 Token::BracketRight => break,
                 _ => {
                     let span = self.scanner.span();
