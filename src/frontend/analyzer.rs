@@ -116,16 +116,27 @@ impl Analyzer {
 
                     break;
                 }
-                syntax::StmtKind::Let(name, expr) => {
-                    let expr = self.analyze_expr(expr)?;
+                syntax::StmtKind::Let(let_stmt) => {
+                    let expr = self.analyze_expr(let_stmt.value)?;
+
+                    if let Some(ty) = let_stmt.ty {
+                        let ty = self.get_type(span, &ty)?;
+
+                        if expr.ty != ty {
+                            return error!(
+                                stmt.span,
+                                "invalid type '{}' for let statement (expected: {})", expr.ty, ty
+                            );
+                        }
+                    }
 
                     let scope = self.scopes.head_mut();
-                    scope.declare(name.clone(), expr.ty.clone())?;
+                    scope.declare(let_stmt.name.clone(), expr.ty.clone())?;
 
                     body.push(Stmt::new(
                         stmt.span,
                         self.scopes.head().id,
-                        StmtKind::Let(name, expr),
+                        StmtKind::Let(let_stmt.name, expr),
                     ));
                 }
                 syntax::StmtKind::Expr(expr) => {

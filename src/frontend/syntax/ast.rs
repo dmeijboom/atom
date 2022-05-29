@@ -101,8 +101,16 @@ impl Stmt {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Let {
+    pub span: Span,
+    pub ty: Option<Type>,
+    pub name: String,
+    pub value: Expr,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum StmtKind {
-    Let(String, Expr),
+    Let(Let),
     Return(Expr),
     Expr(Expr),
     ExprEnd(Expr),

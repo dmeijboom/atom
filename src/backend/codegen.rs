@@ -72,16 +72,19 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn fn_type(&self, ty: &Type, params: &[&Type]) -> FunctionType<'ctx> {
-        let params = &[];
+        let params = params
+            .iter()
+            .map(|ty| self.make_basic_type(ty))
+            .collect::<Vec<_>>();
 
         match self.make_type(ty) {
-            AnyTypeEnum::ArrayType(ty) => ty.fn_type(params, false),
-            AnyTypeEnum::FloatType(ty) => ty.fn_type(params, false),
-            AnyTypeEnum::IntType(ty) => ty.fn_type(params, false),
-            AnyTypeEnum::PointerType(ty) => ty.fn_type(params, false),
-            AnyTypeEnum::StructType(ty) => ty.fn_type(params, false),
-            AnyTypeEnum::VectorType(ty) => ty.fn_type(params, false),
-            AnyTypeEnum::VoidType(ty) => ty.fn_type(params, false),
+            AnyTypeEnum::ArrayType(ty) => ty.fn_type(&params, false),
+            AnyTypeEnum::FloatType(ty) => ty.fn_type(&params, false),
+            AnyTypeEnum::IntType(ty) => ty.fn_type(&params, false),
+            AnyTypeEnum::PointerType(ty) => ty.fn_type(&params, false),
+            AnyTypeEnum::StructType(ty) => ty.fn_type(&params, false),
+            AnyTypeEnum::VectorType(ty) => ty.fn_type(&params, false),
+            AnyTypeEnum::VoidType(ty) => ty.fn_type(&params, false),
             _ => unimplemented!(),
         }
     }

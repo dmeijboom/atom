@@ -2,8 +2,8 @@ use std::mem;
 
 use crate::frontend::syntax::lexer::StringToken;
 use crate::frontend::syntax::{
-    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, Literal, LiteralKind, Node, NodeKind,
-    Scanner, Stmt, StmtKind, Token, Type,
+    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, Let, Literal, LiteralKind, Node,
+    NodeKind, Scanner, Stmt, StmtKind, Token, Type,
 };
 
 type Result<T> = std::result::Result<T, Error>;
@@ -232,11 +232,27 @@ impl<'s> Parser<'s> {
         let span = self.scanner.span();
         self.scanner.advance();
         let name = expect!(withValue self.scanner, Token::Ident);
+
+        let mut ty = None;
+
+        if accept!(self.scanner, Token::TypeSeparator) {
+            self.scanner.advance();
+            ty = Some(self.ty()?);
+        }
+
         expect!(self.scanner, Token::Assign);
         let expr = self.expr()?;
         expect!(self.scanner, Token::End);
 
-        Ok(Stmt::new(span, StmtKind::Let(name, expr)))
+        Ok(Stmt::new(
+            span.clone(),
+            StmtKind::Let(Let {
+                span,
+                ty,
+                name,
+                value: expr,
+            }),
+        ))
     }
 
     fn body(&mut self) -> Result<Vec<Stmt>> {
