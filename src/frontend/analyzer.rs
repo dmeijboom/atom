@@ -169,7 +169,7 @@ impl Analyzer {
         })
     }
 
-    pub fn analyze(mut self, program: Vec<syntax::Node>) -> Result<Vec<Node>> {
+    pub fn analyze(mut self, program: Vec<syntax::Node>) -> Result<Program> {
         for node in program {
             match node.kind {
                 syntax::NodeKind::FnDef(fn_def) => {
@@ -180,6 +180,9 @@ impl Analyzer {
             }
         }
 
-        Ok(self.nodes)
+        Ok(Program {
+            scopes: self.scopes.consume(),
+            nodes: self.nodes,
+        })
     }
 }

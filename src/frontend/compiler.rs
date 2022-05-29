@@ -1,7 +1,7 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
-use crate::frontend::scope::{ScopeKind, ScopeList};
+use crate::frontend::scope::{Scope, ScopeKind, ScopeList};
 use crate::frontend::syntax::{BinaryOp, Span};
-use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, StmtKind};
+use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
 use crate::frontend::{Error, Node};
 
@@ -17,26 +17,53 @@ macro_rules! match_types {
     };
 }
 
+struct Cursor<T> {
+    index: usize,
+    data: Vec<T>,
+}
+
+impl<T> Default for Cursor<T> {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            data: vec![],
+        }
+    }
+}
+
+impl<T> Cursor<T> {
+    pub fn new(data: Vec<T>) -> Self {
+        Self { index: 0, data }
+    }
+
+    pub fn move_to(&mut self, index: usize) {
+        self.index = index;
+    }
+
+    #[inline]
+    pub fn head(&self) -> &T {
+        &self.data[self.index]
+    }
+}
+
 pub struct Compiler {
     module: Module,
+    scopes: Cursor<Scope>,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
             module: Module::default(),
+            scopes: Cursor::default(),
         }
     }
 
     fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<()> {
         match expr.kind {
             ExprKind::Ident(name) => {
-                unimplemented!()
-                //let (local, idx) = self.scopes.head().local(&name).ok_or_else(|| {
-                //    Error::new(expr.span.clone(), format!("no such name: {}", name))
-                //})?;
-
-                //block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
+                let (_, idx) = self.scopes.head().local(&name).unwrap();
+                block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
             }
             ExprKind::Literal(literal) => {
                 block
@@ -96,12 +123,14 @@ impl Compiler {
     }
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
+        self.scopes.move_to(fn_def.scope);
+
         let mut block = Block::default();
 
         for stmt in fn_def.body {
-            if block.term.is_some() {
-                break;
-            }
+            self.scopes.move_to(stmt.scope);
+
+            assert!(block.term.is_none(), "block should not be terminated");
 
             match stmt.kind {
                 StmtKind::Return(expr) => {
@@ -109,12 +138,13 @@ impl Compiler {
                     block.term = Some(Terminator::Return);
                 }
                 StmtKind::Let(name, expr) => {
-                    unimplemented!()
-                    //self.compile_expr(&mut block, expr)?;
-                    //
-                    //block
-                    //    .body
-                    //    .push(Instr::new(stmt.span, InstrKind::Store(idx)));
+                    let (_, idx) = self.scopes.head().local(&name).unwrap();
+
+                    self.compile_expr(&mut block, expr)?;
+
+                    block
+                        .body
+                        .push(Instr::new(stmt.span, InstrKind::Store(idx)));
                 }
                 StmtKind::Expr(expr) => {
                     self.compile_expr(&mut block, expr)?;
@@ -123,11 +153,22 @@ impl Compiler {
             }
         }
 
-        //let mut locals = Vec::with_capacity(scope.locals().len());
+        let mut locals = vec![];
 
-        //for local in scope.locals() {
-        //    locals.push(self.to_concrete_type(&local.ty)?);
-        //}
+        self.scopes.move_to(fn_def.scope);
+
+        loop {
+            for local in self.scopes.head().locals() {
+                locals.push(self.to_concrete_type(&span, &local.ty)?);
+            }
+
+            if let Some(idx) = self.scopes.head().parent {
+                self.scopes.move_to(idx);
+                continue;
+            }
+
+            break;
+        }
 
         let return_type = self.to_concrete_type(&span, &fn_def.return_type)?;
 
@@ -135,14 +176,16 @@ impl Compiler {
             name: fn_def.name,
             body: vec![block],
             return_type,
-            locals: vec![],
+            locals,
         });
 
         Ok(())
     }
 
-    pub fn compile(mut self, program: Vec<Node>) -> Result<Module> {
-        for node in program {
+    pub fn compile(mut self, program: Program) -> Result<Module> {
+        self.scopes = Cursor::new(program.scopes);
+
+        for node in program.nodes {
             match node.kind {
                 NodeKind::FnDef(fn_def) => self.compile_fn_def(node.span, fn_def)?,
             }

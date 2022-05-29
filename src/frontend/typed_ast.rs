@@ -3,6 +3,12 @@ use crate::frontend::syntax::{BinaryOp, LiteralKind, Span};
 use crate::frontend::Type;
 
 #[derive(Debug)]
+pub struct Program {
+    pub scopes: Vec<Scope>,
+    pub nodes: Vec<Node>,
+}
+
+#[derive(Debug)]
 pub struct Node {
     pub span: Span,
     pub kind: NodeKind,
@@ -24,7 +30,7 @@ pub struct FnDef {
     pub name: String,
     pub body: Vec<Stmt>,
     pub return_type: Type,
-    pub scope: Scope,
+    pub scope: ScopeId,
 }
 
 #[derive(Debug)]

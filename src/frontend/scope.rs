@@ -54,12 +54,14 @@ impl Scope {
 }
 
 pub struct ScopeList {
+    index: usize,
     scopes: Vec<Scope>,
 }
 
 impl ScopeList {
     pub fn new() -> Self {
         Self {
+            index: 0,
             scopes: vec![Scope {
                 id: 0,
                 kind: ScopeKind::Global,
@@ -69,20 +71,22 @@ impl ScopeList {
         }
     }
 
+    pub fn consume(self) -> Vec<Scope> {
+        self.scopes
+    }
+
     #[inline]
     pub fn head(&self) -> &Scope {
-        let idx = self.scopes.len() - 1;
-        &self.scopes[idx]
+        &self.scopes[self.index]
     }
 
     #[inline]
     pub fn head_mut(&mut self) -> &mut Scope {
-        let idx = self.scopes.len() - 1;
-        &mut self.scopes[idx]
+        &mut self.scopes[self.index]
     }
 
     pub fn enter(&mut self, kind: ScopeKind) -> ScopeId {
-        let id = self.scopes.len();
+        let id = self.head().id + 1;
 
         self.scopes.push(Scope {
             id,
@@ -91,11 +95,18 @@ impl ScopeList {
             locals: vec![],
         });
 
+        self.index += 1;
+
         id
     }
 
-    pub fn exit(&mut self) -> Scope {
-        assert_ne!(self.scopes.len(), 0);
-        self.scopes.pop().unwrap()
+    pub fn exit(&mut self) -> ScopeId {
+        assert_ne!(self.index, 0);
+
+        let id = self.head().id;
+
+        self.index -= 1;
+
+        id
     }
 }
