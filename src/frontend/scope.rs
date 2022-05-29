@@ -3,16 +3,19 @@ use crate::frontend::{Error, Type};
 
 pub type ScopeId = usize;
 
+#[derive(Debug)]
 pub enum ScopeKind {
     Global,
     Fn,
 }
 
+#[derive(Debug)]
 pub struct Local {
     pub name: String,
     pub ty: Type,
 }
 
+#[derive(Debug)]
 pub struct Scope {
     pub id: ScopeId,
     pub kind: ScopeKind,

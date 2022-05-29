@@ -11,6 +11,7 @@ use clap::Parser as ClapParser;
 use inkwell::context;
 use temp_dir::TempDir;
 
+use crate::frontend::Analyzer;
 use backend::CodeGen;
 use frontend::{syntax::Parser, Compiler};
 
@@ -46,10 +47,14 @@ fn main() -> Result<()> {
     match opts.cmd {
         Cmd::Compile(opts) => {
             let source = fs::read_to_string(opts.filename).context("failed to read file")?;
-            let parser = Parser::new(&source);
-            let program = parser.parse()?;
+            let program = Parser::new(&source).parse()?;
 
             println!("-- AST --");
+            pretty_print(&program);
+
+            let program = Analyzer::new().analyze(program)?;
+
+            println!("\n-- Typed AST --");
             pretty_print(&program);
 
             let module = Compiler::new().compile(program)?;

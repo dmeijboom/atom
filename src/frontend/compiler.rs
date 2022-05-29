@@ -1,10 +1,9 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
 use crate::frontend::scope::{ScopeKind, ScopeList};
-use crate::frontend::syntax::{
-    self, BinaryOp, Expr, ExprKind, FnDef, InferType, Node, NodeKind, Span, StmtKind,
-};
+use crate::frontend::syntax::{BinaryOp, Span};
+use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
-use crate::frontend::Error;
+use crate::frontend::{Error, Node};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -18,81 +17,35 @@ macro_rules! match_types {
     };
 }
 
-macro_rules! error {
-    ($span: expr, $($arg:tt)*) => {
-        Err(Error::new($span, format!($($arg)*)))
-    };
-}
-
 pub struct Compiler {
     module: Module,
-    scopes: ScopeList,
 }
 
 impl Compiler {
     pub fn new() -> Self {
         Self {
             module: Module::default(),
-            scopes: ScopeList::new(),
         }
     }
 
-    fn validate(&self, program: &[Node]) -> Result<()> {
-        let mut names = vec![];
-
-        for node in program {
-            match &node.kind {
-                NodeKind::FnDef(fn_def) => {
-                    if names.contains(&&fn_def.name) {
-                        return error!(
-                            node.span.clone(),
-                            "unable to redefine Fn '{}'", fn_def.name,
-                        );
-                    }
-
-                    names.push(&fn_def.name);
-                }
-            }
-        }
-
-        Ok(())
-    }
-
-    fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<Type> {
+    fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<()> {
         match expr.kind {
             ExprKind::Ident(name) => {
-                let (local, idx) = self.scopes.head().local(&name).ok_or_else(|| {
-                    Error::new(expr.span.clone(), format!("no such name: {}", name))
-                })?;
+                unimplemented!()
+                //let (local, idx) = self.scopes.head().local(&name).ok_or_else(|| {
+                //    Error::new(expr.span.clone(), format!("no such name: {}", name))
+                //})?;
 
-                block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
-
-                Ok(local.ty.clone())
+                //block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
             }
             ExprKind::Literal(literal) => {
-                let ty = literal.kind.infer_type();
-
                 block
                     .body
-                    .push(Instr::new(literal.span, InstrKind::Const(literal.kind)));
-
-                Ok(ty)
+                    .push(Instr::new(expr.span, InstrKind::Const(literal)));
             }
-            ExprKind::Binary(binary) => {
-                let lhs = self.compile_expr(block, binary.left)?;
-                let rhs = self.compile_expr(block, binary.right)?;
-
-                if lhs != rhs {
-                    return error!(
-                        expr.span,
-                        "invalid type for binary expression: {} and {} (should be the equal)",
-                        lhs,
-                        rhs
-                    );
-                }
-
-                let instr_kind = match lhs.attr.numeric {
-                    Some(Numeric::Int { signed, .. }) => match binary.op {
+            ExprKind::Binary(op, lhs, rhs) => {
+                let kind = match lhs.ty.attr.numeric {
+                    Some(Numeric::Int { signed, .. }) => match op {
                         BinaryOp::Add => InstrKind::IntAdd,
                         BinaryOp::Sub => InstrKind::IntSub,
                         BinaryOp::Mul => InstrKind::IntMul,
@@ -105,31 +58,28 @@ impl Compiler {
                         }
                         _ => unimplemented!(),
                     },
-                    Some(Numeric::Float { .. }) => match binary.op {
+                    Some(Numeric::Float { .. }) => match op {
                         BinaryOp::Add => InstrKind::FloatAdd,
                         BinaryOp::Sub => InstrKind::FloatSub,
                         BinaryOp::Mul => InstrKind::FloatMul,
                         BinaryOp::Div => InstrKind::FloatDiv,
                         _ => unimplemented!(),
                     },
-                    _ => {
-                        return error!(
-                        expr.span,
-                        "invalid non-numeric type for binary expression: {} (should be numeric)",
-                        lhs
-                    )
-                    }
+                    _ => unreachable!(),
                 };
 
-                block.body.push(Instr::new(expr.span, instr_kind));
+                self.compile_expr(block, *lhs)?;
+                self.compile_expr(block, *rhs)?;
 
-                Ok(lhs)
+                block.body.push(Instr::new(expr.span, kind));
             }
             _ => unimplemented!(),
         }
+
+        Ok(())
     }
 
-    fn to_concrete_type(&self, ty: &Type) -> Result<LlvmType> {
+    fn to_concrete_type(&self, span: &Span, ty: &Type) -> Result<LlvmType> {
         match_types!(
             ty,
             types::INT8 => LlvmType::Int8,
@@ -142,101 +92,56 @@ impl Compiler {
             types::VOID => LlvmType::Void
         );
 
-        Err(Error::new(Span::default(), format!("invalid type: {}", ty)))
-    }
-
-    fn compile_type(&mut self, span: &Span, ty: &syntax::Type) -> Result<Type> {
-        if let Some(ty) = Type::from_name(&ty.name) {
-            return Ok(ty);
-        }
-
-        error!(span.clone(), "unknown type: {}", ty.name)
+        Err(Error::new(span.clone(), format!("invalid type: {}", ty)))
     }
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
-        let return_type = if let Some(ty) = fn_def.sig.return_type {
-            Some(self.compile_type(&span, &ty)?)
-        } else {
-            None
-        };
-
-        self.scopes.enter(ScopeKind::Fn);
-
         let mut block = Block::default();
-        let body_len = fn_def.body.len();
-        let mut inferred_return_type = None;
 
-        for (i, stmt) in fn_def.body.into_iter().enumerate() {
+        for stmt in fn_def.body {
             if block.term.is_some() {
                 break;
             }
 
             match stmt.kind {
                 StmtKind::Return(expr) => {
-                    let ty = self.compile_expr(&mut block, expr)?;
-
-                    inferred_return_type = Some(ty);
+                    self.compile_expr(&mut block, expr)?;
                     block.term = Some(Terminator::Return);
                 }
                 StmtKind::Let(name, expr) => {
-                    let ty = self.compile_expr(&mut block, expr)?;
-                    let scope = self.scopes.head_mut();
-                    let idx = scope.declare(name, ty)?;
-
-                    block
-                        .body
-                        .push(Instr::new(stmt.span, InstrKind::Store(idx)));
+                    unimplemented!()
+                    //self.compile_expr(&mut block, expr)?;
+                    //
+                    //block
+                    //    .body
+                    //    .push(Instr::new(stmt.span, InstrKind::Store(idx)));
                 }
                 StmtKind::Expr(expr) => {
-                    let ty = self.compile_expr(&mut block, expr)?;
-
-                    if i == body_len - 1 && block.term.is_none() {
-                        inferred_return_type = Some(ty);
-                        block.term = Some(Terminator::Return);
-                    }
-                }
-                StmtKind::ExprEnd(expr) => {
                     self.compile_expr(&mut block, expr)?;
                 }
                 _ => unimplemented!(),
             }
         }
 
-        let scope = self.scopes.exit();
-        let inferred_return_type = inferred_return_type.unwrap_or(types::VOID);
-        let return_type = self.to_concrete_type(&match return_type {
-            Some(return_type) if return_type != inferred_return_type => {
-                return error!(
-                    span,
-                    "invalid return type '{}' for '{}(...)' (expected: {})",
-                    inferred_return_type,
-                    fn_def.name,
-                    return_type
-                );
-            }
-            Some(return_type) => return_type,
-            None => inferred_return_type,
-        })?;
+        //let mut locals = Vec::with_capacity(scope.locals().len());
 
-        let mut locals = Vec::with_capacity(scope.locals().len());
+        //for local in scope.locals() {
+        //    locals.push(self.to_concrete_type(&local.ty)?);
+        //}
 
-        for local in scope.locals() {
-            locals.push(self.to_concrete_type(&local.ty)?);
-        }
+        let return_type = self.to_concrete_type(&span, &fn_def.return_type)?;
 
         self.module.funcs.push(Fn {
             name: fn_def.name,
             body: vec![block],
             return_type,
-            locals,
+            locals: vec![],
         });
 
         Ok(())
     }
 
     pub fn compile(mut self, program: Vec<Node>) -> Result<Module> {
-        self.validate(&program)?;
-
         for node in program {
             match node.kind {
                 NodeKind::FnDef(fn_def) => self.compile_fn_def(node.span, fn_def)?,

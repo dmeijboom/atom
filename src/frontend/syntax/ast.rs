@@ -15,6 +15,7 @@ pub struct Span {
 }
 
 impl Span {
+    #[cfg(test)]
     pub fn new(line: usize, column: usize, begin: usize, end: usize) -> Self {
         Self {
             line,

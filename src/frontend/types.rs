@@ -1,5 +1,5 @@
 use std::borrow::Cow;
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 
 macro_rules! static_types {
     ($(($name:ident $const_name:ident $numeric:expr)),+) => {
@@ -70,13 +70,13 @@ static_types!(
 );
 
 impl Type {
-    pub fn new(name: impl Into<TypeName>) -> Self {
-        Self {
-            name: name.into(),
-            args: vec![],
-            attr: TypeAttr::default(),
-        }
-    }
+    //pub fn new(name: impl Into<TypeName>) -> Self {
+    //    Self {
+    //        name: name.into(),
+    //        args: vec![],
+    //        attr: TypeAttr::default(),
+    //    }
+    //}
 }
 
 impl PartialEq for Type {
@@ -102,5 +102,11 @@ impl Display for Type {
         }
 
         Ok(())
+    }
+}
+
+impl Debug for Type {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self)
     }
 }
