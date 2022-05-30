@@ -132,6 +132,9 @@ pub enum Token {
     #[token("let")]
     Let,
 
+    #[token("mut")]
+    Mut,
+
     #[token(";")]
     End,
 

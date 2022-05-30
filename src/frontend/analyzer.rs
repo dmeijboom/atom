@@ -103,6 +103,35 @@ impl Analyzer {
 
         for (i, stmt) in fn_def.body.into_iter().enumerate() {
             match stmt.kind {
+                syntax::StmtKind::Assign(name, expr) => {
+                    let expr = self.analyze_expr(expr)?;
+                    let (local, _) = self.scopes.head().local(&name).ok_or_else(|| {
+                        Error::new(expr.span.clone(), format!("no such name: {}", name))
+                    })?;
+
+                    if !local.mutable {
+                        return error!(
+                            stmt.span,
+                            "unable to assign twice to mutable name: {}", name
+                        );
+                    }
+
+                    if local.ty != expr.ty {
+                        return error!(
+                            stmt.span,
+                            "invalid type '{}' for name '{}' (expected: {})",
+                            local.ty,
+                            name,
+                            expr.ty
+                        );
+                    }
+
+                    body.push(Stmt::new(
+                        stmt.span,
+                        self.scopes.head().id,
+                        StmtKind::Assign(name, expr),
+                    ))
+                }
                 syntax::StmtKind::Return(expr) => {
                     let expr = self.analyze_expr(expr)?;
 
@@ -131,7 +160,7 @@ impl Analyzer {
                     }
 
                     let scope = self.scopes.head_mut();
-                    scope.declare(let_stmt.name.clone(), expr.ty.clone())?;
+                    scope.declare(let_stmt.name.clone(), expr.ty.clone(), let_stmt.mutable)?;
 
                     body.push(Stmt::new(
                         stmt.span,

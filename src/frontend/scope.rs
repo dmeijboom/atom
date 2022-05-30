@@ -11,8 +11,9 @@ pub enum ScopeKind {
 
 #[derive(Debug)]
 pub struct Local {
-    pub name: String,
     pub ty: Type,
+    pub name: String,
+    pub mutable: bool,
 }
 
 #[derive(Debug)]
@@ -37,7 +38,7 @@ impl Scope {
         None
     }
 
-    pub fn declare(&mut self, name: String, ty: Type) -> Result<usize, Error> {
+    pub fn declare(&mut self, name: String, ty: Type, mutable: bool) -> Result<usize, Error> {
         if self.locals.iter().any(|local| local.name == name) {
             return Err(Error::new(
                 Span::default(),
@@ -47,7 +48,7 @@ impl Scope {
 
         let idx = self.locals.len();
 
-        self.locals.push(Local { name, ty });
+        self.locals.push(Local { name, mutable, ty });
 
         Ok(idx)
     }

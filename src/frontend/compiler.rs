@@ -65,29 +65,28 @@ impl Compiler {
                 let (_, idx) = self.scopes.head().local(&name).unwrap();
                 block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
             }
-            ExprKind::Literal(literal) => {
-                match literal {
-                    LiteralKind::Int(val) => {
-                        let signed = matches!(expr.ty.attr.numeric, Some(Numeric::Int { signed, .. }) if signed);
+            ExprKind::Literal(literal) => match literal {
+                LiteralKind::Int(val) => {
+                    let signed =
+                        matches!(expr.ty.attr.numeric, Some(Numeric::Int { signed, .. }) if signed);
 
-                        block.body.push(Instr::new(
-                            expr.span,
-                            if signed {
-                                InstrKind::ConstInt(val)
-                            } else {
-                                InstrKind::ConstUint(val as u64)
-                            },
-                        ));
-                    }
-                    LiteralKind::Bool(val) => block
-                        .body
-                        .push(Instr::new(expr.span, InstrKind::ConstBool(val))),
-                    LiteralKind::Float(val) => block
-                        .body
-                        .push(Instr::new(expr.span, InstrKind::ConstFloat(val))),
-                    LiteralKind::String(_) => unimplemented!(),
+                    block.body.push(Instr::new(
+                        expr.span,
+                        if signed {
+                            InstrKind::ConstInt(val)
+                        } else {
+                            InstrKind::ConstUint(val as u64)
+                        },
+                    ));
                 }
-            }
+                LiteralKind::Bool(val) => block
+                    .body
+                    .push(Instr::new(expr.span, InstrKind::ConstBool(val))),
+                LiteralKind::Float(val) => block
+                    .body
+                    .push(Instr::new(expr.span, InstrKind::ConstFloat(val))),
+                LiteralKind::String(_) => unimplemented!(),
+            },
             ExprKind::Binary(op, lhs, rhs) => {
                 let kind = match lhs.ty.attr.numeric {
                     Some(Numeric::Int { signed, .. }) => match op {
@@ -157,11 +156,7 @@ impl Compiler {
             assert!(block.term.is_none(), "block should not be terminated");
 
             match stmt.kind {
-                StmtKind::Return(expr) => {
-                    self.compile_expr(&mut block, expr)?;
-                    block.term = Some(Terminator::Return);
-                }
-                StmtKind::Let(name, expr) => {
+                StmtKind::Let(name, expr) | StmtKind::Assign(name, expr) => {
                     let (_, idx) = self.scopes.head().local(&name).unwrap();
 
                     self.compile_expr(&mut block, expr)?;
@@ -169,6 +164,10 @@ impl Compiler {
                     block
                         .body
                         .push(Instr::new(stmt.span, InstrKind::Store(idx)));
+                }
+                StmtKind::Return(expr) => {
+                    self.compile_expr(&mut block, expr)?;
+                    block.term = Some(Terminator::Return);
                 }
                 StmtKind::Expr(expr) => {
                     self.compile_expr(&mut block, expr)?;

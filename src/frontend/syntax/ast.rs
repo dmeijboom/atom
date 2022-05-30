@@ -106,11 +106,13 @@ pub struct Let {
     pub ty: Option<Type>,
     pub name: String,
     pub value: Expr,
+    pub mutable: bool,
 }
 
 #[derive(Debug, PartialEq)]
 pub enum StmtKind {
     Let(Let),
+    Assign(String, Expr),
     Return(Expr),
     Expr(Expr),
     ExprEnd(Expr),

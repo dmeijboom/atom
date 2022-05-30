@@ -48,6 +48,7 @@ impl Stmt {
 
 #[derive(Debug)]
 pub enum StmtKind {
+    Assign(String, Expr),
     Let(String, Expr),
     Return(Expr),
     Expr(Expr),

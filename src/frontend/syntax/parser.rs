@@ -231,8 +231,15 @@ impl<'s> Parser<'s> {
     fn let_stmt(&mut self) -> Result<Stmt> {
         let span = self.scanner.span();
         self.scanner.advance();
-        let name = expect!(withValue self.scanner, Token::Ident);
 
+        let mut mutable = false;
+
+        if accept!(self.scanner, Token::Mut) {
+            self.scanner.advance();
+            mutable = true;
+        }
+
+        let name = expect!(withValue self.scanner, Token::Ident);
         let mut ty = None;
 
         if accept!(self.scanner, Token::TypeSeparator) {
@@ -249,10 +256,32 @@ impl<'s> Parser<'s> {
             StmtKind::Let(Let {
                 span,
                 ty,
+                mutable,
                 name,
                 value: expr,
             }),
         ))
+    }
+
+    fn assign(&mut self) -> Result<Stmt> {
+        let span = self.scanner.span();
+        let name = expect!(withValue self.scanner, Token::Ident);
+        expect!(self.scanner, Token::Assign);
+        let expr = self.expr()?;
+        expect!(self.scanner, Token::End);
+
+        Ok(Stmt::new(span, StmtKind::Assign(name, expr)))
+    }
+
+    fn lookahead_is_assign(&mut self) -> bool {
+        let token = self.scanner.advance();
+        let is_assign = accept!(self.scanner, Token::Assign);
+
+        if let Some(token) = token {
+            self.scanner.push_back(token);
+        }
+
+        is_assign
     }
 
     fn body(&mut self) -> Result<Vec<Stmt>> {
@@ -263,24 +292,34 @@ impl<'s> Parser<'s> {
                 Token::Let => stmts.push(self.let_stmt()?),
                 Token::Return => stmts.push(self.return_stmt()?),
                 Token::BracketRight => break,
-                _ => {
-                    let span = self.scanner.span();
-                    let expr = self.expr()?;
+                Token::Ident(_) => {
+                    if self.lookahead_is_assign() {
+                        stmts.push(self.assign()?);
+                        continue;
+                    }
 
-                    stmts.push(Stmt::new(
-                        span,
-                        if accept!(self.scanner, Token::End) {
-                            self.scanner.advance();
-                            StmtKind::ExprEnd(expr)
-                        } else {
-                            StmtKind::Expr(expr)
-                        },
-                    ));
+                    stmts.push(self.expr_stmt()?);
                 }
+                _ => stmts.push(self.expr_stmt()?),
             }
         }
 
         Ok(stmts)
+    }
+
+    fn expr_stmt(&mut self) -> Result<Stmt> {
+        let span = self.scanner.span();
+        let expr = self.expr()?;
+
+        Ok(Stmt::new(
+            span,
+            if accept!(self.scanner, Token::End) {
+                self.scanner.advance();
+                StmtKind::ExprEnd(expr)
+            } else {
+                StmtKind::Expr(expr)
+            },
+        ))
     }
 
     fn ty(&mut self) -> Result<Type> {

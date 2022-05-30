@@ -5,16 +5,16 @@ use crate::frontend::syntax::Span;
 
 pub struct Scanner<'s, T: Logos<'s> = Token> {
     lexer: Lexer<'s, T>,
-    peeked: Option<T>,
+    stack: Vec<T>,
 }
 
 impl<'s> Scanner<'s> {
     pub fn into_string_scanner(self) -> Scanner<'s, StringToken> {
-        debug_assert!(self.peeked.is_none());
+        debug_assert!(self.stack.is_empty());
 
         Scanner {
             lexer: self.lexer.morph(),
-            peeked: None,
+            stack: vec![],
         }
     }
 }
@@ -27,24 +27,33 @@ where
     pub fn new(source: &'s str) -> Self {
         Self {
             lexer: T::lexer(source),
-            peeked: None,
+            stack: vec![],
         }
     }
 }
 
 impl<'s, T: Logos<'s>> Scanner<'s, T> {
-    #[inline]
     pub fn peek(&mut self) -> Option<&T> {
-        if self.peeked.is_none() {
-            self.peeked = self.lexer.next();
+        if !self.stack.is_empty() {
+            return self.stack.last();
         }
 
-        self.peeked.as_ref()
+        if let Some(token) = self.lexer.next() {
+            self.stack.push(token);
+
+            return self.stack.last();
+        }
+
+        None
     }
 
     #[inline]
     pub fn text(&self) -> &'s <T::Source as Source>::Slice {
         self.lexer.slice()
+    }
+
+    pub fn push_back(&mut self, token: T) {
+        self.stack.push(token);
     }
 }
 
@@ -54,11 +63,11 @@ impl<'s, T: Logos<'s, Source = str>> Scanner<'s, T> {
         T2: Logos<'s, Source = str>,
         <T as Logos<'s>>::Extras: Into<T2::Extras>,
     {
-        debug_assert!(self.peeked.is_none());
+        debug_assert!(self.stack.is_empty());
 
         Scanner {
             lexer: self.lexer.morph(),
-            peeked: None,
+            stack: vec![],
         }
     }
 }
@@ -79,7 +88,7 @@ impl<'s, T: Logos<'s, Extras = LexerExtras>> Scanner<'s, T> {
 
 impl<'s, T: Logos<'s, Source = str, Extras = LexerExtras>> Scanner<'s, T> {
     pub fn advance(&mut self) -> Option<T> {
-        let token = self.peeked.take().or_else(|| self.lexer.next());
+        let token = self.stack.pop().or_else(|| self.lexer.next());
 
         self.lexer.extras.apply(self.text());
 
