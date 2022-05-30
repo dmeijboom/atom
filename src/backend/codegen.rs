@@ -8,7 +8,7 @@ use inkwell::targets::{
 };
 use inkwell::types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FunctionType};
 use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue};
-use inkwell::OptimizationLevel;
+use inkwell::{IntPredicate, OptimizationLevel};
 
 use crate::backend::{module, Block, Fn, InstrKind, Terminator, Type};
 
@@ -147,6 +147,78 @@ impl<'ctx> CodeGen<'ctx> {
                 InstrKind::IntUShr => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     BasicValueEnum::IntValue(builder.build_right_shift(lhs, rhs, false, "int_ushr"))
+                }
+                InstrKind::IntSGte => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::SGE,
+                        lhs,
+                        rhs,
+                        "int_sgte",
+                    ))
+                }
+                InstrKind::IntSGt => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::SGT,
+                        lhs,
+                        rhs,
+                        "int_sgt",
+                    ))
+                }
+                InstrKind::IntUGte => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::UGE,
+                        lhs,
+                        rhs,
+                        "int_ugte",
+                    ))
+                }
+                InstrKind::IntUGt => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::UGT,
+                        lhs,
+                        rhs,
+                        "int_ugt",
+                    ))
+                }
+                InstrKind::IntSLte => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::SLE,
+                        lhs,
+                        rhs,
+                        "int_slte",
+                    ))
+                }
+                InstrKind::IntSLt => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::SLT,
+                        lhs,
+                        rhs,
+                        "int_slt",
+                    ))
+                }
+                InstrKind::IntULte => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::ULE,
+                        lhs,
+                        rhs,
+                        "int_ulte",
+                    ))
+                }
+                InstrKind::IntULt => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_compare(
+                        IntPredicate::ULT,
+                        lhs,
+                        rhs,
+                        "int_ult",
+                    ))
                 }
                 InstrKind::FloatAdd => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);

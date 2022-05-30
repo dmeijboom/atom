@@ -144,6 +144,10 @@ pub enum BinaryOp {
     Div,
     Add,
     Sub,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
     ShiftLeft,
     ShiftRight,
 }

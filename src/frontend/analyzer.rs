@@ -83,7 +83,10 @@ impl Analyzer {
 
                 Expr::new(
                     expr.span,
-                    lhs.ty.clone(),
+                    match binary.op {
+                        BinaryOp::Lte | BinaryOp::Lt | BinaryOp::Gte | BinaryOp::Gt => types::BOOL,
+                        _ => lhs.ty.clone(),
+                    },
                     ExprKind::Binary(binary.op, lhs.into(), rhs.into()),
                 )
             }

@@ -93,21 +93,20 @@ impl Compiler {
                         BinaryOp::Add => InstrKind::IntAdd,
                         BinaryOp::Sub => InstrKind::IntSub,
                         BinaryOp::Mul => InstrKind::IntMul,
-                        BinaryOp::Div => {
-                            if signed {
-                                InstrKind::IntSDiv
-                            } else {
-                                InstrKind::IntUDiv
-                            }
-                        }
+                        BinaryOp::Div if signed => InstrKind::IntSDiv,
+                        BinaryOp::Div if !signed => InstrKind::IntUDiv,
                         BinaryOp::ShiftLeft => InstrKind::IntShl,
-                        BinaryOp::ShiftRight => {
-                            if signed {
-                                InstrKind::IntSShr
-                            } else {
-                                InstrKind::IntUShr
-                            }
-                        }
+                        BinaryOp::ShiftRight if signed => InstrKind::IntSShr,
+                        BinaryOp::ShiftRight if !signed => InstrKind::IntUShr,
+                        BinaryOp::Lte if signed => InstrKind::IntSLte,
+                        BinaryOp::Lte if !signed => InstrKind::IntULte,
+                        BinaryOp::Lt if signed => InstrKind::IntSLt,
+                        BinaryOp::Lt if !signed => InstrKind::IntULt,
+                        BinaryOp::Gte if signed => InstrKind::IntSGte,
+                        BinaryOp::Gte if !signed => InstrKind::IntUGte,
+                        BinaryOp::Gt if signed => InstrKind::IntSGt,
+                        BinaryOp::Gt if !signed => InstrKind::IntUGt,
+                        _ => unimplemented!(),
                     },
                     Some(Numeric::Float { .. }) => match op {
                         BinaryOp::Add => InstrKind::FloatAdd,

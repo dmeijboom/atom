@@ -148,8 +148,38 @@ impl<'s> Parser<'s> {
         }
     }
 
-    fn bitwise_shift(&mut self) -> Result<Expr> {
+    fn relational(&mut self) -> Result<Expr> {
         let mut expr = self.term()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Lte) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, Lte);
+                }
+                Some(Token::Lt) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, Lt);
+                }
+                Some(Token::Gte) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, Gte);
+                }
+                Some(Token::Gt) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, Gt);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn bitwise_shift(&mut self) -> Result<Expr> {
+        let mut expr = self.relational()?;
 
         loop {
             let token = self.scanner.peek();
@@ -157,11 +187,11 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::ShiftLeft) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, ShiftLeft);
+                    make_bin!(expr, self.relational()?, ShiftLeft);
                 }
                 Some(Token::ShiftRight) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, ShiftRight);
+                    make_bin!(expr, self.relational()?, ShiftRight);
                 }
                 _ => break,
             }

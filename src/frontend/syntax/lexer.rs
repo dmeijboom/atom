@@ -96,6 +96,30 @@ where
 #[derive(Logos, Debug, PartialEq)]
 #[logos(extras = LexerExtras)]
 pub enum Token {
+    #[token("!=")]
+    Neq,
+
+    #[token("==")]
+    Eq,
+
+    #[token("<=")]
+    Lte,
+
+    #[token("<")]
+    Lt,
+
+    #[token(">=")]
+    Gte,
+
+    #[token(">")]
+    Gt,
+
+    #[token("||")]
+    Or,
+
+    #[token("&&")]
+    And,
+
     #[token("<<")]
     ShiftLeft,
 
