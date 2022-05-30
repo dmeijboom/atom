@@ -15,6 +15,7 @@ macro_rules! error {
 pub struct Analyzer {
     nodes: Vec<Node>,
     scopes: ScopeList,
+    return_type: Option<Type>,
 }
 
 impl Analyzer {
@@ -22,6 +23,7 @@ impl Analyzer {
         Self {
             nodes: vec![],
             scopes: ScopeList::new(),
+            return_type: None,
         }
     }
 
@@ -33,7 +35,7 @@ impl Analyzer {
         error!(span.clone(), "unknown type: {}", ty.name)
     }
 
-    fn analyze_expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
+    fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
         Ok(match expr.kind {
             syntax::ExprKind::Ident(name) => {
                 let (local, _) = self.scopes.head().local(&name).ok_or_else(|| {
@@ -47,8 +49,8 @@ impl Analyzer {
                 Expr::new(expr.span, ty, ExprKind::Literal(literal.kind))
             }
             syntax::ExprKind::Binary(binary) => {
-                let lhs = self.analyze_expr(binary.left)?;
-                let rhs = self.analyze_expr(binary.right)?;
+                let lhs = self.expr(binary.left)?;
+                let rhs = self.expr(binary.right)?;
 
                 if matches!(binary.op, BinaryOp::ShiftLeft | BinaryOp::ShiftRight)
                     && !matches!(lhs.ty.attr.numeric, Some(Numeric::Int { .. }))
@@ -88,23 +90,33 @@ impl Analyzer {
         })
     }
 
-    fn analyze_fn(&mut self, span: &Span, fn_def: syntax::FnDef) -> Result<FnDef> {
-        let return_type = if let Some(ty) = fn_def.sig.return_type {
-            Some(self.get_type(span, &ty)?)
-        } else {
-            None
-        };
-
-        self.scopes.enter(ScopeKind::Fn);
-
+    fn body(&mut self, fn_body: Vec<syntax::Stmt>) -> Result<Vec<Stmt>> {
         let mut body = vec![];
-        let body_size = fn_def.body.len();
-        let mut inferred_return_type = None;
+        let body_size = fn_body.len();
 
-        for (i, stmt) in fn_def.body.into_iter().enumerate() {
+        for (i, stmt) in fn_body.into_iter().enumerate() {
             match stmt.kind {
+                syntax::StmtKind::If(if_stmt) => {
+                    let expr = self.expr(if_stmt.cond)?;
+
+                    if expr.ty != types::BOOL {
+                        return error!(
+                            stmt.span,
+                            "invalid type for condition of if statement: {} (should be bool)",
+                            expr.ty
+                        );
+                    }
+
+                    let if_body = self.body(if_stmt.body)?;
+
+                    body.push(Stmt::new(
+                        stmt.span,
+                        self.scopes.head().id,
+                        StmtKind::If(expr, if_body),
+                    ));
+                }
                 syntax::StmtKind::Assign(name, expr) => {
-                    let expr = self.analyze_expr(expr)?;
+                    let expr = self.expr(expr)?;
                     let (local, _) = self.scopes.head().local(&name).ok_or_else(|| {
                         Error::new(expr.span.clone(), format!("no such name: {}", name))
                     })?;
@@ -133,9 +145,18 @@ impl Analyzer {
                     ))
                 }
                 syntax::StmtKind::Return(expr) => {
-                    let expr = self.analyze_expr(expr)?;
+                    let expr = self.expr(expr)?;
 
-                    inferred_return_type = Some(expr.ty.clone());
+                    if let Some(return_type) = &self.return_type {
+                        if &expr.ty != return_type {
+                            return error!(
+                                expr.span,
+                                "invalid return type '{}' (expected: {})", expr.ty, return_type
+                            );
+                        }
+                    }
+
+                    self.return_type = Some(expr.ty.clone());
 
                     body.push(Stmt::new(
                         stmt.span,
@@ -146,10 +167,10 @@ impl Analyzer {
                     break;
                 }
                 syntax::StmtKind::Let(let_stmt) => {
-                    let expr = self.analyze_expr(let_stmt.value)?;
+                    let expr = self.expr(let_stmt.value)?;
 
                     if let Some(ty) = let_stmt.ty {
-                        let ty = self.get_type(span, &ty)?;
+                        let ty = self.get_type(&stmt.span, &ty)?;
 
                         if expr.ty != ty {
                             return error!(
@@ -169,13 +190,13 @@ impl Analyzer {
                     ));
                 }
                 syntax::StmtKind::Expr(expr) => {
-                    let expr = self.analyze_expr(expr)?;
+                    let expr = self.expr(expr)?;
 
                     body.push(Stmt::new(
                         stmt.span,
                         self.scopes.head().id,
                         if i == body_size - 1 {
-                            inferred_return_type = Some(expr.ty.clone());
+                            self.return_type = Some(expr.ty.clone());
                             StmtKind::Return(expr)
                         } else {
                             StmtKind::Expr(expr)
@@ -183,7 +204,7 @@ impl Analyzer {
                     ));
                 }
                 syntax::StmtKind::ExprEnd(expr) => {
-                    let expr = self.analyze_expr(expr)?;
+                    let expr = self.expr(expr)?;
 
                     body.push(Stmt::new(
                         stmt.span,
@@ -194,27 +215,24 @@ impl Analyzer {
             }
         }
 
-        let scope = self.scopes.exit();
+        Ok(body)
+    }
 
-        let inferred_return_type = inferred_return_type.unwrap_or(types::VOID);
-        let return_type = match return_type {
-            Some(return_type) if return_type != inferred_return_type => {
-                return error!(
-                    span.clone(),
-                    "invalid return type '{}' for '{}(...)' (expected: {})",
-                    inferred_return_type,
-                    fn_def.name,
-                    return_type
-                );
-            }
-            Some(return_type) => return_type,
-            None => inferred_return_type,
+    fn func(&mut self, span: &Span, fn_def: syntax::FnDef) -> Result<FnDef> {
+        self.return_type = if let Some(ty) = fn_def.sig.return_type {
+            Some(self.get_type(span, &ty)?)
+        } else {
+            None
         };
+
+        self.scopes.enter(ScopeKind::Fn);
+        let body = self.body(fn_def.body)?;
+        let scope = self.scopes.exit();
 
         Ok(FnDef {
             name: fn_def.name,
             body,
-            return_type,
+            return_type: self.return_type.take().unwrap_or(types::VOID),
             scope,
         })
     }
@@ -223,7 +241,7 @@ impl Analyzer {
         for node in program {
             match node.kind {
                 syntax::NodeKind::FnDef(fn_def) => {
-                    let kind = NodeKind::FnDef(self.analyze_fn(&node.span, fn_def)?);
+                    let kind = NodeKind::FnDef(self.func(&node.span, fn_def)?);
                     self.nodes.push(Node::new(node.span, kind));
                 }
             }

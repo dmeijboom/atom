@@ -63,8 +63,10 @@ fn main() -> Result<()> {
             pretty_print(&module);
 
             let ctx = context::Context::create();
-            let codegen = CodeGen::new(&ctx, module);
-            let buffer = codegen.generate().context("code generation failed")?;
+            let codegen = CodeGen::new(&ctx, &module.name);
+            let buffer = codegen
+                .generate(&module)
+                .context("code generation failed")?;
 
             if opts.check {
                 return Ok(());

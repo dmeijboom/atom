@@ -110,7 +110,15 @@ pub struct Let {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct If {
+    pub span: Span,
+    pub cond: Expr,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum StmtKind {
+    If(If),
     Let(Let),
     Assign(String, Expr),
     Return(Expr),

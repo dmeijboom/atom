@@ -129,6 +129,9 @@ pub enum Token {
     #[token("fn")]
     Fn,
 
+    #[token("if")]
+    If,
+
     #[token("let")]
     Let,
 

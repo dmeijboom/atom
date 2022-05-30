@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::frontend::syntax::lexer::StringToken;
 use crate::frontend::syntax::{
-    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, Let, Literal, LiteralKind, Node,
+    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal, LiteralKind, Node,
     NodeKind, Scanner, Stmt, StmtKind, Token, Type,
 };
 
@@ -263,6 +263,20 @@ impl<'s> Parser<'s> {
         ))
     }
 
+    fn if_stmt(&mut self) -> Result<Stmt> {
+        let span = self.scanner.span();
+        expect!(self.scanner, Token::If);
+        let cond = self.expr()?;
+        expect!(self.scanner, Token::BracketLeft);
+        let body = self.body()?;
+        expect!(self.scanner, Token::BracketRight);
+
+        Ok(Stmt::new(
+            span.clone(),
+            StmtKind::If(If { span, cond, body }),
+        ))
+    }
+
     fn assign(&mut self) -> Result<Stmt> {
         let span = self.scanner.span();
         let name = expect!(withValue self.scanner, Token::Ident);
@@ -291,6 +305,7 @@ impl<'s> Parser<'s> {
             match token {
                 Token::Let => stmts.push(self.let_stmt()?),
                 Token::Return => stmts.push(self.return_stmt()?),
+                Token::If => stmts.push(self.if_stmt()?),
                 Token::BracketRight => break,
                 Token::Ident(_) => {
                     if self.lookahead_is_assign() {

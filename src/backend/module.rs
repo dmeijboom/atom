@@ -1,4 +1,5 @@
 use crate::frontend::syntax::Span;
+use std::slice::Iter;
 
 #[derive(Debug)]
 pub enum Type {
@@ -54,6 +55,7 @@ pub enum InstrKind {
     ConstUint(u64),
     ConstBool(bool),
     ConstFloat(f64),
+    Branch(Block, Block),
 }
 
 #[derive(Debug, Default)]
@@ -62,10 +64,17 @@ pub struct Block {
     pub term: Option<Terminator>,
 }
 
+impl Block {
+    #[inline]
+    pub fn iter(&self) -> Iter<'_, Instr> {
+        self.body.iter()
+    }
+}
+
 #[derive(Debug)]
 pub struct Fn {
     pub name: String,
-    pub body: Vec<Block>,
+    pub body: Block,
     pub return_type: Type,
     pub locals: Vec<Type>,
 }

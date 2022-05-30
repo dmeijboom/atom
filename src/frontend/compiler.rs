@@ -1,7 +1,7 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
 use crate::frontend::scope::Scope;
 use crate::frontend::syntax::{BinaryOp, LiteralKind, Span};
-use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, StmtKind};
+use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
 use crate::frontend::Error;
 
@@ -145,12 +145,8 @@ impl Compiler {
         Err(Error::new(span.clone(), format!("invalid type: {}", ty)))
     }
 
-    fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
-        self.scopes.move_to(fn_def.scope);
-
-        let mut block = Block::default();
-
-        for stmt in fn_def.body {
+    fn compile_body(&mut self, block: &mut Block, body: Vec<Stmt>) -> Result<()> {
+        for stmt in body {
             self.scopes.move_to(stmt.scope);
 
             assert!(block.term.is_none(), "block should not be terminated");
@@ -159,20 +155,48 @@ impl Compiler {
                 StmtKind::Let(name, expr) | StmtKind::Assign(name, expr) => {
                     let (_, idx) = self.scopes.head().local(&name).unwrap();
 
-                    self.compile_expr(&mut block, expr)?;
+                    self.compile_expr(block, expr)?;
 
                     block
                         .body
                         .push(Instr::new(stmt.span, InstrKind::Store(idx)));
                 }
+                StmtKind::If(cond, body) => {
+                    let mut then = Block::default();
+
+                    self.compile_expr(block, cond)?;
+                    self.compile_body(&mut then, body)?;
+
+                    block.body.push(Instr::new(
+                        stmt.span,
+                        InstrKind::Branch(then, Block::default()),
+                    ));
+                }
                 StmtKind::Return(expr) => {
-                    self.compile_expr(&mut block, expr)?;
+                    self.compile_expr(block, expr)?;
                     block.term = Some(Terminator::Return);
                 }
                 StmtKind::Expr(expr) => {
-                    self.compile_expr(&mut block, expr)?;
+                    self.compile_expr(block, expr)?;
                 }
             }
+        }
+
+        Ok(())
+    }
+
+    fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
+        self.scopes.move_to(fn_def.scope);
+
+        let mut body = Block::default();
+        self.compile_body(&mut body, fn_def.body)?;
+
+        if body.term.is_none() {
+            if fn_def.return_type != types::VOID {
+                return Err(Error::new(span, "fn must return a value".to_string()));
+            }
+
+            body.term = Some(Terminator::Return);
         }
 
         let mut locals = vec![];
@@ -196,7 +220,7 @@ impl Compiler {
 
         self.module.funcs.push(Fn {
             name: fn_def.name,
-            body: vec![block],
+            body,
             return_type,
             locals,
         });

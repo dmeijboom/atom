@@ -1,4 +1,5 @@
 use anyhow::{anyhow, Result};
+use inkwell::basic_block::BasicBlock;
 use inkwell::context::Context;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
@@ -6,23 +7,23 @@ use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
 use inkwell::types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FunctionType};
-use inkwell::values::{BasicValue, BasicValueEnum};
+use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue};
 use inkwell::OptimizationLevel;
 
-use crate::backend::{module, Fn, InstrKind, Terminator, Type};
+use crate::backend::{module, Block, Fn, InstrKind, Terminator, Type};
 
 macro_rules! pop_binary {
-    ($stack:ident as int) => {{
+    ($stack:expr, int) => {{
         let (lhs, rhs) = pop_binary!($stack);
         (lhs.into_int_value(), rhs.into_int_value())
     }};
 
-    ($stack:ident as float) => {{
+    ($stack:expr, float) => {{
         let (lhs, rhs) = pop_binary!($stack);
         (lhs.into_float_value(), rhs.into_float_value())
     }};
 
-    ($stack:ident) => {{
+    ($stack:expr) => {{
         let rhs = $stack.pop().unwrap();
         let lhs = $stack.pop().unwrap();
 
@@ -31,17 +32,17 @@ macro_rules! pop_binary {
 }
 
 pub struct CodeGen<'ctx> {
-    module: module::Module,
     context: &'ctx Context,
     llvm_module: Module<'ctx>,
+    stack: Vec<BasicValueEnum<'ctx>>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    pub fn new(context: &'ctx Context, module: module::Module) -> Self {
+    pub fn new(context: &'ctx Context, name: &str) -> Self {
         Self {
-            llvm_module: context.create_module(&module.name),
             context,
-            module,
+            llvm_module: context.create_module(name),
+            stack: vec![],
         }
     }
 
@@ -89,7 +90,130 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_fn(&self, func: &Fn) {
+    fn generate_body(
+        &mut self,
+        func: FunctionValue<'ctx>,
+        locals: &[PointerValue<'ctx>],
+        block: BasicBlock<'ctx>,
+        body: &Block,
+    ) {
+        let builder = self.context.create_builder();
+        builder.position_at_end(block);
+
+        for instr in body.iter() {
+            let value = match &instr.kind {
+                InstrKind::ConstInt(val) => {
+                    BasicValueEnum::IntValue(self.context.i32_type().const_int(*val as u64, false))
+                }
+                InstrKind::ConstUint(val) => {
+                    BasicValueEnum::IntValue(self.context.i32_type().const_int(*val, true))
+                }
+                InstrKind::ConstFloat(val) => {
+                    BasicValueEnum::FloatValue(self.context.f32_type().const_float(*val as f64))
+                }
+                InstrKind::ConstBool(val) => BasicValueEnum::IntValue(
+                    self.context
+                        .custom_width_int_type(1)
+                        .const_int(if *val { 1 } else { 0 }, false),
+                ),
+                InstrKind::IntAdd => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_add(lhs, rhs, "int_add"))
+                }
+                InstrKind::IntSub => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_sub(lhs, rhs, "int_sub"))
+                }
+                InstrKind::IntMul => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_mul(lhs, rhs, "int_mul"))
+                }
+                InstrKind::IntSDiv => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_signed_div(lhs, rhs, "int_sdiv"))
+                }
+                InstrKind::IntUDiv => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_int_unsigned_div(lhs, rhs, "int_udiv"))
+                }
+                InstrKind::IntShl => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_left_shift(lhs, rhs, "int_shl"))
+                }
+                InstrKind::IntSShr => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_right_shift(lhs, rhs, true, "int_sshr"))
+                }
+                InstrKind::IntUShr => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    BasicValueEnum::IntValue(builder.build_right_shift(lhs, rhs, false, "int_ushr"))
+                }
+                InstrKind::FloatAdd => {
+                    let (lhs, rhs) = pop_binary!(self.stack, float);
+                    BasicValueEnum::FloatValue(builder.build_float_add(lhs, rhs, "float_add"))
+                }
+                InstrKind::FloatSub => {
+                    let (lhs, rhs) = pop_binary!(self.stack, float);
+                    BasicValueEnum::FloatValue(builder.build_float_sub(lhs, rhs, "float_sub"))
+                }
+                InstrKind::FloatMul => {
+                    let (lhs, rhs) = pop_binary!(self.stack, float);
+                    BasicValueEnum::FloatValue(builder.build_float_mul(lhs, rhs, "float_mul"))
+                }
+                InstrKind::FloatDiv => {
+                    let (lhs, rhs) = pop_binary!(self.stack, float);
+                    BasicValueEnum::FloatValue(builder.build_float_div(lhs, rhs, "float_div"))
+                }
+                InstrKind::Load(idx) => builder.build_load(locals[*idx], &format!("load{}", idx)),
+                InstrKind::Store(idx) => {
+                    let value = self.stack.pop().unwrap();
+                    builder.build_store(locals[*idx], value);
+
+                    continue;
+                }
+                InstrKind::Branch(then, alt) => {
+                    let cond = self.stack.pop().unwrap().into_int_value();
+
+                    let then_block = self.context.append_basic_block(func, "then");
+                    let alt_block = self.context.append_basic_block(func, "alt");
+                    let cont_block = self.context.append_basic_block(func, "cont");
+
+                    builder.build_conditional_branch(cond, then_block, alt_block);
+
+                    self.generate_body(func, locals, then_block, then);
+
+                    if then.term.is_none() {
+                        builder.position_at_end(then_block);
+                        builder.build_unconditional_branch(cont_block);
+                    }
+
+                    self.generate_body(func, locals, alt_block, alt);
+
+                    if alt.term.is_none() {
+                        builder.position_at_end(alt_block);
+                        builder.build_unconditional_branch(cont_block);
+                    }
+
+                    builder.position_at_end(cont_block);
+
+                    continue;
+                }
+            };
+
+            self.stack.push(value);
+        }
+
+        if let Some(Terminator::Return) = body.term {
+            if func.get_type().get_return_type().is_none() {
+                builder.build_return(None);
+                return;
+            }
+
+            builder.build_return(self.stack.pop().as_ref().map(|v| v as &dyn BasicValue));
+        };
+    }
+
+    fn generate_fn(&mut self, func: &Fn) {
         let return_type = self.fn_type(&func.return_type, &[]);
         let llvm_func = self.llvm_module.add_function(&func.name, return_type, None);
         let block = self.context.append_basic_block(llvm_func, "entry");
@@ -97,116 +221,24 @@ impl<'ctx> CodeGen<'ctx> {
 
         builder.position_at_end(block);
 
-        let mut stack: Vec<BasicValueEnum> = vec![];
         let mut locals = vec![];
 
         for (idx, ty) in func.locals.iter().enumerate() {
             locals.push(builder.build_alloca(self.make_basic_type(ty), &format!("local{}", idx)));
         }
 
-        for block in func.body.iter() {
-            for instr in block.body.iter() {
-                let value = match &instr.kind {
-                    InstrKind::ConstInt(val) => BasicValueEnum::IntValue(
-                        self.context.i32_type().const_int(*val as u64, false),
-                    ),
-                    InstrKind::ConstUint(val) => {
-                        BasicValueEnum::IntValue(self.context.i32_type().const_int(*val, true))
-                    }
-                    InstrKind::ConstFloat(val) => {
-                        BasicValueEnum::FloatValue(self.context.f32_type().const_float(*val as f64))
-                    }
-                    InstrKind::ConstBool(val) => BasicValueEnum::IntValue(
-                        self.context
-                            .custom_width_int_type(1)
-                            .const_int(if *val { 1 } else { 0 }, false),
-                    ),
-                    InstrKind::IntAdd => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(builder.build_int_add(lhs, rhs, "int_add"))
-                    }
-                    InstrKind::IntSub => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(builder.build_int_sub(lhs, rhs, "int_sub"))
-                    }
-                    InstrKind::IntMul => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(builder.build_int_mul(lhs, rhs, "int_mul"))
-                    }
-                    InstrKind::IntSDiv => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(builder.build_int_signed_div(lhs, rhs, "int_sdiv"))
-                    }
-                    InstrKind::IntUDiv => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(
-                            builder.build_int_unsigned_div(lhs, rhs, "int_udiv"),
-                        )
-                    }
-                    InstrKind::IntShl => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(builder.build_left_shift(lhs, rhs, "int_shl"))
-                    }
-                    InstrKind::IntSShr => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(
-                            builder.build_right_shift(lhs, rhs, true, "int_sshr"),
-                        )
-                    }
-                    InstrKind::IntUShr => {
-                        let (lhs, rhs) = pop_binary!(stack as int);
-                        BasicValueEnum::IntValue(
-                            builder.build_right_shift(lhs, rhs, false, "int_ushr"),
-                        )
-                    }
-                    InstrKind::FloatAdd => {
-                        let (lhs, rhs) = pop_binary!(stack as float);
-                        BasicValueEnum::FloatValue(builder.build_float_add(lhs, rhs, "float_add"))
-                    }
-                    InstrKind::FloatSub => {
-                        let (lhs, rhs) = pop_binary!(stack as float);
-                        BasicValueEnum::FloatValue(builder.build_float_sub(lhs, rhs, "float_sub"))
-                    }
-                    InstrKind::FloatMul => {
-                        let (lhs, rhs) = pop_binary!(stack as float);
-                        BasicValueEnum::FloatValue(builder.build_float_mul(lhs, rhs, "float_mul"))
-                    }
-                    InstrKind::FloatDiv => {
-                        let (lhs, rhs) = pop_binary!(stack as float);
-                        BasicValueEnum::FloatValue(builder.build_float_div(lhs, rhs, "float_div"))
-                    }
-                    InstrKind::Load(idx) => {
-                        builder.build_load(locals[*idx], &format!("load{}", idx))
-                    }
-                    InstrKind::Store(idx) => {
-                        let value = stack.pop().unwrap();
-                        builder.build_store(locals[*idx], value);
-
-                        continue;
-                    }
-                };
-
-                stack.push(value);
-            }
-
-            match block.term {
-                Some(Terminator::Return) => {
-                    builder.build_return(stack.pop().as_ref().map(|v| v as &dyn BasicValue))
-                }
-                None => builder.build_return(None),
-            };
-        }
+        self.generate_body(llvm_func, &locals, block, &func.body);
     }
 
-    pub fn generate(self) -> Result<MemoryBuffer> {
-        for func in self.module.funcs.iter() {
+    pub fn generate(mut self, module: &module::Module) -> Result<MemoryBuffer> {
+        for func in module.funcs.iter() {
             self.generate_fn(func);
         }
 
+        self.llvm_module.print_to_stderr();
         self.llvm_module
             .verify()
             .map_err(|e| anyhow!("failed to verify module: {}", e))?;
-        self.llvm_module.print_to_stderr();
 
         Target::initialize_native(&InitializationConfig::default())
             .map_err(|e| anyhow!("failed to initialize target: {}", e))?;
