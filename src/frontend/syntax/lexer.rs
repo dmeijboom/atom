@@ -96,6 +96,12 @@ where
 #[derive(Logos, Debug, PartialEq)]
 #[logos(extras = LexerExtras)]
 pub enum Token {
+    #[regex(r"#[^\n]+", |lex| {
+        lex.extras.apply(lex.slice());
+        logos::Skip
+    })]
+    Comment,
+
     #[token("!=")]
     Neq,
 
