@@ -38,7 +38,7 @@ impl Analyzer {
     fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
         Ok(match expr.kind {
             syntax::ExprKind::Ident(name) => {
-                let (local, _) = self.scopes.head().local(&name).ok_or_else(|| {
+                let (local, _) = self.scopes.local(&name).ok_or_else(|| {
                     Error::new(expr.span.clone(), format!("no such name: {}", name))
                 })?;
 
@@ -100,6 +100,8 @@ impl Analyzer {
         for (i, stmt) in fn_body.into_iter().enumerate() {
             match stmt.kind {
                 syntax::StmtKind::If(if_stmt) => {
+                    self.scopes.enter(ScopeKind::If);
+
                     let expr = self.expr(if_stmt.cond)?;
 
                     if expr.ty != types::BOOL {
@@ -117,10 +119,12 @@ impl Analyzer {
                         self.scopes.head().id,
                         StmtKind::If(expr, if_body),
                     ));
+
+                    self.scopes.leave();
                 }
                 syntax::StmtKind::Assign(name, expr) => {
                     let expr = self.expr(expr)?;
-                    let (local, _) = self.scopes.head().local(&name).ok_or_else(|| {
+                    let (local, _) = self.scopes.local(&name).ok_or_else(|| {
                         Error::new(expr.span.clone(), format!("no such name: {}", name))
                     })?;
 
@@ -237,7 +241,7 @@ impl Analyzer {
 
         self.scopes.enter(ScopeKind::Fn);
         let body = self.body(fn_def.body)?;
-        let scope = self.scopes.exit();
+        let scope = self.scopes.leave();
 
         Ok(FnDef {
             name: fn_def.name,

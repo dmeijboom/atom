@@ -1,5 +1,5 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
-use crate::frontend::scope::Scope;
+use crate::frontend::scope::{find_local, Scope};
 use crate::frontend::syntax::{BinaryOp, LiteralKind, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
@@ -46,6 +46,12 @@ impl<T> Cursor<T> {
     }
 }
 
+impl<T> AsRef<[T]> for Cursor<T> {
+    fn as_ref(&self) -> &[T] {
+        &self.data
+    }
+}
+
 pub struct Compiler {
     module: Module,
     scopes: Cursor<Scope>,
@@ -62,7 +68,7 @@ impl Compiler {
     fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<()> {
         match expr.kind {
             ExprKind::Ident(name) => {
-                let (_, idx) = self.scopes.head().local(&name).unwrap();
+                let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
                 block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
             }
             ExprKind::Literal(literal) => match literal {
@@ -152,7 +158,8 @@ impl Compiler {
 
             match stmt.kind {
                 StmtKind::Let(name, expr) | StmtKind::Assign(name, expr) => {
-                    let (_, idx) = self.scopes.head().local(&name).unwrap();
+                    let (_, idx) =
+                        find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
 
                     self.compile_expr(block, expr)?;
 

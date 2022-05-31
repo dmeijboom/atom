@@ -5,8 +5,9 @@ pub type ScopeId = usize;
 
 #[derive(Debug)]
 pub enum ScopeKind {
-    Global,
+    If,
     Fn,
+    Global,
 }
 
 #[derive(Debug)]
@@ -30,7 +31,7 @@ impl Scope {
         &self.locals
     }
 
-    pub fn local(&self, name: &str) -> Option<(&Local, usize)> {
+    fn local(&self, name: &str) -> Option<(&Local, usize)> {
         if let Some(idx) = self.locals.iter().position(|local| local.name == name) {
             return Some((&self.locals[idx], idx));
         }
@@ -77,6 +78,11 @@ impl ScopeList {
     }
 
     #[inline]
+    pub fn local(&self, name: &str) -> Option<(&Local, usize)> {
+        find_local(&self.scopes, self.index, name)
+    }
+
+    #[inline]
     pub fn head(&self) -> &Scope {
         &self.scopes[self.index]
     }
@@ -101,7 +107,7 @@ impl ScopeList {
         id
     }
 
-    pub fn exit(&mut self) -> ScopeId {
+    pub fn leave(&mut self) -> ScopeId {
         assert_ne!(self.index, 0);
 
         let id = self.head().id;
@@ -109,5 +115,24 @@ impl ScopeList {
         self.index -= 1;
 
         id
+    }
+}
+
+pub fn find_local<'s>(scopes: &'s [Scope], index: usize, name: &str) -> Option<(&'s Local, usize)> {
+    let mut idx = index;
+
+    loop {
+        let scope = &scopes[idx];
+
+        if let Some(local) = scope.local(name) {
+            return Some(local);
+        }
+
+        if let Some(parent) = scope.parent {
+            idx = parent;
+            continue;
+        }
+
+        return None;
     }
 }
