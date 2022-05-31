@@ -148,8 +148,30 @@ impl<'s> Parser<'s> {
         }
     }
 
-    fn relational(&mut self) -> Result<Expr> {
+    fn equality(&mut self) -> Result<Expr> {
         let mut expr = self.term()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Eq) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, Eq);
+                }
+                Some(Token::Neq) => {
+                    self.scanner.advance();
+                    make_bin!(expr, self.term()?, Neq);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn relational(&mut self) -> Result<Expr> {
+        let mut expr = self.equality()?;
 
         loop {
             let token = self.scanner.peek();
@@ -157,19 +179,19 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::Lte) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, Lte);
+                    make_bin!(expr, self.equality()?, Lte);
                 }
                 Some(Token::Lt) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, Lt);
+                    make_bin!(expr, self.equality()?, Lt);
                 }
                 Some(Token::Gte) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, Gte);
+                    make_bin!(expr, self.equality()?, Gte);
                 }
                 Some(Token::Gt) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, Gt);
+                    make_bin!(expr, self.equality()?, Gt);
                 }
                 _ => break,
             }

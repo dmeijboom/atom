@@ -148,6 +148,8 @@ pub enum BinaryOp {
     Lte,
     Gt,
     Gte,
+    Eq,
+    Neq,
     ShiftLeft,
     ShiftRight,
 }

@@ -84,7 +84,12 @@ impl Analyzer {
                 Expr::new(
                     expr.span,
                     match binary.op {
-                        BinaryOp::Lte | BinaryOp::Lt | BinaryOp::Gte | BinaryOp::Gt => types::BOOL,
+                        BinaryOp::Lte
+                        | BinaryOp::Lt
+                        | BinaryOp::Gte
+                        | BinaryOp::Gt
+                        | BinaryOp::Eq
+                        | BinaryOp::Neq => types::BOOL,
                         _ => lhs.ty.clone(),
                     },
                     ExprKind::Binary(binary.op, lhs.into(), rhs.into()),
@@ -107,7 +112,7 @@ impl Analyzer {
                     if expr.ty != types::BOOL {
                         return error!(
                             stmt.span,
-                            "invalid type for condition of if statement: {} (should be bool)",
+                            "invalid type for condition of if statement: {} (should be Bool)",
                             expr.ty
                         );
                     }
