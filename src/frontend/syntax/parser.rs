@@ -252,7 +252,13 @@ impl<'s> Parser<'s> {
     fn return_stmt(&mut self) -> Result<Stmt> {
         let span = self.scanner.span();
         self.scanner.advance();
-        let expr = self.expr()?;
+
+        let mut expr = None;
+
+        if !accept!(self.scanner, Token::End) {
+            expr = Some(self.expr()?);
+        }
+
         expect!(self.scanner, Token::End);
 
         Ok(Stmt::new(span, StmtKind::Return(expr)))
@@ -535,6 +541,21 @@ mod tests {
                             ExprKind::Literal(Literal::new(Span::new(1, 10, 10, 10 + size), kind,))
                         ))
                     )]
+                })
+            )])
+        );
+    }
+
+    #[test]
+    fn test_return_void() {
+        assert_eq!(
+            parse("fn main { return; }"),
+            Ok(vec![Node::new(
+                Span::new(1, 0, 0, 18),
+                NodeKind::FnDef(FnDef {
+                    name: "main".to_string(),
+                    sig: FnSig::default(),
+                    body: vec![Stmt::new(Span::new(1, 10, 10, 16), StmtKind::Return(None),)]
                 })
             )])
         );

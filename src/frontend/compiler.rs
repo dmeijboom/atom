@@ -172,7 +172,10 @@ impl Compiler {
                     ));
                 }
                 StmtKind::Return(expr) => {
-                    self.compile_expr(block, expr)?;
+                    if let Some(expr) = expr {
+                        self.compile_expr(block, expr)?;
+                    }
+
                     block.term = Some(Terminator::Return);
                 }
                 StmtKind::Expr(expr) => {

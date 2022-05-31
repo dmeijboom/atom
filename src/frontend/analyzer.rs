@@ -148,18 +148,25 @@ impl Analyzer {
                     ))
                 }
                 syntax::StmtKind::Return(expr) => {
-                    let expr = self.expr(expr)?;
+                    let (expr, ty) = if let Some(expr) = expr {
+                        let expr = self.expr(expr)?;
+                        let ty = expr.ty.clone();
+
+                        (Some(expr), ty)
+                    } else {
+                        (None, types::VOID)
+                    };
 
                     if let Some(return_type) = &self.return_type {
-                        if &expr.ty != return_type {
+                        if &ty != return_type {
                             return error!(
-                                expr.span,
-                                "invalid return type '{}' (expected: {})", expr.ty, return_type
+                                stmt.span,
+                                "invalid return type '{}' (expected: {})", ty, return_type
                             );
                         }
                     }
 
-                    self.return_type = Some(expr.ty.clone());
+                    self.return_type = Some(ty);
 
                     body.push(Stmt::new(
                         stmt.span,
@@ -200,7 +207,7 @@ impl Analyzer {
                         self.scopes.head().id,
                         if i == body_size - 1 {
                             self.return_type = Some(expr.ty.clone());
-                            StmtKind::Return(expr)
+                            StmtKind::Return(Some(expr))
                         } else {
                             StmtKind::Expr(expr)
                         },

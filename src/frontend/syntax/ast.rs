@@ -121,7 +121,7 @@ pub enum StmtKind {
     If(If),
     Let(Let),
     Assign(String, Expr),
-    Return(Expr),
+    Return(Option<Expr>),
     Expr(Expr),
     ExprEnd(Expr),
 }
