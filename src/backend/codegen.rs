@@ -94,7 +94,7 @@ impl<'ctx> CodeGen<'ctx> {
         &mut self,
         func: FunctionValue<'ctx>,
         locals: &[PointerValue<'ctx>],
-        block: BasicBlock<'ctx>,
+        mut block: BasicBlock<'ctx>,
         body: &Block,
     ) {
         let builder = self.context.create_builder();
@@ -309,7 +309,7 @@ impl<'ctx> CodeGen<'ctx> {
                     let cond = self.stack.pop().unwrap().into_int_value();
                     let then_block = self.context.append_basic_block(func, "then");
                     let alt_block = self.context.append_basic_block(func, "alt");
-                    let cont = if then.term.is_some() && alt.term.is_some() {
+                    let cont = if then.is_terminated() && alt.is_terminated() {
                         None
                     } else {
                         Some(self.context.append_basic_block(func, "cont"))
@@ -319,21 +319,27 @@ impl<'ctx> CodeGen<'ctx> {
 
                     self.generate_body(func, locals, then_block, then);
 
-                    if let Some(cont_block) = cont {
-                        builder.position_at_end(then_block);
-                        builder.build_unconditional_branch(cont_block);
+                    if then.term.is_none() {
+                        if let Some(cont_block) = cont {
+                            builder.position_at_end(then_block);
+                            builder.build_unconditional_branch(cont_block);
+                        }
                     }
 
                     self.generate_body(func, locals, alt_block, alt);
 
-                    if let Some(cont_block) = cont {
-                        builder.position_at_end(alt_block);
-                        builder.build_unconditional_branch(cont_block);
+                    if alt.term.is_none() {
+                        if let Some(cont_block) = cont {
+                            builder.position_at_end(alt_block);
+                            builder.build_unconditional_branch(cont_block);
+                        }
                     }
 
                     if let Some(cont_block) = cont {
-                        builder.position_at_end(cont_block);
+                        block = cont_block;
                     }
+
+                    builder.position_at_end(block);
 
                     continue;
                 }

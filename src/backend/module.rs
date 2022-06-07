@@ -88,16 +88,19 @@ impl Block {
             return true;
         }
 
+        let mut terminated = false;
+
         for stmt in self.iter() {
-            match &stmt.kind {
-                InstrKind::Branch(then, alt) if then.term.is_none() || alt.term.is_none() => {
-                    return false;
+            if let InstrKind::Branch(then, alt) = &stmt.kind {
+                terminated = then.is_terminated() && alt.is_terminated();
+
+                if !terminated {
+                    break;
                 }
-                _ => continue,
             }
         }
 
-        true
+        terminated
     }
 }
 
@@ -120,4 +123,100 @@ pub struct Fn {
 pub struct Module {
     pub name: String,
     pub funcs: Vec<Fn>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn block_terminated_when_term_is_set() {
+        let block = Block {
+            term: Some(Terminator::Return),
+            ..Block::default()
+        };
+
+        assert!(block.is_terminated());
+    }
+
+    #[test]
+    fn block_not_terminated_when_term_is_not_set() {
+        let block = Block::default();
+        assert!(!block.is_terminated());
+    }
+
+    #[test]
+    fn block_not_terminated_when_one_side_of_branch_is_not_terminated() {
+        let block = Block {
+            body: vec![Instr::new(
+                Span::default(),
+                InstrKind::Branch(
+                    Block {
+                        term: Some(Terminator::Return),
+                        ..Block::default()
+                    },
+                    Block::default(),
+                ),
+            )],
+            ..Block::default()
+        };
+
+        assert!(!block.is_terminated());
+    }
+
+    #[test]
+    fn block_terminated_when_both_sides_of_branch_are_terminated() {
+        let block = Block {
+            body: vec![Instr::new(
+                Span::default(),
+                InstrKind::Branch(
+                    Block {
+                        term: Some(Terminator::Return),
+                        ..Block::default()
+                    },
+                    Block {
+                        term: Some(Terminator::Return),
+                        ..Block::default()
+                    },
+                ),
+            )],
+            ..Block::default()
+        };
+
+        assert!(block.is_terminated());
+    }
+
+    #[test]
+    fn block_terminated_when_both_sides_of_branch_are_recursively_terminated() {
+        let block = Block {
+            body: vec![Instr::new(
+                Span::default(),
+                InstrKind::Branch(
+                    Block {
+                        term: Some(Terminator::Return),
+                        ..Block::default()
+                    },
+                    Block {
+                        body: vec![Instr::new(
+                            Span::default(),
+                            InstrKind::Branch(
+                                Block {
+                                    term: Some(Terminator::Return),
+                                    ..Block::default()
+                                },
+                                Block {
+                                    term: Some(Terminator::Return),
+                                    ..Block::default()
+                                },
+                            ),
+                        )],
+                        ..Block::default()
+                    },
+                ),
+            )],
+            ..Block::default()
+        };
+
+        assert!(block.is_terminated());
+    }
 }

@@ -110,11 +110,17 @@ pub struct Let {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum Alt {
+    ElseIf(Box<If>),
+    Else(Vec<Stmt>),
+}
+
+#[derive(Debug, PartialEq)]
 pub struct If {
     pub span: Span,
     pub cond: Expr,
     pub body: Vec<Stmt>,
-    pub alt: Vec<Stmt>,
+    pub alt: Option<Alt>,
 }
 
 #[derive(Debug, PartialEq)]

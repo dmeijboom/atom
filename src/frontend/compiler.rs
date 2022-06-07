@@ -181,6 +181,11 @@ impl Compiler {
 
             assert!(block.term.is_none(), "block should not be terminated");
 
+            // @TODO: how to deal with dead code?
+            if block.is_terminated() {
+                return Ok(());
+            }
+
             match stmt.kind {
                 StmtKind::Let(name, expr) | StmtKind::Assign(name, expr) => {
                     let (_, idx) =

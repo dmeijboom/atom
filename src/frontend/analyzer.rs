@@ -1,5 +1,5 @@
 use crate::frontend::scope::{ScopeKind, ScopeList};
-use crate::frontend::syntax::{BinaryOp, InferType, Span};
+use crate::frontend::syntax::{Alt, BinaryOp, InferType, Span};
 use crate::frontend::typed_ast::*;
 use crate::frontend::{syntax, types, Error, Node, Type};
 
@@ -105,6 +105,43 @@ impl Analyzer {
         })
     }
 
+    fn if_else(&mut self, if_stmt: syntax::If) -> Result<Stmt> {
+        let expr = self.expr(if_stmt.cond)?;
+
+        if expr.ty != types::BOOL {
+            return error!(
+                if_stmt.span,
+                "invalid type for condition of if statement: {} (should be Bool)", expr.ty
+            );
+        }
+
+        self.scopes.enter(ScopeKind::Local);
+        let if_body = self.body(if_stmt.body)?;
+        self.scopes.leave();
+
+        let else_body = match if_stmt.alt {
+            None => vec![],
+            Some(alt) => match alt {
+                Alt::ElseIf(else_if) => {
+                    vec![self.if_else(*else_if)?]
+                }
+                Alt::Else(body) => {
+                    self.scopes.enter(ScopeKind::Local);
+                    let else_body = self.body(body)?;
+                    self.scopes.leave();
+
+                    else_body
+                }
+            },
+        };
+
+        Ok(Stmt::new(
+            if_stmt.span,
+            self.scopes.head().id,
+            StmtKind::If(expr, if_body, else_body),
+        ))
+    }
+
     fn body(&mut self, fn_body: Vec<syntax::Stmt>) -> Result<Vec<Stmt>> {
         let mut body = vec![];
         let body_size = fn_body.len();
@@ -112,29 +149,7 @@ impl Analyzer {
         for (i, stmt) in fn_body.into_iter().enumerate() {
             match stmt.kind {
                 syntax::StmtKind::If(if_stmt) => {
-                    let expr = self.expr(if_stmt.cond)?;
-
-                    if expr.ty != types::BOOL {
-                        return error!(
-                            stmt.span,
-                            "invalid type for condition of if statement: {} (should be Bool)",
-                            expr.ty
-                        );
-                    }
-
-                    self.scopes.enter(ScopeKind::Local);
-                    let if_body = self.body(if_stmt.body)?;
-                    self.scopes.leave();
-
-                    self.scopes.enter(ScopeKind::Local);
-                    let else_body = self.body(if_stmt.alt)?;
-                    self.scopes.leave();
-
-                    body.push(Stmt::new(
-                        stmt.span,
-                        self.scopes.head().id,
-                        StmtKind::If(expr, if_body, else_body),
-                    ));
+                    body.push(self.if_else(if_stmt)?);
                 }
                 syntax::StmtKind::Assign(name, expr) => {
                     let expr = self.expr(expr)?;

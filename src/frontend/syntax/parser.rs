@@ -2,8 +2,8 @@ use std::mem;
 
 use crate::frontend::syntax::lexer::StringToken;
 use crate::frontend::syntax::{
-    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal, LiteralKind, Logical,
-    LogicalOp, Node, NodeKind, Scanner, Stmt, StmtKind, Token, Type,
+    Alt, Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal, LiteralKind,
+    Logical, LogicalOp, Node, NodeKind, Scanner, Stmt, StmtKind, Token, Type,
 };
 
 type Result<T> = std::result::Result<T, Error>;
@@ -360,32 +360,57 @@ impl<'s> Parser<'s> {
         ))
     }
 
-    fn if_stmt(&mut self) -> Result<Stmt> {
-        let span = self.scanner.span();
-        expect!(self.scanner, Token::If);
+    fn if_else(&mut self) -> Result<(Expr, Vec<Stmt>)> {
         let cond = self.expr()?;
         expect!(self.scanner, Token::BracketLeft);
         let body = self.body()?;
         expect!(self.scanner, Token::BracketRight);
 
-        let mut alt = vec![];
+        Ok((cond, body))
+    }
 
-        if accept!(self.scanner, Token::Else) {
+    fn if_stmt(&mut self) -> Result<Stmt> {
+        let span = self.scanner.span();
+        expect!(self.scanner, Token::If);
+        let (cond, body) = self.if_else()?;
+
+        let mut out = If {
+            span,
+            cond,
+            body,
+            alt: None,
+        };
+        let mut current = &mut out;
+
+        while accept!(self.scanner, Token::Else) {
+            let span = self.scanner.span();
             self.scanner.advance();
-            expect!(self.scanner, Token::BracketLeft);
-            alt = self.body()?;
-            expect!(self.scanner, Token::BracketRight);
+
+            if accept!(self.scanner, Token::If) {
+                self.scanner.advance();
+                let (cond, body) = self.if_else()?;
+
+                current.alt = Some(Alt::ElseIf(Box::new(If {
+                    span,
+                    cond,
+                    body,
+                    alt: None,
+                })));
+
+                if let Some(Alt::ElseIf(else_if)) = current.alt.as_mut() {
+                    current = else_if;
+                    continue;
+                }
+            } else {
+                expect!(self.scanner, Token::BracketLeft);
+                current.alt = Some(Alt::Else(self.body()?));
+                expect!(self.scanner, Token::BracketRight);
+            }
+
+            break;
         }
 
-        Ok(Stmt::new(
-            span.clone(),
-            StmtKind::If(If {
-                span,
-                cond,
-                body,
-                alt,
-            }),
-        ))
+        Ok(Stmt::new(out.span.clone(), StmtKind::If(out)))
     }
 
     fn assign(&mut self) -> Result<Stmt> {
