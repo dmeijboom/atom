@@ -48,7 +48,7 @@ impl Stmt {
 
 #[derive(Debug)]
 pub enum StmtKind {
-    If(Expr, Vec<Stmt>),
+    If(Expr, Vec<Stmt>, Vec<Stmt>),
     Assign(String, Expr),
     Let(String, Expr),
     Return(Option<Expr>),

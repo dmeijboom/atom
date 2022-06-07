@@ -114,6 +114,7 @@ pub struct If {
     pub span: Span,
     pub cond: Expr,
     pub body: Vec<Stmt>,
+    pub alt: Vec<Stmt>,
 }
 
 #[derive(Debug, PartialEq)]

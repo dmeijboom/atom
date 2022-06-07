@@ -368,9 +368,23 @@ impl<'s> Parser<'s> {
         let body = self.body()?;
         expect!(self.scanner, Token::BracketRight);
 
+        let mut alt = vec![];
+
+        if accept!(self.scanner, Token::Else) {
+            self.scanner.advance();
+            expect!(self.scanner, Token::BracketLeft);
+            alt = self.body()?;
+            expect!(self.scanner, Token::BracketRight);
+        }
+
         Ok(Stmt::new(
             span.clone(),
-            StmtKind::If(If { span, cond, body }),
+            StmtKind::If(If {
+                span,
+                cond,
+                body,
+                alt,
+            }),
         ))
     }
 

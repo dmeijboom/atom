@@ -5,8 +5,8 @@ pub type ScopeId = usize;
 
 #[derive(Debug)]
 pub enum ScopeKind {
-    If,
     Fn,
+    Local,
     Global,
 }
 

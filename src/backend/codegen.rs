@@ -307,28 +307,33 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 InstrKind::Branch(then, alt) => {
                     let cond = self.stack.pop().unwrap().into_int_value();
-
                     let then_block = self.context.append_basic_block(func, "then");
                     let alt_block = self.context.append_basic_block(func, "alt");
-                    let cont_block = self.context.append_basic_block(func, "cont");
+                    let cont = if then.term.is_some() && alt.term.is_some() {
+                        None
+                    } else {
+                        Some(self.context.append_basic_block(func, "cont"))
+                    };
 
                     builder.build_conditional_branch(cond, then_block, alt_block);
 
                     self.generate_body(func, locals, then_block, then);
 
-                    if then.term.is_none() {
+                    if let Some(cont_block) = cont {
                         builder.position_at_end(then_block);
                         builder.build_unconditional_branch(cont_block);
                     }
 
                     self.generate_body(func, locals, alt_block, alt);
 
-                    if alt.term.is_none() {
+                    if let Some(cont_block) = cont {
                         builder.position_at_end(alt_block);
                         builder.build_unconditional_branch(cont_block);
                     }
 
-                    builder.position_at_end(cont_block);
+                    if let Some(cont_block) = cont {
+                        builder.position_at_end(cont_block);
+                    }
 
                     continue;
                 }

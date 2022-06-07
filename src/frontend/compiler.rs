@@ -192,16 +192,18 @@ impl Compiler {
                         .body
                         .push(Instr::new(stmt.span, InstrKind::Store(idx)));
                 }
-                StmtKind::If(cond, body) => {
-                    let mut then = Block::default();
-
+                StmtKind::If(cond, body, alt) => {
                     self.compile_expr(block, cond)?;
+
+                    let mut then = Block::default();
                     self.compile_body(&mut then, body)?;
 
-                    block.body.push(Instr::new(
-                        stmt.span,
-                        InstrKind::Branch(then, Block::default()),
-                    ));
+                    let mut or_else = Block::default();
+                    self.compile_body(&mut or_else, alt)?;
+
+                    block
+                        .body
+                        .push(Instr::new(stmt.span, InstrKind::Branch(then, or_else)));
                 }
                 StmtKind::Return(expr) => {
                     if let Some(expr) = expr {
@@ -225,9 +227,12 @@ impl Compiler {
         let mut body = Block::default();
         self.compile_body(&mut body, fn_def.body)?;
 
-        if body.term.is_none() {
+        if !body.is_terminated() {
             if fn_def.return_type != types::VOID {
-                return Err(Error::new(span, "fn must return a value".to_string()));
+                return Err(Error::new(
+                    span,
+                    format!("fn '{}(...)' must return a value", fn_def.name),
+                ));
             }
 
             body.term = Some(Terminator::Return);

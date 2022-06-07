@@ -162,6 +162,9 @@ pub enum Token {
     #[token("if")]
     If,
 
+    #[token("else")]
+    Else,
+
     #[token("let")]
     Let,
 

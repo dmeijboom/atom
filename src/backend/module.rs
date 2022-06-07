@@ -83,6 +83,25 @@ pub struct Block {
 }
 
 impl Block {
+    pub fn is_terminated(&self) -> bool {
+        if self.term.is_some() {
+            return true;
+        }
+
+        for stmt in self.iter() {
+            match &stmt.kind {
+                InstrKind::Branch(then, alt) if then.term.is_none() || alt.term.is_none() => {
+                    return false;
+                }
+                _ => continue,
+            }
+        }
+
+        true
+    }
+}
+
+impl Block {
     #[inline]
     pub fn iter(&self) -> Iter<'_, Instr> {
         self.body.iter()
