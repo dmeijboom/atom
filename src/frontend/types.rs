@@ -53,6 +53,16 @@ pub struct Type {
     pub args: Vec<Type>,
 }
 
+impl Type {
+    pub fn is_numeric(&self) -> bool {
+        self.attr.numeric.is_some()
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self.attr.numeric, Some(Numeric::Int { .. }))
+    }
+}
+
 static_types!(
     (Bool BOOL None),
     (String STRING None),
@@ -68,16 +78,6 @@ static_types!(
     (Float64 FLOAT64 Some(Numeric::Float { size: 64 })),
     (Void VOID None)
 );
-
-impl Type {
-    //pub fn new(name: impl Into<TypeName>) -> Self {
-    //    Self {
-    //        name: name.into(),
-    //        args: vec![],
-    //        attr: TypeAttr::default(),
-    //    }
-    //}
-}
 
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {

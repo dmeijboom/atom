@@ -1,5 +1,5 @@
 use crate::frontend::scope::{Scope, ScopeId};
-use crate::frontend::syntax::{BinaryOp, LiteralKind, Span};
+use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
 use crate::frontend::Type;
 
 #[derive(Debug)]
@@ -73,4 +73,5 @@ pub enum ExprKind {
     Ident(String),
     Literal(LiteralKind),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
+    Logical(LogicalOp, Box<Expr>, Box<Expr>),
 }

@@ -1,7 +1,6 @@
 use crate::frontend::scope::{ScopeKind, ScopeList};
 use crate::frontend::syntax::{BinaryOp, InferType, Span};
 use crate::frontend::typed_ast::*;
-use crate::frontend::types::Numeric;
 use crate::frontend::{syntax, types, Error, Node, Type};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -48,50 +47,58 @@ impl Analyzer {
                 let ty = literal.kind.infer_type();
                 Expr::new(expr.span, ty, ExprKind::Literal(literal.kind))
             }
-            syntax::ExprKind::Binary(binary) => {
-                let lhs = self.expr(binary.left)?;
-                let rhs = self.expr(binary.right)?;
+            syntax::ExprKind::Logical(logical) => {
+                let lhs = self.expr(logical.left)?;
+                let rhs = self.expr(logical.right)?;
 
-                if matches!(binary.op, BinaryOp::ShiftLeft | BinaryOp::ShiftRight)
-                    && !matches!(lhs.ty.attr.numeric, Some(Numeric::Int { .. }))
-                {
+                if lhs.ty != types::BOOL || rhs.ty != types::BOOL {
                     return error!(
                         expr.span,
-                        "invalid types for binary shift expression: {} and {} (should be Int)",
+                        "invalid type for logical expression: {} and {} (should be Bool)",
                         lhs.ty,
                         rhs.ty
                     );
                 }
-
-                if lhs.ty != rhs.ty {
-                    return error!(
-                        expr.span,
-                        "invalid type for binary expression: {} and {} (should be the equal)",
-                        lhs.ty,
-                        rhs.ty
-                    );
-                }
-
-                if lhs.ty.attr.numeric.is_none() {
-                    return error!(
-                        expr.span,
-                        "invalid type for binary expression: {} (should be numeric)", lhs.ty
-                    );
-                }
-
-                // @FIXME: is the outcome always equal to the left hand side?
 
                 Expr::new(
                     expr.span,
-                    match binary.op {
-                        BinaryOp::Lte
-                        | BinaryOp::Lt
-                        | BinaryOp::Gte
-                        | BinaryOp::Gt
-                        | BinaryOp::Eq
-                        | BinaryOp::Neq => types::BOOL,
-                        _ => lhs.ty.clone(),
-                    },
+                    types::BOOL,
+                    ExprKind::Logical(logical.op, lhs.into(), rhs.into()),
+                )
+            }
+            syntax::ExprKind::Binary(binary) => {
+                let lhs = self.expr(binary.left)?;
+                let rhs = self.expr(binary.right)?;
+                let (valid, output) = match binary.op {
+                    BinaryOp::ShiftLeft | BinaryOp::ShiftRight => (
+                        lhs.ty == rhs.ty && lhs.ty.is_int() && rhs.ty.is_int(),
+                        Some(types::INT),
+                    ),
+                    BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => (
+                        lhs.ty == rhs.ty && lhs.ty.is_numeric() && rhs.ty.is_numeric(),
+                        None,
+                    ),
+                    BinaryOp::Lte
+                    | BinaryOp::Lt
+                    | BinaryOp::Gte
+                    | BinaryOp::Gt
+                    | BinaryOp::Eq
+                    | BinaryOp::Neq => (
+                        lhs.ty == rhs.ty && lhs.ty.attr.primitive && rhs.ty.attr.primitive,
+                        Some(types::BOOL),
+                    ),
+                };
+
+                if !valid {
+                    return error!(
+                        expr.span,
+                        "invalid types for binary expression: {} and {}", lhs.ty, rhs.ty,
+                    );
+                }
+
+                Expr::new(
+                    expr.span,
+                    output.unwrap_or_else(|| lhs.ty.clone()),
                     ExprKind::Binary(binary.op, lhs.into(), rhs.into()),
                 )
             }

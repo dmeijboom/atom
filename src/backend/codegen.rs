@@ -297,6 +297,14 @@ impl<'ctx> CodeGen<'ctx> {
 
                     continue;
                 }
+                InstrKind::And => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    builder.build_and(lhs, rhs, "and").as_basic_value_enum()
+                }
+                InstrKind::Or => {
+                    let (lhs, rhs) = pop_binary!(self.stack, int);
+                    builder.build_or(lhs, rhs, "or").as_basic_value_enum()
+                }
                 InstrKind::Branch(then, alt) => {
                     let cond = self.stack.pop().unwrap().into_int_value();
 
@@ -356,7 +364,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.generate_body(llvm_func, &locals, block, &func.body);
     }
 
-    pub fn generate(mut self, module: &module::Module) -> Result<MemoryBuffer> {
+    pub fn generate(mut self, module: &module::Module, optimize: bool) -> Result<MemoryBuffer> {
         for func in module.funcs.iter() {
             self.generate_fn(func);
         }
@@ -382,9 +390,13 @@ impl<'ctx> CodeGen<'ctx> {
                 &triple,
                 &TargetMachine::get_host_cpu_name().to_string(),
                 &TargetMachine::get_host_cpu_features().to_string(),
-                OptimizationLevel::Aggressive,
-                RelocMode::Default,
-                CodeModel::Default,
+                if optimize {
+                    OptimizationLevel::Aggressive
+                } else {
+                    OptimizationLevel::None
+                },
+                RelocMode::Static,
+                CodeModel::Small,
             )
             .unwrap();
 

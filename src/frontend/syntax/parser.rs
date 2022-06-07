@@ -2,8 +2,8 @@ use std::mem;
 
 use crate::frontend::syntax::lexer::StringToken;
 use crate::frontend::syntax::{
-    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal, LiteralKind, Node,
-    NodeKind, Scanner, Stmt, StmtKind, Token, Type,
+    Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal, LiteralKind, Logical,
+    LogicalOp, Node, NodeKind, Scanner, Stmt, StmtKind, Token, Type,
 };
 
 type Result<T> = std::result::Result<T, Error>;
@@ -65,7 +65,24 @@ macro_rules! make_lit {
     };
 }
 
-macro_rules! make_bin {
+macro_rules! make_logical {
+    ($expr:expr, $right:expr, $op:ident) => {
+        $expr = Expr::new(
+            $expr.span.clone(),
+            ExprKind::Logical(
+                Logical {
+                    span: $expr.span.clone(),
+                    op: LogicalOp::$op,
+                    left: $expr,
+                    right: $right,
+                }
+                .into(),
+            ),
+        )
+    };
+}
+
+macro_rules! make_binary {
     ($expr:expr, $right:expr, $op:ident) => {
         $expr = Expr::new(
             $expr.span.clone(),
@@ -148,8 +165,30 @@ impl<'s> Parser<'s> {
         }
     }
 
+    fn logical(&mut self) -> Result<Expr> {
+        let mut expr = self.equality()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Or) => {
+                    self.scanner.advance();
+                    make_logical!(expr, self.equality()?, Or);
+                }
+                Some(Token::And) => {
+                    self.scanner.advance();
+                    make_logical!(expr, self.equality()?, And);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
     fn equality(&mut self) -> Result<Expr> {
-        let mut expr = self.term()?;
+        let mut expr = self.relational()?;
 
         loop {
             let token = self.scanner.peek();
@@ -157,11 +196,11 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::Eq) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, Eq);
+                    make_binary!(expr, self.relational()?, Eq);
                 }
                 Some(Token::Neq) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.term()?, Neq);
+                    make_binary!(expr, self.relational()?, Neq);
                 }
                 _ => break,
             }
@@ -171,7 +210,7 @@ impl<'s> Parser<'s> {
     }
 
     fn relational(&mut self) -> Result<Expr> {
-        let mut expr = self.equality()?;
+        let mut expr = self.bitwise_shift()?;
 
         loop {
             let token = self.scanner.peek();
@@ -179,19 +218,19 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::Lte) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.equality()?, Lte);
+                    make_binary!(expr, self.bitwise_shift()?, Lte);
                 }
                 Some(Token::Lt) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.equality()?, Lt);
+                    make_binary!(expr, self.bitwise_shift()?, Lt);
                 }
                 Some(Token::Gte) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.equality()?, Gte);
+                    make_binary!(expr, self.bitwise_shift()?, Gte);
                 }
                 Some(Token::Gt) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.equality()?, Gt);
+                    make_binary!(expr, self.bitwise_shift()?, Gt);
                 }
                 _ => break,
             }
@@ -201,7 +240,7 @@ impl<'s> Parser<'s> {
     }
 
     fn bitwise_shift(&mut self) -> Result<Expr> {
-        let mut expr = self.relational()?;
+        let mut expr = self.additive()?;
 
         loop {
             let token = self.scanner.peek();
@@ -209,11 +248,11 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::ShiftLeft) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.relational()?, ShiftLeft);
+                    make_binary!(expr, self.additive()?, ShiftLeft);
                 }
                 Some(Token::ShiftRight) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.relational()?, ShiftRight);
+                    make_binary!(expr, self.additive()?, ShiftRight);
                 }
                 _ => break,
             }
@@ -223,7 +262,7 @@ impl<'s> Parser<'s> {
     }
 
     fn multiplicative(&mut self) -> Result<Expr> {
-        let mut expr = self.bitwise_shift()?;
+        let mut expr = self.term()?;
 
         loop {
             let token = self.scanner.peek();
@@ -231,11 +270,11 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::Mul) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.bitwise_shift()?, Mul);
+                    make_binary!(expr, self.term()?, Mul);
                 }
                 Some(Token::Div) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.bitwise_shift()?, Div);
+                    make_binary!(expr, self.term()?, Div);
                 }
                 _ => break,
             }
@@ -253,11 +292,11 @@ impl<'s> Parser<'s> {
             match token {
                 Some(Token::Add) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.multiplicative()?, Add);
+                    make_binary!(expr, self.multiplicative()?, Add);
                 }
                 Some(Token::Sub) => {
                     self.scanner.advance();
-                    make_bin!(expr, self.multiplicative()?, Sub);
+                    make_binary!(expr, self.multiplicative()?, Sub);
                 }
                 _ => break,
             }
@@ -268,7 +307,7 @@ impl<'s> Parser<'s> {
 
     #[inline]
     fn expr(&mut self) -> Result<Expr> {
-        self.additive()
+        self.logical()
     }
 
     fn return_stmt(&mut self) -> Result<Stmt> {

@@ -1,6 +1,6 @@
 use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
 use crate::frontend::scope::{find_local, Scope};
-use crate::frontend::syntax::{BinaryOp, LiteralKind, Span};
+use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
 use crate::frontend::types::{self, Numeric, Type};
 use crate::frontend::Error;
@@ -127,7 +127,12 @@ impl Compiler {
                         BinaryOp::Gt => InstrKind::FloatGt,
                         BinaryOp::Eq => InstrKind::FloatEq,
                         BinaryOp::Neq => InstrKind::FloatNeq,
-                        _ => unimplemented!(),
+                        _ => unreachable!(),
+                    },
+                    _ if lhs.ty == types::BOOL => match op {
+                        BinaryOp::Eq => InstrKind::IntEq,
+                        BinaryOp::Neq => InstrKind::IntNeq,
+                        _ => unreachable!(),
                     },
                     _ => unreachable!(),
                 };
@@ -136,6 +141,18 @@ impl Compiler {
                 self.compile_expr(block, *rhs)?;
 
                 block.body.push(Instr::new(expr.span, kind));
+            }
+            ExprKind::Logical(op, lhs, rhs) => {
+                self.compile_expr(block, *lhs)?;
+                self.compile_expr(block, *rhs)?;
+
+                block.body.push(Instr::new(
+                    expr.span,
+                    match op {
+                        LogicalOp::And => InstrKind::And,
+                        LogicalOp::Or => InstrKind::Or,
+                    },
+                ));
             }
         }
 

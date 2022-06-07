@@ -163,10 +163,25 @@ pub struct Binary {
 }
 
 #[derive(Debug, PartialEq)]
+pub enum LogicalOp {
+    And,
+    Or,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Logical {
+    pub span: Span,
+    pub op: LogicalOp,
+    pub left: Expr,
+    pub right: Expr,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ExprKind {
     Ident(String),
     Literal(Literal),
     Binary(Box<Binary>),
+    Logical(Box<Logical>),
 }
 
 #[derive(Debug, PartialEq)]

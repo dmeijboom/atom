@@ -37,6 +37,8 @@ impl Instr {
 
 #[derive(Debug)]
 pub enum InstrKind {
+    And,
+    Or,
     IntAdd,
     IntSub,
     IntMul,

@@ -65,7 +65,7 @@ fn main() -> Result<()> {
             let ctx = context::Context::create();
             let codegen = CodeGen::new(&ctx, &module.name);
             let buffer = codegen
-                .generate(&module)
+                .generate(&module, true)
                 .context("code generation failed")?;
 
             if opts.check {
