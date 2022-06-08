@@ -56,7 +56,7 @@ impl<'ctx> CodeGen<'ctx> {
             Type::Int64 => self.context.i64_type().as_any_type_enum(),
             Type::Int1 => self.context.custom_width_int_type(1).as_any_type_enum(),
             Type::Void => self.context.void_type().as_any_type_enum(),
-            _ => unimplemented!(),
+            //_ => unimplemented!(),
         }
     }
 

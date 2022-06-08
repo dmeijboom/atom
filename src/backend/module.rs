@@ -3,18 +3,18 @@ use std::slice::Iter;
 
 #[derive(Debug)]
 pub enum Type {
-    Array,
+    //Array,
     Float32,
     Float64,
-    Fn,
+    //Fn,
     Int1,
     Int8,
     Int16,
     Int32,
     Int64,
-    Ptr,
-    Struct,
-    Vec,
+    //Ptr,
+    //Struct,
+    //Vec,
     Void,
 }
 
