@@ -1,12 +1,15 @@
 use anyhow::{anyhow, Result};
 use inkwell::basic_block::BasicBlock;
+use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::memory_buffer::MemoryBuffer;
 use inkwell::module::Module;
 use inkwell::targets::{
     CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine,
 };
-use inkwell::types::{AnyType, AnyTypeEnum, BasicType, BasicTypeEnum, FunctionType};
+use inkwell::types::{
+    AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
+};
 use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue};
 use inkwell::{FloatPredicate, IntPredicate, OptimizationLevel};
 
@@ -29,6 +32,12 @@ macro_rules! pop_binary {
 
         (lhs, rhs)
     }};
+}
+
+macro_rules! label {
+    ($instr:expr, $name:ident) => {
+        &format!("{}{}", stringify!($name), $instr.id)
+    };
 }
 
 pub struct CodeGen<'ctx> {
@@ -72,10 +81,21 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn make_basic_metadata_type(&self, ty: &Type) -> BasicMetadataTypeEnum<'ctx> {
+        match self.make_basic_type(ty) {
+            BasicTypeEnum::ArrayType(ty) => BasicMetadataTypeEnum::ArrayType(ty),
+            BasicTypeEnum::FloatType(ty) => BasicMetadataTypeEnum::FloatType(ty),
+            BasicTypeEnum::IntType(ty) => BasicMetadataTypeEnum::IntType(ty),
+            BasicTypeEnum::PointerType(ty) => BasicMetadataTypeEnum::PointerType(ty),
+            BasicTypeEnum::StructType(ty) => BasicMetadataTypeEnum::StructType(ty),
+            BasicTypeEnum::VectorType(ty) => BasicMetadataTypeEnum::VectorType(ty),
+        }
+    }
+
     fn fn_type(&self, ty: &Type, params: &[&Type]) -> FunctionType<'ctx> {
         let params = params
             .iter()
-            .map(|ty| self.make_basic_type(ty))
+            .map(|ty| self.make_basic_metadata_type(ty))
             .collect::<Vec<_>>();
 
         match self.make_type(ty) {
@@ -90,17 +110,17 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_body(
+    fn generate_block(
         &mut self,
-        func: FunctionValue<'ctx>,
+        llvm_func: FunctionValue<'ctx>,
         locals: &[PointerValue<'ctx>],
-        mut block: BasicBlock<'ctx>,
-        body: &Block,
-    ) {
+        llvm_block: BasicBlock<'ctx>,
+        block: &Block,
+    ) -> Builder<'ctx> {
         let builder = self.context.create_builder();
-        builder.position_at_end(block);
+        builder.position_at_end(llvm_block);
 
-        for instr in body.iter() {
+        for instr in block.iter() {
             let value = match &instr.kind {
                 InstrKind::ConstInt(val) => self
                     .context
@@ -125,172 +145,187 @@ impl<'ctx> CodeGen<'ctx> {
                 InstrKind::IntAdd => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_add(lhs, rhs, "int_add")
+                        .build_int_add(lhs, rhs, label!(instr, int_add))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSub => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_sub(lhs, rhs, "int_sub")
+                        .build_int_sub(lhs, rhs, label!(instr, int_sub))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntMul => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_mul(lhs, rhs, "int_mul")
+                        .build_int_mul(lhs, rhs, label!(instr, int_mul))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSDiv => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_signed_div(lhs, rhs, "int_sdiv")
+                        .build_int_signed_div(lhs, rhs, label!(instr, int_sdiv))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntUDiv => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_unsigned_div(lhs, rhs, "int_udiv")
+                        .build_int_unsigned_div(lhs, rhs, label!(instr, int_udiv))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntShl => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_left_shift(lhs, rhs, "int_shl")
+                        .build_left_shift(lhs, rhs, label!(instr, int_shl))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSShr => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_right_shift(lhs, rhs, true, "int_sshr")
+                        .build_right_shift(lhs, rhs, true, label!(instr, int_sshr))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntUShr => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_right_shift(lhs, rhs, false, "int_ushr")
+                        .build_right_shift(lhs, rhs, false, label!(instr, int_ushr))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSGte => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::SGE, lhs, rhs, "int_sgte")
+                        .build_int_compare(IntPredicate::SGE, lhs, rhs, label!(instr, int_sgte))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSGt => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::SGT, lhs, rhs, "int_sgt")
+                        .build_int_compare(IntPredicate::SGT, lhs, rhs, label!(instr, int_sgt))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntUGte => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::UGE, lhs, rhs, "int_ugte")
+                        .build_int_compare(IntPredicate::UGE, lhs, rhs, label!(instr, int_ugte))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntUGt => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::UGT, lhs, rhs, "int_ugt")
+                        .build_int_compare(IntPredicate::UGT, lhs, rhs, label!(instr, int_ugt))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSLte => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::SLE, lhs, rhs, "int_slte")
+                        .build_int_compare(IntPredicate::SLE, lhs, rhs, label!(instr, int_slte))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntSLt => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::SLT, lhs, rhs, "int_slt")
+                        .build_int_compare(IntPredicate::SLT, lhs, rhs, label!(instr, int_slt))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntULte => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::ULE, lhs, rhs, "int_ulte")
+                        .build_int_compare(IntPredicate::ULE, lhs, rhs, label!(instr, int_ulte))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntULt => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::ULT, lhs, rhs, "int_ult")
+                        .build_int_compare(IntPredicate::ULT, lhs, rhs, label!(instr, int_ult))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntEq => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::EQ, lhs, rhs, "int_eq")
+                        .build_int_compare(IntPredicate::EQ, lhs, rhs, label!(instr, int_eq))
                         .as_basic_value_enum()
                 }
                 InstrKind::IntNeq => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
                     builder
-                        .build_int_compare(IntPredicate::NE, lhs, rhs, "int_neq")
+                        .build_int_compare(IntPredicate::NE, lhs, rhs, label!(instr, int_neq))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatAdd => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_add(lhs, rhs, "float_add")
+                        .build_float_add(lhs, rhs, label!(instr, float_add))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatSub => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_sub(lhs, rhs, "float_sub")
+                        .build_float_sub(lhs, rhs, label!(instr, float_sub))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatMul => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_mul(lhs, rhs, "float_mul")
+                        .build_float_mul(lhs, rhs, label!(instr, float_mul))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatDiv => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_div(lhs, rhs, "float_div")
+                        .build_float_div(lhs, rhs, label!(instr, float_div))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatLte => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_compare(FloatPredicate::OLE, lhs, rhs, "float_lte")
+                        .build_float_compare(
+                            FloatPredicate::OLE,
+                            lhs,
+                            rhs,
+                            label!(instr, float_lte),
+                        )
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatLt => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_compare(FloatPredicate::OLE, lhs, rhs, "float_lt")
+                        .build_float_compare(FloatPredicate::OLE, lhs, rhs, label!(instr, float_lt))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatGte => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_compare(FloatPredicate::OGE, lhs, rhs, "float_gte")
+                        .build_float_compare(
+                            FloatPredicate::OGE,
+                            lhs,
+                            rhs,
+                            label!(instr, float_gte),
+                        )
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatGt => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_compare(FloatPredicate::OGT, lhs, rhs, "float_gt")
+                        .build_float_compare(FloatPredicate::OGT, lhs, rhs, label!(instr, float_gt))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatEq => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_compare(FloatPredicate::OEQ, lhs, rhs, "float_eq")
+                        .build_float_compare(FloatPredicate::OEQ, lhs, rhs, label!(instr, float_eq))
                         .as_basic_value_enum()
                 }
                 InstrKind::FloatNeq => {
                     let (lhs, rhs) = pop_binary!(self.stack, float);
                     builder
-                        .build_float_compare(FloatPredicate::ONE, lhs, rhs, "float_neq")
+                        .build_float_compare(
+                            FloatPredicate::ONE,
+                            lhs,
+                            rhs,
+                            label!(instr, float_neq),
+                        )
                         .as_basic_value_enum()
                 }
-                InstrKind::Load(idx) => builder.build_load(locals[*idx], &format!("load{}", idx)),
+                InstrKind::Load(idx) => builder.build_load(locals[*idx], label!(instr, load)),
                 InstrKind::Store(idx) => {
                     let value = self.stack.pop().unwrap();
                     builder.build_store(locals[*idx], value);
@@ -299,47 +334,43 @@ impl<'ctx> CodeGen<'ctx> {
                 }
                 InstrKind::And => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
-                    builder.build_and(lhs, rhs, "and").as_basic_value_enum()
+                    builder
+                        .build_and(lhs, rhs, label!(instr, and))
+                        .as_basic_value_enum()
                 }
                 InstrKind::Or => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
-                    builder.build_or(lhs, rhs, "or").as_basic_value_enum()
+                    builder
+                        .build_or(lhs, rhs, label!(instr, or))
+                        .as_basic_value_enum()
                 }
                 InstrKind::Branch(then, alt) => {
                     let cond = self.stack.pop().unwrap().into_int_value();
-                    let then_block = self.context.append_basic_block(func, "then");
-                    let alt_block = self.context.append_basic_block(func, "alt");
-                    let cont = if then.is_terminated() && alt.is_terminated() {
-                        None
-                    } else {
-                        Some(self.context.append_basic_block(func, "cont"))
-                    };
+                    let then_block = self
+                        .context
+                        .append_basic_block(llvm_func, label!(instr, then));
+                    let alt_block = self
+                        .context
+                        .append_basic_block(llvm_func, label!(instr, alt));
+                    let cont_block = self
+                        .context
+                        .append_basic_block(llvm_func, label!(instr, cont));
 
                     builder.build_conditional_branch(cond, then_block, alt_block);
 
-                    self.generate_body(func, locals, then_block, then);
+                    let then_builder = self.generate_block(llvm_func, locals, then_block, then);
 
-                    if then.term.is_none() {
-                        if let Some(cont_block) = cont {
-                            builder.position_at_end(then_block);
-                            builder.build_unconditional_branch(cont_block);
-                        }
+                    if !then.is_terminated() {
+                        then_builder.build_unconditional_branch(cont_block);
                     }
 
-                    self.generate_body(func, locals, alt_block, alt);
+                    let alt_builder = self.generate_block(llvm_func, locals, alt_block, alt);
 
-                    if alt.term.is_none() {
-                        if let Some(cont_block) = cont {
-                            builder.position_at_end(alt_block);
-                            builder.build_unconditional_branch(cont_block);
-                        }
+                    if !alt.is_terminated() {
+                        alt_builder.build_unconditional_branch(cont_block);
                     }
 
-                    if let Some(cont_block) = cont {
-                        block = cont_block;
-                    }
-
-                    builder.position_at_end(block);
+                    builder.position_at_end(cont_block);
 
                     continue;
                 }
@@ -348,14 +379,15 @@ impl<'ctx> CodeGen<'ctx> {
             self.stack.push(value);
         }
 
-        if let Some(Terminator::Return) = body.term {
-            if func.get_type().get_return_type().is_none() {
+        if let Some(Terminator::Return) = block.term {
+            if llvm_func.get_type().get_return_type().is_none() {
                 builder.build_return(None);
-                return;
+            } else {
+                builder.build_return(self.stack.pop().as_ref().map(|v| v as &dyn BasicValue));
             }
-
-            builder.build_return(self.stack.pop().as_ref().map(|v| v as &dyn BasicValue));
         };
+
+        builder
     }
 
     fn generate_fn(&mut self, func: &Fn) {
@@ -372,7 +404,7 @@ impl<'ctx> CodeGen<'ctx> {
             locals.push(builder.build_alloca(self.make_basic_type(ty), &format!("local{}", idx)));
         }
 
-        self.generate_body(llvm_func, &locals, block, &func.body);
+        self.generate_block(llvm_func, &locals, block, &func.body);
     }
 
     pub fn generate(mut self, module: &module::Module, optimize: bool) -> Result<MemoryBuffer> {

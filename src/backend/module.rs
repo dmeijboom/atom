@@ -23,15 +23,18 @@ pub enum Terminator {
     Return,
 }
 
+pub type InstrId = usize;
+
 #[derive(Debug)]
 pub struct Instr {
+    pub id: InstrId,
     pub span: Span,
     pub kind: InstrKind,
 }
 
 impl Instr {
-    pub fn new(span: Span, kind: InstrKind) -> Self {
-        Self { span, kind }
+    pub fn new(id: InstrId, span: Span, kind: InstrKind) -> Self {
+        Self { id, span, kind }
     }
 }
 
@@ -149,6 +152,7 @@ mod tests {
     fn block_not_terminated_when_one_side_of_branch_is_not_terminated() {
         let block = Block {
             body: vec![Instr::new(
+                1,
                 Span::default(),
                 InstrKind::Branch(
                     Block {
@@ -168,6 +172,7 @@ mod tests {
     fn block_terminated_when_both_sides_of_branch_are_terminated() {
         let block = Block {
             body: vec![Instr::new(
+                1,
                 Span::default(),
                 InstrKind::Branch(
                     Block {
@@ -190,6 +195,7 @@ mod tests {
     fn block_terminated_when_both_sides_of_branch_are_recursively_terminated() {
         let block = Block {
             body: vec![Instr::new(
+                1,
                 Span::default(),
                 InstrKind::Branch(
                     Block {
@@ -198,6 +204,7 @@ mod tests {
                     },
                     Block {
                         body: vec![Instr::new(
+                            1,
                             Span::default(),
                             InstrKind::Branch(
                                 Block {

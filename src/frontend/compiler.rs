@@ -1,4 +1,4 @@
-use crate::backend::{Block, Fn, Instr, InstrKind, Module, Terminator, Type as LlvmType};
+use crate::backend::{Block, Fn, Instr, InstrId, InstrKind, Module, Terminator, Type as LlvmType};
 use crate::frontend::scope::{find_local, Scope};
 use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
@@ -53,6 +53,7 @@ impl<T> AsRef<[T]> for Cursor<T> {
 }
 
 pub struct Compiler {
+    id: InstrId,
     module: Module,
     scopes: Cursor<Scope>,
 }
@@ -60,16 +61,25 @@ pub struct Compiler {
 impl Compiler {
     pub fn new() -> Self {
         Self {
+            id: 0,
             module: Module::default(),
             scopes: Cursor::default(),
         }
+    }
+
+    fn new_id(&mut self) -> InstrId {
+        let id = self.id;
+        self.id += 1;
+        id
     }
 
     fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<()> {
         match expr.kind {
             ExprKind::Ident(name) => {
                 let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
-                block.body.push(Instr::new(expr.span, InstrKind::Load(idx)));
+                block
+                    .body
+                    .push(Instr::new(self.new_id(), expr.span, InstrKind::Load(idx)));
             }
             ExprKind::Literal(literal) => match literal {
                 LiteralKind::Int(val) => {
@@ -77,6 +87,7 @@ impl Compiler {
                         matches!(expr.ty.attr.numeric, Some(Numeric::Int { signed, .. }) if signed);
 
                     block.body.push(Instr::new(
+                        self.new_id(),
                         expr.span,
                         if signed {
                             InstrKind::ConstInt(val)
@@ -85,12 +96,16 @@ impl Compiler {
                         },
                     ));
                 }
-                LiteralKind::Bool(val) => block
-                    .body
-                    .push(Instr::new(expr.span, InstrKind::ConstBool(val))),
-                LiteralKind::Float(val) => block
-                    .body
-                    .push(Instr::new(expr.span, InstrKind::ConstFloat(val))),
+                LiteralKind::Bool(val) => block.body.push(Instr::new(
+                    self.new_id(),
+                    expr.span,
+                    InstrKind::ConstBool(val),
+                )),
+                LiteralKind::Float(val) => block.body.push(Instr::new(
+                    self.new_id(),
+                    expr.span,
+                    InstrKind::ConstFloat(val),
+                )),
                 LiteralKind::String(_) => unimplemented!(),
             },
             ExprKind::Binary(op, lhs, rhs) => {
@@ -140,13 +155,14 @@ impl Compiler {
                 self.compile_expr(block, *lhs)?;
                 self.compile_expr(block, *rhs)?;
 
-                block.body.push(Instr::new(expr.span, kind));
+                block.body.push(Instr::new(self.new_id(), expr.span, kind));
             }
             ExprKind::Logical(op, lhs, rhs) => {
                 self.compile_expr(block, *lhs)?;
                 self.compile_expr(block, *rhs)?;
 
                 block.body.push(Instr::new(
+                    self.new_id(),
                     expr.span,
                     match op {
                         LogicalOp::And => InstrKind::And,
@@ -195,7 +211,7 @@ impl Compiler {
 
                     block
                         .body
-                        .push(Instr::new(stmt.span, InstrKind::Store(idx)));
+                        .push(Instr::new(self.new_id(), stmt.span, InstrKind::Store(idx)));
                 }
                 StmtKind::If(cond, body, alt) => {
                     self.compile_expr(block, cond)?;
@@ -206,9 +222,11 @@ impl Compiler {
                     let mut or_else = Block::default();
                     self.compile_body(&mut or_else, alt)?;
 
-                    block
-                        .body
-                        .push(Instr::new(stmt.span, InstrKind::Branch(then, or_else)));
+                    block.body.push(Instr::new(
+                        self.new_id(),
+                        stmt.span,
+                        InstrKind::Branch(then, or_else),
+                    ));
                 }
                 StmtKind::Return(expr) => {
                     if let Some(expr) = expr {
