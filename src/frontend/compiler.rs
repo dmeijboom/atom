@@ -40,6 +40,15 @@ impl<T> Cursor<T> {
         self.index = index;
     }
 
+    pub fn next_sibling(&mut self) -> bool {
+        if self.index >= self.data.len() - 1 {
+            return false;
+        }
+
+        self.index += 1;
+        true
+    }
+
     #[inline]
     pub fn head(&self) -> &T {
         &self.data[self.index]
@@ -270,12 +279,9 @@ impl Compiler {
                 locals.push(self.to_concrete_type(&span, &local.ty)?);
             }
 
-            if let Some(idx) = self.scopes.head().parent {
-                self.scopes.move_to(idx);
-                continue;
+            if !self.scopes.next_sibling() {
+                break;
             }
-
-            break;
         }
 
         let return_type = self.to_concrete_type(&span, &fn_def.return_type)?;
