@@ -1,4 +1,4 @@
-use crate::frontend::scope::{ScopeKind, ScopeList};
+use crate::frontend::scope::{Local, ScopeKind, ScopeList};
 use crate::frontend::syntax::{Alt, BinaryOp, InferType, Span};
 use crate::frontend::typed_ast::*;
 use crate::frontend::{syntax, types, Error, Node, Type};
@@ -37,11 +37,23 @@ impl Analyzer {
     fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
         Ok(match expr.kind {
             syntax::ExprKind::Ident(name) => {
-                let (local, _) = self.scopes.local(&name).ok_or_else(|| {
+                let (local, _, initialised) = self.scopes.local(&name).ok_or_else(|| {
                     Error::new(expr.span.clone(), format!("no such name: {}", name))
                 })?;
 
-                Expr::new(expr.span, local.ty.clone(), ExprKind::Ident(name))
+                if !initialised {
+                    return error!(
+                        expr.span.clone(),
+                        "name '{}' is not guaranteed to be initialised", name
+                    );
+                }
+
+                // This should be safe as it's guaranteed to be initialised and thus always has a type
+                Expr::new(
+                    expr.span,
+                    local.ty.as_ref().unwrap().clone(),
+                    ExprKind::Ident(name),
+                )
             }
             syntax::ExprKind::Literal(literal) => {
                 let ty = literal.kind.infer_type();
@@ -153,32 +165,35 @@ impl Analyzer {
                 }
                 syntax::StmtKind::Assign(name, expr) => {
                     let expr = self.expr(expr)?;
-                    let (local, _) = self.scopes.local(&name).ok_or_else(|| {
-                        Error::new(expr.span.clone(), format!("no such name: {}", name))
-                    })?;
+                    let scope_id = self.scopes.head().id;
+                    let (local, _, initialised) =
+                        self.scopes.local_mut(&name).ok_or_else(|| {
+                            Error::new(expr.span.clone(), format!("no such name: {}", name))
+                        })?;
 
-                    if !local.mutable {
+                    if !local.mutable && initialised {
                         return error!(
                             stmt.span,
-                            "unable to assign twice to mutable name: {}", name
+                            "unable to assign more than once to immutable name: {}", name
                         );
                     }
 
-                    if local.ty != expr.ty {
-                        return error!(
-                            stmt.span,
-                            "invalid type '{}' for name '{}' (expected: {})",
-                            local.ty,
-                            name,
-                            expr.ty
-                        );
+                    if let Some(ty) = &local.ty {
+                        if ty != &expr.ty {
+                            return error!(
+                                stmt.span,
+                                "invalid type '{}' for name '{}' (expected: {})", ty, name, expr.ty
+                            );
+                        }
+                    } else {
+                        local.ty = Some(expr.ty.clone());
                     }
 
-                    body.push(Stmt::new(
-                        stmt.span,
-                        self.scopes.head().id,
-                        StmtKind::Assign(name, expr),
-                    ))
+                    if !initialised {
+                        local.initialised_at.push(scope_id);
+                    }
+
+                    body.push(Stmt::new(stmt.span, scope_id, StmtKind::Assign(name, expr)))
                 }
                 syntax::StmtKind::Return(expr) => {
                     let (expr, ty) = if let Some(expr) = expr {
@@ -210,21 +225,38 @@ impl Analyzer {
                     break;
                 }
                 syntax::StmtKind::Let(let_stmt) => {
-                    let expr = self.expr(let_stmt.value)?;
+                    let expr = if let Some(value) = let_stmt.value {
+                        let expr = self.expr(value)?;
 
-                    if let Some(ty) = let_stmt.ty {
-                        let ty = self.get_type(&stmt.span, &ty)?;
+                        if let Some(ty) = let_stmt.ty {
+                            let ty = self.get_type(&stmt.span, &ty)?;
 
-                        if expr.ty != ty {
-                            return error!(
-                                stmt.span,
-                                "invalid type '{}' for let statement (expected: {})", expr.ty, ty
-                            );
+                            if expr.ty != ty {
+                                return error!(
+                                    stmt.span,
+                                    "invalid type '{}' for let statement (expected: {})",
+                                    expr.ty,
+                                    ty
+                                );
+                            }
                         }
-                    }
+
+                        Some(expr)
+                    } else {
+                        None
+                    };
 
                     let scope = self.scopes.head_mut();
-                    scope.declare(let_stmt.name.clone(), expr.ty.clone(), let_stmt.mutable)?;
+                    scope.declare(Local {
+                        ty: expr.as_ref().map(|e| e.ty.clone()),
+                        name: let_stmt.name.clone(),
+                        mutable: let_stmt.mutable,
+                        initialised_at: if expr.is_some() {
+                            vec![scope.id]
+                        } else {
+                            vec![]
+                        },
+                    })?;
 
                     body.push(Stmt::new(
                         stmt.span,

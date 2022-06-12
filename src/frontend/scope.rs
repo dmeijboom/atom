@@ -12,9 +12,10 @@ pub enum ScopeKind {
 
 #[derive(Debug)]
 pub struct Local {
-    pub ty: Type,
+    pub ty: Option<Type>,
     pub name: String,
     pub mutable: bool,
+    pub initialised_at: Vec<ScopeId>,
 }
 
 #[derive(Debug)]
@@ -31,25 +32,17 @@ impl Scope {
         &self.locals
     }
 
-    fn local(&self, name: &str) -> Option<(&Local, usize)> {
-        if let Some(idx) = self.locals.iter().position(|local| local.name == name) {
-            return Some((&self.locals[idx], idx));
-        }
-
-        None
-    }
-
-    pub fn declare(&mut self, name: String, ty: Type, mutable: bool) -> Result<usize, Error> {
-        if self.locals.iter().any(|local| local.name == name) {
+    pub fn declare(&mut self, local_def: Local) -> Result<usize, Error> {
+        if self.locals.iter().any(|local| local.name == local_def.name) {
             return Err(Error::new(
                 Span::default(),
-                format!("unable to redefine '{}'", name),
+                format!("unable to redefine '{}'", local_def.name),
             ));
         }
 
         let idx = self.locals.len();
 
-        self.locals.push(Local { name, mutable, ty });
+        self.locals.push(local_def);
 
         Ok(idx)
     }
@@ -77,9 +70,42 @@ impl ScopeList {
         self.scopes
     }
 
-    #[inline]
-    pub fn local(&self, name: &str) -> Option<(&Local, usize)> {
-        find_local(&self.scopes, self.index, name)
+    fn is_initialised(&self, local: &Local) -> bool {
+        'find_init: for scope_id in local.initialised_at.iter() {
+            let mut current = self.index;
+
+            loop {
+                if current == *scope_id {
+                    return true;
+                }
+
+                if let Some(idx) = self.scopes[current].parent {
+                    current = idx;
+                    continue;
+                }
+
+                continue 'find_init;
+            }
+        }
+
+        false
+    }
+
+    pub fn local(&self, name: &str) -> Option<(&Local, usize, bool)> {
+        find_local(&self.scopes, self.index, name).map(|(scope, idx)| {
+            let local = &self.scopes[scope].locals[idx];
+
+            (local, idx, self.is_initialised(local))
+        })
+    }
+
+    pub fn local_mut(&mut self, name: &str) -> Option<(&mut Local, usize, bool)> {
+        find_local(&self.scopes, self.index, name).map(|(scope, idx)| {
+            let local = &self.scopes[scope].locals[idx];
+            let initialised = self.is_initialised(local);
+
+            (&mut self.scopes[scope].locals[idx], idx, initialised)
+        })
     }
 
     #[inline]
@@ -93,7 +119,7 @@ impl ScopeList {
     }
 
     pub fn enter(&mut self, kind: ScopeKind) -> ScopeId {
-        let id = self.head().id + 1;
+        let id = self.scopes.len();
 
         self.scopes.push(Scope {
             id,
@@ -102,7 +128,7 @@ impl ScopeList {
             locals: vec![],
         });
 
-        self.index += 1;
+        self.index = id;
 
         id
     }
@@ -110,22 +136,23 @@ impl ScopeList {
     pub fn leave(&mut self) -> ScopeId {
         assert_ne!(self.index, 0);
 
-        let id = self.head().id;
+        let head = self.head();
+        let id = head.id;
 
-        self.index -= 1;
+        self.index = head.parent.unwrap();
 
         id
     }
 }
 
-pub fn find_local<'s>(scopes: &'s [Scope], index: usize, name: &str) -> Option<(&'s Local, usize)> {
+pub fn find_local(scopes: &[Scope], index: usize, name: &str) -> Option<(ScopeId, usize)> {
     let mut idx = index;
 
     loop {
         let scope = &scopes[idx];
 
-        if let Some(local) = scope.local(name) {
-            return Some(local);
+        if let Some(idx) = scope.locals.iter().position(|local| local.name == name) {
+            return Some((scope.id, idx));
         }
 
         if let Some(parent) = scope.parent {

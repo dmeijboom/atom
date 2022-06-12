@@ -50,7 +50,7 @@ impl Stmt {
 pub enum StmtKind {
     If(Expr, Vec<Stmt>, Vec<Stmt>),
     Assign(String, Expr),
-    Let(String, Expr),
+    Let(String, Option<Expr>),
     Return(Option<Expr>),
     Expr(Expr),
 }

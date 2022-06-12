@@ -103,10 +103,10 @@ impl Stmt {
 #[derive(Debug, PartialEq)]
 pub struct Let {
     pub span: Span,
-    pub ty: Option<Type>,
     pub name: String,
-    pub value: Expr,
     pub mutable: bool,
+    pub ty: Option<Type>,
+    pub value: Option<Expr>,
 }
 
 #[derive(Debug, PartialEq)]

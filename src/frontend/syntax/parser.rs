@@ -337,6 +337,7 @@ impl<'s> Parser<'s> {
         }
 
         let name = expect!(withValue self.scanner, Token::Ident);
+        let mut value = None;
         let mut ty = None;
 
         if accept!(self.scanner, Token::TypeSeparator) {
@@ -344,8 +345,19 @@ impl<'s> Parser<'s> {
             ty = Some(self.ty()?);
         }
 
-        expect!(self.scanner, Token::Assign);
-        let expr = self.expr()?;
+        if accept!(self.scanner, Token::Assign) {
+            expect!(self.scanner, Token::Assign);
+            value = Some(self.expr()?);
+        } else if mutable {
+            return Err(Error::new(
+                span,
+                format!(
+                    "unable to declare uninitialised name '{}' as mutable (as it's implied)",
+                    name
+                ),
+            ));
+        }
+
         expect!(self.scanner, Token::End);
 
         Ok(Stmt::new(
@@ -355,7 +367,7 @@ impl<'s> Parser<'s> {
                 ty,
                 mutable,
                 name,
-                value: expr,
+                value,
             }),
         ))
     }

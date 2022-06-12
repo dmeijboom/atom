@@ -86,6 +86,7 @@ impl Compiler {
         match expr.kind {
             ExprKind::Ident(name) => {
                 let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
+
                 block
                     .body
                     .push(Instr::new(self.new_id(), expr.span, InstrKind::Load(idx)));
@@ -200,6 +201,24 @@ impl Compiler {
         Err(Error::new(span.clone(), format!("invalid type: {}", ty)))
     }
 
+    fn compile_assign(
+        &mut self,
+        block: &mut Block,
+        span: Span,
+        name: String,
+        expr: Expr,
+    ) -> Result<()> {
+        let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
+
+        self.compile_expr(block, expr)?;
+
+        block
+            .body
+            .push(Instr::new(self.new_id(), span, InstrKind::Store(idx)));
+
+        Ok(())
+    }
+
     fn compile_body(&mut self, block: &mut Block, body: Vec<Stmt>) -> Result<()> {
         for stmt in body {
             self.scopes.move_to(stmt.scope);
@@ -212,15 +231,13 @@ impl Compiler {
             }
 
             match stmt.kind {
-                StmtKind::Let(name, expr) | StmtKind::Assign(name, expr) => {
-                    let (_, idx) =
-                        find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
-
-                    self.compile_expr(block, expr)?;
-
-                    block
-                        .body
-                        .push(Instr::new(self.new_id(), stmt.span, InstrKind::Store(idx)));
+                StmtKind::Let(name, expr) => {
+                    if let Some(expr) = expr {
+                        self.compile_assign(block, stmt.span, name, expr)?;
+                    }
+                }
+                StmtKind::Assign(name, expr) => {
+                    self.compile_assign(block, stmt.span, name, expr)?;
                 }
                 StmtKind::If(cond, body, alt) => {
                     self.compile_expr(block, cond)?;
@@ -276,7 +293,14 @@ impl Compiler {
 
         loop {
             for local in self.scopes.head().locals() {
-                locals.push(self.to_concrete_type(&span, &local.ty)?);
+                // Defaulting to `Int1` should be fine as it's guaranteed to be unused anyway
+                locals.push(
+                    local
+                        .ty
+                        .as_ref()
+                        .map(|ty| self.to_concrete_type(&span, ty))
+                        .unwrap_or_else(|| Ok(LlvmType::Int1))?,
+                );
             }
 
             if !self.scopes.next_sibling() {
