@@ -486,8 +486,10 @@ impl<'s> Parser<'s> {
     }
 
     fn ty(&mut self) -> Result<Type> {
+        let span = self.scanner.span();
         let name = expect!(withValue self.scanner, Token::Ident);
-        Ok(Type::new(name))
+
+        Ok(Type::new(span, name))
     }
 
     fn fn_sig(&mut self) -> Result<FnSig> {

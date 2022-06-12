@@ -1,5 +1,5 @@
 use crate::frontend::scope::{Local, ScopeKind, ScopeList};
-use crate::frontend::syntax::{Alt, BinaryOp, InferType, Span};
+use crate::frontend::syntax::{Alt, BinaryOp, InferType};
 use crate::frontend::typed_ast::*;
 use crate::frontend::{syntax, types, Error, Node, Type};
 
@@ -26,12 +26,12 @@ impl Analyzer {
         }
     }
 
-    fn get_type(&mut self, span: &Span, ty: &syntax::Type) -> Result<Type> {
+    fn get_type(&mut self, ty: &syntax::Type) -> Result<Type> {
         if let Some(ty) = Type::from_name(&ty.name) {
             return Ok(ty);
         }
 
-        error!(span.clone(), "unknown type: {}", ty.name)
+        error!(ty.span.clone(), "unknown type {}", ty.name)
     }
 
     fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
@@ -66,7 +66,7 @@ impl Analyzer {
                 if lhs.ty != types::BOOL || rhs.ty != types::BOOL {
                     return error!(
                         expr.span,
-                        "invalid type for logical expression: {} and {} (should be Bool)",
+                        "invalid types {} and {} for logical expression (should be Bool)",
                         lhs.ty,
                         rhs.ty
                     );
@@ -81,13 +81,15 @@ impl Analyzer {
             syntax::ExprKind::Binary(binary) => {
                 let lhs = self.expr(binary.left)?;
                 let rhs = self.expr(binary.right)?;
-                let (valid, output) = match binary.op {
+                let (valid, hint, output) = match binary.op {
                     BinaryOp::ShiftLeft | BinaryOp::ShiftRight => (
                         lhs.ty == rhs.ty && lhs.ty.is_int() && rhs.ty.is_int(),
+                        "should be Int",
                         Some(types::INT),
                     ),
                     BinaryOp::Add | BinaryOp::Sub | BinaryOp::Mul | BinaryOp::Div => (
                         lhs.ty == rhs.ty && lhs.ty.is_numeric() && rhs.ty.is_numeric(),
+                        "should be 'Numeric",
                         None,
                     ),
                     BinaryOp::Lte
@@ -97,6 +99,7 @@ impl Analyzer {
                     | BinaryOp::Eq
                     | BinaryOp::Neq => (
                         lhs.ty == rhs.ty && lhs.ty.attr.primitive && rhs.ty.attr.primitive,
+                        "should be 'Primitive",
                         Some(types::BOOL),
                     ),
                 };
@@ -104,7 +107,7 @@ impl Analyzer {
                 if !valid {
                     return error!(
                         expr.span,
-                        "invalid types for binary expression: {} and {}", lhs.ty, rhs.ty,
+                        "invalid types {} and {} for binary expression ({})", lhs.ty, rhs.ty, hint,
                     );
                 }
 
@@ -123,7 +126,7 @@ impl Analyzer {
         if expr.ty != types::BOOL {
             return error!(
                 if_stmt.span,
-                "invalid type for condition of if statement: {} (should be Bool)", expr.ty
+                "invalid type {} for condition (should be Bool)", expr.ty
             );
         }
 
@@ -174,7 +177,7 @@ impl Analyzer {
                     if !local.mutable && initialised {
                         return error!(
                             stmt.span,
-                            "unable to assign more than once to immutable name: {}", name
+                            "cannot assign more than once to immutable name '{}'", name
                         );
                     }
 
@@ -182,7 +185,7 @@ impl Analyzer {
                         if ty != &expr.ty {
                             return error!(
                                 stmt.span,
-                                "invalid type '{}' for name '{}' (expected: {})", ty, name, expr.ty
+                                "invalid type {} for name '{}' (should be {})", expr.ty, name, ty
                             );
                         }
                     } else {
@@ -209,7 +212,7 @@ impl Analyzer {
                         if &ty != return_type {
                             return error!(
                                 stmt.span,
-                                "invalid return type '{}' (expected: {})", ty, return_type
+                                "invalid return type {} (should be {})", ty, return_type
                             );
                         }
                     }
@@ -225,20 +228,23 @@ impl Analyzer {
                     break;
                 }
                 syntax::StmtKind::Let(let_stmt) => {
+                    let mut ty = if let Some(ty) = let_stmt.ty {
+                        Some(self.get_type(&ty)?)
+                    } else {
+                        None
+                    };
                     let expr = if let Some(value) = let_stmt.value {
                         let expr = self.expr(value)?;
 
-                        if let Some(ty) = let_stmt.ty {
-                            let ty = self.get_type(&stmt.span, &ty)?;
-
-                            if expr.ty != ty {
+                        if let Some(ty) = &ty {
+                            if &expr.ty != ty {
                                 return error!(
                                     stmt.span,
-                                    "invalid type '{}' for let statement (expected: {})",
-                                    expr.ty,
-                                    ty
+                                    "invalid type {} for let statement (should be {})", expr.ty, ty
                                 );
                             }
+                        } else {
+                            ty = Some(expr.ty.clone());
                         }
 
                         Some(expr)
@@ -248,7 +254,7 @@ impl Analyzer {
 
                     let scope = self.scopes.head_mut();
                     scope.declare(Local {
-                        ty: expr.as_ref().map(|e| e.ty.clone()),
+                        ty,
                         name: let_stmt.name.clone(),
                         mutable: let_stmt.mutable,
                         initialised_at: if expr.is_some() {
@@ -293,9 +299,9 @@ impl Analyzer {
         Ok(body)
     }
 
-    fn func(&mut self, span: &Span, fn_def: syntax::FnDef) -> Result<FnDef> {
+    fn func(&mut self, fn_def: syntax::FnDef) -> Result<FnDef> {
         self.return_type = if let Some(ty) = fn_def.sig.return_type {
-            Some(self.get_type(span, &ty)?)
+            Some(self.get_type(&ty)?)
         } else {
             None
         };
@@ -316,7 +322,7 @@ impl Analyzer {
         for node in program {
             match node.kind {
                 syntax::NodeKind::FnDef(fn_def) => {
-                    let kind = NodeKind::FnDef(self.func(&node.span, fn_def)?);
+                    let kind = NodeKind::FnDef(self.func(fn_def)?);
                     self.nodes.push(Node::new(node.span, kind));
                 }
             }
@@ -326,5 +332,111 @@ impl Analyzer {
             scopes: self.scopes.consume(),
             nodes: self.nodes,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use anyhow::Result;
+    use test_case::test_case;
+
+    use super::*;
+
+    use crate::frontend::syntax::Parser;
+
+    macro_rules! assert_err {
+        ($err:expr, $expected:expr) => {
+            assert!($err.is_err(), "an error was expected");
+
+            if let Err(err) = $err {
+                assert_eq!(format!("{}", err), $expected);
+            }
+        };
+    }
+
+    fn analyze(source: &str) -> Result<Program> {
+        let parser = Parser::new(source);
+        let program = parser.parse()?;
+        let analyzer = Analyzer::new();
+
+        Ok(analyzer.analyze(program)?)
+    }
+
+    #[test]
+    fn test_unknown_type() {
+        let result = analyze("fn main :: () -> Test {}");
+        assert_err!(result, "CompileError: unknown type Test at 1:16");
+    }
+
+    #[test]
+    fn test_name_not_initialized() {
+        let result = analyze(
+            "fn main {
+            let x;
+
+            if true {
+                x = 1;
+            }
+
+            x
+        }",
+        );
+        assert_err!(
+            result,
+            "CompileError: name 'x' is not guaranteed to be initialised at 9:8"
+        );
+    }
+
+    #[test]
+    fn test_logical_expr_not_bool() {
+        let result = analyze(
+            "fn main {
+            true && 1
+        }",
+        );
+        assert_err!(result, "CompileError: invalid types Bool and Int for logical expression (should be Bool) at 2:12");
+    }
+
+    #[test_case("10 << true", "CompileError: invalid types Int and Bool for binary expression (should be Int) at 1:10"; "left shift with bool")]
+    #[test_case("false * 1.04", "CompileError: invalid types Bool and Float for binary expression (should be 'Numeric) at 1:10"; "arithmetic with non-numeric type")]
+    fn test_binary_expr_invalid(source: &str, expected: &str) {
+        let result = analyze(&format!("fn main {{ {} }}", source));
+        assert_err!(result, expected);
+    }
+
+    #[test]
+    fn test_if_cond_not_bool() {
+        let result = analyze(
+            "fn main {
+            if 1 {
+                1
+            }
+        }",
+        );
+        assert_err!(
+            result,
+            "CompileError: invalid type Int for condition (should be Bool) at 2:12"
+        );
+    }
+
+    #[test]
+    fn test_assign_immutable_name() {
+        let result = analyze(
+            "fn main {
+            let x = 1;
+            x = 2;
+        }",
+        );
+        assert_err!(
+            result,
+            "CompileError: cannot assign more than once to immutable name 'x' at 3:14"
+        );
+    }
+
+    #[test_case("let mut x = true;\nx = 20;", "CompileError: invalid type Int for name 'x' (should be Bool) at 2:2"; "invalid type")]
+    #[test_case("let x :: Int;\nx = true;", "CompileError: invalid type Bool for name 'x' (should be Int) at 2:2"; "invalid type late initialization")]
+    fn test_invalid_type_assign_name(source: &str, expected: &str) {
+        let result = analyze(&format!("fn main {{ {} }}", source));
+        assert_err!(result, expected);
     }
 }

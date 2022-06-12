@@ -33,11 +33,7 @@ impl Span {
 
 impl Display for Span {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{}:{} [{}..{}]",
-            self.line, self.column, self.begin, self.end
-        )
+        write!(f, "{}:{}", self.line, self.column)
     }
 }
 
@@ -67,11 +63,12 @@ pub enum NodeKind {
 #[derive(Debug, PartialEq)]
 pub struct Type {
     pub name: String,
+    pub span: Span,
 }
 
 impl Type {
-    pub fn new(name: String) -> Self {
-        Self { name }
+    pub fn new(span: Span, name: String) -> Self {
+        Self { span, name }
     }
 }
 
