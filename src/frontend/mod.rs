@@ -10,4 +10,4 @@ pub use analyzer::Analyzer;
 pub use compiler::Compiler;
 pub use error::Error;
 pub use typed_ast::Node;
-pub use types::Type;
+pub use types::{Type, TypeKind};

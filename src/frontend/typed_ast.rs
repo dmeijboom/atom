@@ -70,8 +70,10 @@ impl Expr {
 
 #[derive(Debug)]
 pub enum ExprKind {
-    Ident(String),
+    Fn(String),
+    Name(String),
     Literal(LiteralKind),
+    Call(Box<Expr>, Vec<Expr>),
     Binary(BinaryOp, Box<Expr>, Box<Expr>),
     Logical(LogicalOp, Box<Expr>, Box<Expr>),
 }

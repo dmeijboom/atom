@@ -181,7 +181,15 @@ pub struct Logical {
 }
 
 #[derive(Debug, PartialEq)]
+pub struct Call {
+    pub span: Span,
+    pub callee: Expr,
+    pub args: Vec<Expr>,
+}
+
+#[derive(Debug, PartialEq)]
 pub enum ExprKind {
+    Call(Box<Call>),
     Ident(String),
     Literal(Literal),
     Binary(Box<Binary>),

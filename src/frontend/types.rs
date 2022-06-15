@@ -1,8 +1,9 @@
 use std::borrow::Cow;
 use std::fmt::{Debug, Display, Formatter};
+use std::rc::Rc;
 
 macro_rules! static_types {
-    ($(($name:ident $const_name:ident $numeric:expr)),+) => {
+    ($(($name:ident $const_name:ident $kind:expr)),+) => {
         impl Type {
             pub fn from_name(name: &str) -> Option<Self> {
                 match name {
@@ -14,74 +15,104 @@ macro_rules! static_types {
 
         $(pub const $const_name: Type = Type {
             name: Cow::Borrowed(&stringify!($name)),
-            attr: TypeAttr {
-                primitive: true,
-                numeric: $numeric,
-            },
+            kind: $kind,
+            primitive: true,
             args: vec![]
         };)+
     };
 }
 
-#[derive(PartialEq, Clone)]
-pub enum Numeric {
+type TypeName = Cow<'static, str>;
+
+#[derive(Debug, PartialEq, Clone)]
+pub struct Argument {
+    pub name: String,
+    pub ty: Type,
+}
+
+#[derive(Debug, Clone)]
+pub struct FunctionType {
+    pub name: String,
+    pub args: Vec<Argument>,
+    pub return_type: Type,
+}
+
+#[derive(Clone)]
+pub enum TypeKind {
+    Bool,
+    String,
     Int { size: usize, signed: bool },
     Float { size: usize },
+    Function(Rc<FunctionType>),
+    Void,
+    Unknown,
 }
 
-#[derive(PartialEq, Clone)]
-pub struct TypeAttr {
-    pub primitive: bool,
-    pub numeric: Option<Numeric>,
-}
-
-impl Default for TypeAttr {
-    fn default() -> Self {
-        Self {
-            primitive: true,
-            numeric: None,
+impl TypeKind {
+    pub fn id(&self) -> usize {
+        match self {
+            TypeKind::Bool => 1,
+            TypeKind::String => 2,
+            TypeKind::Int { .. } => 3,
+            TypeKind::Float { .. } => 4,
+            TypeKind::Function(_) => 5,
+            TypeKind::Void => 6,
+            TypeKind::Unknown => 7,
         }
     }
 }
 
-type TypeName = Cow<'static, &'static str>;
-
 #[derive(Clone)]
 pub struct Type {
     pub name: TypeName,
-    pub attr: TypeAttr,
+    pub kind: TypeKind,
+    pub primitive: bool,
     pub args: Vec<Type>,
 }
 
 impl Type {
+    pub fn new(name: String, kind: TypeKind) -> Self {
+        Self {
+            name: TypeName::Owned(name),
+            kind,
+            primitive: false,
+            args: vec![],
+        }
+    }
+
     pub fn is_numeric(&self) -> bool {
-        self.attr.numeric.is_some()
+        matches!(self.kind, TypeKind::Int { .. } | TypeKind::Float { .. })
     }
 
     pub fn is_int(&self) -> bool {
-        matches!(self.attr.numeric, Some(Numeric::Int { .. }))
+        matches!(self.kind, TypeKind::Int { .. })
     }
 }
 
 static_types!(
-    (Bool BOOL None),
-    (String STRING None),
-    (Int8 INT8 Some(Numeric::Int { size: 8, signed: true })),
-    (Int16 INT16 Some(Numeric::Int { size: 16, signed: true })),
-    (Int INT Some(Numeric::Int { size: 32, signed: true })),
-    (Int64 INT64 Some(Numeric::Int { size: 64, signed: true })),
-    (Uint8 UINT8 Some(Numeric::Int { size: 8, signed: false })),
-    (Uint16 UINT16 Some(Numeric::Int { size: 16, signed: false })),
-    (Uint UINT Some(Numeric::Int { size: 32, signed: false })),
-    (Uint64 UINT64 Some(Numeric::Int { size: 64, signed: false })),
-    (Float FLOAT Some(Numeric::Float { size: 32 })),
-    (Float64 FLOAT64 Some(Numeric::Float { size: 64 })),
-    (Void VOID None)
+    (Bool BOOL TypeKind::Bool),
+    (String STRING TypeKind::String),
+    (Int8 INT8 TypeKind::Int { size: 8, signed: true }),
+    (Int16 INT16 TypeKind::Int { size: 16, signed: true }),
+    (Int INT TypeKind::Int { size: 32, signed: true }),
+    (Int64 INT64 TypeKind::Int { size: 64, signed: true }),
+    (Uint8 UINT8 TypeKind::Int { size: 8, signed: false }),
+    (Uint16 UINT16 TypeKind::Int { size: 16, signed: false }),
+    (Uint UINT TypeKind::Int { size: 32, signed: false }),
+    (Uint64 UINT64 TypeKind::Int { size: 64, signed: false }),
+    (Float FLOAT TypeKind::Float { size: 32 }),
+    (Float64 FLOAT64 TypeKind::Float { size: 64 }),
+    (Void VOID TypeKind::Void),
+    (Unknown UNKNOWN TypeKind::Unknown)
 );
 
 impl PartialEq for Type {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name && self.attr == other.attr
+        self.name == other.name
+            && !matches!(self.kind, TypeKind::Unknown)
+            && !matches!(other.kind, TypeKind::Unknown)
+            && self.primitive == other.primitive
+            && self.kind.id() == other.kind.id()
     }
 }
 

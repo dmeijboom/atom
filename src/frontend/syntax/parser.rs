@@ -2,8 +2,8 @@ use std::mem;
 
 use crate::frontend::syntax::lexer::StringToken;
 use crate::frontend::syntax::{
-    Alt, Binary, BinaryOp, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal, LiteralKind,
-    Logical, LogicalOp, Node, NodeKind, Scanner, Stmt, StmtKind, Token, Type,
+    Alt, Binary, BinaryOp, Call, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal,
+    LiteralKind, Logical, LogicalOp, Node, NodeKind, Scanner, Stmt, StmtKind, Token, Type,
 };
 
 type Result<T> = std::result::Result<T, Error>;
@@ -58,10 +58,10 @@ macro_rules! accept {
 
 macro_rules! make_lit {
     ($span:expr, $type:ident, $source:expr) => {
-        Ok(Expr::new(
+        Expr::new(
             $span.clone(),
             ExprKind::Literal(Literal::new($span, LiteralKind::$type($source))),
-        ))
+        )
     };
 }
 
@@ -143,9 +143,8 @@ impl<'s> Parser<'s> {
 
     fn term(&mut self) -> Result<Expr> {
         let span = self.scanner.span();
-
-        match self.scanner.advance() {
-            Some(Token::Ident(name)) => Ok(Expr::new(span, ExprKind::Ident(name))),
+        let mut expr = match self.scanner.advance() {
+            Some(Token::Ident(name)) => Expr::new(span, ExprKind::Ident(name)),
             Some(Token::BeginString) => {
                 make_lit!(span, String, self.string()?)
             }
@@ -153,106 +152,44 @@ impl<'s> Parser<'s> {
             Some(Token::False) => make_lit!(span, Bool, false),
             Some(Token::Int(i)) => make_lit!(span, Int, i),
             Some(Token::Float(f)) => make_lit!(span, Float, f),
-            Some(Token::Error) => Err(Error::new(
-                span,
-                format!("{} in expr", self.scanner.error_description()),
-            )),
-            Some(token) => Err(Error::new(
-                span,
-                format!("unexpected token '{:?}' in expr", token),
-            )),
-            None => Err(Error::new(span, "unexpected EOF in expr".to_string())),
-        }
-    }
-
-    fn logical(&mut self) -> Result<Expr> {
-        let mut expr = self.equality()?;
-
-        loop {
-            let token = self.scanner.peek();
-
-            match token {
-                Some(Token::Or) => {
-                    self.scanner.advance();
-                    make_logical!(expr, self.equality()?, Or);
-                }
-                Some(Token::And) => {
-                    self.scanner.advance();
-                    make_logical!(expr, self.equality()?, And);
-                }
-                _ => break,
+            Some(Token::Error) => {
+                return Err(Error::new(
+                    span,
+                    format!("{} in expr", self.scanner.error_description()),
+                ))
             }
-        }
-
-        Ok(expr)
-    }
-
-    fn equality(&mut self) -> Result<Expr> {
-        let mut expr = self.relational()?;
-
-        loop {
-            let token = self.scanner.peek();
-
-            match token {
-                Some(Token::Eq) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.relational()?, Eq);
-                }
-                Some(Token::Neq) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.relational()?, Neq);
-                }
-                _ => break,
+            Some(token) => {
+                return Err(Error::new(
+                    span,
+                    format!("unexpected token '{:?}' in expr", token),
+                ))
             }
-        }
-
-        Ok(expr)
-    }
-
-    fn relational(&mut self) -> Result<Expr> {
-        let mut expr = self.bitwise_shift()?;
+            None => return Err(Error::new(span, "unexpected EOF in expr".to_string())),
+        };
 
         loop {
             let token = self.scanner.peek();
 
             match token {
-                Some(Token::Lte) => {
+                Some(Token::ParentLeft) => {
+                    let span = self.scanner.span();
                     self.scanner.advance();
-                    make_binary!(expr, self.bitwise_shift()?, Lte);
-                }
-                Some(Token::Lt) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.bitwise_shift()?, Lt);
-                }
-                Some(Token::Gte) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.bitwise_shift()?, Gte);
-                }
-                Some(Token::Gt) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.bitwise_shift()?, Gt);
-                }
-                _ => break,
-            }
-        }
 
-        Ok(expr)
-    }
+                    let args = if accept!(self.scanner, Token::ParentRight) {
+                        vec![]
+                    } else {
+                        self.expr_list()?
+                    };
 
-    fn bitwise_shift(&mut self) -> Result<Expr> {
-        let mut expr = self.additive()?;
-
-        loop {
-            let token = self.scanner.peek();
-
-            match token {
-                Some(Token::ShiftLeft) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.additive()?, ShiftLeft);
-                }
-                Some(Token::ShiftRight) => {
-                    self.scanner.advance();
-                    make_binary!(expr, self.additive()?, ShiftRight);
+                    expr = Expr::new(
+                        span.clone(),
+                        ExprKind::Call(Box::new(Call {
+                            span,
+                            callee: expr,
+                            args,
+                        })),
+                    );
+                    expect!(self.scanner, Token::ParentRight);
                 }
                 _ => break,
             }
@@ -305,9 +242,121 @@ impl<'s> Parser<'s> {
         Ok(expr)
     }
 
+    fn bitwise_shift(&mut self) -> Result<Expr> {
+        let mut expr = self.additive()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::ShiftLeft) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.additive()?, ShiftLeft);
+                }
+                Some(Token::ShiftRight) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.additive()?, ShiftRight);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn relational(&mut self) -> Result<Expr> {
+        let mut expr = self.bitwise_shift()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Lte) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.bitwise_shift()?, Lte);
+                }
+                Some(Token::Lt) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.bitwise_shift()?, Lt);
+                }
+                Some(Token::Gte) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.bitwise_shift()?, Gte);
+                }
+                Some(Token::Gt) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.bitwise_shift()?, Gt);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn equality(&mut self) -> Result<Expr> {
+        let mut expr = self.relational()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Eq) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.relational()?, Eq);
+                }
+                Some(Token::Neq) => {
+                    self.scanner.advance();
+                    make_binary!(expr, self.relational()?, Neq);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn logical(&mut self) -> Result<Expr> {
+        let mut expr = self.equality()?;
+
+        loop {
+            let token = self.scanner.peek();
+
+            match token {
+                Some(Token::Or) => {
+                    self.scanner.advance();
+                    make_logical!(expr, self.equality()?, Or);
+                }
+                Some(Token::And) => {
+                    self.scanner.advance();
+                    make_logical!(expr, self.equality()?, And);
+                }
+                _ => break,
+            }
+        }
+
+        Ok(expr)
+    }
+
     #[inline]
     fn expr(&mut self) -> Result<Expr> {
         self.logical()
+    }
+
+    fn expr_list(&mut self) -> Result<Vec<Expr>> {
+        let mut list = vec![];
+
+        loop {
+            list.push(self.expr()?);
+
+            if !accept!(self.scanner, Token::Separator) {
+                break;
+            }
+
+            self.scanner.advance();
+        }
+
+        Ok(list)
     }
 
     fn return_stmt(&mut self) -> Result<Stmt> {

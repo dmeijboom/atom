@@ -2,7 +2,7 @@ use crate::backend::{Block, Fn, Instr, InstrId, InstrKind, Module, Terminator, T
 use crate::frontend::scope::{find_local, Scope};
 use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
-use crate::frontend::types::{self, Numeric, Type};
+use crate::frontend::types::{self, Type, TypeKind};
 use crate::frontend::Error;
 
 type Result<T> = std::result::Result<T, Error>;
@@ -84,17 +84,38 @@ impl Compiler {
 
     fn compile_expr(&mut self, block: &mut Block, expr: Expr) -> Result<()> {
         match expr.kind {
-            ExprKind::Ident(name) => {
+            ExprKind::Fn(name) => {
+                block.body.push(Instr::new(
+                    self.new_id(),
+                    expr.span,
+                    InstrKind::LoadFn(name),
+                ));
+            }
+            ExprKind::Name(name) => {
                 let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
 
                 block
                     .body
                     .push(Instr::new(self.new_id(), expr.span, InstrKind::Load(idx)));
             }
+            ExprKind::Call(callee, args) => {
+                let arg_count = args.len();
+
+                for arg in args {
+                    self.compile_expr(block, arg)?;
+                }
+
+                self.compile_expr(block, *callee)?;
+
+                block.body.push(Instr::new(
+                    self.new_id(),
+                    expr.span,
+                    InstrKind::Call(arg_count),
+                ));
+            }
             ExprKind::Literal(literal) => match literal {
                 LiteralKind::Int(val) => {
-                    let signed =
-                        matches!(expr.ty.attr.numeric, Some(Numeric::Int { signed, .. }) if signed);
+                    let signed = matches!(expr.ty.kind, TypeKind::Int { signed, .. } if signed);
 
                     block.body.push(Instr::new(
                         self.new_id(),
@@ -119,8 +140,8 @@ impl Compiler {
                 LiteralKind::String(_) => unimplemented!(),
             },
             ExprKind::Binary(op, lhs, rhs) => {
-                let kind = match lhs.ty.attr.numeric {
-                    Some(Numeric::Int { signed, .. }) => match op {
+                let kind = match lhs.ty.kind {
+                    TypeKind::Int { signed, .. } => match op {
                         BinaryOp::Add => InstrKind::IntAdd,
                         BinaryOp::Sub => InstrKind::IntSub,
                         BinaryOp::Mul => InstrKind::IntMul,
@@ -141,7 +162,7 @@ impl Compiler {
                         BinaryOp::Neq => InstrKind::IntNeq,
                         _ => unimplemented!(),
                     },
-                    Some(Numeric::Float { .. }) => match op {
+                    TypeKind::Float { .. } => match op {
                         BinaryOp::Add => InstrKind::FloatAdd,
                         BinaryOp::Sub => InstrKind::FloatSub,
                         BinaryOp::Mul => InstrKind::FloatMul,
@@ -154,7 +175,7 @@ impl Compiler {
                         BinaryOp::Neq => InstrKind::FloatNeq,
                         _ => unreachable!(),
                     },
-                    _ if lhs.ty == types::BOOL => match op {
+                    TypeKind::Bool => match op {
                         BinaryOp::Eq => InstrKind::IntEq,
                         BinaryOp::Neq => InstrKind::IntNeq,
                         _ => unreachable!(),

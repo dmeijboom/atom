@@ -10,7 +10,7 @@ use inkwell::targets::{
 use inkwell::types::{
     AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 };
-use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, PointerValue};
+use inkwell::values::{BasicValue, BasicValueEnum, CallableValue, FunctionValue, PointerValue};
 use inkwell::{FloatPredicate, IntPredicate, OptimizationLevel};
 
 use crate::backend::{module, Block, Fn, InstrKind, Terminator, Type};
@@ -65,7 +65,6 @@ impl<'ctx> CodeGen<'ctx> {
             Type::Int64 => self.context.i64_type().as_any_type_enum(),
             Type::Int1 => self.context.custom_width_int_type(1).as_any_type_enum(),
             Type::Void => self.context.void_type().as_any_type_enum(),
-            //_ => unimplemented!(),
         }
     }
 
@@ -325,12 +324,31 @@ impl<'ctx> CodeGen<'ctx> {
                         )
                         .as_basic_value_enum()
                 }
+                InstrKind::LoadFn(name) => {
+                    let fn_ptr = self.llvm_module.get_function(name).unwrap();
+
+                    fn_ptr
+                        .as_global_value()
+                        .as_pointer_value()
+                        .as_basic_value_enum()
+                }
                 InstrKind::Load(idx) => builder.build_load(locals[*idx], label!(instr, load)),
                 InstrKind::Store(idx) => {
                     let value = self.stack.pop().unwrap();
                     builder.build_store(locals[*idx], value);
 
                     continue;
+                }
+                InstrKind::Call(_arg_count) => {
+                    let fn_ptr = self.stack.pop().unwrap().into_pointer_value();
+                    let callable = CallableValue::try_from(fn_ptr).unwrap();
+                    let value = builder.build_call(callable, &[], label!(instr, call));
+
+                    if let Some(basic_value) = value.try_as_basic_value().left() {
+                        basic_value.as_basic_value_enum()
+                    } else {
+                        continue;
+                    }
                 }
                 InstrKind::And => {
                     let (lhs, rhs) = pop_binary!(self.stack, int);
@@ -391,8 +409,7 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn generate_fn(&mut self, func: &Fn) {
-        let return_type = self.fn_type(&func.return_type, &[]);
-        let llvm_func = self.llvm_module.add_function(&func.name, return_type, None);
+        let llvm_func = self.llvm_module.get_function(&func.name).unwrap();
         let block = self.context.append_basic_block(llvm_func, "entry");
         let builder = self.context.create_builder();
 
@@ -408,6 +425,12 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     pub fn generate(mut self, module: &module::Module, optimize: bool) -> Result<MemoryBuffer> {
+        // Register functions early to prevent circular dependencies
+        for func in module.funcs.iter() {
+            let return_type = self.fn_type(&func.return_type, &[]);
+            self.llvm_module.add_function(&func.name, return_type, None);
+        }
+
         for func in module.funcs.iter() {
             self.generate_fn(func);
         }

@@ -1,7 +1,11 @@
+use std::collections::HashMap;
+use std::rc::Rc;
+
 use crate::frontend::scope::{Local, ScopeKind, ScopeList};
 use crate::frontend::syntax::{Alt, BinaryOp, InferType};
 use crate::frontend::typed_ast::*;
-use crate::frontend::{syntax, types, Error, Node, Type};
+use crate::frontend::types::FunctionType;
+use crate::frontend::{syntax, types, Error, Node, Type, TypeKind};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -11,10 +15,16 @@ macro_rules! error {
     };
 }
 
+#[derive(Debug)]
+struct Function {
+    ty: Rc<FunctionType>,
+}
+
 pub struct Analyzer {
     nodes: Vec<Node>,
     scopes: ScopeList,
     return_type: Option<Type>,
+    functions: HashMap<String, Function>,
 }
 
 impl Analyzer {
@@ -23,6 +33,7 @@ impl Analyzer {
             nodes: vec![],
             scopes: ScopeList::new(),
             return_type: None,
+            functions: HashMap::new(),
         }
     }
 
@@ -37,27 +48,50 @@ impl Analyzer {
     fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
         Ok(match expr.kind {
             syntax::ExprKind::Ident(name) => {
-                let (local, _, initialised) = self.scopes.local(&name).ok_or_else(|| {
-                    Error::new(expr.span.clone(), format!("no such name: {}", name))
-                })?;
+                match self.scopes.local(&name) {
+                    Some((local, _, initialised)) => {
+                        if !initialised {
+                            return error!(
+                                expr.span.clone(),
+                                "name '{}' is not guaranteed to be initialised", name
+                            );
+                        }
 
-                if !initialised {
-                    return error!(
-                        expr.span.clone(),
-                        "name '{}' is not guaranteed to be initialised", name
-                    );
-                }
-
-                // This should be safe as it's guaranteed to be initialised and thus always has a type
-                Expr::new(
-                    expr.span,
-                    local.ty.as_ref().unwrap().clone(),
-                    ExprKind::Ident(name),
-                )
+                        // This should be safe as it's guaranteed to be initialised and thus always has a type
+                        Ok(Expr::new(
+                            expr.span,
+                            local.ty.as_ref().unwrap().clone(),
+                            ExprKind::Name(name),
+                        ))
+                    }
+                    None if self.functions.contains_key(&name) => Ok(Expr::new(
+                        expr.span,
+                        Type::new(
+                            name.clone(),
+                            TypeKind::Function(Rc::clone(&self.functions[&name].ty)),
+                        ),
+                        ExprKind::Fn(name),
+                    )),
+                    None => error!(expr.span.clone(), "no such name '{}'", name),
+                }?
             }
             syntax::ExprKind::Literal(literal) => {
                 let ty = literal.kind.infer_type();
                 Expr::new(expr.span, ty, ExprKind::Literal(literal.kind))
+            }
+            syntax::ExprKind::Call(call) => {
+                let callee = self.expr(call.callee)?;
+                let fn_type = if let TypeKind::Function(fn_type) = &callee.ty.kind {
+                    Rc::clone(fn_type)
+                } else {
+                    return error!(expr.span, "unable to call {}", callee.ty);
+                };
+
+                Expr::new(
+                    expr.span,
+                    fn_type.return_type.clone(),
+                    ExprKind::Call(Box::new(callee), vec![]),
+                )
             }
             syntax::ExprKind::Logical(logical) => {
                 let lhs = self.expr(logical.left)?;
@@ -98,7 +132,7 @@ impl Analyzer {
                     | BinaryOp::Gt
                     | BinaryOp::Eq
                     | BinaryOp::Neq => (
-                        lhs.ty == rhs.ty && lhs.ty.attr.primitive && rhs.ty.attr.primitive,
+                        lhs.ty == rhs.ty && lhs.ty.primitive && rhs.ty.primitive,
                         "should be 'Primitive",
                         Some(types::BOOL),
                     ),
@@ -310,15 +344,57 @@ impl Analyzer {
         let body = self.body(fn_def.body)?;
         let scope = self.scopes.leave();
 
+        let return_type = self.return_type.take().unwrap_or(types::VOID);
+        let mut entry = self.functions.get_mut(&fn_def.name).unwrap();
+
+        if let Some(ty) = Rc::get_mut(&mut entry.ty) {
+            ty.return_type = return_type.clone();
+        } else {
+            entry.ty = Rc::new(FunctionType {
+                return_type: return_type.clone(),
+                ..entry.ty.as_ref().clone()
+            });
+        }
+
         Ok(FnDef {
             name: fn_def.name,
             body,
-            return_type: self.return_type.take().unwrap_or(types::VOID),
+            return_type,
             scope,
         })
     }
 
     pub fn analyze(mut self, program: Vec<syntax::Node>) -> Result<Program> {
+        for node in program.iter() {
+            match &node.kind {
+                syntax::NodeKind::FnDef(fn_def) => {
+                    if self.functions.contains_key(&fn_def.name) {
+                        return error!(
+                            node.span.clone(),
+                            "unable to redefine Fn '{}(...)'", fn_def.name
+                        );
+                    }
+
+                    let return_type = if let Some(ty) = &fn_def.sig.return_type {
+                        self.get_type(ty)?
+                    } else {
+                        types::UNKNOWN
+                    };
+
+                    self.functions.insert(
+                        fn_def.name.clone(),
+                        Function {
+                            ty: Rc::new(FunctionType {
+                                name: fn_def.name.clone(),
+                                args: vec![],
+                                return_type,
+                            }),
+                        },
+                    );
+                }
+            }
+        }
+
         for node in program {
             match node.kind {
                 syntax::NodeKind::FnDef(fn_def) => {
@@ -388,6 +464,12 @@ mod tests {
     }
 
     #[test]
+    fn test_no_such_name() {
+        let result = analyze("fn main { x }");
+        assert_err!(result, "CompileError: no such name 'x' at 1:12");
+    }
+
+    #[test]
     fn test_logical_expr_not_bool() {
         let result = analyze(
             "fn main {
@@ -438,5 +520,11 @@ mod tests {
     fn test_invalid_type_assign_name(source: &str, expected: &str) {
         let result = analyze(&format!("fn main {{ {} }}", source));
         assert_err!(result, expected);
+    }
+
+    #[test]
+    fn test_unable_to_call() {
+        let result = analyze("fn main { 10() }");
+        assert_err!(result, "CompileError: unable to call Int at 1:12");
     }
 }
