@@ -11,7 +11,7 @@ use inkwell::types::{
     AnyType, AnyTypeEnum, BasicMetadataTypeEnum, BasicType, BasicTypeEnum, FunctionType,
 };
 use inkwell::values::{BasicValue, BasicValueEnum, CallableValue, FunctionValue, PointerValue};
-use inkwell::{FloatPredicate, IntPredicate, OptimizationLevel};
+use inkwell::{AddressSpace, FloatPredicate, IntPredicate, OptimizationLevel};
 
 use crate::backend::{module, Block, Fn, InstrKind, Terminator, Type};
 
@@ -64,6 +64,27 @@ impl<'ctx> CodeGen<'ctx> {
             Type::Int32 => self.context.i32_type().as_any_type_enum(),
             Type::Int64 => self.context.i64_type().as_any_type_enum(),
             Type::Int1 => self.context.custom_width_int_type(1).as_any_type_enum(),
+            Type::Ptr(inner) => match self.make_type(inner) {
+                AnyTypeEnum::ArrayType(ty) => ty.ptr_type(AddressSpace::Generic).as_any_type_enum(),
+                AnyTypeEnum::FloatType(ty) => ty.ptr_type(AddressSpace::Generic).as_any_type_enum(),
+                AnyTypeEnum::FunctionType(ty) => {
+                    ty.ptr_type(AddressSpace::Generic).as_any_type_enum()
+                }
+                AnyTypeEnum::IntType(ty) => ty.ptr_type(AddressSpace::Generic).as_any_type_enum(),
+                AnyTypeEnum::PointerType(ty) => {
+                    ty.ptr_type(AddressSpace::Generic).as_any_type_enum()
+                }
+                AnyTypeEnum::StructType(ty) => {
+                    ty.ptr_type(AddressSpace::Generic).as_any_type_enum()
+                }
+                AnyTypeEnum::VectorType(ty) => {
+                    ty.ptr_type(AddressSpace::Generic).as_any_type_enum()
+                }
+                AnyTypeEnum::VoidType(_) => unreachable!(),
+            },
+            Type::Fn(return_type, args) => self
+                .fn_type(return_type, args.as_slice())
+                .as_any_type_enum(),
             Type::Void => self.context.void_type().as_any_type_enum(),
         }
     }
@@ -91,7 +112,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn fn_type(&self, ty: &Type, params: &[&Type]) -> FunctionType<'ctx> {
+    fn fn_type(&self, ty: &Type, params: &[Type]) -> FunctionType<'ctx> {
         let params = params
             .iter()
             .map(|ty| self.make_basic_metadata_type(ty))

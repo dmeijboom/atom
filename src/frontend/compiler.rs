@@ -219,7 +219,15 @@ impl Compiler {
             types::VOID => LlvmType::Void
         );
 
-        Err(Error::new(span.clone(), format!("invalid type: {}", ty)))
+        // Functions are always being stored as function pointers in atom
+        if let TypeKind::Function(fn_type) = &ty.kind {
+            return Ok(LlvmType::Ptr(Box::new(LlvmType::Fn(
+                Box::new(self.to_concrete_type(&Span::default(), &fn_type.return_type)?),
+                vec![],
+            ))));
+        }
+
+        Err(Error::new(span.clone(), format!("invalid type {}", ty)))
     }
 
     fn compile_assign(
