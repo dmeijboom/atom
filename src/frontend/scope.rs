@@ -1,3 +1,5 @@
+use std::ops::Index;
+
 use crate::frontend::syntax::Span;
 use crate::frontend::{Error, Type};
 
@@ -12,10 +14,11 @@ pub enum ScopeKind {
 
 #[derive(Debug)]
 pub struct Local {
+    pub span: Span,
     pub ty: Option<Type>,
     pub name: String,
     pub mutable: bool,
-    pub initialised_at: Vec<ScopeId>,
+    pub usages: Vec<ScopeId>,
 }
 
 #[derive(Debug)]
@@ -70,42 +73,14 @@ impl ScopeList {
         self.scopes
     }
 
-    fn is_initialised(&self, local: &Local) -> bool {
-        'find_init: for scope_id in local.initialised_at.iter() {
-            let mut current = self.index;
-
-            loop {
-                if current == *scope_id {
-                    return true;
-                }
-
-                if let Some(idx) = self.scopes[current].parent {
-                    current = idx;
-                    continue;
-                }
-
-                continue 'find_init;
-            }
-        }
-
-        false
+    #[inline]
+    pub fn cursor(&self) -> Cursor<'_, Scope> {
+        Cursor::new(CursorData::Borrowed(self.scopes.as_slice()))
     }
 
-    pub fn local(&self, name: &str) -> Option<(&Local, usize, bool)> {
-        find_local(&self.scopes, self.index, name).map(|(scope, idx)| {
-            let local = &self.scopes[scope].locals[idx];
-
-            (local, idx, self.is_initialised(local))
-        })
-    }
-
-    pub fn local_mut(&mut self, name: &str) -> Option<(&mut Local, usize, bool)> {
-        find_local(&self.scopes, self.index, name).map(|(scope, idx)| {
-            let local = &self.scopes[scope].locals[idx];
-            let initialised = self.is_initialised(local);
-
-            (&mut self.scopes[scope].locals[idx], idx, initialised)
-        })
+    pub fn local_mut(&mut self, name: &str) -> Option<(&mut Local, usize)> {
+        find_local(&self.scopes, self.index, name)
+            .map(|(scope, idx)| (&mut self.scopes[scope].locals[idx], idx))
     }
 
     #[inline]
@@ -161,5 +136,97 @@ pub fn find_local(scopes: &[Scope], index: usize, name: &str) -> Option<(ScopeId
         }
 
         return None;
+    }
+}
+
+pub enum CursorData<'s, T> {
+    Owned(Vec<T>),
+    Borrowed(&'s [T]),
+}
+
+impl<'s, T> Index<usize> for CursorData<'s, T> {
+    type Output = T;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        match self {
+            CursorData::Owned(data) => data.index(index),
+            CursorData::Borrowed(data) => data.index(index),
+        }
+    }
+}
+
+impl<'s, T> CursorData<'s, T> {
+    pub fn len(&self) -> usize {
+        match self {
+            CursorData::Owned(data) => data.len(),
+            CursorData::Borrowed(data) => data.len(),
+        }
+    }
+}
+
+pub struct Cursor<'c, T> {
+    pub index: usize,
+    data: CursorData<'c, T>,
+}
+
+impl<T> Default for Cursor<'_, T> {
+    fn default() -> Self {
+        Self {
+            index: 0,
+            data: CursorData::Owned(vec![]),
+        }
+    }
+}
+
+impl<'c, T> Cursor<'c, T> {
+    pub fn new(slice: CursorData<'c, T>) -> Self {
+        Self {
+            index: 0,
+            data: slice,
+        }
+    }
+
+    pub fn move_to(&mut self, index: usize) {
+        self.index = index;
+    }
+
+    #[inline]
+    pub fn head(&self) -> &T {
+        &self.data[self.index]
+    }
+
+    pub fn as_slice(&self) -> &[T] {
+        match &self.data {
+            CursorData::Owned(data) => data.as_slice(),
+            CursorData::Borrowed(data) => data,
+        }
+    }
+}
+
+impl Cursor<'_, Scope> {
+    // Moves the cursor to the next scope within the same parent. It will stop when it finds a scope
+    // with a different parent which should work as all of the function scopes should be grouped
+    // together.
+    pub fn next_sibling(&mut self, parent: ScopeId) -> bool {
+        if self.index >= self.data.len() - 1 {
+            return false;
+        }
+
+        self.index += 1;
+
+        let mut idx = self.index;
+
+        loop {
+            if idx == parent {
+                return true;
+            }
+
+            if let Some(parent) = self.data[idx].parent {
+                idx = parent;
+                continue;
+            }
+
+            return false;
+        }
     }
 }

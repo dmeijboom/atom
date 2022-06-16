@@ -48,21 +48,21 @@ impl Analyzer {
     fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
         Ok(match expr.kind {
             syntax::ExprKind::Ident(name) => {
-                match self.scopes.local(&name) {
-                    Some((local, _, initialised)) => {
-                        if !initialised {
-                            return error!(
-                                expr.span.clone(),
-                                "name '{}' is not guaranteed to be initialised", name
-                            );
-                        }
+                let scope_id = self.scopes.head().id;
 
-                        // This should be safe as it's guaranteed to be initialised and thus always has a type
-                        Ok(Expr::new(
-                            expr.span,
-                            local.ty.as_ref().unwrap().clone(),
-                            ExprKind::Name(name),
-                        ))
+                match self.scopes.local_mut(&name) {
+                    Some((local, _)) => {
+                        // If we are unable to find a type its not initialised
+                        let ty = local.ty.as_ref().ok_or_else(|| {
+                            Error::new(
+                                expr.span.clone(),
+                                format!("name '{}' is not initialised", name),
+                            )
+                        })?;
+
+                        local.usages.push(scope_id);
+
+                        Ok(Expr::new(expr.span, ty.clone(), ExprKind::Name(name)))
                     }
                     None if self.functions.contains_key(&name) => Ok(Expr::new(
                         expr.span,
@@ -203,12 +203,11 @@ impl Analyzer {
                 syntax::StmtKind::Assign(name, expr) => {
                     let expr = self.expr(expr)?;
                     let scope_id = self.scopes.head().id;
-                    let (local, _, initialised) =
-                        self.scopes.local_mut(&name).ok_or_else(|| {
-                            Error::new(expr.span.clone(), format!("no such name: {}", name))
-                        })?;
+                    let (local, _) = self.scopes.local_mut(&name).ok_or_else(|| {
+                        Error::new(expr.span.clone(), format!("no such name: {}", name))
+                    })?;
 
-                    if !local.mutable && initialised {
+                    if !local.mutable {
                         return error!(
                             stmt.span,
                             "cannot assign more than once to immutable name '{}'", name
@@ -224,10 +223,6 @@ impl Analyzer {
                         }
                     } else {
                         local.ty = Some(expr.ty.clone());
-                    }
-
-                    if !initialised {
-                        local.initialised_at.push(scope_id);
                     }
 
                     body.push(Stmt::new(stmt.span, scope_id, StmtKind::Assign(name, expr)))
@@ -289,13 +284,10 @@ impl Analyzer {
                     let scope = self.scopes.head_mut();
                     scope.declare(Local {
                         ty,
+                        span: stmt.span.clone(),
                         name: let_stmt.name.clone(),
                         mutable: let_stmt.mutable,
-                        initialised_at: if expr.is_some() {
-                            vec![scope.id]
-                        } else {
-                            vec![]
-                        },
+                        usages: vec![],
                     })?;
 
                     body.push(Stmt::new(
@@ -343,7 +335,6 @@ impl Analyzer {
         self.scopes.enter(ScopeKind::Fn);
         let body = self.body(fn_def.body)?;
         let scope = self.scopes.leave();
-
         let return_type = self.return_type.take().unwrap_or(types::VOID);
         let mut entry = self.functions.get_mut(&fn_def.name).unwrap();
 
@@ -354,6 +345,22 @@ impl Analyzer {
                 return_type: return_type.clone(),
                 ..entry.ty.as_ref().clone()
             });
+        }
+
+        let mut cursor = self.scopes.cursor();
+
+        cursor.move_to(scope);
+
+        loop {
+            for local in cursor.head().locals() {
+                if local.usages.is_empty() {
+                    return error!(local.span.clone(), "unused name '{}'", local.name);
+                }
+            }
+
+            if !cursor.next_sibling(scope) {
+                break;
+            }
         }
 
         Ok(FnDef {

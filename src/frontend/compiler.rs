@@ -1,5 +1,5 @@
 use crate::backend::{Block, Fn, Instr, InstrId, InstrKind, Module, Terminator, Type as LlvmType};
-use crate::frontend::scope::{find_local, Scope};
+use crate::frontend::scope::{find_local, Cursor, CursorData, Scope};
 use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
 use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
 use crate::frontend::types::{self, Type, TypeKind};
@@ -17,62 +17,18 @@ macro_rules! match_types {
     };
 }
 
-struct Cursor<T> {
-    index: usize,
-    data: Vec<T>,
-}
-
-impl<T> Default for Cursor<T> {
-    fn default() -> Self {
-        Self {
-            index: 0,
-            data: vec![],
-        }
-    }
-}
-
-impl<T> Cursor<T> {
-    pub fn new(data: Vec<T>) -> Self {
-        Self { index: 0, data }
-    }
-
-    pub fn move_to(&mut self, index: usize) {
-        self.index = index;
-    }
-
-    pub fn next_sibling(&mut self) -> bool {
-        if self.index >= self.data.len() - 1 {
-            return false;
-        }
-
-        self.index += 1;
-        true
-    }
-
-    #[inline]
-    pub fn head(&self) -> &T {
-        &self.data[self.index]
-    }
-}
-
-impl<T> AsRef<[T]> for Cursor<T> {
-    fn as_ref(&self) -> &[T] {
-        &self.data
-    }
-}
-
-pub struct Compiler {
+pub struct Compiler<'c> {
     id: InstrId,
     module: Module,
-    scopes: Cursor<Scope>,
+    cursor: Cursor<'c, Scope>,
 }
 
-impl Compiler {
+impl Compiler<'_> {
     pub fn new() -> Self {
         Self {
             id: 0,
+            cursor: Cursor::default(),
             module: Module::default(),
-            scopes: Cursor::default(),
         }
     }
 
@@ -92,7 +48,8 @@ impl Compiler {
                 ));
             }
             ExprKind::Name(name) => {
-                let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
+                let (_, idx) =
+                    find_local(self.cursor.as_slice(), self.cursor.index, &name).unwrap();
 
                 block
                     .body
@@ -237,7 +194,7 @@ impl Compiler {
         name: String,
         expr: Expr,
     ) -> Result<()> {
-        let (_, idx) = find_local(self.scopes.as_ref(), self.scopes.index, &name).unwrap();
+        let (_, idx) = find_local(self.cursor.as_slice(), self.cursor.index, &name).unwrap();
 
         self.compile_expr(block, expr)?;
 
@@ -250,7 +207,7 @@ impl Compiler {
 
     fn compile_body(&mut self, block: &mut Block, body: Vec<Stmt>) -> Result<()> {
         for stmt in body {
-            self.scopes.move_to(stmt.scope);
+            self.cursor.move_to(stmt.scope);
 
             assert!(block.term.is_none(), "block should not be terminated");
 
@@ -300,7 +257,7 @@ impl Compiler {
     }
 
     fn compile_fn_def(&mut self, span: Span, fn_def: FnDef) -> Result<()> {
-        self.scopes.move_to(fn_def.scope);
+        self.cursor.move_to(fn_def.scope);
 
         let mut body = Block::default();
         self.compile_body(&mut body, fn_def.body)?;
@@ -318,10 +275,10 @@ impl Compiler {
 
         let mut locals = vec![];
 
-        self.scopes.move_to(fn_def.scope);
+        self.cursor.move_to(fn_def.scope);
 
         loop {
-            for local in self.scopes.head().locals() {
+            for local in self.cursor.head().locals() {
                 // Defaulting to `Int1` should be fine as it's guaranteed to be unused anyway
                 locals.push(
                     local
@@ -332,7 +289,7 @@ impl Compiler {
                 );
             }
 
-            if !self.scopes.next_sibling() {
+            if !self.cursor.next_sibling(fn_def.scope) {
                 break;
             }
         }
@@ -350,7 +307,7 @@ impl Compiler {
     }
 
     pub fn compile(mut self, program: Program) -> Result<Module> {
-        self.scopes = Cursor::new(program.scopes);
+        self.cursor = Cursor::new(CursorData::Owned(program.scopes));
 
         for node in program.nodes {
             match node.kind {

@@ -1,3 +1,5 @@
+extern crate core;
+
 mod backend;
 mod frontend;
 mod gcc;
