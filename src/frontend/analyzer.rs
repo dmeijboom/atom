@@ -50,8 +50,8 @@ impl Analyzer {
             syntax::ExprKind::Ident(name) => {
                 let scope_id = self.scopes.head().id;
 
-                match self.scopes.local_mut(&name) {
-                    Some((local, _)) => {
+                match self.scopes.find_local_mut(&name) {
+                    Some(local) => {
                         // If we are unable to find a type its not initialised
                         let ty = local.ty.as_ref().ok_or_else(|| {
                             Error::new(
@@ -203,16 +203,18 @@ impl Analyzer {
                 syntax::StmtKind::Assign(name, expr) => {
                     let expr = self.expr(expr)?;
                     let scope_id = self.scopes.head().id;
-                    let (local, _) = self.scopes.local_mut(&name).ok_or_else(|| {
+                    let local = self.scopes.find_local(&name).ok_or_else(|| {
                         Error::new(expr.span.clone(), format!("no such name: {}", name))
                     })?;
 
-                    if !local.mutable {
+                    if !local.mutable && self.scopes.is_initialised(local) {
                         return error!(
                             stmt.span,
                             "cannot assign more than once to immutable name '{}'", name
                         );
                     }
+
+                    let local = self.scopes.find_local_mut(&name).unwrap();
 
                     if let Some(ty) = &local.ty {
                         if ty != &expr.ty {
@@ -225,6 +227,7 @@ impl Analyzer {
                         local.ty = Some(expr.ty.clone());
                     }
 
+                    local.assigned.push(scope_id);
                     body.push(Stmt::new(stmt.span, scope_id, StmtKind::Assign(name, expr)))
                 }
                 syntax::StmtKind::Return(expr) => {
@@ -288,6 +291,11 @@ impl Analyzer {
                         name: let_stmt.name.clone(),
                         mutable: let_stmt.mutable,
                         usages: vec![],
+                        assigned: if expr.is_some() {
+                            vec![scope.id]
+                        } else {
+                            vec![]
+                        },
                     })?;
 
                     body.push(Stmt::new(
@@ -449,25 +457,6 @@ mod tests {
     fn test_unknown_type() {
         let result = analyze("fn main :: () -> Test {}");
         assert_err!(result, "CompileError: unknown type Test at 1:16");
-    }
-
-    #[test]
-    fn test_name_not_initialized() {
-        let result = analyze(
-            "fn main {
-            let x;
-
-            if true {
-                x = 1;
-            }
-
-            x
-        }",
-        );
-        assert_err!(
-            result,
-            "CompileError: name 'x' is not guaranteed to be initialised at 9:8"
-        );
     }
 
     #[test]

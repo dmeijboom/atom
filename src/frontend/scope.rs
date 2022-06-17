@@ -15,10 +15,11 @@ pub enum ScopeKind {
 #[derive(Debug)]
 pub struct Local {
     pub span: Span,
-    pub ty: Option<Type>,
     pub name: String,
     pub mutable: bool,
+    pub ty: Option<Type>,
     pub usages: Vec<ScopeId>,
+    pub assigned: Vec<ScopeId>,
 }
 
 #[derive(Debug)]
@@ -73,14 +74,36 @@ impl ScopeList {
         self.scopes
     }
 
+    pub fn is_initialised(&self, local: &Local) -> bool {
+        let mut idx = self.index;
+
+        loop {
+            if local.assigned.contains(&idx) {
+                return true;
+            }
+
+            if let Some(parent) = self.scopes[idx].parent {
+                idx = parent;
+                continue;
+            }
+
+            return false;
+        }
+    }
+
     #[inline]
     pub fn cursor(&self) -> Cursor<'_, Scope> {
         Cursor::new(CursorData::Borrowed(self.scopes.as_slice()))
     }
 
-    pub fn local_mut(&mut self, name: &str) -> Option<(&mut Local, usize)> {
+    pub fn find_local(&self, name: &str) -> Option<&Local> {
         find_local(&self.scopes, self.index, name)
-            .map(|(scope, idx)| (&mut self.scopes[scope].locals[idx], idx))
+            .map(|(scope, idx)| &self.scopes[scope].locals[idx])
+    }
+
+    pub fn find_local_mut(&mut self, name: &str) -> Option<&mut Local> {
+        find_local(&self.scopes, self.index, name)
+            .map(|(scope, idx)| &mut self.scopes[scope].locals[idx])
     }
 
     #[inline]
