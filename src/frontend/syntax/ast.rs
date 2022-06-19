@@ -72,9 +72,15 @@ impl Type {
     }
 }
 
+#[derive(Debug, PartialEq)]
+pub struct FnArg {
+    pub name: String,
+    pub ty: Type,
+}
+
 #[derive(Debug, Default, PartialEq)]
 pub struct FnSig {
-    pub params: Vec<Type>,
+    pub args: Vec<FnArg>,
     pub return_type: Option<Type>,
 }
 

@@ -2,7 +2,7 @@ use std::mem;
 
 use crate::frontend::syntax::lexer::StringToken;
 use crate::frontend::syntax::{
-    Alt, Binary, BinaryOp, Call, Error, Expr, ExprKind, FnDef, FnSig, If, Let, Literal,
+    Alt, Binary, BinaryOp, Call, Error, Expr, ExprKind, FnArg, FnDef, FnSig, If, Let, Literal,
     LiteralKind, Logical, LogicalOp, Node, NodeKind, Scanner, Stmt, StmtKind, Token, Type,
 };
 
@@ -541,8 +541,8 @@ impl<'s> Parser<'s> {
         Ok(Type::new(span, name))
     }
 
-    fn fn_sig(&mut self) -> Result<FnSig> {
-        let mut params = vec![];
+    fn fn_type(&mut self) -> Result<(Vec<Type>, Option<Type>)> {
+        let mut args = vec![];
 
         let token = self.scanner.peek();
 
@@ -550,7 +550,7 @@ impl<'s> Parser<'s> {
             Some(Token::Ident(_)) => loop {
                 let ty = self.ty()?;
 
-                params.push(ty);
+                args.push(ty);
 
                 if !accept!(self.scanner, Token::Separator) {
                     break;
@@ -581,31 +581,60 @@ impl<'s> Parser<'s> {
             return_type = Some(self.ty()?);
         }
 
-        Ok(FnSig {
-            params,
-            return_type,
-        })
+        Ok((args, return_type))
     }
 
     fn func(&mut self) -> Result<FnDef> {
-        let mut sig = FnSig {
-            params: vec![],
-            return_type: None,
-        };
-
         expect!(self.scanner, Token::Fn);
         let name = expect!(withValue self.scanner, Token::Ident);
+        let mut arg_names = vec![];
 
-        if accept!(self.scanner, Token::TypeSeparator) {
+        if accept!(self.scanner, Token::ParentLeft) {
             self.scanner.advance();
-            sig = self.fn_sig()?;
+
+            loop {
+                let name = expect!(withValue self.scanner, Token::Ident);
+                arg_names.push(name);
+
+                if !accept!(self.scanner, Token::Separator) {
+                    break;
+                }
+
+                self.scanner.advance();
+            }
+
+            expect!(self.scanner, Token::ParentRight);
         }
+
+        let (arg_types, return_type) = if accept!(self.scanner, Token::TypeSeparator) {
+            self.scanner.advance();
+            self.fn_type()?
+        } else {
+            (vec![], None)
+        };
 
         expect!(self.scanner, Token::BracketLeft);
         let body = self.body()?;
         expect!(self.scanner, Token::BracketRight);
 
-        Ok(FnDef { name, sig, body })
+        if arg_names.len() != arg_types.len() {
+            return Err(Error::new(
+                self.scanner.span(),
+                "number of arguments does not match the Fn signature".to_string(),
+            ));
+        }
+
+        let args = arg_names
+            .into_iter()
+            .zip(arg_types)
+            .map(|(name, ty)| FnArg { name, ty })
+            .collect::<Vec<_>>();
+
+        Ok(FnDef {
+            name,
+            sig: FnSig { args, return_type },
+            body,
+        })
     }
 
     pub fn parse(mut self) -> Result<Vec<Node>> {

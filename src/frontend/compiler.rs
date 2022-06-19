@@ -1,9 +1,10 @@
 use crate::backend::{Block, Fn, Instr, InstrId, InstrKind, Module, Terminator, Type as LlvmType};
-use crate::frontend::scope::{find_local, Cursor, CursorData, Scope};
+use crate::frontend::scope::{find_local, Scope};
 use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
-use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Program, Stmt, StmtKind};
+use crate::frontend::tree::Cursor;
+use crate::frontend::typed_ast::{Expr, ExprKind, FnDef, NodeKind, Stmt, StmtKind};
 use crate::frontend::types::{self, Type, TypeKind};
-use crate::frontend::Error;
+use crate::frontend::{Error, Node};
 
 type Result<T> = std::result::Result<T, Error>;
 
@@ -23,7 +24,7 @@ pub struct Compiler<'c> {
     cursor: Cursor<'c, Scope>,
 }
 
-impl Compiler<'_> {
+impl<'c> Compiler<'c> {
     pub fn new() -> Self {
         Self {
             id: 0,
@@ -48,8 +49,7 @@ impl Compiler<'_> {
                 ));
             }
             ExprKind::Name(name) => {
-                let (_, idx) =
-                    find_local(self.cursor.as_slice(), self.cursor.index, &name).unwrap();
+                let (_, idx) = find_local(self.cursor.clone(), &name).unwrap();
 
                 block
                     .body
@@ -177,7 +177,7 @@ impl Compiler<'_> {
         );
 
         // Functions are always being stored as function pointers in atom
-        if let TypeKind::Function(fn_type) = &ty.kind {
+        if let TypeKind::Fn(fn_type) = &ty.kind {
             return Ok(LlvmType::Ptr(Box::new(LlvmType::Fn(
                 Box::new(self.to_concrete_type(&Span::default(), &fn_type.return_type)?),
                 vec![],
@@ -194,7 +194,7 @@ impl Compiler<'_> {
         name: String,
         expr: Expr,
     ) -> Result<()> {
-        let (_, idx) = find_local(self.cursor.as_slice(), self.cursor.index, &name).unwrap();
+        let (_, idx) = find_local(self.cursor.clone(), &name).unwrap();
 
         self.compile_expr(block, expr)?;
 
@@ -277,20 +277,29 @@ impl Compiler<'_> {
 
         self.cursor.move_to(fn_def.scope);
 
-        loop {
-            for local in self.cursor.head().locals() {
-                // Defaulting to `Int1` should be fine as it's guaranteed to be unused anyway
+        'locals_loop: for node in self.cursor.clone() {
+            let mut cursor = self.cursor.clone();
+            cursor.move_to(node.index);
+
+            // Make sure this scope is a descendant of the Fn scope
+            loop {
+                if cursor.node().map(|n| n.index) == Some(fn_def.scope) {
+                    break;
+                }
+
+                if !cursor.move_to_parent() {
+                    continue 'locals_loop;
+                }
+            }
+
+            for local in node.value.locals.iter() {
                 locals.push(
                     local
                         .ty
                         .as_ref()
                         .map(|ty| self.to_concrete_type(&span, ty))
-                        .unwrap_or_else(|| Ok(LlvmType::Int1))?,
+                        .unwrap()?,
                 );
-            }
-
-            if !self.cursor.next_sibling(fn_def.scope) {
-                break;
             }
         }
 
@@ -306,10 +315,10 @@ impl Compiler<'_> {
         Ok(())
     }
 
-    pub fn compile(mut self, program: Program) -> Result<Module> {
-        self.cursor = Cursor::new(CursorData::Owned(program.scopes));
+    pub fn compile(mut self, nodes: Vec<Node>, cursor: Cursor<'c, Scope>) -> Result<Module> {
+        self.cursor = cursor;
 
-        for node in program.nodes {
+        for node in nodes {
             match node.kind {
                 NodeKind::FnDef(fn_def) => self.compile_fn_def(node.span, fn_def)?,
             }

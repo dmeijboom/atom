@@ -3,6 +3,7 @@ mod compiler;
 mod error;
 mod scope;
 pub mod syntax;
+pub mod tree;
 mod typed_ast;
 pub mod types;
 

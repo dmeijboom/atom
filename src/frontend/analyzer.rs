@@ -1,10 +1,10 @@
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use crate::frontend::scope::{Local, ScopeKind, ScopeList};
-use crate::frontend::syntax::{Alt, BinaryOp, InferType};
+use crate::frontend::scope::{FnScope, Name, ScopeContainer, ScopeKind};
+use crate::frontend::syntax::{Alt, BinaryOp, InferType, Span};
 use crate::frontend::typed_ast::*;
-use crate::frontend::types::FunctionType;
+use crate::frontend::types::{FnArg, FnType};
 use crate::frontend::{syntax, types, Error, Node, Type, TypeKind};
 
 type Result<T> = std::result::Result<T, Error>;
@@ -12,17 +12,17 @@ type Result<T> = std::result::Result<T, Error>;
 macro_rules! error {
     ($span: expr, $($arg:tt)*) => {
         Err(Error::new($span, format!($($arg)*)))
-    };
+    }
 }
 
 #[derive(Debug)]
 struct Function {
-    ty: Rc<FunctionType>,
+    ty: Rc<FnType>,
 }
 
 pub struct Analyzer {
     nodes: Vec<Node>,
-    scopes: ScopeList,
+    scopes: ScopeContainer,
     return_type: Option<Type>,
     functions: HashMap<String, Function>,
 }
@@ -31,13 +31,13 @@ impl Analyzer {
     pub fn new() -> Self {
         Self {
             nodes: vec![],
-            scopes: ScopeList::new(),
+            scopes: ScopeContainer::new(),
             return_type: None,
             functions: HashMap::new(),
         }
     }
 
-    fn get_type(&mut self, ty: &syntax::Type) -> Result<Type> {
+    fn get_type(&self, ty: &syntax::Type) -> Result<Type> {
         if let Some(ty) = Type::from_name(&ty.name) {
             return Ok(ty);
         }
@@ -48,7 +48,7 @@ impl Analyzer {
     fn expr(&mut self, expr: syntax::Expr) -> Result<Expr> {
         Ok(match expr.kind {
             syntax::ExprKind::Ident(name) => {
-                let scope_id = self.scopes.head().id;
+                let scope_id = self.scopes.index;
 
                 match self.scopes.find_local_mut(&name) {
                     Some(local) => {
@@ -68,7 +68,7 @@ impl Analyzer {
                         expr.span,
                         Type::new(
                             name.clone(),
-                            TypeKind::Function(Rc::clone(&self.functions[&name].ty)),
+                            TypeKind::Fn(Rc::clone(&self.functions[&name].ty)),
                         ),
                         ExprKind::Fn(name),
                     )),
@@ -81,16 +81,45 @@ impl Analyzer {
             }
             syntax::ExprKind::Call(call) => {
                 let callee = self.expr(call.callee)?;
-                let fn_type = if let TypeKind::Function(fn_type) = &callee.ty.kind {
+                let fn_type = if let TypeKind::Fn(fn_type) = &callee.ty.kind {
                     Rc::clone(fn_type)
                 } else {
                     return error!(expr.span, "unable to call {}", callee.ty);
                 };
 
+                if fn_type.args.len() != call.args.len() {
+                    return error!(
+                        expr.span,
+                        "invalid argument count of {} for Fn '{}(...)' (should be {})",
+                        call.args.len(),
+                        fn_type.name,
+                        fn_type.args.len(),
+                    );
+                }
+
+                let mut args = vec![];
+
+                for (i, arg) in call.args.into_iter().enumerate() {
+                    let expr = self.expr(arg)?;
+
+                    if expr.ty != fn_type.args[i].ty {
+                        return error!(
+                            expr.span,
+                            "invalid type {} for argument '{}' of Fn '{}(...)' (should be {})",
+                            expr.ty,
+                            fn_type.args[i].name,
+                            fn_type.name,
+                            fn_type.args[i].ty
+                        );
+                    }
+
+                    args.push(expr);
+                }
+
                 Expr::new(
                     expr.span,
                     fn_type.return_type.clone(),
-                    ExprKind::Call(Box::new(callee), vec![]),
+                    ExprKind::Call(Box::new(callee), args),
                 )
             }
             syntax::ExprKind::Logical(logical) => {
@@ -186,7 +215,7 @@ impl Analyzer {
 
         Ok(Stmt::new(
             if_stmt.span,
-            self.scopes.head().id,
+            self.scopes.index,
             StmtKind::If(expr, if_body, else_body),
         ))
     }
@@ -202,7 +231,7 @@ impl Analyzer {
                 }
                 syntax::StmtKind::Assign(name, expr) => {
                     let expr = self.expr(expr)?;
-                    let scope_id = self.scopes.head().id;
+                    let scope_id = self.scopes.index;
                     let local = self.scopes.find_local(&name).ok_or_else(|| {
                         Error::new(expr.span.clone(), format!("no such name: {}", name))
                     })?;
@@ -253,7 +282,7 @@ impl Analyzer {
 
                     body.push(Stmt::new(
                         stmt.span,
-                        self.scopes.head().id,
+                        self.scopes.index,
                         StmtKind::Return(expr),
                     ));
 
@@ -284,23 +313,23 @@ impl Analyzer {
                         None
                     };
 
+                    let mut name =
+                        Name::new(stmt.span.clone(), let_stmt.name.clone(), let_stmt.mutable);
+
+                    if let Some(ty) = ty {
+                        name = name.with_type(ty);
+                    }
+
+                    if expr.is_some() {
+                        name = name.with_value(self.scopes.index);
+                    }
+
                     let scope = self.scopes.head_mut();
-                    scope.declare(Local {
-                        ty,
-                        span: stmt.span.clone(),
-                        name: let_stmt.name.clone(),
-                        mutable: let_stmt.mutable,
-                        usages: vec![],
-                        assigned: if expr.is_some() {
-                            vec![scope.id]
-                        } else {
-                            vec![]
-                        },
-                    })?;
+                    scope.declare(name)?;
 
                     body.push(Stmt::new(
                         stmt.span,
-                        self.scopes.head().id,
+                        self.scopes.index,
                         StmtKind::Let(let_stmt.name, expr),
                     ));
                 }
@@ -309,7 +338,7 @@ impl Analyzer {
 
                     body.push(Stmt::new(
                         stmt.span,
-                        self.scopes.head().id,
+                        self.scopes.index,
                         if i == body_size - 1 {
                             self.return_type = Some(expr.ty.clone());
                             StmtKind::Return(Some(expr))
@@ -323,7 +352,7 @@ impl Analyzer {
 
                     body.push(Stmt::new(
                         stmt.span,
-                        self.scopes.head().id,
+                        self.scopes.index,
                         StmtKind::Expr(expr),
                     ));
                 }
@@ -340,7 +369,20 @@ impl Analyzer {
             None
         };
 
-        self.scopes.enter(ScopeKind::Fn);
+        let scope_info = FnScope::new(
+            self.functions
+                .get(&fn_def.name)
+                .unwrap()
+                .ty
+                .args
+                .iter()
+                .map(|arg| {
+                    Name::new(Span::default(), arg.name.clone(), false).with_type(arg.ty.clone())
+                })
+                .collect::<Vec<_>>(),
+        );
+
+        self.scopes.enter(ScopeKind::Fn(scope_info));
         let body = self.body(fn_def.body)?;
         let scope = self.scopes.leave();
         let return_type = self.return_type.take().unwrap_or(types::VOID);
@@ -349,26 +391,10 @@ impl Analyzer {
         if let Some(ty) = Rc::get_mut(&mut entry.ty) {
             ty.return_type = return_type.clone();
         } else {
-            entry.ty = Rc::new(FunctionType {
+            entry.ty = Rc::new(FnType {
                 return_type: return_type.clone(),
                 ..entry.ty.as_ref().clone()
             });
-        }
-
-        let mut cursor = self.scopes.cursor();
-
-        cursor.move_to(scope);
-
-        loop {
-            for local in cursor.head().locals() {
-                if local.usages.is_empty() {
-                    return error!(local.span.clone(), "unused name '{}'", local.name);
-                }
-            }
-
-            if !cursor.next_sibling(scope) {
-                break;
-            }
         }
 
         Ok(FnDef {
@@ -377,6 +403,21 @@ impl Analyzer {
             return_type,
             scope,
         })
+    }
+
+    fn map_args(&self, args: &[syntax::FnArg]) -> Result<Vec<FnArg>> {
+        let mut out_args = Vec::new();
+
+        for arg in args {
+            let ty = self.get_type(&arg.ty)?;
+
+            out_args.push(FnArg {
+                ty,
+                name: arg.name.clone(),
+            });
+        }
+
+        Ok(out_args)
     }
 
     pub fn analyze(mut self, program: Vec<syntax::Node>) -> Result<Program> {
@@ -399,9 +440,9 @@ impl Analyzer {
                     self.functions.insert(
                         fn_def.name.clone(),
                         Function {
-                            ty: Rc::new(FunctionType {
+                            ty: Rc::new(FnType {
                                 name: fn_def.name.clone(),
-                                args: vec![],
+                                args: self.map_args(&fn_def.sig.args)?,
                                 return_type,
                             }),
                         },
@@ -415,6 +456,17 @@ impl Analyzer {
                 syntax::NodeKind::FnDef(fn_def) => {
                     let kind = NodeKind::FnDef(self.func(fn_def)?);
                     self.nodes.push(Node::new(node.span, kind));
+                }
+            }
+        }
+
+        let mut cursor = self.scopes.cursor();
+        cursor.move_to(0);
+
+        for node in cursor {
+            for local in node.value.locals.iter() {
+                if local.usages.is_empty() {
+                    return error!(local.span.clone(), "unused name '{}'", local.name);
                 }
             }
         }

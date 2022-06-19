@@ -1,10 +1,11 @@
 use crate::frontend::scope::{Scope, ScopeId};
 use crate::frontend::syntax::{BinaryOp, LiteralKind, LogicalOp, Span};
+use crate::frontend::tree::Tree;
 use crate::frontend::Type;
 
 #[derive(Debug)]
 pub struct Program {
-    pub scopes: Vec<Scope>,
+    pub scopes: Tree<Scope>,
     pub nodes: Vec<Node>,
 }
 

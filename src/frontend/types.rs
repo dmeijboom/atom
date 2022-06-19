@@ -25,15 +25,15 @@ macro_rules! static_types {
 type TypeName = Cow<'static, str>;
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Argument {
+pub struct FnArg {
     pub name: String,
     pub ty: Type,
 }
 
 #[derive(Debug, Clone)]
-pub struct FunctionType {
+pub struct FnType {
     pub name: String,
-    pub args: Vec<Argument>,
+    pub args: Vec<FnArg>,
     pub return_type: Type,
 }
 
@@ -43,7 +43,7 @@ pub enum TypeKind {
     String,
     Int { size: usize, signed: bool },
     Float { size: usize },
-    Function(Rc<FunctionType>),
+    Fn(Rc<FnType>),
     Void,
     Unknown,
 }
@@ -55,7 +55,7 @@ impl TypeKind {
             TypeKind::String => 2,
             TypeKind::Int { .. } => 3,
             TypeKind::Float { .. } => 4,
-            TypeKind::Function(_) => 5,
+            TypeKind::Fn(_) => 5,
             TypeKind::Void => 6,
             TypeKind::Unknown => 7,
         }

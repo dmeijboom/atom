@@ -59,7 +59,7 @@ fn main() -> Result<()> {
             println!("\n-- Typed AST --");
             pretty_print(&program);
 
-            let module = Compiler::new().compile(program)?;
+            let module = Compiler::new().compile(program.nodes, program.scopes.cursor())?;
 
             println!("\n-- module --");
             pretty_print(&module);
