@@ -1,96 +1,74 @@
-extern crate core;
+use std::{fs, path::PathBuf, process::exit};
 
-mod backend;
-mod frontend;
-mod gcc;
+use anyhow::Result;
+use ast::Location;
+use clap::Parser as _;
+use logos::Logos;
 
-use std::fmt::Debug;
-use std::fs;
-use std::path::PathBuf;
+mod ast;
+mod parser;
+mod token;
 
-use anyhow::{Context, Result};
-use clap::Parser as ClapParser;
-use inkwell::context;
-use temp_dir::TempDir;
+use parser::{Error, Parser};
+use token::Token;
 
-use crate::frontend::Analyzer;
-use backend::CodeGen;
-use frontend::{syntax::Parser, Compiler};
-
-#[derive(ClapParser)]
-#[clap(about = "atom")]
+#[derive(clap::Parser)]
 struct Opts {
-    #[clap(subcommand)]
-    cmd: Cmd,
-}
-
-#[derive(ClapParser)]
-struct CompileOpts {
-    filename: PathBuf,
-    #[clap(long)]
-    check: bool,
-    #[clap(short)]
-    output: Option<PathBuf>,
-}
-
-#[derive(ClapParser)]
-enum Cmd {
-    #[clap(about = "Compile a program")]
-    Compile(CompileOpts),
-}
-
-fn pretty_print<T: Debug>(input: T) {
-    println!("{}", format!("{:#?}", input).replace("    ", "  "));
+    source: PathBuf,
 }
 
 fn main() -> Result<()> {
     let opts = Opts::parse();
+    let source = fs::read_to_string(opts.source)?;
+    let lexer = Token::lexer(&source);
+    let parser = Parser::new(lexer);
 
-    match opts.cmd {
-        Cmd::Compile(opts) => {
-            let source = fs::read_to_string(opts.filename).context("failed to read file")?;
-            let program = Parser::new(&source).parse()?;
+    match parser.parse() {
+        Ok(tree) => println!("{:#?}", tree),
+        Err(e) => {
+            let message = format!("{}", e);
 
-            println!("-- AST --");
-            pretty_print(&program);
+            match e {
+                Error::Syntax { location } => {
+                    eprintln!(
+                        "ParseError: {} at {}:{}",
+                        message, location.line, location.column
+                    );
+                    show_error(&source, location)
+                }
+                Error::UnexpectedToken { location, .. } => {
+                    eprintln!(
+                        "ParseError: {} at {}:{}",
+                        message, location.line, location.column
+                    );
+                    show_error(&source, location)
+                }
+                _ => {}
+            };
 
-            let program = Analyzer::new().analyze(program)?;
+            exit(1);
+        }
+    }
 
-            println!("\n-- Typed AST --");
-            pretty_print(&program);
+    Ok(())
+}
 
-            let module = Compiler::new().compile(program.nodes, program.scopes.cursor())?;
+fn show_error(source: &str, location: Location) {
+    let summary = source
+        .lines()
+        .enumerate()
+        .filter(|(idx, _)| *idx + 1 >= location.line - 1 && *idx < location.line)
+        .collect::<Vec<_>>();
 
-            println!("\n-- module --");
-            pretty_print(&module);
+    println!();
 
-            let ctx = context::Context::create();
-            let codegen = CodeGen::new(&ctx, &module.name);
-            let buffer = codegen
-                .generate(&module, true)
-                .context("code generation failed")?;
+    for (line_no, line) in summary {
+        let prefix = format!("{} | ", line_no + 1);
 
-            if opts.check {
-                return Ok(());
-            }
+        eprintln!("{}{}", prefix, line);
 
-            let build_dir = TempDir::new()?;
-
-            fs::write(build_dir.child("program.o"), buffer.as_slice())
-                .context("failed to write to object file")?;
-
-            gcc::compile(
-                build_dir.child("program.o"),
-                build_dir.child("program"),
-                true,
-            )?;
-
-            fs::rename(
-                build_dir.child("program"),
-                opts.output.unwrap_or_else(|| PathBuf::from("program")),
-            )?;
-
-            Ok(())
+        if line_no + 1 == location.line {
+            eprintln!("{}^", " ".repeat(prefix.len() + location.column - 1));
         }
     }
 }

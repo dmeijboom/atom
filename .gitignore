@@ -2,3 +2,8 @@ target
 /program
 /example.atom
 /.atom_repl_history
+
+
+# Added by cargo
+
+/target
