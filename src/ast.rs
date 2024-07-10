@@ -15,6 +15,7 @@ pub enum BinaryOp {
     Gte,
     Lt,
     Lte,
+    Assign,
 }
 
 #[derive(Debug)]

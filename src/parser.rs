@@ -5,12 +5,13 @@ use crate::{
     lexer::{Token, TokenKind},
 };
 
-const PREC_EQ: u8 = 1;
-const PREC_REL: u8 = 2;
-const PREC_ADD: u8 = 3;
-const PREC_MUL: u8 = 4;
-const PREC_PRE: u8 = 5;
-const PREC_CALL: u8 = 6;
+const PREC_ASS: u8 = 1;
+const PREC_EQ: u8 = 2;
+const PREC_REL: u8 = 3;
+const PREC_ADD: u8 = 4;
+const PREC_MUL: u8 = 5;
+const PREC_PRE: u8 = 6;
+const PREC_CALL: u8 = 7;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -178,6 +179,9 @@ impl Parser {
                 (TokenKind::Not, Some(TokenKind::Eq)) if min_prec <= PREC_EQ => {
                     self.advance();
                     self.binary(expr, BinaryOp::Ne, min_prec)?
+                }
+                (TokenKind::Eq, _) if min_prec <= PREC_ASS => {
+                    self.binary(expr, BinaryOp::Assign, min_prec - 1)?
                 }
                 _ => return Ok(expr),
             },
