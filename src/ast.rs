@@ -1,3 +1,5 @@
+use crate::lexer::Span;
+
 #[derive(Debug)]
 pub enum UnaryOp {
     Not,
@@ -27,7 +29,7 @@ pub enum Literal {
 }
 
 #[derive(Debug)]
-pub enum Expr {
+pub enum ExprKind {
     Unary(UnaryOp, Box<Expr>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Array(Vec<Expr>),
@@ -37,9 +39,33 @@ pub enum Expr {
     Literal(Literal),
 }
 
+impl ExprKind {
+    pub fn at(self, span: Span) -> Expr {
+        Expr { span, kind: self }
+    }
+}
+
 #[derive(Debug)]
-pub enum Stmt {
+pub struct Expr {
+    pub kind: ExprKind,
+    pub span: Span,
+}
+
+#[derive(Debug)]
+pub enum StmtKind {
     Let(String, Expr),
     Expr(Expr),
     Fn(String, Vec<String>, Vec<Stmt>),
+}
+
+impl StmtKind {
+    pub fn at(self, span: Span) -> Stmt {
+        Stmt { span, kind: self }
+    }
+}
+
+#[derive(Debug)]
+pub struct Stmt {
+    pub kind: StmtKind,
+    pub span: Span,
 }

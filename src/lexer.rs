@@ -3,7 +3,7 @@ use std::{
     num::{ParseFloatError, ParseIntError},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Span {
     pub offset: usize,
 }

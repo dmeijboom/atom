@@ -1,8 +1,8 @@
 use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
-    ast::{BinaryOp, Expr, Literal, Stmt, UnaryOp},
-    lexer::{Token, TokenKind},
+    ast::{BinaryOp, Expr, ExprKind, Literal, Stmt, StmtKind, UnaryOp},
+    lexer::{Span, Token, TokenKind},
 };
 
 const PREC_ASS: u8 = 1;
@@ -45,6 +45,13 @@ impl Parser {
         (self.tokens.front(), self.tokens.get(1))
     }
 
+    fn span(&self) -> Span {
+        self.tokens
+            .front()
+            .map(|t| t.span.clone())
+            .unwrap_or_default()
+    }
+
     fn advance(&mut self) {
         let _ = self.next();
     }
@@ -73,9 +80,9 @@ impl Parser {
         false
     }
 
-    fn array(&mut self) -> Result<Expr, Error> {
+    fn array(&mut self) -> Result<ExprKind, Error> {
         let items = self.expr_list(TokenKind::SqrBracketRight, 1)?;
-        Ok(Expr::Array(items))
+        Ok(ExprKind::Array(items))
     }
 
     fn semi(&mut self) -> Result<(), Error> {
@@ -115,12 +122,12 @@ impl Parser {
     fn primary(&mut self) -> Result<Expr, Error> {
         match self.next() {
             Some(token) => match token.kind {
-                TokenKind::IntLit(i) => Ok(Expr::Literal(Literal::Int(i))),
-                TokenKind::FloatLit(f) => Ok(Expr::Literal(Literal::Float(f))),
-                TokenKind::BoolLit(b) => Ok(Expr::Literal(Literal::Bool(b))),
-                TokenKind::StringLit(s) => Ok(Expr::Literal(Literal::String(s))),
-                TokenKind::Ident(id) => Ok(Expr::Ident(id)),
-                TokenKind::SqrBracketLeft => Ok(self.array()?),
+                TokenKind::IntLit(i) => Ok(ExprKind::Literal(Literal::Int(i)).at(token.span)),
+                TokenKind::FloatLit(f) => Ok(ExprKind::Literal(Literal::Float(f)).at(token.span)),
+                TokenKind::BoolLit(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
+                TokenKind::StringLit(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
+                TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
+                TokenKind::SqrBracketLeft => Ok(self.array()?.at(token.span)),
                 kind => Err(Error::InvalidExpr(kind)),
             },
             None => Err(Error::UnexpectedEof),
@@ -128,9 +135,11 @@ impl Parser {
     }
 
     fn binary(&mut self, lhs: Expr, op: BinaryOp, min_prec: u8) -> Result<Expr, Error> {
+        let span = lhs.span.clone();
         self.advance();
         let rhs = self.expr(min_prec + 1)?;
-        Ok(Expr::Binary(Box::new(lhs), op, Box::new(rhs)))
+
+        Ok(ExprKind::Binary(Box::new(lhs), op, Box::new(rhs)).at(span))
     }
 
     fn compute(&mut self, expr: Expr, min_prec: u8) -> Result<Expr, Error> {
@@ -139,12 +148,16 @@ impl Parser {
                 (TokenKind::Dot, _) if min_prec <= PREC_CALL => {
                     self.advance();
                     let rhs = self.expr(min_prec + 1)?;
-                    Expr::Member(Box::new(expr), Box::new(rhs))
+                    let span = expr.span.clone();
+
+                    ExprKind::Member(Box::new(expr), Box::new(rhs)).at(span)
                 }
                 (TokenKind::ParentLeft, _) if min_prec <= PREC_CALL => {
                     self.advance();
                     let args = self.expr_list(TokenKind::ParentRight, min_prec + 1)?;
-                    Expr::Call(Box::new(expr), args)
+                    let span = expr.span.clone();
+
+                    ExprKind::Call(Box::new(expr), args).at(span)
                 }
                 (TokenKind::Mul, _) if min_prec <= PREC_MUL => {
                     self.binary(expr, BinaryOp::Mul, min_prec)?
@@ -195,9 +208,10 @@ impl Parser {
         match self.hdr() {
             Some(token) => match token.kind {
                 TokenKind::Not if min_prec <= PREC_PRE => {
+                    let span = self.span();
                     self.advance();
                     let expr = self.expr(min_prec + 1)?;
-                    let lhs = Expr::Unary(UnaryOp::Not, Box::new(expr));
+                    let lhs = ExprKind::Unary(UnaryOp::Not, Box::new(expr)).at(span);
 
                     self.compute(lhs, min_prec + 1)
                 }
@@ -211,9 +225,11 @@ impl Parser {
     }
 
     fn expr_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
         let expr = self.expr(1)?;
         self.semi()?;
-        Ok(Stmt::Expr(expr))
+
+        Ok(StmtKind::Expr(expr).at(span))
     }
 
     fn ident(&mut self) -> Result<String, Error> {
@@ -230,16 +246,18 @@ impl Parser {
     }
 
     fn let_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
         self.advance();
         let name = self.ident()?;
         self.expect(TokenKind::Eq)?;
         let value = self.expr(1)?;
         self.semi()?;
 
-        Ok(Stmt::Let(name, value))
+        Ok(StmtKind::Let(name, value).at(span))
     }
 
     fn fn_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
         self.advance();
         let name = self.ident()?;
         self.expect(TokenKind::ParentLeft)?;
@@ -248,7 +266,7 @@ impl Parser {
         let body = self.body(false)?;
         self.expect(TokenKind::BracketRight)?;
 
-        Ok(Stmt::Fn(name, args, body))
+        Ok(StmtKind::Fn(name, args, body).at(span))
     }
 
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
