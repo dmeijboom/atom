@@ -12,6 +12,7 @@ const PREC_ADD: u8 = 4;
 const PREC_MUL: u8 = 5;
 const PREC_PRE: u8 = 6;
 const PREC_CALL: u8 = 7;
+const PREC_GROUP: u8 = 8;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -147,54 +148,54 @@ impl Parser {
             (Some(token), next) => match (&token.kind, next.map(|t| &t.kind)) {
                 (TokenKind::Dot, _) if min_prec <= PREC_CALL => {
                     self.advance();
-                    let rhs = self.expr(min_prec + 1)?;
+                    let rhs = self.expr(PREC_CALL + 1)?;
                     let span = expr.span.clone();
 
                     ExprKind::Member(Box::new(expr), Box::new(rhs)).at(span)
                 }
                 (TokenKind::ParentLeft, _) if min_prec <= PREC_CALL => {
                     self.advance();
-                    let args = self.expr_list(TokenKind::ParentRight, min_prec + 1)?;
+                    let args = self.expr_list(TokenKind::ParentRight, PREC_CALL + 1)?;
                     let span = expr.span.clone();
 
                     ExprKind::Call(Box::new(expr), args).at(span)
                 }
                 (TokenKind::Mul, _) if min_prec <= PREC_MUL => {
-                    self.binary(expr, BinaryOp::Mul, min_prec)?
+                    self.binary(expr, BinaryOp::Mul, PREC_MUL)?
                 }
                 (TokenKind::Div, _) if min_prec <= PREC_MUL => {
-                    self.binary(expr, BinaryOp::Div, min_prec)?
+                    self.binary(expr, BinaryOp::Div, PREC_MUL)?
                 }
                 (TokenKind::Add, _) if min_prec <= PREC_ADD => {
-                    self.binary(expr, BinaryOp::Add, min_prec)?
+                    self.binary(expr, BinaryOp::Add, PREC_ADD)?
                 }
                 (TokenKind::Sub, _) if min_prec <= PREC_ADD => {
-                    self.binary(expr, BinaryOp::Sub, min_prec)?
+                    self.binary(expr, BinaryOp::Sub, PREC_ADD)?
                 }
                 (TokenKind::Lt, Some(TokenKind::Eq)) if min_prec <= PREC_REL => {
                     self.advance();
-                    self.binary(expr, BinaryOp::Lte, min_prec)?
+                    self.binary(expr, BinaryOp::Lte, PREC_REL)?
                 }
                 (TokenKind::Gt, Some(TokenKind::Eq)) if min_prec <= PREC_REL => {
                     self.advance();
-                    self.binary(expr, BinaryOp::Gte, min_prec)?
+                    self.binary(expr, BinaryOp::Gte, PREC_REL)?
                 }
                 (TokenKind::Lt, _) if min_prec <= PREC_REL => {
-                    self.binary(expr, BinaryOp::Lt, min_prec)?
+                    self.binary(expr, BinaryOp::Lt, PREC_REL)?
                 }
                 (TokenKind::Gt, _) if min_prec <= PREC_REL => {
-                    self.binary(expr, BinaryOp::Gt, min_prec)?
+                    self.binary(expr, BinaryOp::Gt, PREC_REL)?
                 }
                 (TokenKind::Eq, Some(TokenKind::Eq)) if min_prec <= PREC_EQ => {
                     self.advance();
-                    self.binary(expr, BinaryOp::Eq, min_prec)?
+                    self.binary(expr, BinaryOp::Eq, PREC_EQ)?
                 }
                 (TokenKind::Not, Some(TokenKind::Eq)) if min_prec <= PREC_EQ => {
                     self.advance();
-                    self.binary(expr, BinaryOp::Ne, min_prec)?
+                    self.binary(expr, BinaryOp::Ne, PREC_EQ)?
                 }
                 (TokenKind::Eq, _) if min_prec <= PREC_ASS => {
-                    self.binary(expr, BinaryOp::Assign, min_prec - 1)?
+                    self.binary(expr, BinaryOp::Assign, PREC_ASS - 1)?
                 }
                 _ => return Ok(expr),
             },
@@ -207,13 +208,21 @@ impl Parser {
     fn expr(&mut self, min_prec: u8) -> Result<Expr, Error> {
         match self.hdr() {
             Some(token) => match token.kind {
+                TokenKind::ParentLeft if min_prec <= PREC_GROUP => {
+                    self.advance();
+                    let lhs = self.expr(PREC_GROUP + 1)?;
+                    let expr = self.compute(lhs, min_prec + 1)?;
+                    self.expect(TokenKind::ParentRight)?;
+
+                    Ok(expr)
+                }
                 TokenKind::Not if min_prec <= PREC_PRE => {
                     let span = self.span();
                     self.advance();
-                    let expr = self.expr(min_prec + 1)?;
+                    let expr = self.expr(PREC_PRE + 1)?;
                     let lhs = ExprKind::Unary(UnaryOp::Not, Box::new(expr)).at(span);
 
-                    self.compute(lhs, min_prec + 1)
+                    self.compute(lhs, 1)
                 }
                 _ => {
                     let lhs = self.primary()?;

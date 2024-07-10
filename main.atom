@@ -1,2 +1,1 @@
-let my_name = name == "dillen".lower();
-my_name = 10 * 1;
+!true + 3;
