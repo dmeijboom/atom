@@ -18,6 +18,11 @@ pub enum BinaryOp {
     Lt,
     Lte,
     Assign,
+    LogicalOr,
+    LogicalAnd,
+    BitwiseOr,
+    BitwiseAnd,
+    BitwiseXor,
 }
 
 #[derive(Debug)]

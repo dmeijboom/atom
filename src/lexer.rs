@@ -8,6 +8,12 @@ pub struct Span {
     pub offset: usize,
 }
 
+impl Display for Span {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "@{}", self.offset)
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Token {
     pub kind: TokenKind,
@@ -42,6 +48,9 @@ pub enum TokenKind {
     Not,
     Lt,
     Gt,
+    And,
+    Or,
+    Pow,
     BoolLit(bool),
     IntLit(i64),
     FloatLit(f64),
@@ -78,6 +87,9 @@ impl Display for TokenKind {
             Self::Not => write!(f, "!"),
             Self::Lt => write!(f, "<"),
             Self::Gt => write!(f, ">"),
+            Self::And => write!(f, "&"),
+            Self::Or => write!(f, "|"),
+            Self::Pow => write!(f, "^"),
             Self::BoolLit(true) => write!(f, "true"),
             Self::BoolLit(false) => write!(f, "false"),
             Self::IntLit(value) => write!(f, "{}", value),
@@ -242,6 +254,9 @@ impl<'a> Lexer<'a> {
                 (Some('-'), _) => TokenKind::Sub.at(span),
                 (Some('*'), _) => TokenKind::Mul.at(span),
                 (Some('/'), _) => TokenKind::Div.at(span),
+                (Some('&'), _) => TokenKind::And.at(span),
+                (Some('|'), _) => TokenKind::Or.at(span),
+                (Some('^'), _) => TokenKind::Pow.at(span),
                 (Some('!'), _) => TokenKind::Not.at(span),
                 (Some('='), _) => TokenKind::Eq.at(span),
                 (Some('<'), _) => TokenKind::Lt.at(span),
