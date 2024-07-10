@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
     ast::{Expr, Literal, Op, Stmt},
@@ -8,7 +8,10 @@ use crate::{
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("unexpected token {actual}, expected: {expected}")]
-    UnexpectedToken { expected: TokenKind, actual: Token },
+    UnexpectedToken {
+        expected: Cow<'static, str>,
+        actual: Token,
+    },
     #[error("unexpected eof")]
     UnexpectedEof,
     #[error("invalid expr: {0}")]
@@ -38,11 +41,11 @@ impl Parser {
         self.tokens.pop_front()
     }
 
-    fn expect(&mut self, expected: &TokenKind) -> Result<(), Error> {
+    fn expect(&mut self, expected: TokenKind) -> Result<(), Error> {
         match self.next() {
-            Some(token) if &token.kind == expected => Ok(()),
+            Some(token) if token.kind == expected => Ok(()),
             Some(token) => Err(Error::UnexpectedToken {
-                expected: expected.clone(),
+                expected: Cow::Owned(format!("{expected}")),
                 actual: token.clone(),
             }),
             None => Err(Error::UnexpectedEof),
@@ -55,7 +58,7 @@ impl Parser {
     }
 
     fn semi(&mut self) -> Result<(), Error> {
-        self.expect(&TokenKind::Semi)
+        self.expect(TokenKind::Semi)
     }
 
     fn expr_list(&mut self, sep: TokenKind, min_prec: u8) -> Result<Vec<Expr>, Error> {
@@ -78,7 +81,7 @@ impl Parser {
                 }
                 Some(token) => {
                     return Err(Error::UnexpectedToken {
-                        expected: sep,
+                        expected: Cow::Owned(format!("{sep}")),
                         actual: token.clone(),
                     })
                 }
@@ -91,14 +94,14 @@ impl Parser {
 
     fn primary(&mut self) -> Result<Expr, Error> {
         match self.next() {
-            Some(token) => match &token.kind {
-                TokenKind::IntLit(i) => Ok(Expr::Literal(Literal::Int(*i))),
-                TokenKind::FloatLit(f) => Ok(Expr::Literal(Literal::Float(*f))),
-                TokenKind::BoolLit(b) => Ok(Expr::Literal(Literal::Bool(*b))),
-                TokenKind::StringLit(s) => Ok(Expr::Literal(Literal::String(s.clone()))),
-                TokenKind::Ident(id) => Ok(Expr::Ident(id.clone())),
+            Some(token) => match token.kind {
+                TokenKind::IntLit(i) => Ok(Expr::Literal(Literal::Int(i))),
+                TokenKind::FloatLit(f) => Ok(Expr::Literal(Literal::Float(f))),
+                TokenKind::BoolLit(b) => Ok(Expr::Literal(Literal::Bool(b))),
+                TokenKind::StringLit(s) => Ok(Expr::Literal(Literal::String(s))),
+                TokenKind::Ident(id) => Ok(Expr::Ident(id)),
                 TokenKind::SqrBracketLeft => Ok(self.array()?),
-                kind => Err(Error::InvalidExpr(kind.clone())),
+                kind => Err(Error::InvalidExpr(kind)),
             },
             None => Err(Error::UnexpectedEof),
         }
@@ -160,15 +163,39 @@ impl Parser {
         Ok(Stmt::Expr(expr))
     }
 
+    fn ident(&mut self) -> Result<String, Error> {
+        match self.next() {
+            Some(token) => match token.kind {
+                TokenKind::Ident(id) => Ok(id),
+                _ => Err(Error::UnexpectedToken {
+                    expected: Cow::Borrowed("ident"),
+                    actual: token,
+                }),
+            },
+            None => Err(Error::UnexpectedEof),
+        }
+    }
+
+    fn let_stmt(&mut self) -> Result<Stmt, Error> {
+        self.advance();
+        let name = self.ident()?;
+        self.expect(TokenKind::Eq)?;
+        let value = self.expr(1)?;
+        self.semi()?;
+
+        Ok(Stmt::Let(name, value))
+    }
+
     pub fn parse(mut self) -> Result<Vec<Stmt>, Error> {
         let mut stmts = vec![];
 
         while let Some(token) = self.hdr() {
-            if token.kind == TokenKind::Eof {
-                break;
-            }
+            let stmt = match &token.kind {
+                TokenKind::Eof => break,
+                TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
+                _ => self.expr_stmt()?,
+            };
 
-            let stmt = self.expr_stmt()?;
             stmts.push(stmt);
         }
 

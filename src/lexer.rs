@@ -173,6 +173,7 @@ impl<'a> Lexer<'a> {
                     dot = true;
                     num.push('.');
                     num.push(*c);
+                    self.advance();
                 }
                 (Some(_), _) => {
                     self.move_back();
@@ -215,34 +216,34 @@ impl<'a> Lexer<'a> {
 
         loop {
             let span = self.span();
-            let token = match self.next() {
-                Some(c) if c.is_whitespace() => continue,
-                Some('{') => TokenKind::BracketLeft.at(span),
-                Some('}') => TokenKind::BracketRight.at(span),
-                Some('[') => TokenKind::SqrBracketLeft.at(span),
-                Some(']') => TokenKind::SqrBracketRight.at(span),
-                Some('(') => TokenKind::ParentLeft.at(span),
-                Some(')') => TokenKind::ParentRight.at(span),
-                Some(':') => TokenKind::Colon.at(span),
-                Some(';') => TokenKind::Semi.at(span),
-                Some('.') => TokenKind::Dot.at(span),
-                Some(',') => TokenKind::Comma.at(span),
-                Some('+') => TokenKind::Add.at(span),
-                Some('-') => TokenKind::Sub.at(span),
-                Some('*') => TokenKind::Mul.at(span),
-                Some('/') => TokenKind::Div.at(span),
-                Some('=') => TokenKind::Eq.at(span),
-                Some('"') => self.string(span)?,
-                Some(c) if c.is_ascii_digit() || c == &'.' => {
+            let token = match self.next_and_hdr() {
+                (Some(c), _) if c.is_whitespace() => continue,
+                (Some(c), Some(n)) if c.is_ascii_digit() || (c == &'.' && n.is_ascii_digit()) => {
                     self.move_back();
                     self.number()?
                 }
-                Some('_' | 'a'..='z' | 'A'..='Z') => {
+                (Some('{'), _) => TokenKind::BracketLeft.at(span),
+                (Some('}'), _) => TokenKind::BracketRight.at(span),
+                (Some('['), _) => TokenKind::SqrBracketLeft.at(span),
+                (Some(']'), _) => TokenKind::SqrBracketRight.at(span),
+                (Some('('), _) => TokenKind::ParentLeft.at(span),
+                (Some(')'), _) => TokenKind::ParentRight.at(span),
+                (Some(':'), _) => TokenKind::Colon.at(span),
+                (Some(';'), _) => TokenKind::Semi.at(span),
+                (Some('.'), _) => TokenKind::Dot.at(span),
+                (Some(','), _) => TokenKind::Comma.at(span),
+                (Some('+'), _) => TokenKind::Add.at(span),
+                (Some('-'), _) => TokenKind::Sub.at(span),
+                (Some('*'), _) => TokenKind::Mul.at(span),
+                (Some('/'), _) => TokenKind::Div.at(span),
+                (Some('='), _) => TokenKind::Eq.at(span),
+                (Some('"'), _) => self.string(span)?,
+                (Some('_' | 'a'..='z' | 'A'..='Z'), _) => {
                     self.move_back();
                     self.term()
                 }
-                Some(c) => return Err(Error::InvalidInput(*c)),
-                None => {
+                (Some(c), _) => return Err(Error::InvalidInput(*c)),
+                (None, _) => {
                     tokens.push(TokenKind::Eof.at(span));
                     break;
                 }

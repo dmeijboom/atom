@@ -4,7 +4,6 @@ pub enum Op {
     Sub,
     Mul,
     Div,
-    Eq,
 }
 
 #[derive(Debug)]
