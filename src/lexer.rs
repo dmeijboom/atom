@@ -90,10 +90,6 @@ fn is_keyword(s: &str) -> bool {
     matches!(s, "if" | "else" | "elif" | "for" | "let" | "fn" | "return")
 }
 
-fn is_digit(c: &char) -> bool {
-    matches!(c, '0'..='9')
-}
-
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("failed to parse float: {0}")]
@@ -171,12 +167,12 @@ impl<'a> Lexer<'a> {
 
         loop {
             match self.next_and_hdr() {
-                (Some(c), _) if is_digit(c) => num.push(c.clone()),
+                (Some(c), _) if c.is_ascii_digit() => num.push(*c),
                 (Some('_'), _) => continue,
-                (Some('.'), Some(c)) if !dot && is_digit(c) => {
+                (Some('.'), Some(c)) if !dot && c.is_ascii_digit() => {
                     dot = true;
                     num.push('.');
-                    num.push(c.clone());
+                    num.push(*c);
                 }
                 (Some(_), _) => {
                     self.move_back();
@@ -203,11 +199,11 @@ impl<'a> Lexer<'a> {
                 '\\' => match self.next() {
                     Some(c) => {
                         s.push('\\');
-                        s.push(c.clone());
+                        s.push(*c);
                     }
                     None => return Err(Error::UnexpectedEof),
                 },
-                c => s.push(c.clone()),
+                c => s.push(*c),
             }
         }
 
@@ -237,7 +233,7 @@ impl<'a> Lexer<'a> {
                 Some('/') => TokenKind::Div.at(span),
                 Some('=') => TokenKind::Eq.at(span),
                 Some('"') => self.string(span)?,
-                Some(c) if is_digit(c) || c == &'.' => {
+                Some(c) if c.is_ascii_digit() || c == &'.' => {
                     self.move_back();
                     self.number()?
                 }
@@ -245,7 +241,7 @@ impl<'a> Lexer<'a> {
                     self.move_back();
                     self.term()
                 }
-                Some(c) => return Err(Error::InvalidInput(c.clone())),
+                Some(c) => return Err(Error::InvalidInput(*c)),
                 None => {
                     tokens.push(TokenKind::Eof.at(span));
                     break;

@@ -1,3 +1,5 @@
+use std::collections::VecDeque;
+
 use crate::{
     ast::{Expr, Literal, Op, Stmt},
     lexer::{Token, TokenKind},
@@ -14,30 +16,26 @@ pub enum Error {
 }
 
 pub struct Parser {
-    n: usize,
-    tokens: Vec<Token>,
+    tokens: VecDeque<Token>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
-        Self { n: 0, tokens }
+        Self {
+            tokens: VecDeque::from(tokens),
+        }
     }
 
     fn hdr(&self) -> Option<&Token> {
-        self.tokens.get(self.n)
+        self.tokens.front()
     }
 
     fn advance(&mut self) {
-        self.n += 1;
+        let _ = self.next();
     }
 
-    fn move_back(&mut self) {
-        self.n -= 1;
-    }
-
-    fn next(&mut self) -> Option<&Token> {
-        self.advance();
-        self.tokens.get(self.n - 1)
+    fn next(&mut self) -> Option<Token> {
+        self.tokens.pop_front()
     }
 
     fn expect(&mut self, expected: &TokenKind) -> Result<(), Error> {
@@ -52,7 +50,7 @@ impl Parser {
     }
 
     fn array(&mut self) -> Result<Expr, Error> {
-        let items = self.expr_list(TokenKind::SqrBracketRight)?;
+        let items = self.expr_list(TokenKind::SqrBracketRight, 1)?;
         Ok(Expr::Array(items))
     }
 
@@ -60,7 +58,7 @@ impl Parser {
         self.expect(&TokenKind::Semi)
     }
 
-    fn expr_list(&mut self, sep: TokenKind) -> Result<Vec<Expr>, Error> {
+    fn expr_list(&mut self, sep: TokenKind, min_prec: u8) -> Result<Vec<Expr>, Error> {
         let mut exprs = vec![];
 
         loop {
@@ -73,7 +71,7 @@ impl Parser {
 
             match self.next() {
                 Some(token) if token.kind == TokenKind::Comma => {
-                    exprs.push(self.expr(1)?);
+                    exprs.push(self.expr(min_prec)?);
                 }
                 Some(token) if token.kind == sep => {
                     break;
@@ -107,47 +105,47 @@ impl Parser {
     }
 
     fn compute(&mut self, expr: Expr, min_prec: u8) -> Result<Expr, Error> {
-        match self.next() {
+        match self.hdr() {
             Some(token) => match token.kind {
                 TokenKind::Dot if min_prec <= 3 => {
+                    self.advance();
                     let rhs = self.expr(4)?;
                     let lhs = Expr::Member(Box::new(expr), Box::new(rhs));
                     self.compute(lhs, min_prec)
                 }
                 TokenKind::ParentLeft if min_prec <= 3 => {
-                    let args = self.expr_list(TokenKind::ParentRight)?;
+                    self.advance();
+                    let args = self.expr_list(TokenKind::ParentRight, 4)?;
                     let lhs = Expr::Call(Box::new(expr), args);
                     self.compute(lhs, min_prec)
                 }
                 TokenKind::Mul if min_prec <= 2 => {
+                    self.advance();
                     let rhs = self.expr(3)?;
                     let lhs = Expr::Binary(Box::new(expr), Op::Mul, Box::new(rhs));
                     self.compute(lhs, min_prec)
                 }
                 TokenKind::Div if min_prec <= 2 => {
+                    self.advance();
                     let rhs = self.expr(3)?;
                     let lhs = Expr::Binary(Box::new(expr), Op::Div, Box::new(rhs));
                     self.compute(lhs, min_prec)
                 }
                 TokenKind::Add if min_prec <= 1 => {
+                    self.advance();
                     let rhs = self.expr(2)?;
                     let lhs = Expr::Binary(Box::new(expr), Op::Add, Box::new(rhs));
                     self.compute(lhs, min_prec)
                 }
                 TokenKind::Sub if min_prec <= 1 => {
+                    self.advance();
                     let rhs = self.expr(2)?;
                     let lhs = Expr::Binary(Box::new(expr), Op::Sub, Box::new(rhs));
                     self.compute(lhs, min_prec)
                 }
-                _ => {
-                    self.move_back();
-                    Ok(expr)
-                }
+                _ => Ok(expr),
             },
-            None => {
-                self.move_back();
-                Ok(expr)
-            }
+            None => Ok(expr),
         }
     }
 

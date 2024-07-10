@@ -17,5 +17,6 @@ fn main() {
     let parser = Parser::new(tokens);
     let stmts = parser.parse().expect("parser failed");
 
-    println!("{:#?}", stmts);
+    let output = format!("{:#?}", stmts).replace("    ", "  ");
+    println!("{output}");
 }
