@@ -211,7 +211,7 @@ impl Parser {
                 TokenKind::ParentLeft if min_prec <= PREC_GROUP => {
                     self.advance();
                     let lhs = self.expr(PREC_GROUP + 1)?;
-                    let expr = self.compute(lhs, min_prec + 1)?;
+                    let expr = self.compute(lhs, 1)?;
                     self.expect(TokenKind::ParentRight)?;
 
                     Ok(expr)
