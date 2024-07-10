@@ -9,6 +9,12 @@ pub enum BinaryOp {
     Sub,
     Mul,
     Div,
+    Eq,
+    Ne,
+    Gt,
+    Gte,
+    Lt,
+    Lte,
 }
 
 #[derive(Debug)]

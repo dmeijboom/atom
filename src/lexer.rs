@@ -40,6 +40,8 @@ pub enum TokenKind {
     Div,
     Eq,
     Not,
+    Lt,
+    Gt,
     BoolLit(bool),
     IntLit(i64),
     FloatLit(f64),
@@ -74,6 +76,8 @@ impl Display for TokenKind {
             Self::Div => write!(f, "/"),
             Self::Eq => write!(f, "="),
             Self::Not => write!(f, "!"),
+            Self::Lt => write!(f, "<"),
+            Self::Gt => write!(f, ">"),
             Self::BoolLit(true) => write!(f, "true"),
             Self::BoolLit(false) => write!(f, "false"),
             Self::IntLit(value) => write!(f, "{}", value),
@@ -240,6 +244,8 @@ impl<'a> Lexer<'a> {
                 (Some('/'), _) => TokenKind::Div.at(span),
                 (Some('!'), _) => TokenKind::Not.at(span),
                 (Some('='), _) => TokenKind::Eq.at(span),
+                (Some('<'), _) => TokenKind::Lt.at(span),
+                (Some('>'), _) => TokenKind::Gt.at(span),
                 (Some('"'), _) => self.string(span)?,
                 (Some('_' | 'a'..='z' | 'A'..='Z'), _) => {
                     self.move_back();
