@@ -1,5 +1,10 @@
 #[derive(Debug)]
-pub enum Op {
+pub enum UnaryOp {
+    Not,
+}
+
+#[derive(Debug)]
+pub enum BinaryOp {
     Add,
     Sub,
     Mul,
@@ -16,7 +21,8 @@ pub enum Literal {
 
 #[derive(Debug)]
 pub enum Expr {
-    Binary(Box<Expr>, Op, Box<Expr>),
+    Unary(UnaryOp, Box<Expr>),
+    Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Array(Vec<Expr>),
     Member(Box<Expr>, Box<Expr>),
     Ident(String),

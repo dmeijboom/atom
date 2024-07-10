@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
-    ast::{Expr, Literal, Op, Stmt},
+    ast::{BinaryOp, Expr, Literal, Stmt, UnaryOp},
     lexer::{Token, TokenKind},
 };
 
@@ -116,53 +116,63 @@ impl Parser {
     }
 
     fn compute(&mut self, expr: Expr, min_prec: u8) -> Result<Expr, Error> {
-        match self.hdr() {
+        let lhs = match self.hdr() {
             Some(token) => match token.kind {
-                TokenKind::Dot if min_prec <= 3 => {
+                TokenKind::Dot if min_prec <= 4 => {
                     self.advance();
-                    let rhs = self.expr(4)?;
-                    let lhs = Expr::Member(Box::new(expr), Box::new(rhs));
-                    self.compute(lhs, min_prec)
+                    let rhs = self.expr(min_prec + 1)?;
+                    Expr::Member(Box::new(expr), Box::new(rhs))
                 }
-                TokenKind::ParentLeft if min_prec <= 3 => {
+                TokenKind::ParentLeft if min_prec <= 4 => {
                     self.advance();
-                    let args = self.expr_list(TokenKind::ParentRight, 4)?;
-                    let lhs = Expr::Call(Box::new(expr), args);
-                    self.compute(lhs, min_prec)
+                    let args = self.expr_list(TokenKind::ParentRight, min_prec + 1)?;
+                    Expr::Call(Box::new(expr), args)
                 }
                 TokenKind::Mul if min_prec <= 2 => {
                     self.advance();
-                    let rhs = self.expr(3)?;
-                    let lhs = Expr::Binary(Box::new(expr), Op::Mul, Box::new(rhs));
-                    self.compute(lhs, min_prec)
+                    let rhs = self.expr(min_prec + 1)?;
+                    Expr::Binary(Box::new(expr), BinaryOp::Mul, Box::new(rhs))
                 }
                 TokenKind::Div if min_prec <= 2 => {
                     self.advance();
-                    let rhs = self.expr(3)?;
-                    let lhs = Expr::Binary(Box::new(expr), Op::Div, Box::new(rhs));
-                    self.compute(lhs, min_prec)
+                    let rhs = self.expr(min_prec + 1)?;
+                    Expr::Binary(Box::new(expr), BinaryOp::Div, Box::new(rhs))
                 }
                 TokenKind::Add if min_prec <= 1 => {
                     self.advance();
-                    let rhs = self.expr(2)?;
-                    let lhs = Expr::Binary(Box::new(expr), Op::Add, Box::new(rhs));
-                    self.compute(lhs, min_prec)
+                    let rhs = self.expr(min_prec + 1)?;
+                    Expr::Binary(Box::new(expr), BinaryOp::Add, Box::new(rhs))
                 }
                 TokenKind::Sub if min_prec <= 1 => {
                     self.advance();
-                    let rhs = self.expr(2)?;
-                    let lhs = Expr::Binary(Box::new(expr), Op::Sub, Box::new(rhs));
-                    self.compute(lhs, min_prec)
+                    let rhs = self.expr(min_prec + 1)?;
+                    Expr::Binary(Box::new(expr), BinaryOp::Sub, Box::new(rhs))
                 }
-                _ => Ok(expr),
+                _ => return Ok(expr),
             },
-            None => Ok(expr),
-        }
+            None => return Ok(expr),
+        };
+
+        self.compute(lhs, min_prec)
     }
 
     fn expr(&mut self, min_prec: u8) -> Result<Expr, Error> {
-        let lhs = self.primary()?;
-        self.compute(lhs, min_prec)
+        match self.hdr() {
+            Some(token) => match token.kind {
+                TokenKind::Not if min_prec <= 3 => {
+                    self.advance();
+                    let expr = self.expr(min_prec + 1)?;
+                    let lhs = Expr::Unary(UnaryOp::Not, Box::new(expr));
+
+                    self.compute(lhs, min_prec + 1)
+                }
+                _ => {
+                    let lhs = self.primary()?;
+                    self.compute(lhs, min_prec)
+                }
+            },
+            None => Err(Error::UnexpectedEof),
+        }
     }
 
     fn expr_stmt(&mut self) -> Result<Stmt, Error> {
