@@ -28,4 +28,5 @@ pub enum Expr {
 pub enum Stmt {
     Let(String, Expr),
     Expr(Expr),
+    Fn(String, Vec<String>, Vec<Stmt>),
 }

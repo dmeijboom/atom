@@ -52,6 +52,15 @@ impl Parser {
         }
     }
 
+    fn accept(&mut self, kind: &TokenKind) -> bool {
+        if matches!(self.hdr(), Some(token) if &token.kind == kind) {
+            self.advance();
+            return true;
+        }
+
+        false
+    }
+
     fn array(&mut self) -> Result<Expr, Error> {
         let items = self.expr_list(TokenKind::SqrBracketRight, 1)?;
         Ok(Expr::Array(items))
@@ -61,31 +70,30 @@ impl Parser {
         self.expect(TokenKind::Semi)
     }
 
-    fn expr_list(&mut self, sep: TokenKind, min_prec: u8) -> Result<Vec<Expr>, Error> {
-        let mut exprs = vec![];
+    fn arg_list(&mut self, end: TokenKind) -> Result<Vec<String>, Error> {
+        let mut args = vec![];
 
-        loop {
-            if matches!(self.hdr(), Some(token) if token.kind == sep) {
-                self.advance();
+        while !self.accept(&end) {
+            args.push(self.ident()?);
+
+            if !self.accept(&TokenKind::Comma) {
+                self.expect(end)?;
                 break;
             }
+        }
 
-            exprs.push(self.expr(1)?);
+        Ok(args)
+    }
 
-            match self.next() {
-                Some(token) if token.kind == TokenKind::Comma => {
-                    exprs.push(self.expr(min_prec)?);
-                }
-                Some(token) if token.kind == sep => {
-                    break;
-                }
-                Some(token) => {
-                    return Err(Error::UnexpectedToken {
-                        expected: Cow::Owned(format!("{sep}")),
-                        actual: token.clone(),
-                    })
-                }
-                None => return Err(Error::UnexpectedEof),
+    fn expr_list(&mut self, end: TokenKind, min_prec: u8) -> Result<Vec<Expr>, Error> {
+        let mut exprs = vec![];
+
+        while !self.accept(&end) {
+            exprs.push(self.expr(min_prec)?);
+
+            if !self.accept(&TokenKind::Comma) {
+                self.expect(end)?;
+                break;
             }
         }
 
@@ -186,13 +194,27 @@ impl Parser {
         Ok(Stmt::Let(name, value))
     }
 
-    pub fn parse(mut self) -> Result<Vec<Stmt>, Error> {
+    fn fn_stmt(&mut self) -> Result<Stmt, Error> {
+        self.advance();
+        let name = self.ident()?;
+        self.expect(TokenKind::ParentLeft)?;
+        let args = self.arg_list(TokenKind::ParentRight)?;
+        self.expect(TokenKind::BracketLeft)?;
+        let body = self.body(false)?;
+        self.expect(TokenKind::BracketRight)?;
+
+        Ok(Stmt::Fn(name, args, body))
+    }
+
+    fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
         let mut stmts = vec![];
 
         while let Some(token) = self.hdr() {
             let stmt = match &token.kind {
                 TokenKind::Eof => break,
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
+                TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
             };
 
@@ -200,5 +222,9 @@ impl Parser {
         }
 
         Ok(stmts)
+    }
+
+    pub fn parse(mut self) -> Result<Vec<Stmt>, Error> {
+        self.body(true)
     }
 }
