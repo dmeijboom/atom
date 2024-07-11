@@ -131,7 +131,7 @@ impl Compiler {
             ExprKind::Call(_, _) => todo!(),
             ExprKind::Literal(lit) => {
                 let idx = match lit {
-                    Literal::Bool(_) => todo!(),
+                    Literal::Bool(b) => self.push_const(Const::Bool(b)),
                     Literal::Int(i) => self.push_const(Const::Int(i)),
                     Literal::Float(f) => self.push_const(Const::Float(f)),
                     Literal::String(_) => todo!(),

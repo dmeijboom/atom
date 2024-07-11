@@ -6,6 +6,7 @@ use crate::{codes::BinaryOp, lexer::Span};
 pub enum Type {
     Int,
     Float,
+    Bool,
 }
 
 impl Display for Type {
@@ -13,6 +14,7 @@ impl Display for Type {
         match self {
             Type::Int => write!(f, "Int"),
             Type::Float => write!(f, "Float"),
+            Type::Bool => write!(f, "Bool"),
         }
     }
 }
@@ -21,6 +23,7 @@ impl Display for Type {
 pub enum Value {
     Int(i64),
     Float(f64),
+    Bool(bool),
 }
 
 impl Value {
@@ -28,7 +31,12 @@ impl Value {
         match self {
             Value::Int(_) => Type::Int,
             Value::Float(_) => Type::Float,
+            Value::Bool(_) => Type::Bool,
         }
+    }
+
+    pub fn is_number(&self) -> bool {
+        matches!(self.ty(), Type::Int | Type::Float)
     }
 
     pub fn int(self) -> i64 {
@@ -51,6 +59,7 @@ impl Display for Value {
         match self {
             Value::Int(i) => write!(fmt, "{i}"),
             Value::Float(f) => write!(fmt, "{f}"),
+            Value::Bool(b) => write!(fmt, "{b}"),
         }
     }
 }

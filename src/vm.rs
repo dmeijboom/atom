@@ -12,6 +12,7 @@ macro_rules! binary_op {
         match $lhs.ty() {
             Type::Int => Value::Int($lhs.int() $op $rhs.int()),
             Type::Float => Value::Float($lhs.float() $op $rhs.float()),
+            _ => unreachable!(),
         }
     };
 }
@@ -62,6 +63,7 @@ impl Vm {
         match const_ {
             Const::Int(i) => Ok(Value::Int(i)),
             Const::Float(f) => Ok(Value::Float(f)),
+            Const::Bool(b) => Ok(Value::Bool(b)),
         }
     }
 
@@ -97,10 +99,10 @@ impl Vm {
                 }
 
                 let value = match op {
-                    BinaryOp::Add => binary_op!(lhs + rhs),
-                    BinaryOp::Sub => binary_op!(lhs - rhs),
-                    BinaryOp::Mul => binary_op!(lhs * rhs),
-                    BinaryOp::Div => binary_op!(lhs / rhs),
+                    BinaryOp::Add if lhs.is_number() => binary_op!(lhs + rhs),
+                    BinaryOp::Sub if lhs.is_number() => binary_op!(lhs - rhs),
+                    BinaryOp::Mul if lhs.is_number() => binary_op!(lhs * rhs),
+                    BinaryOp::Div if lhs.is_number() => binary_op!(lhs / rhs),
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
