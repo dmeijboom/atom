@@ -11,13 +11,13 @@ pub enum Type {
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Type::Int => write!(f, "{}", "Int"),
-            Type::Float => write!(f, "{}", "Float"),
+            Type::Int => write!(f, "Int"),
+            Type::Float => write!(f, "Float"),
         }
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
     Float(f64),
@@ -59,6 +59,8 @@ impl Display for Value {
 pub enum ErrorKind {
     #[error("invalid const at: {0}")]
     InvalidConst(usize),
+    #[error("invalid var at: {0}")]
+    InvalidVar(usize),
     #[error("stack is empty")]
     StackEmpty,
     #[error("binary type mismatch: {left} != {right}")]

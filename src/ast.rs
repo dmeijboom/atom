@@ -17,7 +17,6 @@ pub enum BinaryOp {
     Gte,
     Lt,
     Lte,
-    Assign,
     LogicalOr,
     LogicalAnd,
     BitwiseOr,
@@ -58,8 +57,9 @@ pub struct Expr {
 
 #[derive(Debug)]
 pub enum StmtKind {
-    Let(String, Expr),
     Expr(Expr),
+    Let(String, Expr),
+    Assign(String, Expr),
     Fn(String, Vec<String>, Vec<Stmt>),
 }
 

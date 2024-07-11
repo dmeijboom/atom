@@ -1,3 +1,5 @@
+use std::collections::HashMap;
+
 use crate::{
     codes::{BinaryOp, Const, Op},
     compiler::Module,
@@ -27,6 +29,7 @@ pub struct Vm {
     n: usize,
     module: Module,
     stack: Vec<Value>,
+    vars: HashMap<usize, Value>,
 }
 
 impl Vm {
@@ -35,6 +38,7 @@ impl Vm {
             module,
             n: 0,
             stack: vec![],
+            vars: HashMap::new(),
         }
     }
 
@@ -58,6 +62,13 @@ impl Vm {
         match const_ {
             Const::Int(i) => Ok(Value::Int(i)),
             Const::Float(f) => Ok(Value::Float(f)),
+        }
+    }
+
+    fn load_var(&self, span: Span, idx: usize) -> Result<Value, Error> {
+        match self.vars.get(&idx) {
+            Some(value) => Ok(value.clone()),
+            None => Err(ErrorKind::InvalidVar(idx).at(span)),
         }
     }
 
@@ -103,6 +114,14 @@ impl Vm {
                     }
                 };
 
+                self.stack.push(value);
+            }
+            Op::Store(idx) => {
+                let value = self.pop_stack(span)?;
+                self.vars.insert(idx, value);
+            }
+            Op::Load(idx) => {
+                let value = self.load_var(span, idx)?;
                 self.stack.push(value);
             }
         }

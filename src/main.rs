@@ -19,8 +19,10 @@ enum Error {
     IO(#[from] std::io::Error),
     #[error("ParseError: {0}")]
     Parse(#[from] parser::Error),
-    #[error("LexError: {0}")]
+    #[error("TokenError: {0}")]
     Lex(#[from] lexer::Error),
+    #[error("CompileError: {0}")]
+    Compile(#[from] compiler::Error),
     #[error("RuntimeError: {0}")]
     Runtime(#[from] runtime::Error),
 }
@@ -36,7 +38,7 @@ fn main() -> Result<(), Error> {
     let stmts = parser.parse()?;
 
     let compiler = Compiler::new(stmts);
-    let module = compiler.compile();
+    let module = compiler.compile()?;
 
     for code in module.codes.iter() {
         println!("{}: {:?}", code.span.offset, code.op);

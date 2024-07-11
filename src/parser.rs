@@ -5,19 +5,18 @@ use crate::{
     lexer::{Span, Token, TokenKind},
 };
 
-const PREC_ASS: u8 = 1;
-const PREC_LOR: u8 = 2;
-const PREC_LAN: u8 = 3;
-const PREC_BOR: u8 = 4;
-const PREC_XOR: u8 = 5;
-const PREC_BAN: u8 = 6;
-const PREC_EQ: u8 = 7;
-const PREC_REL: u8 = 8;
-const PREC_ADD: u8 = 9;
-const PREC_MUL: u8 = 10;
-const PREC_PRE: u8 = 11;
-const PREC_CALL: u8 = 12;
-//const PREC_GROUP: u8 = 13;
+const PREC_LOR: u8 = 1;
+const PREC_LAN: u8 = 2;
+const PREC_BOR: u8 = 3;
+const PREC_XOR: u8 = 4;
+const PREC_BAN: u8 = 5;
+const PREC_EQ: u8 = 6;
+const PREC_REL: u8 = 7;
+const PREC_ADD: u8 = 8;
+const PREC_MUL: u8 = 9;
+const PREC_PRE: u8 = 10;
+const PREC_CALL: u8 = 11;
+//const PREC_GROUP: u8 = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -43,19 +42,19 @@ impl Parser {
         }
     }
 
-    fn hdr(&self) -> Option<&Token> {
-        self.tokens.front()
+    fn hdr(&self) -> Option<&TokenKind> {
+        self.tokens.front().map(|t| &t.kind)
     }
 
-    fn hdr2(&self) -> (Option<&Token>, Option<&Token>) {
-        (self.tokens.front(), self.tokens.get(1))
+    fn hdr2(&self) -> (Option<&TokenKind>, Option<&TokenKind>) {
+        (
+            self.tokens.front().map(|t| &t.kind),
+            self.tokens.get(1).map(|t| &t.kind),
+        )
     }
 
     fn span(&self) -> Span {
-        self.tokens
-            .front()
-            .map(|t| t.span.clone())
-            .unwrap_or_default()
+        self.tokens.front().map(|t| t.span).unwrap_or_default()
     }
 
     fn advance(&mut self) {
@@ -78,7 +77,7 @@ impl Parser {
     }
 
     fn accept(&mut self, kind: &TokenKind) -> bool {
-        if matches!(self.hdr(), Some(token) if &token.kind == kind) {
+        if matches!(self.hdr(), Some(token) if token == kind) {
             self.advance();
             return true;
         }
@@ -154,7 +153,7 @@ impl Parser {
     }
 
     fn binary(&mut self, lhs: Expr, op: BinaryOp, min_prec: u8) -> Result<Expr, Error> {
-        let span = lhs.span.clone();
+        let span = lhs.span;
         self.advance();
         let rhs = self.expr(min_prec + 1)?;
 
@@ -166,18 +165,18 @@ impl Parser {
 
         loop {
             lhs = match self.hdr2() {
-                (Some(token), next) => match (&token.kind, next.map(|t| &t.kind)) {
+                (Some(token), next) => match (token, next) {
                     (TokenKind::Dot, _) if min_prec <= PREC_CALL => {
                         self.advance();
                         let rhs = self.expr(PREC_CALL + 1)?;
-                        let span = lhs.span.clone();
+                        let span = lhs.span;
 
                         ExprKind::Member(Box::new(lhs), Box::new(rhs)).at(span)
                     }
                     (TokenKind::ParentLeft, _) if min_prec <= PREC_CALL => {
                         self.advance();
                         let args = self.expr_list(TokenKind::ParentRight, PREC_CALL + 1)?;
-                        let span = lhs.span.clone();
+                        let span = lhs.span;
 
                         ExprKind::Call(Box::new(lhs), args).at(span)
                     }
@@ -250,9 +249,6 @@ impl Parser {
                     (TokenKind::Or, _) if min_prec <= PREC_BOR => {
                         self.binary(lhs, BinaryOp::BitwiseOr, PREC_BOR)?
                     }
-                    (TokenKind::Eq, _) if min_prec <= PREC_ASS => {
-                        self.binary(lhs, BinaryOp::Assign, PREC_ASS - 1)?
-                    }
                     _ => break,
                 },
                 (None, _) => break,
@@ -307,14 +303,25 @@ impl Parser {
         Ok(StmtKind::Fn(name, args, body).at(span))
     }
 
+    fn assign_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
+        let name = self.ident()?;
+        self.expect(TokenKind::Eq)?;
+        let value = self.expr(1)?;
+        self.semi()?;
+
+        Ok(StmtKind::Assign(name, value).at(span))
+    }
+
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
         let mut stmts = vec![];
 
-        while let Some(token) = self.hdr() {
-            let stmt = match &token.kind {
+        while let (Some(token), next) = self.hdr2() {
+            let stmt = match token {
                 TokenKind::Eof => break,
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
+                TokenKind::Ident(_) if next == Some(&TokenKind::Eq) => self.assign_stmt()?,
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
             };

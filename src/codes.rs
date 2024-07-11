@@ -15,6 +15,8 @@ pub enum BinaryOp {
 pub enum Op {
     LoadConst(usize),
     BinaryOp(BinaryOp),
+    Store(usize),
+    Load(usize),
 }
 
 impl Op {
