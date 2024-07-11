@@ -66,15 +66,16 @@ impl Compiler {
             ExprKind::Member(_, _) => todo!(),
             ExprKind::Ident(_) => todo!(),
             ExprKind::Call(_, _) => todo!(),
-            ExprKind::Literal(lit) => match lit {
-                Literal::Bool(_) => todo!(),
-                Literal::Int(i) => {
-                    let idx = self.push_const(Const::Int(i));
-                    Op::LoadConst(idx).at(expr.span)
-                }
-                Literal::Float(_) => todo!(),
-                Literal::String(_) => todo!(),
-            },
+            ExprKind::Literal(lit) => {
+                let idx = match lit {
+                    Literal::Bool(_) => todo!(),
+                    Literal::Int(i) => self.push_const(Const::Int(i)),
+                    Literal::Float(f) => self.push_const(Const::Float(f)),
+                    Literal::String(_) => todo!(),
+                };
+
+                Op::LoadConst(idx).at(expr.span)
+            }
         };
 
         self.codes.push(code);

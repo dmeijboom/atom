@@ -1,6 +1,6 @@
 use crate::lexer::Span;
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -11,7 +11,7 @@ pub enum BinaryOp {
     BitwiseXor,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Op {
     LoadConst(usize),
     BinaryOp(BinaryOp),
@@ -29,7 +29,8 @@ pub struct Code {
     pub span: Span,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Const {
     Int(i64),
+    Float(f64),
 }
