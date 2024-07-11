@@ -12,9 +12,20 @@ pub enum BinaryOp {
 }
 
 #[derive(Debug, Clone, Copy)]
+pub enum CompareOp {
+    Eq,
+    Ne,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
+}
+
+#[derive(Debug, Clone, Copy)]
 pub enum Op {
     LoadConst(usize),
     BinaryOp(BinaryOp),
+    CompareOp(CompareOp),
     Store(usize),
     Load(usize),
     Discard,

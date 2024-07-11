@@ -19,6 +19,15 @@ impl Display for Type {
     }
 }
 
+macro_rules! extract {
+    ($value:expr, $name:ident) => {
+        match $value {
+            Value::$name(value) => value,
+            _ => unimplemented!(),
+        }
+    };
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Int(i64),
@@ -40,17 +49,15 @@ impl Value {
     }
 
     pub fn int(self) -> i64 {
-        match self {
-            Value::Int(i) => i,
-            _ => unimplemented!(),
-        }
+        extract!(self, Int)
     }
 
     pub fn float(self) -> f64 {
-        match self {
-            Value::Float(f) => f,
-            _ => unimplemented!(),
-        }
+        extract!(self, Float)
+    }
+
+    pub fn bool(self) -> bool {
+        extract!(self, Bool)
     }
 }
 
@@ -72,8 +79,8 @@ pub enum ErrorKind {
     InvalidVar(usize),
     #[error("stack is empty")]
     StackEmpty,
-    #[error("binary type mismatch: {left} != {right}")]
-    BinaryTypeMismatch { left: Type, right: Type },
+    #[error("type mismatch: {left} != {right}")]
+    TypeMismatch { left: Type, right: Type },
     #[error("unsupported operation '{op:?}' for {left} and {right}")]
     UnsupportedOp {
         left: Type,

@@ -2,7 +2,7 @@ use std::{collections::VecDeque, fmt::Display};
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
-    codes::{BinaryOp, Code, Const, Op},
+    codes::{BinaryOp, Code, CompareOp, Const, Op},
     lexer::Span,
 };
 
@@ -109,12 +109,12 @@ impl Compiler {
                     ast::BinaryOp::Sub => Op::BinaryOp(BinaryOp::Sub).at(expr.span),
                     ast::BinaryOp::Mul => Op::BinaryOp(BinaryOp::Mul).at(expr.span),
                     ast::BinaryOp::Div => Op::BinaryOp(BinaryOp::Div).at(expr.span),
-                    ast::BinaryOp::Eq => todo!(),
-                    ast::BinaryOp::Ne => todo!(),
-                    ast::BinaryOp::Gt => todo!(),
-                    ast::BinaryOp::Gte => todo!(),
-                    ast::BinaryOp::Lt => todo!(),
-                    ast::BinaryOp::Lte => todo!(),
+                    ast::BinaryOp::Eq => Op::CompareOp(CompareOp::Eq).at(expr.span),
+                    ast::BinaryOp::Ne => Op::CompareOp(CompareOp::Ne).at(expr.span),
+                    ast::BinaryOp::Gt => Op::CompareOp(CompareOp::Gt).at(expr.span),
+                    ast::BinaryOp::Gte => Op::CompareOp(CompareOp::Gte).at(expr.span),
+                    ast::BinaryOp::Lt => Op::CompareOp(CompareOp::Lt).at(expr.span),
+                    ast::BinaryOp::Lte => Op::CompareOp(CompareOp::Lte).at(expr.span),
                     ast::BinaryOp::LogicalOr => todo!(),
                     ast::BinaryOp::LogicalAnd => todo!(),
                     ast::BinaryOp::BitwiseOr => Op::BinaryOp(BinaryOp::BitwiseOr).at(expr.span),

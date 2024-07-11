@@ -1,11 +1,21 @@
 use std::collections::HashMap;
 
 use crate::{
-    codes::{BinaryOp, Const, Op},
+    codes::{BinaryOp, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
     runtime::{Error, ErrorKind, Type, Value},
 };
+
+macro_rules! compare_op {
+    ($lhs:ident $op:tt $rhs:ident) => {
+        match $lhs.ty() {
+            Type::Int => Value::Bool($lhs.int() $op $rhs.int()),
+            Type::Float => Value::Bool($lhs.float() $op $rhs.float()),
+            Type::Bool => Value::Bool($lhs.bool() $op $rhs.bool()),
+        }
+    };
+}
 
 macro_rules! binary_op {
     ($lhs:ident $op:tt $rhs:ident) => {
@@ -80,23 +90,42 @@ impl Vm {
             .ok_or_else(|| ErrorKind::StackEmpty.at(span))
     }
 
+    fn check_type(&self, span: Span, left: Type, right: Type) -> Result<(), Error> {
+        if left != right {
+            return Err(ErrorKind::TypeMismatch { left, right }.at(span));
+        }
+
+        Ok(())
+    }
+
     fn eval(&mut self, span: Span, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
                 let value = self.load_const(span, idx)?;
                 self.stack.push(value);
             }
+            Op::CompareOp(op) => {
+                let rhs = self.pop_stack(span)?;
+                let lhs = self.pop_stack(span)?;
+
+                self.check_type(span, lhs.ty(), rhs.ty())?;
+
+                let value = match op {
+                    CompareOp::Eq => compare_op!(lhs == rhs),
+                    CompareOp::Ne => compare_op!(lhs != rhs),
+                    CompareOp::Lt => compare_op!(lhs < rhs),
+                    CompareOp::Lte => compare_op!(lhs <= rhs),
+                    CompareOp::Gt => compare_op!(lhs > rhs),
+                    CompareOp::Gte => compare_op!(lhs >= rhs),
+                };
+
+                self.stack.push(value);
+            }
             Op::BinaryOp(op) => {
                 let rhs = self.pop_stack(span)?;
                 let lhs = self.pop_stack(span)?;
 
-                if lhs.ty() != rhs.ty() {
-                    return Err(ErrorKind::BinaryTypeMismatch {
-                        left: lhs.ty(),
-                        right: rhs.ty(),
-                    }
-                    .at(span));
-                }
+                self.check_type(span, lhs.ty(), rhs.ty())?;
 
                 let value = match op {
                     BinaryOp::Add if lhs.is_number() => binary_op!(lhs + rhs),
