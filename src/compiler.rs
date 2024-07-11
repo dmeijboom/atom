@@ -62,6 +62,10 @@ impl Compiler {
         }
     }
 
+    fn loc(&self) -> usize {
+        self.codes.len()
+    }
+
     fn next(&mut self) -> Option<Stmt> {
         self.stmts.pop_front()
     }
@@ -69,6 +73,12 @@ impl Compiler {
     fn push_const(&mut self, const_: Const) -> usize {
         let idx = self.consts.len();
         self.consts.push(const_);
+        idx
+    }
+
+    fn push_code(&mut self, code: Code) -> usize {
+        let idx = self.codes.len();
+        self.codes.push(code);
         idx
     }
 
@@ -102,9 +112,8 @@ impl Compiler {
             ExprKind::Unary(_, _) => todo!(),
             ExprKind::Binary(lhs, op, rhs) => {
                 self.expr(*lhs)?;
-                self.expr(*rhs)?;
 
-                match op {
+                let code = match op {
                     ast::BinaryOp::Add => Op::BinaryOp(BinaryOp::Add).at(expr.span),
                     ast::BinaryOp::Sub => Op::BinaryOp(BinaryOp::Sub).at(expr.span),
                     ast::BinaryOp::Mul => Op::BinaryOp(BinaryOp::Mul).at(expr.span),
@@ -115,12 +124,25 @@ impl Compiler {
                     ast::BinaryOp::Gte => Op::CompareOp(CompareOp::Gte).at(expr.span),
                     ast::BinaryOp::Lt => Op::CompareOp(CompareOp::Lt).at(expr.span),
                     ast::BinaryOp::Lte => Op::CompareOp(CompareOp::Lte).at(expr.span),
-                    ast::BinaryOp::LogicalOr => todo!(),
-                    ast::BinaryOp::LogicalAnd => todo!(),
+                    ast::BinaryOp::LogicalOr => {
+                        let idx = self.push_code(Op::JumpIfTrue(0).at(Span::default()));
+                        self.expr(*rhs)?;
+                        self.codes[idx] = Op::JumpIfTrue(self.loc()).at(expr.span);
+                        return Ok(());
+                    }
+                    ast::BinaryOp::LogicalAnd => {
+                        let idx = self.push_code(Op::JumpIfFalse(0).at(Span::default()));
+                        self.expr(*rhs)?;
+                        self.codes[idx] = Op::JumpIfFalse(self.loc()).at(expr.span);
+                        return Ok(());
+                    }
                     ast::BinaryOp::BitwiseOr => Op::BinaryOp(BinaryOp::BitwiseOr).at(expr.span),
                     ast::BinaryOp::BitwiseAnd => Op::BinaryOp(BinaryOp::BitwiseAnd).at(expr.span),
                     ast::BinaryOp::BitwiseXor => Op::BinaryOp(BinaryOp::BitwiseXor).at(expr.span),
-                }
+                };
+
+                self.expr(*rhs)?;
+                code
             }
             ExprKind::Array(_) => todo!(),
             ExprKind::Member(_, _) => todo!(),

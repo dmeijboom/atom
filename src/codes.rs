@@ -30,6 +30,8 @@ pub enum Op {
     Load(usize),
     Discard,
     Return,
+    JumpIfFalse(usize),
+    JumpIfTrue(usize),
 }
 
 impl Op {

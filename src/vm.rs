@@ -53,6 +53,10 @@ impl Vm {
         }
     }
 
+    fn goto(&mut self, n: usize) {
+        self.n = n;
+    }
+
     fn next(&mut self) -> Option<(Span, Op)> {
         if let Some(code) = self.module.codes.get(self.n) {
             self.n += 1;
@@ -93,6 +97,18 @@ impl Vm {
     fn check_type(&self, span: Span, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
             return Err(ErrorKind::TypeMismatch { left, right }.at(span));
+        }
+
+        Ok(())
+    }
+
+    fn jump_cond(&mut self, span: Span, idx: usize, b: bool) -> Result<(), Error> {
+        let value = self.pop_stack(span)?;
+        self.check_type(span, value.ty(), Type::Bool)?;
+
+        if value.bool() == b {
+            self.stack.push(Value::Bool(b));
+            self.goto(idx);
         }
 
         Ok(())
@@ -160,6 +176,8 @@ impl Vm {
             }
             // @TODO: implement when we have functions
             Op::Return => {}
+            Op::JumpIfTrue(idx) => self.jump_cond(span, idx, true)?,
+            Op::JumpIfFalse(idx) => self.jump_cond(span, idx, false)?,
         }
 
         Ok(())
