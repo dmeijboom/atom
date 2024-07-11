@@ -124,6 +124,11 @@ impl Vm {
                 let value = self.load_var(span, idx)?;
                 self.stack.push(value);
             }
+            Op::Discard => {
+                self.stack.pop();
+            }
+            // @TODO: implement when we have functions
+            Op::Return => {}
         }
 
         Ok(())

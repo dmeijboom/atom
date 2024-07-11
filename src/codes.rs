@@ -17,6 +17,8 @@ pub enum Op {
     BinaryOp(BinaryOp),
     Store(usize),
     Load(usize),
+    Discard,
+    Return,
 }
 
 impl Op {

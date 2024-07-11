@@ -58,6 +58,7 @@ pub struct Expr {
 #[derive(Debug)]
 pub enum StmtKind {
     Expr(Expr),
+    Return(Expr),
     Let(String, Expr),
     Assign(String, Expr),
     Fn(String, Vec<String>, Vec<Stmt>),

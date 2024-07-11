@@ -158,7 +158,14 @@ impl Compiler {
                 self.expr(expr)?;
                 self.codes.push(Op::Store(idx).at(stmt.span));
             }
-            StmtKind::Expr(expr) => self.expr(expr)?,
+            StmtKind::Expr(expr) => {
+                self.expr(expr)?;
+                self.codes.push(Op::Discard.at(stmt.span));
+            }
+            StmtKind::Return(expr) => {
+                self.expr(expr)?;
+                self.codes.push(Op::Return.at(stmt.span));
+            }
             StmtKind::Fn(_, _, _) => todo!(),
         }
 

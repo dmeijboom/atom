@@ -261,9 +261,21 @@ impl Parser {
     fn expr_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         let expr = self.expr(1)?;
+
+        if self.accept(&TokenKind::Semi) {
+            return Ok(StmtKind::Expr(expr).at(span));
+        }
+
+        Ok(StmtKind::Return(expr).at(span))
+    }
+
+    fn return_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
+        self.advance();
+        let expr = self.expr(1)?;
         self.semi()?;
 
-        Ok(StmtKind::Expr(expr).at(span))
+        Ok(StmtKind::Return(expr).at(span))
     }
 
     fn ident(&mut self) -> Result<String, Error> {
@@ -321,6 +333,7 @@ impl Parser {
                 TokenKind::Eof => break,
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
                 TokenKind::Ident(_) if next == Some(&TokenKind::Eq) => self.assign_stmt()?,
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
