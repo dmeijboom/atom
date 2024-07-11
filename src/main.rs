@@ -1,9 +1,12 @@
 use std::fs;
 
+use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
 
 mod ast;
+mod codes;
+mod compiler;
 mod lexer;
 mod parser;
 
@@ -27,8 +30,12 @@ fn main() -> Result<(), Error> {
     let parser = Parser::new(tokens);
     let stmts = parser.parse()?;
 
-    let output = format!("{:#?}", stmts).replace("    ", "  ");
-    println!("{output}");
+    let compiler = Compiler::new(stmts);
+    let module = compiler.compile();
+
+    for code in module.codes.iter() {
+        println!("{}: {:?}", code.span.offset, code.op);
+    }
 
     Ok(())
 }
