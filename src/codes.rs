@@ -32,6 +32,7 @@ pub enum Op {
     Return,
     JumpIfFalse(usize),
     JumpIfTrue(usize),
+    MakeArray(usize),
 }
 
 impl Op {

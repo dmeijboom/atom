@@ -89,7 +89,7 @@ impl Vm {
             Const::Bool(b) => Ok(Value::Bool(b)),
             Const::Str(s) => {
                 let value = self.heap.insert(HeapValue::Str(s));
-                Ok(Value::Heap(Type::Str, value))
+                Ok(Value::Heap(Type::Str, value.handle()))
             }
         }
     }
@@ -140,7 +140,23 @@ impl Vm {
         let out = [left.as_str(), right.as_str()].concat();
         let value = self.heap.insert(HeapValue::Str(out));
 
-        Value::Heap(Type::Str, value)
+        Value::Heap(Type::Str, value.handle())
+    }
+
+    fn make_array(&mut self, span: Span, size: usize) -> Result<(), Error> {
+        let mut values = vec![];
+
+        for _ in 0..size {
+            let value = self.pop_stack(span)?;
+            values.push(value);
+        }
+
+        values.reverse();
+
+        let value = self.heap.insert(HeapValue::Array(values));
+        self.stack.push(Value::Heap(Type::Array, value.handle()));
+
+        Ok(())
     }
 
     fn eval(&mut self, span: Span, op: Op) -> Result<(), Error> {
@@ -208,6 +224,7 @@ impl Vm {
             Op::Return => {}
             Op::JumpIfTrue(idx) => self.jump_cond(span, idx, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(span, idx, false)?,
+            Op::MakeArray(len) => self.make_array(span, len)?,
         }
 
         Ok(())

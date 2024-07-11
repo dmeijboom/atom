@@ -144,7 +144,15 @@ impl Compiler {
                 self.expr(*rhs)?;
                 code
             }
-            ExprKind::Array(_) => todo!(),
+            ExprKind::Array(items) => {
+                let len = items.len();
+
+                for item in items {
+                    self.expr(item)?;
+                }
+
+                Op::MakeArray(len).at(expr.span)
+            }
             ExprKind::Member(_, _) => todo!(),
             ExprKind::Ident(name) => {
                 let idx = self.load_var(expr.span, &name)?;

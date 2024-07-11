@@ -1,6 +1,6 @@
 use std::fmt::Display;
 
-use broom::{trace::Trace, Rooted};
+use broom::{trace::Trace, Handle};
 
 use crate::{codes::BinaryOp, lexer::Span};
 
@@ -10,6 +10,7 @@ pub enum Type {
     Float,
     Bool,
     Str,
+    Array,
 }
 
 impl Display for Type {
@@ -19,6 +20,7 @@ impl Display for Type {
             Type::Float => write!(f, "Float"),
             Type::Bool => write!(f, "Bool"),
             Type::Str => write!(f, "Str"),
+            Type::Array => write!(f, "Array"),
         }
     }
 }
@@ -35,20 +37,41 @@ macro_rules! extract {
 #[derive(Debug)]
 pub enum HeapValue {
     Str(String),
+    Array(Vec<Value>),
 }
 
 impl Display for HeapValue {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             HeapValue::Str(s) => write!(f, "\"{s}\""),
+            HeapValue::Array(values) => {
+                write!(f, "[")?;
+
+                for (i, value) in values.iter().enumerate() {
+                    if i > 0 {
+                        write!(f, ", ")?;
+                    }
+
+                    write!(f, "{}", value)?;
+                }
+
+                write!(f, "]")
+            }
         }
     }
 }
 
 impl Trace<Self> for HeapValue {
-    fn trace(&self, _tracer: &mut broom::prelude::Tracer<Self>) {
+    fn trace(&self, tracer: &mut broom::prelude::Tracer<Self>) {
         match self {
             HeapValue::Str(_) => {}
+            HeapValue::Array(values) => {
+                for value in values {
+                    if let Value::Heap(_, value) = value {
+                        value.trace(tracer);
+                    }
+                }
+            }
         }
     }
 }
@@ -58,7 +81,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Heap(Type, Rooted<HeapValue>),
+    Heap(Type, Handle<HeapValue>),
 }
 
 impl Value {
@@ -87,7 +110,7 @@ impl Value {
         extract!(self, Bool)
     }
 
-    pub fn heap(self) -> Rooted<HeapValue> {
+    pub fn heap(self) -> Handle<HeapValue> {
         match self {
             Value::Heap(_, value) => value,
             _ => unreachable!(),
