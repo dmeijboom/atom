@@ -3,6 +3,7 @@ use std::fs;
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
+use runtime::Value;
 use vm::Vm;
 
 mod ast;
@@ -44,11 +45,19 @@ fn main() -> Result<(), Error> {
         println!("{}: {:?}", code.span.offset, code.op);
     }
 
-    let vm = Vm::new(module);
+    let mut vm = Vm::new(module);
     let value = vm.run()?;
 
     if let Some(value) = value {
-        println!("\n{} ({})", value, value.ty());
+        if let Value::Heap(ty, heap) = value {
+            let memory = vm.memory();
+
+            if let Some(value) = memory.get(heap) {
+                println!("\n{} ({})", value, ty);
+            }
+        } else {
+            println!("\n{} ({})", value, value.ty());
+        }
     }
 
     Ok(())

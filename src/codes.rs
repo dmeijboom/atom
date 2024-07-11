@@ -51,4 +51,5 @@ pub enum Const {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Str(String),
 }

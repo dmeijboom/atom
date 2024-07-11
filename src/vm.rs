@@ -1,10 +1,12 @@
 use std::collections::HashMap;
 
+use broom::Heap;
+
 use crate::{
     codes::{BinaryOp, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
-    runtime::{Error, ErrorKind, Type, Value},
+    runtime::{Error, ErrorKind, HeapValue, Type, Value},
 };
 
 macro_rules! compare_op {
@@ -13,6 +15,7 @@ macro_rules! compare_op {
             Type::Int => Value::Bool($lhs.int() $op $rhs.int()),
             Type::Float => Value::Bool($lhs.float() $op $rhs.float()),
             Type::Bool => Value::Bool($lhs.bool() $op $rhs.bool()),
+            _ => unreachable!()
         }
     };
 }
@@ -38,6 +41,7 @@ macro_rules! binary_op_int {
 
 pub struct Vm {
     n: usize,
+    heap: Heap<HeapValue>,
     module: Module,
     stack: Vec<Value>,
     vars: HashMap<usize, Value>,
@@ -50,7 +54,12 @@ impl Vm {
             n: 0,
             stack: vec![],
             vars: HashMap::new(),
+            heap: Heap::new(),
         }
+    }
+
+    pub fn memory(self) -> Heap<HeapValue> {
+        self.heap
     }
 
     fn goto(&mut self, n: usize) {
@@ -66,7 +75,7 @@ impl Vm {
         }
     }
 
-    fn load_const(&self, span: Span, idx: usize) -> Result<Value, Error> {
+    fn load_const(&mut self, span: Span, idx: usize) -> Result<Value, Error> {
         let const_ = self
             .module
             .consts
@@ -78,6 +87,10 @@ impl Vm {
             Const::Int(i) => Ok(Value::Int(i)),
             Const::Float(f) => Ok(Value::Float(f)),
             Const::Bool(b) => Ok(Value::Bool(b)),
+            Const::Str(s) => {
+                let value = self.heap.insert(HeapValue::Str(s));
+                Ok(Value::Heap(Type::Str, value))
+            }
         }
     }
 
@@ -183,7 +196,7 @@ impl Vm {
         Ok(())
     }
 
-    pub fn run(mut self) -> Result<Option<Value>, Error> {
+    pub fn run(&mut self) -> Result<Option<Value>, Error> {
         while let Some((span, op)) = self.next() {
             self.eval(span, op)?;
         }

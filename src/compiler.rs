@@ -156,7 +156,7 @@ impl Compiler {
                     Literal::Bool(b) => self.push_const(Const::Bool(b)),
                     Literal::Int(i) => self.push_const(Const::Int(i)),
                     Literal::Float(f) => self.push_const(Const::Float(f)),
-                    Literal::String(_) => todo!(),
+                    Literal::String(s) => self.push_const(Const::Str(s)),
                 };
 
                 Op::LoadConst(idx).at(expr.span)
