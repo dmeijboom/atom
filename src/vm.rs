@@ -127,6 +127,22 @@ impl Vm {
         Ok(())
     }
 
+    fn concat_string(&mut self, lhs: Value, rhs: Value) -> Value {
+        let left = match self.heap.get(lhs.heap()) {
+            Some(HeapValue::Str(s)) => s,
+            _ => unreachable!(),
+        };
+        let right = match self.heap.get(rhs.heap()) {
+            Some(HeapValue::Str(s)) => s,
+            _ => unreachable!(),
+        };
+
+        let out = [left.as_str(), right.as_str()].concat();
+        let value = self.heap.insert(HeapValue::Str(out));
+
+        Value::Heap(Type::Str, value)
+    }
+
     fn eval(&mut self, span: Span, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
@@ -164,6 +180,7 @@ impl Vm {
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
+                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => self.concat_string(lhs, rhs),
                     op => {
                         return Err(ErrorKind::UnsupportedOp {
                             left: lhs.ty(),

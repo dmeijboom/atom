@@ -86,6 +86,13 @@ impl Value {
     pub fn bool(self) -> bool {
         extract!(self, Bool)
     }
+
+    pub fn heap(self) -> Rooted<HeapValue> {
+        match self {
+            Value::Heap(_, value) => value,
+            _ => unreachable!(),
+        }
+    }
 }
 
 impl Display for Value {

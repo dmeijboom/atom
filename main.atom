@@ -1,1 +1,4 @@
-"hello world!"
+let name = "dillen";
+
+name = name ^ ".net";
+name ^ ".com"
