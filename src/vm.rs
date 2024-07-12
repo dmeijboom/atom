@@ -191,7 +191,20 @@ impl Vm {
                         Type::Str => format!("\"{}\"", String::from_utf8_lossy(&buff)),
                         _ => unreachable!(),
                     },
-                    HeapValue::Array(_) => todo!(),
+                    HeapValue::Array(items) => {
+                        let mut s = String::from("[");
+
+                        for (i, item) in items.iter().enumerate() {
+                            if i > 0 {
+                                s.push_str(", ");
+                            }
+
+                            s.push_str(&self.repr(item));
+                        }
+
+                        s.push(']');
+                        s
+                    }
                 },
                 None => "<nilptr>".to_string(),
             },
