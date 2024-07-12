@@ -71,14 +71,15 @@ impl Vm {
         }
     }
 
-    fn load_const(&mut self, span: Span, idx: usize) -> Result<Value, Error> {
-        let const_ = self
-            .module
+    fn get_const(&self, span: Span, idx: usize) -> Result<&Const, Error> {
+        self.module
             .consts
             .get(idx)
-            .cloned()
-            .ok_or_else(|| ErrorKind::InvalidConst(idx).at(span))?;
+            .ok_or_else(|| ErrorKind::InvalidConst(idx).at(span))
+    }
 
+    fn load_const(&mut self, span: Span, idx: usize) -> Result<Value, Error> {
+        let const_ = self.get_const(span, idx)?.clone();
         match const_ {
             Const::Int(i) => Ok(Value::new_int(i)),
             Const::Float(f) => Ok(Value::new_float(f)),
@@ -217,6 +218,15 @@ impl Vm {
             Op::LoadConst(idx) => {
                 let value = self.load_const(span, idx)?;
                 self.stack.push(value);
+            }
+            Op::LoadMember(idx) => {
+                let object = self.pop_stack(span)?;
+                let member = match self.get_const(span, idx)? {
+                    Const::Str(name) => name,
+                    _ => unreachable!(),
+                };
+
+                panic!("load: {member}");
             }
             Op::CompareOp(op) => {
                 let rhs = self.pop_stack(span)?;

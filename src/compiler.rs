@@ -159,7 +159,11 @@ impl Compiler {
 
                 Op::MakeArray(len).at(expr.span)
             }
-            ExprKind::Member(_, _) => todo!(),
+            ExprKind::Member(object, member) => {
+                self.expr(*object)?;
+                let idx = self.push_const(Const::Str(member));
+                Op::LoadMember(idx).at(expr.span)
+            }
             ExprKind::CompMember(object, elem) => {
                 self.expr(*object)?;
                 self.expr(*elem)?;

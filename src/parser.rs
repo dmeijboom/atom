@@ -166,12 +166,12 @@ impl Parser {
         loop {
             lhs = match self.hdr2() {
                 (Some(token), next) => match (token, next) {
-                    (TokenKind::Dot, _) if min_prec <= PREC_CALL => {
+                    (TokenKind::Dot, Some(TokenKind::Ident(_))) if min_prec <= PREC_CALL => {
                         self.advance();
-                        let rhs = self.expr(PREC_CALL + 1)?;
                         let span = lhs.span;
+                        let name = self.ident()?;
 
-                        ExprKind::Member(Box::new(lhs), Box::new(rhs)).at(span)
+                        ExprKind::Member(Box::new(lhs), name).at(span)
                     }
                     (TokenKind::SqrBracketLeft, _) if min_prec <= PREC_CALL => {
                         self.advance();

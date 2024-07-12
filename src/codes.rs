@@ -34,8 +34,9 @@ pub enum Op {
     JumpIfFalse(usize),
     JumpIfTrue(usize),
     MakeArray(usize),
-    LoadElement,
     UnaryNot,
+    LoadElement,
+    LoadMember(usize),
 }
 
 impl Op {
