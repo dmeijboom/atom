@@ -27,7 +27,7 @@ impl Display for Type {
 
 macro_rules! extract {
     ($value:expr, $name:ident) => {
-        match $value {
+        match $value.kind {
             ValueKind::$name(value) => value,
             _ => unimplemented!(),
         }
@@ -66,59 +66,45 @@ impl Value {
         self.ty
     }
 
-    pub fn kind(self) -> ValueKind {
-        self.kind
-    }
-
-    pub fn kind_ref(&self) -> &ValueKind {
+    pub fn kind(&self) -> &ValueKind {
         &self.kind
     }
 
-    pub fn int(i: i64) -> Self {
+    pub fn new_int(i: i64) -> Self {
         Self {
             ty: Type::Int,
             kind: ValueKind::Int(i),
         }
     }
 
-    pub fn float(f: f64) -> Self {
+    pub fn new_float(f: f64) -> Self {
         Self {
             ty: Type::Float,
             kind: ValueKind::Float(f),
         }
     }
 
-    pub fn bool(b: bool) -> Self {
+    pub fn new_bool(b: bool) -> Self {
         Self {
             ty: Type::Bool,
             kind: ValueKind::Bool(b),
         }
     }
 
-    pub fn str(handle: Handle<HeapValue>) -> Self {
+    pub fn new_str(handle: Handle<HeapValue>) -> Self {
         Self {
             ty: Type::Str,
             kind: ValueKind::Heap(handle),
         }
     }
 
-    pub fn array(handle: Handle<HeapValue>) -> Self {
+    pub fn new_array(handle: Handle<HeapValue>) -> Self {
         Self {
             ty: Type::Array,
             kind: ValueKind::Heap(handle),
         }
     }
-}
 
-#[derive(Debug, Clone)]
-pub enum ValueKind {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Heap(Handle<HeapValue>),
-}
-
-impl ValueKind {
     pub fn int(self) -> i64 {
         extract!(self, Int)
     }
@@ -131,16 +117,20 @@ impl ValueKind {
         extract!(self, Bool)
     }
 
-    pub fn is_number(&self) -> bool {
-        matches!(self, ValueKind::Int(_) | ValueKind::Float(_))
-    }
-
     pub fn heap(self) -> Handle<HeapValue> {
-        match self {
+        match self.kind {
             ValueKind::Heap(handle) => handle,
             _ => unreachable!(),
         }
     }
+}
+
+#[derive(Debug, Clone)]
+pub enum ValueKind {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Heap(Handle<HeapValue>),
 }
 
 impl Display for ValueKind {
@@ -151,6 +141,12 @@ impl Display for ValueKind {
             ValueKind::Bool(b) => write!(fmt, "{b}"),
             ValueKind::Heap(..) => write!(fmt, "<heap>"),
         }
+    }
+}
+
+impl ValueKind {
+    pub fn is_number(&self) -> bool {
+        matches!(self, ValueKind::Int(_) | ValueKind::Float(_))
     }
 }
 

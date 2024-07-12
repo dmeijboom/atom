@@ -109,7 +109,13 @@ impl Compiler {
 
     fn expr(&mut self, expr: Expr) -> Result<(), Error> {
         let code = match expr.kind {
-            ExprKind::Unary(_, _) => todo!(),
+            ExprKind::Unary(op, unary_expr) => match op {
+                ast::UnaryOp::Not => {
+                    let span = expr.span;
+                    self.expr(*unary_expr)?;
+                    Op::UnaryNot.at(span)
+                }
+            },
             ExprKind::Binary(lhs, op, rhs) => {
                 self.expr(*lhs)?;
 

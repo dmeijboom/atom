@@ -35,6 +35,7 @@ pub enum Op {
     JumpIfTrue(usize),
     MakeArray(usize),
     LoadElement,
+    UnaryNot,
 }
 
 impl Op {
