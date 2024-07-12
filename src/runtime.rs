@@ -9,8 +9,8 @@ pub enum Type {
     Int,
     Float,
     Bool,
-    Str,
     Array,
+    Str,
 }
 
 impl Display for Type {
@@ -28,7 +28,7 @@ impl Display for Type {
 macro_rules! extract {
     ($value:expr, $name:ident) => {
         match $value {
-            Value::$name(value) => value,
+            ValueKind::$name(value) => value,
             _ => unimplemented!(),
         }
     };
@@ -36,38 +36,17 @@ macro_rules! extract {
 
 #[derive(Debug)]
 pub enum HeapValue {
-    Str(String),
+    Buffer(Vec<u8>),
     Array(Vec<Value>),
-}
-
-impl Display for HeapValue {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HeapValue::Str(s) => write!(f, "\"{s}\""),
-            HeapValue::Array(values) => {
-                write!(f, "[")?;
-
-                for (i, value) in values.iter().enumerate() {
-                    if i > 0 {
-                        write!(f, ", ")?;
-                    }
-
-                    write!(f, "{}", value)?;
-                }
-
-                write!(f, "]")
-            }
-        }
-    }
 }
 
 impl Trace<Self> for HeapValue {
     fn trace(&self, tracer: &mut broom::prelude::Tracer<Self>) {
         match self {
-            HeapValue::Str(_) => {}
+            HeapValue::Buffer(_) => {}
             HeapValue::Array(values) => {
                 for value in values {
-                    if let Value::Heap(_, value) = value {
+                    if let ValueKind::Heap(value) = value.kind {
                         value.trace(tracer);
                     }
                 }
@@ -77,27 +56,69 @@ impl Trace<Self> for HeapValue {
 }
 
 #[derive(Debug, Clone)]
-pub enum Value {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Heap(Type, Handle<HeapValue>),
+pub struct Value {
+    ty: Type,
+    kind: ValueKind,
 }
 
 impl Value {
     pub fn ty(&self) -> Type {
-        match self {
-            Value::Int(_) => Type::Int,
-            Value::Float(_) => Type::Float,
-            Value::Bool(_) => Type::Bool,
-            Value::Heap(ty, _) => *ty,
+        self.ty
+    }
+
+    pub fn kind(self) -> ValueKind {
+        self.kind
+    }
+
+    pub fn kind_ref(&self) -> &ValueKind {
+        &self.kind
+    }
+
+    pub fn int(i: i64) -> Self {
+        Self {
+            ty: Type::Int,
+            kind: ValueKind::Int(i),
         }
     }
 
-    pub fn is_number(&self) -> bool {
-        matches!(self.ty(), Type::Int | Type::Float)
+    pub fn float(f: f64) -> Self {
+        Self {
+            ty: Type::Float,
+            kind: ValueKind::Float(f),
+        }
     }
 
+    pub fn bool(b: bool) -> Self {
+        Self {
+            ty: Type::Bool,
+            kind: ValueKind::Bool(b),
+        }
+    }
+
+    pub fn str(handle: Handle<HeapValue>) -> Self {
+        Self {
+            ty: Type::Str,
+            kind: ValueKind::Heap(handle),
+        }
+    }
+
+    pub fn array(handle: Handle<HeapValue>) -> Self {
+        Self {
+            ty: Type::Array,
+            kind: ValueKind::Heap(handle),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum ValueKind {
+    Int(i64),
+    Float(f64),
+    Bool(bool),
+    Heap(Handle<HeapValue>),
+}
+
+impl ValueKind {
     pub fn int(self) -> i64 {
         extract!(self, Int)
     }
@@ -110,21 +131,25 @@ impl Value {
         extract!(self, Bool)
     }
 
+    pub fn is_number(&self) -> bool {
+        matches!(self, ValueKind::Int(_) | ValueKind::Float(_))
+    }
+
     pub fn heap(self) -> Handle<HeapValue> {
         match self {
-            Value::Heap(_, value) => value,
+            ValueKind::Heap(handle) => handle,
             _ => unreachable!(),
         }
     }
 }
 
-impl Display for Value {
+impl Display for ValueKind {
     fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Value::Int(i) => write!(fmt, "{i}"),
-            Value::Float(f) => write!(fmt, "{f}"),
-            Value::Bool(b) => write!(fmt, "{b}"),
-            Value::Heap(..) => write!(fmt, "<heap>"),
+            ValueKind::Int(i) => write!(fmt, "{i}"),
+            ValueKind::Float(f) => write!(fmt, "{f}"),
+            ValueKind::Bool(b) => write!(fmt, "{b}"),
+            ValueKind::Heap(..) => write!(fmt, "<heap>"),
         }
     }
 }

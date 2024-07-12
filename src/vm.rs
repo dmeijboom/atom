@@ -6,15 +6,15 @@ use crate::{
     codes::{BinaryOp, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
-    runtime::{Error, ErrorKind, HeapValue, Type, Value},
+    runtime::{Error, ErrorKind, HeapValue, Type, Value, ValueKind},
 };
 
 macro_rules! compare_op {
     ($lhs:ident $op:tt $rhs:ident) => {
         match $lhs.ty() {
-            Type::Int => Value::Bool($lhs.int() $op $rhs.int()),
-            Type::Float => Value::Bool($lhs.float() $op $rhs.float()),
-            Type::Bool => Value::Bool($lhs.bool() $op $rhs.bool()),
+            Type::Int => Value::bool($lhs.kind().int() $op $rhs.kind().int()),
+            Type::Float => Value::bool($lhs.kind().float() $op $rhs.kind().float()),
+            Type::Bool => Value::bool($lhs.kind().bool() $op $rhs.kind().bool()),
             _ => unreachable!()
         }
     };
@@ -23,8 +23,8 @@ macro_rules! compare_op {
 macro_rules! binary_op {
     ($lhs:ident $op:tt $rhs:ident) => {
         match $lhs.ty() {
-            Type::Int => Value::Int($lhs.int() $op $rhs.int()),
-            Type::Float => Value::Float($lhs.float() $op $rhs.float()),
+            Type::Int => Value::int($lhs.kind().int() $op $rhs.kind().int()),
+            Type::Float => Value::float($lhs.kind().float() $op $rhs.kind().float()),
             _ => unreachable!(),
         }
     };
@@ -33,7 +33,7 @@ macro_rules! binary_op {
 macro_rules! binary_op_int {
     ($lhs:ident $op:tt $rhs:ident) => {
         match $lhs.ty() {
-            Type::Int => Value::Int($lhs.int() $op $rhs.int()),
+            Type::Int => Value::int($lhs.kind().int() $op $rhs.kind().int()),
             _ => unreachable!(),
         }
     };
@@ -58,10 +58,6 @@ impl Vm {
         }
     }
 
-    pub fn memory(self) -> Heap<HeapValue> {
-        self.heap
-    }
-
     fn goto(&mut self, n: usize) {
         self.n = n;
     }
@@ -84,12 +80,12 @@ impl Vm {
             .ok_or_else(|| ErrorKind::InvalidConst(idx).at(span))?;
 
         match const_ {
-            Const::Int(i) => Ok(Value::Int(i)),
-            Const::Float(f) => Ok(Value::Float(f)),
-            Const::Bool(b) => Ok(Value::Bool(b)),
+            Const::Int(i) => Ok(Value::int(i)),
+            Const::Float(f) => Ok(Value::float(f)),
+            Const::Bool(b) => Ok(Value::bool(b)),
             Const::Str(s) => {
-                let value = self.heap.insert(HeapValue::Str(s));
-                Ok(Value::Heap(Type::Str, value.handle()))
+                let value = self.heap.insert(HeapValue::Buffer(s.into_bytes()));
+                Ok(Value::str(value.handle()))
             }
         }
     }
@@ -119,29 +115,29 @@ impl Vm {
         let value = self.pop_stack(span)?;
         self.check_type(span, value.ty(), Type::Bool)?;
 
-        if value.bool() == b {
-            self.stack.push(Value::Bool(b));
+        if value.kind().bool() == b {
+            self.stack.push(Value::bool(b));
             self.goto(idx);
         }
 
         Ok(())
     }
 
-    fn concat_string(&mut self, span: Span, lhs: Value, rhs: Value) -> Result<Value, Error> {
-        let left = match self.heap.get(lhs.heap()) {
-            Some(HeapValue::Str(s)) => s,
+    fn concat(&mut self, span: Span, lhs: Value, rhs: Value) -> Result<Value, Error> {
+        let left = match self.heap.get(lhs.kind().heap()) {
+            Some(HeapValue::Buffer(b)) => b,
             None => return Err(ErrorKind::Segfault.at(span)),
             _ => unreachable!(),
         };
-        let right = match self.heap.get(rhs.heap()) {
-            Some(HeapValue::Str(s)) => s,
+        let right = match self.heap.get(rhs.kind().heap()) {
+            Some(HeapValue::Buffer(b)) => b,
             _ => unreachable!(),
         };
 
-        let out = [left.as_str(), right.as_str()].concat();
-        let value = self.heap.insert(HeapValue::Str(out));
+        let out = [left.as_slice(), right.as_slice()].concat();
+        let value = self.heap.insert(HeapValue::Buffer(out));
 
-        Ok(Value::Heap(Type::Str, value.handle()))
+        Ok(Value::str(value.handle()))
     }
 
     fn make_array(&mut self, span: Span, size: usize) -> Result<(), Error> {
@@ -155,7 +151,7 @@ impl Vm {
         values.reverse();
 
         let value = self.heap.insert(HeapValue::Array(values));
-        self.stack.push(Value::Heap(Type::Array, value.handle()));
+        self.stack.push(Value::array(value.handle()));
 
         Ok(())
     }
@@ -167,10 +163,10 @@ impl Vm {
         self.check_type(span, elem.ty(), Type::Int)?;
         self.check_type(span, array.ty(), Type::Array)?;
 
-        let n = elem.int() as usize;
+        let n = elem.kind().int() as usize;
         let heap = self
             .heap
-            .get(array.heap())
+            .get(array.kind().heap())
             .ok_or_else(|| ErrorKind::Segfault.at(span))?;
 
         match heap {
@@ -182,6 +178,24 @@ impl Vm {
                 None => Err(ErrorKind::IndexOutOfBounds(n).at(span)),
             },
             _ => unreachable!(),
+        }
+    }
+
+    pub fn repr(&self, value: &Value) -> String {
+        let ty = value.ty();
+
+        match value.kind_ref() {
+            ValueKind::Heap(handle) => match self.heap.get(*handle) {
+                Some(value) => match value {
+                    HeapValue::Buffer(buff) => match ty {
+                        Type::Str => format!("\"{}\"", String::from_utf8_lossy(&buff)),
+                        _ => unreachable!(),
+                    },
+                    HeapValue::Array(_) => todo!(),
+                },
+                None => "<nilptr>".to_string(),
+            },
+            kind => format!("{kind}"),
         }
     }
 
@@ -215,16 +229,14 @@ impl Vm {
                 self.check_type(span, lhs.ty(), rhs.ty())?;
 
                 let value = match op {
-                    BinaryOp::Add if lhs.is_number() => binary_op!(lhs + rhs),
-                    BinaryOp::Sub if lhs.is_number() => binary_op!(lhs - rhs),
-                    BinaryOp::Mul if lhs.is_number() => binary_op!(lhs * rhs),
-                    BinaryOp::Div if lhs.is_number() => binary_op!(lhs / rhs),
+                    BinaryOp::Add if lhs.kind_ref().is_number() => binary_op!(lhs + rhs),
+                    BinaryOp::Sub if lhs.kind_ref().is_number() => binary_op!(lhs - rhs),
+                    BinaryOp::Mul if lhs.kind_ref().is_number() => binary_op!(lhs * rhs),
+                    BinaryOp::Div if lhs.kind_ref().is_number() => binary_op!(lhs / rhs),
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
-                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => {
-                        self.concat_string(span, lhs, rhs)?
-                    }
+                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => self.concat(span, lhs, rhs)?,
                     op => {
                         return Err(ErrorKind::UnsupportedOp {
                             left: lhs.ty(),

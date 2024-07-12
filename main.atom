@@ -1,6 +1,4 @@
-let values = [1, 2];
-let value = values[1];
+let name = "rick";
+let names = [name ^ " van Assen"];
 
-value = 10;
-
-values[1]
+names[0]
