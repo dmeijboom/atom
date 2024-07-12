@@ -154,6 +154,11 @@ impl Compiler {
                 Op::MakeArray(len).at(expr.span)
             }
             ExprKind::Member(_, _) => todo!(),
+            ExprKind::CompMember(object, elem) => {
+                self.expr(*object)?;
+                self.expr(*elem)?;
+                Op::LoadElement.at(expr.span)
+            }
             ExprKind::Ident(name) => {
                 let idx = self.load_var(expr.span, &name)?;
                 Op::Load(idx).at(expr.span)

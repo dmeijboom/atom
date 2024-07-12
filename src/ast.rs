@@ -38,6 +38,7 @@ pub enum ExprKind {
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Array(Vec<Expr>),
     Member(Box<Expr>, Box<Expr>),
+    CompMember(Box<Expr>, Box<Expr>),
     Ident(String),
     Call(Box<Expr>, Vec<Expr>),
     Literal(Literal),

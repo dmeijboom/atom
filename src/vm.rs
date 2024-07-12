@@ -127,9 +127,10 @@ impl Vm {
         Ok(())
     }
 
-    fn concat_string(&mut self, lhs: Value, rhs: Value) -> Value {
+    fn concat_string(&mut self, span: Span, lhs: Value, rhs: Value) -> Result<Value, Error> {
         let left = match self.heap.get(lhs.heap()) {
             Some(HeapValue::Str(s)) => s,
+            None => return Err(ErrorKind::Segfault.at(span)),
             _ => unreachable!(),
         };
         let right = match self.heap.get(rhs.heap()) {
@@ -140,7 +141,7 @@ impl Vm {
         let out = [left.as_str(), right.as_str()].concat();
         let value = self.heap.insert(HeapValue::Str(out));
 
-        Value::Heap(Type::Str, value.handle())
+        Ok(Value::Heap(Type::Str, value.handle()))
     }
 
     fn make_array(&mut self, span: Span, size: usize) -> Result<(), Error> {
@@ -157,6 +158,31 @@ impl Vm {
         self.stack.push(Value::Heap(Type::Array, value.handle()));
 
         Ok(())
+    }
+
+    fn load_elem(&mut self, span: Span) -> Result<(), Error> {
+        let elem = self.pop_stack(span)?;
+        let array = self.pop_stack(span)?;
+
+        self.check_type(span, elem.ty(), Type::Int)?;
+        self.check_type(span, array.ty(), Type::Array)?;
+
+        let n = elem.int() as usize;
+        let heap = self
+            .heap
+            .get(array.heap())
+            .ok_or_else(|| ErrorKind::Segfault.at(span))?;
+
+        match heap {
+            HeapValue::Array(array) => match array.get(n) {
+                Some(elem) => {
+                    self.stack.push(elem.clone());
+                    Ok(())
+                }
+                None => Err(ErrorKind::IndexOutOfBounds(n).at(span)),
+            },
+            _ => unreachable!(),
+        }
     }
 
     fn eval(&mut self, span: Span, op: Op) -> Result<(), Error> {
@@ -196,7 +222,9 @@ impl Vm {
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
-                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => self.concat_string(lhs, rhs),
+                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => {
+                        self.concat_string(span, lhs, rhs)?
+                    }
                     op => {
                         return Err(ErrorKind::UnsupportedOp {
                             left: lhs.ty(),
@@ -225,6 +253,7 @@ impl Vm {
             Op::JumpIfTrue(idx) => self.jump_cond(span, idx, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(span, idx, false)?,
             Op::MakeArray(len) => self.make_array(span, len)?,
+            Op::LoadElement => self.load_elem(span)?,
         }
 
         Ok(())

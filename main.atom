@@ -1,3 +1,6 @@
 let values = [1, 2];
+let value = values[1];
 
-values
+value = 10;
+
+values[1]

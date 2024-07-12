@@ -173,6 +173,14 @@ impl Parser {
 
                         ExprKind::Member(Box::new(lhs), Box::new(rhs)).at(span)
                     }
+                    (TokenKind::SqrBracketLeft, _) if min_prec <= PREC_CALL => {
+                        self.advance();
+                        let rhs = self.expr(PREC_CALL + 1)?;
+                        self.expect(TokenKind::SqrBracketRight)?;
+                        let span = lhs.span;
+
+                        ExprKind::CompMember(Box::new(lhs), Box::new(rhs)).at(span)
+                    }
                     (TokenKind::ParentLeft, _) if min_prec <= PREC_CALL => {
                         self.advance();
                         let args = self.expr_list(TokenKind::ParentRight, PREC_CALL + 1)?;
@@ -266,7 +274,14 @@ impl Parser {
             return Ok(StmtKind::Expr(expr).at(span));
         }
 
-        Ok(StmtKind::Return(expr).at(span))
+        match self.hdr() {
+            Some(TokenKind::BracketRight | TokenKind::Eof) => Ok(StmtKind::Return(expr).at(span)),
+            None => Err(Error::UnexpectedEof),
+            _ => Err(Error::UnexpectedToken {
+                expected: Cow::Borrowed(";"),
+                actual: self.tokens.pop_front().unwrap(),
+            }),
+        }
     }
 
     fn return_stmt(&mut self) -> Result<Stmt, Error> {

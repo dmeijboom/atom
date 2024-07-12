@@ -21,6 +21,7 @@ pub enum CompareOp {
     Gte,
 }
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy)]
 pub enum Op {
     LoadConst(usize),
@@ -33,6 +34,7 @@ pub enum Op {
     JumpIfFalse(usize),
     JumpIfTrue(usize),
     MakeArray(usize),
+    LoadElement,
 }
 
 impl Op {

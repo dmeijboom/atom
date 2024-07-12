@@ -139,6 +139,10 @@ pub enum ErrorKind {
     StackEmpty,
     #[error("type mismatch: {left} != {right}")]
     TypeMismatch { left: Type, right: Type },
+    #[error("segmentation fault: heap value is nil")]
+    Segfault,
+    #[error("index out of bounds: {0}")]
+    IndexOutOfBounds(usize),
     #[error("unsupported operation '{op:?}' for {left} and {right}")]
     UnsupportedOp {
         left: Type,
