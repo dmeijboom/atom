@@ -1,0 +1,32 @@
+{
+	"$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+	"name": "atom",
+	"patterns": [
+		{
+			"include": "#keywords"
+		},
+		{
+			"include": "#strings"
+		}
+	],
+	"repository": {
+		"keywords": {
+			"patterns": [{
+				"name": "keyword.control.atom",
+				"match": "\\b(if|else|elif|for|let|fn|return)\\b"
+			}]
+		},
+		"strings": {
+			"name": "string.quoted.double.atom",
+			"begin": "\"",
+			"end": "\"",
+			"patterns": [
+				{
+					"name": "constant.character.escape.atom",
+					"match": "\\\\."
+				}
+			]
+		}
+	},
+	"scopeName": "source.atom"
+}

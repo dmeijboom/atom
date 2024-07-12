@@ -1,0 +1,25 @@
+{
+  "name": "atom-lang",
+  "displayName": "atom-lang",
+  "description": "Support for atom language",
+  "version": "0.0.1",
+  "engines": {
+    "vscode": "^1.91.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [{
+      "id": "atom",
+      "aliases": ["atom", "atom"],
+      "extensions": [".atom"],
+      "configuration": "./language-configuration.json"
+    }],
+    "grammars": [{
+      "language": "atom",
+      "scopeName": "source.atom",
+      "path": "./syntaxes/atom.tmLanguage.json"
+    }]
+  }
+}
