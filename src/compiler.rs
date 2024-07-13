@@ -107,6 +107,33 @@ impl Compiler {
             .ok_or_else(|| ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
+    fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), Error> {
+        let idx = self.push_code(
+            match cond {
+                true => Op::PushJumpIfTrue(0),
+                false => Op::PushJumpIfFalse(0),
+            }
+            .at(Span::default()),
+        );
+
+        self.expr(rhs)?;
+        self.codes[idx] = match cond {
+            true => Op::PushJumpIfTrue(self.loc()),
+            false => Op::PushJumpIfFalse(self.loc()),
+        }
+        .at(span);
+
+        Ok(())
+    }
+
+    fn expr_list(&mut self, exprs: Vec<Expr>) -> Result<(), Error> {
+        for expr in exprs {
+            self.expr(expr)?;
+        }
+
+        Ok(())
+    }
+
     fn expr(&mut self, expr: Expr) -> Result<(), Error> {
         let code = match expr.kind {
             ExprKind::Unary(op, unary_expr) => match op {
@@ -130,18 +157,8 @@ impl Compiler {
                     ast::BinaryOp::Gte => Op::CompareOp(CompareOp::Gte).at(expr.span),
                     ast::BinaryOp::Lt => Op::CompareOp(CompareOp::Lt).at(expr.span),
                     ast::BinaryOp::Lte => Op::CompareOp(CompareOp::Lte).at(expr.span),
-                    ast::BinaryOp::LogicalOr => {
-                        let idx = self.push_code(Op::PushJumpIfTrue(0).at(Span::default()));
-                        self.expr(*rhs)?;
-                        self.codes[idx] = Op::PushJumpIfTrue(self.loc()).at(expr.span);
-                        return Ok(());
-                    }
-                    ast::BinaryOp::LogicalAnd => {
-                        let idx = self.push_code(Op::PushJumpIfFalse(0).at(Span::default()));
-                        self.expr(*rhs)?;
-                        self.codes[idx] = Op::PushJumpIfFalse(self.loc()).at(expr.span);
-                        return Ok(());
-                    }
+                    ast::BinaryOp::LogicalOr => return self.logical(expr.span, *rhs, true),
+                    ast::BinaryOp::LogicalAnd => return self.logical(expr.span, *rhs, false),
                     ast::BinaryOp::BitwiseOr => Op::BinaryOp(BinaryOp::BitwiseOr).at(expr.span),
                     ast::BinaryOp::BitwiseAnd => Op::BinaryOp(BinaryOp::BitwiseAnd).at(expr.span),
                     ast::BinaryOp::BitwiseXor => Op::BinaryOp(BinaryOp::BitwiseXor).at(expr.span),
@@ -152,11 +169,7 @@ impl Compiler {
             }
             ExprKind::Array(items) => {
                 let len = items.len();
-
-                for item in items {
-                    self.expr(item)?;
-                }
-
+                self.expr_list(items)?;
                 Op::MakeArray(len).at(expr.span)
             }
             ExprKind::Member(object, member) => {
@@ -169,21 +182,15 @@ impl Compiler {
                 self.expr(*elem)?;
                 Op::LoadElement.at(expr.span)
             }
-            ExprKind::Ident(name) => {
-                let idx = self.load_var(expr.span, &name)?;
-                Op::Load(idx).at(expr.span)
-            }
+            ExprKind::Ident(name) => Op::Load(self.load_var(expr.span, &name)?).at(expr.span),
             ExprKind::Call(_, _) => todo!(),
-            ExprKind::Literal(lit) => {
-                let idx = match lit {
-                    Literal::Bool(b) => self.push_const(Const::Bool(b)),
-                    Literal::Int(i) => self.push_const(Const::Int(i)),
-                    Literal::Float(f) => self.push_const(Const::Float(f)),
-                    Literal::String(s) => self.push_const(Const::Str(s)),
-                };
-
-                Op::LoadConst(idx).at(expr.span)
-            }
+            ExprKind::Literal(lit) => Op::LoadConst(match lit {
+                Literal::Bool(b) => self.push_const(Const::Bool(b)),
+                Literal::Int(i) => self.push_const(Const::Int(i)),
+                Literal::Float(f) => self.push_const(Const::Float(f)),
+                Literal::String(s) => self.push_const(Const::Str(s)),
+            })
+            .at(expr.span),
         };
 
         self.codes.push(code);
