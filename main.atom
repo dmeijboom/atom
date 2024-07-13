@@ -1,3 +1,1 @@
-let values = [100, 40, 2];
-
-values.length
+1 == 1 && false

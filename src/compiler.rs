@@ -131,15 +131,15 @@ impl Compiler {
                     ast::BinaryOp::Lt => Op::CompareOp(CompareOp::Lt).at(expr.span),
                     ast::BinaryOp::Lte => Op::CompareOp(CompareOp::Lte).at(expr.span),
                     ast::BinaryOp::LogicalOr => {
-                        let idx = self.push_code(Op::JumpIfTrue(0).at(Span::default()));
+                        let idx = self.push_code(Op::PushJumpIfTrue(0).at(Span::default()));
                         self.expr(*rhs)?;
-                        self.codes[idx] = Op::JumpIfTrue(self.loc()).at(expr.span);
+                        self.codes[idx] = Op::PushJumpIfTrue(self.loc()).at(expr.span);
                         return Ok(());
                     }
                     ast::BinaryOp::LogicalAnd => {
-                        let idx = self.push_code(Op::JumpIfFalse(0).at(Span::default()));
+                        let idx = self.push_code(Op::PushJumpIfFalse(0).at(Span::default()));
                         self.expr(*rhs)?;
-                        self.codes[idx] = Op::JumpIfFalse(self.loc()).at(expr.span);
+                        self.codes[idx] = Op::PushJumpIfFalse(self.loc()).at(expr.span);
                         return Ok(());
                     }
                     ast::BinaryOp::BitwiseOr => Op::BinaryOp(BinaryOp::BitwiseOr).at(expr.span),

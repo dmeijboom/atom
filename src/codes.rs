@@ -33,6 +33,8 @@ pub enum Op {
     Return,
     JumpIfFalse(usize),
     JumpIfTrue(usize),
+    PushJumpIfFalse(usize),
+    PushJumpIfTrue(usize),
     MakeArray(usize),
     UnaryNot,
     LoadElement,

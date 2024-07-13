@@ -175,12 +175,15 @@ impl Vm {
         Ok(())
     }
 
-    fn jump_cond(&mut self, idx: usize, b: bool) -> Result<(), Error> {
+    fn jump_cond(&mut self, idx: usize, push: bool, cond: bool) -> Result<(), Error> {
         let value = self.pop()?;
         self.check_type(value.ty(), Type::Bool)?;
 
-        if value.bool() == b {
-            self.stack.push(Value::new_bool(b));
+        if value.bool() == cond {
+            if push {
+                self.stack.push(Value::new_bool(cond));
+            }
+
             self.goto(idx);
         }
 
@@ -323,8 +326,10 @@ impl Vm {
             }
             // @TODO: implement when we have functions
             Op::Return => {}
-            Op::JumpIfTrue(idx) => self.jump_cond(idx, true)?,
-            Op::JumpIfFalse(idx) => self.jump_cond(idx, false)?,
+            Op::JumpIfTrue(idx) => self.jump_cond(idx, false, true)?,
+            Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
+            Op::PushJumpIfTrue(idx) => self.jump_cond(idx, true, true)?,
+            Op::PushJumpIfFalse(idx) => self.jump_cond(idx, true, false)?,
             Op::MakeArray(len) => self.make_array(len)?,
             Op::LoadElement => self.load_elem()?,
             Op::UnaryNot => {
