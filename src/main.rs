@@ -40,6 +40,18 @@ fn main() -> Result<(), Error> {
     let compiler = Compiler::new(stmts);
     let module = compiler.compile()?;
 
+    for (name, func) in module.funcs.iter() {
+        println!("{}:", name);
+
+        for code in func.codes.iter() {
+            println!("{}: {:?}", code.span.offset, code.op);
+        }
+    }
+
+    if !module.funcs.is_empty() {
+        println!();
+    }
+
     for code in module.codes.iter() {
         println!("{}: {:?}", code.span.offset, code.op);
     }

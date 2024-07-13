@@ -53,10 +53,17 @@ pub struct Code {
     pub span: Span,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Const {
     Int(i64),
     Float(f64),
     Bool(bool),
     Str(String),
+}
+
+impl Eq for Const {}
+
+#[derive(Debug, Default)]
+pub struct Func {
+    pub codes: Vec<Code>,
 }

@@ -1,8 +1,12 @@
-use std::{collections::VecDeque, fmt::Display};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Display,
+    mem,
+};
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
-    codes::{BinaryOp, Code, CompareOp, Const, Op},
+    codes::{BinaryOp, Code, CompareOp, Const, Func, Op},
     lexer::Span,
 };
 
@@ -10,6 +14,8 @@ use crate::{
 pub enum ErrorKind {
     #[error("unknown name: {0}")]
     UnknownName(String),
+    #[error("fn '{0}' already exists")]
+    FnAlreadyExists(String),
 }
 
 impl ErrorKind {
@@ -37,18 +43,20 @@ struct Var {
     scope: usize,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Module {
     pub codes: Vec<Code>,
     pub consts: Vec<Const>,
+    pub funcs: HashMap<String, Func>,
 }
 
 pub struct Compiler {
     scope: usize,
     stmts: VecDeque<Stmt>,
+    vars: Vec<Var>,
     codes: Vec<Code>,
     consts: Vec<Const>,
-    vars: Vec<Var>,
+    funcs: HashMap<String, Func>,
 }
 
 impl Compiler {
@@ -56,10 +64,34 @@ impl Compiler {
         Compiler {
             scope: 0,
             stmts: VecDeque::from(stmts),
+            vars: vec![],
             codes: vec![],
             consts: vec![],
-            vars: vec![],
+            funcs: HashMap::new(),
         }
+    }
+
+    fn fork(&mut self, stmts: Vec<Stmt>) -> Compiler {
+        let vars = mem::take(&mut self.vars);
+        let consts = mem::take(&mut self.consts);
+        let funcs = mem::take(&mut self.funcs);
+
+        Compiler {
+            scope: self.scope + 1,
+            stmts: VecDeque::from(stmts),
+            vars,
+            codes: vec![],
+            consts,
+            funcs,
+        }
+    }
+
+    fn merge_back(&mut self, other: Compiler) -> Vec<Code> {
+        self.consts = other.consts;
+        self.vars = other.vars;
+        self.funcs = other.funcs;
+
+        other.codes
     }
 
     fn loc(&self) -> usize {
@@ -71,6 +103,10 @@ impl Compiler {
     }
 
     fn push_const(&mut self, const_: Const) -> usize {
+        if let Some(idx) = self.consts.iter().position(|c| c == &const_) {
+            return idx;
+        }
+
         let idx = self.consts.len();
         self.consts.push(const_);
         idx
@@ -193,7 +229,7 @@ impl Compiler {
             .at(expr.span),
         };
 
-        self.codes.push(code);
+        self.push_code(code);
 
         Ok(())
     }
@@ -203,35 +239,52 @@ impl Compiler {
             StmtKind::Let(name, expr) => {
                 self.expr(expr)?;
                 let idx = self.push_var(stmt.span, name)?;
-                self.codes.push(Op::Store(idx).at(stmt.span));
+                self.push_code(Op::Store(idx).at(stmt.span));
             }
             StmtKind::Assign(name, expr) => {
                 let idx = self.load_var(stmt.span, &name)?;
                 self.expr(expr)?;
-                self.codes.push(Op::Store(idx).at(stmt.span));
+                self.push_code(Op::Store(idx).at(stmt.span));
             }
             StmtKind::Expr(expr) => {
                 self.expr(expr)?;
-                self.codes.push(Op::Discard.at(stmt.span));
+                self.push_code(Op::Discard.at(stmt.span));
             }
             StmtKind::Return(expr) => {
                 self.expr(expr)?;
-                self.codes.push(Op::Return.at(stmt.span));
+                self.push_code(Op::Return.at(stmt.span));
             }
-            StmtKind::Fn(_, _, _) => todo!(),
+            StmtKind::Fn(name, _, stmts) => {
+                if self.funcs.contains_key(&name) {
+                    return Err(ErrorKind::FnAlreadyExists(name).at(stmt.span));
+                }
+
+                let mut compiler = self.fork(stmts);
+                compiler.compile_body()?;
+
+                let codes = self.merge_back(compiler);
+                self.funcs.insert(name, Func { codes });
+            }
+        }
+
+        Ok(())
+    }
+
+    fn compile_body(&mut self) -> Result<(), Error> {
+        while let Some(stmt) = self.next() {
+            self.stmt(stmt)?;
         }
 
         Ok(())
     }
 
     pub fn compile(mut self) -> Result<Module, Error> {
-        while let Some(stmt) = self.next() {
-            self.stmt(stmt)?;
-        }
+        self.compile_body()?;
 
         Ok(Module {
             codes: self.codes,
             consts: self.consts,
+            funcs: self.funcs,
         })
     }
 }
