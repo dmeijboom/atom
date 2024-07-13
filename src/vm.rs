@@ -69,6 +69,7 @@ impl Gc {
 pub struct Vm {
     n: usize,
     gc: Gc,
+    span: Span,
     std: Registry,
     module: Module,
     stack: Vec<Value>,
@@ -83,33 +84,41 @@ impl Vm {
             stack: vec![],
             gc: Gc::default(),
             vars: HashMap::new(),
+            span: Span::default(),
             std: runtime::std::registry(),
         }
     }
 
     fn goto(&mut self, n: usize) {
         self.n = n;
+
+        if let Some(code) = self.module.codes.get(n) {
+            self.span = code.span;
+            self.gc.at(code.span);
+        }
     }
 
-    fn next(&mut self) -> Option<(Span, Op)> {
+    fn next(&mut self) -> Option<Op> {
         if let Some(code) = self.module.codes.get(self.n) {
             self.n += 1;
+            self.span = code.span;
             self.gc.at(code.span);
-            Some((code.span, code.op))
+
+            Some(code.op)
         } else {
             None
         }
     }
 
-    fn get_const(&self, span: Span, idx: usize) -> Result<&Const, Error> {
+    fn get_const(&self, idx: usize) -> Result<&Const, Error> {
         self.module
             .consts
             .get(idx)
-            .ok_or_else(|| ErrorKind::InvalidConst(idx).at(span))
+            .ok_or_else(|| ErrorKind::InvalidConst(idx).at(self.span))
     }
 
-    fn load_const(&mut self, span: Span, idx: usize) -> Result<Value, Error> {
-        let const_ = self.get_const(span, idx)?.clone();
+    fn load_const(&mut self, idx: usize) -> Result<Value, Error> {
+        let const_ = self.get_const(idx)?.clone();
         match const_ {
             Const::Int(i) => Ok(Value::new_int(i)),
             Const::Float(f) => Ok(Value::new_float(f)),
@@ -121,9 +130,9 @@ impl Vm {
         }
     }
 
-    fn load_member(&mut self, span: Span, idx: usize) -> Result<(), Error> {
-        let object = self.pop(span)?;
-        let member = match self.get_const(span, idx)? {
+    fn load_member(&mut self, idx: usize) -> Result<(), Error> {
+        let object = self.pop()?;
+        let member = match self.get_const(idx)? {
             Const::Str(name) => name,
             _ => unreachable!(),
         };
@@ -136,7 +145,7 @@ impl Vm {
                     ty: object.ty(),
                     field: member.clone(),
                 }
-                .at(span)
+                .at(self.span)
             })?;
 
         let value = field.call(&mut self.gc, object)?;
@@ -145,30 +154,30 @@ impl Vm {
         Ok(())
     }
 
-    fn load_var(&self, span: Span, idx: usize) -> Result<Value, Error> {
+    fn load_var(&self, idx: usize) -> Result<Value, Error> {
         match self.vars.get(&idx) {
             Some(value) => Ok(value.clone()),
-            None => Err(ErrorKind::InvalidVar(idx).at(span)),
+            None => Err(ErrorKind::InvalidVar(idx).at(self.span)),
         }
     }
 
-    fn pop(&mut self, span: Span) -> Result<Value, Error> {
+    fn pop(&mut self) -> Result<Value, Error> {
         self.stack
             .pop()
-            .ok_or_else(|| ErrorKind::StackEmpty.at(span))
+            .ok_or_else(|| ErrorKind::StackEmpty.at(self.span))
     }
 
-    fn check_type(&self, span: Span, left: Type, right: Type) -> Result<(), Error> {
+    fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
-            return Err(ErrorKind::TypeMismatch { left, right }.at(span));
+            return Err(ErrorKind::TypeMismatch { left, right }.at(self.span));
         }
 
         Ok(())
     }
 
-    fn jump_cond(&mut self, span: Span, idx: usize, b: bool) -> Result<(), Error> {
-        let value = self.pop(span)?;
-        self.check_type(span, value.ty(), Type::Bool)?;
+    fn jump_cond(&mut self, idx: usize, b: bool) -> Result<(), Error> {
+        let value = self.pop()?;
+        self.check_type(value.ty(), Type::Bool)?;
 
         if value.bool() == b {
             self.stack.push(Value::new_bool(b));
@@ -187,11 +196,11 @@ impl Vm {
         Ok(Value::new_str(handle))
     }
 
-    fn make_array(&mut self, span: Span, size: usize) -> Result<(), Error> {
+    fn make_array(&mut self, size: usize) -> Result<(), Error> {
         let mut values = vec![];
 
         for _ in 0..size {
-            let value = self.pop(span)?;
+            let value = self.pop()?;
             values.push(value);
         }
 
@@ -203,12 +212,12 @@ impl Vm {
         Ok(())
     }
 
-    fn load_elem(&mut self, span: Span) -> Result<(), Error> {
-        let elem = self.pop(span)?;
-        let array = self.pop(span)?;
+    fn load_elem(&mut self) -> Result<(), Error> {
+        let elem = self.pop()?;
+        let array = self.pop()?;
 
-        self.check_type(span, elem.ty(), Type::Int)?;
-        self.check_type(span, array.ty(), Type::Array)?;
+        self.check_type(elem.ty(), Type::Int)?;
+        self.check_type(array.ty(), Type::Array)?;
 
         let n = elem.int() as usize;
         let heap = self.gc.read(array.heap())?;
@@ -218,7 +227,7 @@ impl Vm {
                 self.stack.push(elem.clone());
                 Ok(())
             }
-            None => Err(ErrorKind::IndexOutOfBounds(n).at(span)),
+            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span)),
         }
     }
 
@@ -250,18 +259,18 @@ impl Vm {
         })
     }
 
-    fn eval(&mut self, span: Span, op: Op) -> Result<(), Error> {
+    fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
-                let value = self.load_const(span, idx)?;
+                let value = self.load_const(idx)?;
                 self.stack.push(value);
             }
-            Op::LoadMember(idx) => self.load_member(span, idx)?,
+            Op::LoadMember(idx) => self.load_member(idx)?,
             Op::CompareOp(op) => {
-                let rhs = self.pop(span)?;
-                let lhs = self.pop(span)?;
+                let rhs = self.pop()?;
+                let lhs = self.pop()?;
 
-                self.check_type(span, lhs.ty(), rhs.ty())?;
+                self.check_type(lhs.ty(), rhs.ty())?;
 
                 let value = match op {
                     CompareOp::Eq => compare_op!(lhs == rhs),
@@ -275,10 +284,10 @@ impl Vm {
                 self.stack.push(value);
             }
             Op::BinaryOp(op) => {
-                let rhs = self.pop(span)?;
-                let lhs = self.pop(span)?;
+                let rhs = self.pop()?;
+                let lhs = self.pop()?;
 
-                self.check_type(span, lhs.ty(), rhs.ty())?;
+                self.check_type(lhs.ty(), rhs.ty())?;
 
                 let value = match op {
                     BinaryOp::Add if lhs.kind().is_number() => binary_op!(lhs + rhs),
@@ -295,18 +304,18 @@ impl Vm {
                             right: rhs.ty(),
                             op,
                         }
-                        .at(span))
+                        .at(self.span))
                     }
                 };
 
                 self.stack.push(value);
             }
             Op::Store(idx) => {
-                let value = self.pop(span)?;
+                let value = self.pop()?;
                 self.vars.insert(idx, value);
             }
             Op::Load(idx) => {
-                let value = self.load_var(span, idx)?;
+                let value = self.load_var(idx)?;
                 self.stack.push(value);
             }
             Op::Discard => {
@@ -314,13 +323,13 @@ impl Vm {
             }
             // @TODO: implement when we have functions
             Op::Return => {}
-            Op::JumpIfTrue(idx) => self.jump_cond(span, idx, true)?,
-            Op::JumpIfFalse(idx) => self.jump_cond(span, idx, false)?,
-            Op::MakeArray(len) => self.make_array(span, len)?,
-            Op::LoadElement => self.load_elem(span)?,
+            Op::JumpIfTrue(idx) => self.jump_cond(idx, true)?,
+            Op::JumpIfFalse(idx) => self.jump_cond(idx, false)?,
+            Op::MakeArray(len) => self.make_array(len)?,
+            Op::LoadElement => self.load_elem()?,
             Op::UnaryNot => {
-                let value = self.pop(span)?;
-                self.check_type(span, value.ty(), Type::Bool)?;
+                let value = self.pop()?;
+                self.check_type(value.ty(), Type::Bool)?;
                 self.stack.push(Value::new_bool(!value.bool()));
             }
         }
@@ -329,8 +338,8 @@ impl Vm {
     }
 
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
-        while let Some((span, op)) = self.next() {
-            self.eval(span, op)?;
+        while let Some(op) = self.next() {
+            self.eval(op)?;
         }
 
         Ok(self.stack.pop())
