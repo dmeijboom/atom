@@ -24,7 +24,7 @@ enum Error {
     #[error("CompileError: {0}")]
     Compile(#[from] compiler::Error),
     #[error("RuntimeError: {0}")]
-    Runtime(#[from] runtime::Error),
+    Runtime(#[from] runtime::error::Error),
 }
 
 fn main() -> Result<(), Error> {
@@ -48,7 +48,7 @@ fn main() -> Result<(), Error> {
     let value = vm.run()?;
 
     if let Some(value) = value {
-        println!("\n{} ({})", vm.repr(&value), value.ty());
+        println!("\n{} ({})", vm.repr(&value)?, value.ty());
     }
 
     Ok(())

@@ -1,12 +1,17 @@
 use std::collections::HashMap;
 
-use broom::Heap;
+use broom::{Handle, Heap};
 
 use crate::{
     codes::{BinaryOp, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
-    runtime::{Error, ErrorKind, HeapValue, Type, Value, ValueKind},
+    runtime::{
+        self,
+        error::{Error, ErrorKind},
+        std::Registry,
+        value::{HeapValue, Type, Value, ValueKind},
+    },
 };
 
 macro_rules! compare_op {
@@ -39,9 +44,32 @@ macro_rules! binary_op_int {
     };
 }
 
+#[derive(Default)]
+pub struct Gc {
+    heap: Heap<HeapValue>,
+    span: Span,
+}
+
+impl Gc {
+    pub fn at(&mut self, span: Span) {
+        self.span = span;
+    }
+
+    pub fn read(&self, handle: Handle<HeapValue>) -> Result<&HeapValue, Error> {
+        self.heap
+            .get(handle)
+            .ok_or_else(|| ErrorKind::Segfault.at(self.span))
+    }
+
+    pub fn alloc(&mut self, value: HeapValue) -> Handle<HeapValue> {
+        self.heap.insert(value).handle()
+    }
+}
+
 pub struct Vm {
     n: usize,
-    heap: Heap<HeapValue>,
+    gc: Gc,
+    std: Registry,
     module: Module,
     stack: Vec<Value>,
     vars: HashMap<usize, Value>,
@@ -53,8 +81,9 @@ impl Vm {
             module,
             n: 0,
             stack: vec![],
+            gc: Gc::default(),
             vars: HashMap::new(),
-            heap: Heap::new(),
+            std: runtime::std::registry(),
         }
     }
 
@@ -65,6 +94,7 @@ impl Vm {
     fn next(&mut self) -> Option<(Span, Op)> {
         if let Some(code) = self.module.codes.get(self.n) {
             self.n += 1;
+            self.gc.at(code.span);
             Some((code.span, code.op))
         } else {
             None
@@ -85,10 +115,34 @@ impl Vm {
             Const::Float(f) => Ok(Value::new_float(f)),
             Const::Bool(b) => Ok(Value::new_bool(b)),
             Const::Str(s) => {
-                let value = self.heap.insert(HeapValue::Buffer(s.into_bytes()));
-                Ok(Value::new_str(value.handle()))
+                let handle = self.gc.alloc(HeapValue::Buffer(s.into_bytes()));
+                Ok(Value::new_str(handle))
             }
         }
+    }
+
+    fn load_member(&mut self, span: Span, idx: usize) -> Result<(), Error> {
+        let object = self.pop(span)?;
+        let member = match self.get_const(span, idx)? {
+            Const::Str(name) => name,
+            _ => unreachable!(),
+        };
+        let field = self
+            .std
+            .get(object.ty())
+            .and_then(|t| t.field(member))
+            .ok_or_else(|| {
+                ErrorKind::NoSuchField {
+                    ty: object.ty(),
+                    field: member.clone(),
+                }
+                .at(span)
+            })?;
+
+        let value = field.call(&mut self.gc, object)?;
+        self.stack.push(value);
+
+        Ok(())
     }
 
     fn load_var(&self, span: Span, idx: usize) -> Result<Value, Error> {
@@ -98,7 +152,7 @@ impl Vm {
         }
     }
 
-    fn pop_stack(&mut self, span: Span) -> Result<Value, Error> {
+    fn pop(&mut self, span: Span) -> Result<Value, Error> {
         self.stack
             .pop()
             .ok_or_else(|| ErrorKind::StackEmpty.at(span))
@@ -113,7 +167,7 @@ impl Vm {
     }
 
     fn jump_cond(&mut self, span: Span, idx: usize, b: bool) -> Result<(), Error> {
-        let value = self.pop_stack(span)?;
+        let value = self.pop(span)?;
         self.check_type(span, value.ty(), Type::Bool)?;
 
         if value.bool() == b {
@@ -124,93 +178,76 @@ impl Vm {
         Ok(())
     }
 
-    fn concat(&mut self, span: Span, lhs: Value, rhs: Value) -> Result<Value, Error> {
-        let left = match self.heap.get(lhs.heap()) {
-            Some(HeapValue::Buffer(b)) => b,
-            None => return Err(ErrorKind::Segfault.at(span)),
-            _ => unreachable!(),
-        };
-        let right = match self.heap.get(rhs.heap()) {
-            Some(HeapValue::Buffer(b)) => b,
-            _ => unreachable!(),
-        };
+    fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
+        let lhs = self.gc.read(lhs.heap())?;
+        let rhs = self.gc.read(rhs.heap())?;
+        let out = [lhs.buffer(), rhs.buffer()].concat();
+        let handle = self.gc.alloc(HeapValue::Buffer(out));
 
-        let out = [left.as_slice(), right.as_slice()].concat();
-        let value = self.heap.insert(HeapValue::Buffer(out));
-
-        Ok(Value::new_str(value.handle()))
+        Ok(Value::new_str(handle))
     }
 
     fn make_array(&mut self, span: Span, size: usize) -> Result<(), Error> {
         let mut values = vec![];
 
         for _ in 0..size {
-            let value = self.pop_stack(span)?;
+            let value = self.pop(span)?;
             values.push(value);
         }
 
         values.reverse();
 
-        let value = self.heap.insert(HeapValue::Array(values));
-        self.stack.push(Value::new_array(value.handle()));
+        let handle = self.gc.alloc(HeapValue::Array(values));
+        self.stack.push(Value::new_array(handle));
 
         Ok(())
     }
 
     fn load_elem(&mut self, span: Span) -> Result<(), Error> {
-        let elem = self.pop_stack(span)?;
-        let array = self.pop_stack(span)?;
+        let elem = self.pop(span)?;
+        let array = self.pop(span)?;
 
         self.check_type(span, elem.ty(), Type::Int)?;
         self.check_type(span, array.ty(), Type::Array)?;
 
         let n = elem.int() as usize;
-        let heap = self
-            .heap
-            .get(array.heap())
-            .ok_or_else(|| ErrorKind::Segfault.at(span))?;
+        let heap = self.gc.read(array.heap())?;
 
-        match heap {
-            HeapValue::Array(array) => match array.get(n) {
-                Some(elem) => {
-                    self.stack.push(elem.clone());
-                    Ok(())
-                }
-                None => Err(ErrorKind::IndexOutOfBounds(n).at(span)),
-            },
-            _ => unreachable!(),
+        match heap.array().get(n) {
+            Some(elem) => {
+                self.stack.push(elem.clone());
+                Ok(())
+            }
+            None => Err(ErrorKind::IndexOutOfBounds(n).at(span)),
         }
     }
 
-    pub fn repr(&self, value: &Value) -> String {
+    pub fn repr(&self, value: &Value) -> Result<String, Error> {
         let ty = value.ty();
 
-        match value.kind() {
-            ValueKind::Heap(handle) => match self.heap.get(*handle) {
-                Some(value) => match value {
-                    HeapValue::Buffer(buff) => match ty {
-                        Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
-                        _ => unreachable!(),
-                    },
-                    HeapValue::Array(items) => {
-                        let mut s = String::from("[");
+        Ok(match value.kind() {
+            ValueKind::Heap(handle) => match self.gc.read(*handle)? {
+                HeapValue::Buffer(buff) => match ty {
+                    Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
+                    _ => unreachable!(),
+                },
+                HeapValue::Array(items) => {
+                    let mut s = String::from("[");
 
-                        for (i, item) in items.iter().enumerate() {
-                            if i > 0 {
-                                s.push_str(", ");
-                            }
-
-                            s.push_str(&self.repr(item));
+                    for (i, item) in items.iter().enumerate() {
+                        if i > 0 {
+                            s.push_str(", ");
                         }
 
-                        s.push(']');
-                        s
+                        s.push_str(&self.repr(item)?);
                     }
-                },
-                None => "<nilptr>".to_string(),
+
+                    s.push(']');
+                    s
+                }
             },
             kind => format!("{kind}"),
-        }
+        })
     }
 
     fn eval(&mut self, span: Span, op: Op) -> Result<(), Error> {
@@ -219,18 +256,10 @@ impl Vm {
                 let value = self.load_const(span, idx)?;
                 self.stack.push(value);
             }
-            Op::LoadMember(idx) => {
-                let object = self.pop_stack(span)?;
-                let member = match self.get_const(span, idx)? {
-                    Const::Str(name) => name,
-                    _ => unreachable!(),
-                };
-
-                panic!("load: {member}");
-            }
+            Op::LoadMember(idx) => self.load_member(span, idx)?,
             Op::CompareOp(op) => {
-                let rhs = self.pop_stack(span)?;
-                let lhs = self.pop_stack(span)?;
+                let rhs = self.pop(span)?;
+                let lhs = self.pop(span)?;
 
                 self.check_type(span, lhs.ty(), rhs.ty())?;
 
@@ -246,8 +275,8 @@ impl Vm {
                 self.stack.push(value);
             }
             Op::BinaryOp(op) => {
-                let rhs = self.pop_stack(span)?;
-                let lhs = self.pop_stack(span)?;
+                let rhs = self.pop(span)?;
+                let lhs = self.pop(span)?;
 
                 self.check_type(span, lhs.ty(), rhs.ty())?;
 
@@ -259,7 +288,7 @@ impl Vm {
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
-                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => self.concat(span, lhs, rhs)?,
+                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => self.concat(lhs, rhs)?,
                     op => {
                         return Err(ErrorKind::UnsupportedOp {
                             left: lhs.ty(),
@@ -273,7 +302,7 @@ impl Vm {
                 self.stack.push(value);
             }
             Op::Store(idx) => {
-                let value = self.pop_stack(span)?;
+                let value = self.pop(span)?;
                 self.vars.insert(idx, value);
             }
             Op::Load(idx) => {
@@ -290,7 +319,7 @@ impl Vm {
             Op::MakeArray(len) => self.make_array(span, len)?,
             Op::LoadElement => self.load_elem(span)?,
             Op::UnaryNot => {
-                let value = self.pop_stack(span)?;
+                let value = self.pop(span)?;
                 self.check_type(span, value.ty(), Type::Bool)?;
                 self.stack.push(Value::new_bool(!value.bool()));
             }

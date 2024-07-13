@@ -2,9 +2,7 @@ use std::fmt::Display;
 
 use broom::{trace::Trace, Handle};
 
-use crate::{codes::BinaryOp, lexer::Span};
-
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum Type {
     Int,
     Float,
@@ -34,10 +32,29 @@ macro_rules! extract {
     };
 }
 
+macro_rules! extract_heap {
+    ($value:expr, $name:ident) => {
+        match $value {
+            HeapValue::$name(value) => value,
+            _ => unimplemented!(),
+        }
+    };
+}
+
 #[derive(Debug)]
 pub enum HeapValue {
     Buffer(Vec<u8>),
     Array(Vec<Value>),
+}
+
+impl HeapValue {
+    pub fn buffer(&self) -> &[u8] {
+        extract_heap!(self, Buffer)
+    }
+
+    pub fn array(&self) -> &[Value] {
+        extract_heap!(self, Array)
+    }
 }
 
 impl Trace<Self> for HeapValue {
@@ -149,45 +166,3 @@ impl ValueKind {
         matches!(self, ValueKind::Int(_) | ValueKind::Float(_))
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-pub enum ErrorKind {
-    #[error("invalid const at: {0}")]
-    InvalidConst(usize),
-    #[error("invalid var at: {0}")]
-    InvalidVar(usize),
-    #[error("stack is empty")]
-    StackEmpty,
-    #[error("type mismatch: {left} != {right}")]
-    TypeMismatch { left: Type, right: Type },
-    #[error("segmentation fault: heap value is nil")]
-    Segfault,
-    #[error("index out of bounds: {0}")]
-    IndexOutOfBounds(usize),
-    #[error("unsupported operation '{op:?}' for {left} and {right}")]
-    UnsupportedOp {
-        left: Type,
-        right: Type,
-        op: BinaryOp,
-    },
-}
-
-impl ErrorKind {
-    pub fn at(self, span: Span) -> Error {
-        Error { kind: self, span }
-    }
-}
-
-#[derive(Debug)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub span: Span,
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.kind.fmt(f)
-    }
-}
-
-impl std::error::Error for Error {}
