@@ -232,12 +232,21 @@ impl Vm {
     }
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
+        let ty = lhs.ty();
         let lhs = self.gc.read(lhs.heap())?;
         let rhs = self.gc.read(rhs.heap())?;
-        let out = [lhs.buffer(), rhs.buffer()].concat();
-        let handle = self.gc.alloc(HeapValue::Buffer(out));
 
-        Ok(Value::new_str(handle))
+        Ok(match ty {
+            Type::Array => {
+                let out = [lhs.array(), rhs.array()].concat();
+                Value::new_array(self.gc.alloc(HeapValue::Array(out)))
+            }
+            Type::Str => {
+                let out = [lhs.buffer(), rhs.buffer()].concat();
+                Value::new_str(self.gc.alloc(HeapValue::Buffer(out)))
+            }
+            _ => unreachable!(),
+        })
     }
 
     fn make_array(&mut self, size: usize) -> Result<(), Error> {
@@ -341,7 +350,9 @@ impl Vm {
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
-                    BinaryOp::BitwiseXor if lhs.ty() == Type::Str => self.concat(lhs, rhs)?,
+                    BinaryOp::BitwiseXor if matches!(lhs.ty(), Type::Array | Type::Str) => {
+                        self.concat(lhs, rhs)?
+                    }
                     op => {
                         return Err(ErrorKind::UnsupportedOp {
                             left: lhs.ty(),
