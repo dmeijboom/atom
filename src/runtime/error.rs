@@ -6,12 +6,6 @@ use super::value::Type;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
-    #[error("invalid const at: {0}")]
-    InvalidConst(usize),
-    #[error("invalid var at: {0}")]
-    InvalidVar(usize),
-    #[error("stack is empty")]
-    StackEmpty,
     #[error("type mismatch: {left} != {right}")]
     TypeMismatch { left: Type, right: Type },
     #[error("segmentation fault: heap value is nil")]

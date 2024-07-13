@@ -23,8 +23,8 @@ enum Error {
     Lex(#[from] lexer::Error),
     #[error("CompileError: {0}")]
     Compile(#[from] compiler::Error),
-    #[error("RuntimeError: {0}")]
-    Runtime(#[from] runtime::error::Error),
+    #[error("{0}")]
+    Runtime(#[from] vm::Error),
 }
 
 fn main() -> Result<(), Error> {

@@ -1,4 +1,7 @@
-use std::collections::HashMap;
+use std::{
+    collections::HashMap,
+    fmt::{self, Display, Formatter},
+};
 
 use broom::{Handle, Heap};
 
@@ -8,7 +11,7 @@ use crate::{
     lexer::Span,
     runtime::{
         self,
-        error::{Error, ErrorKind},
+        error::ErrorKind,
         std::Registry,
         value::{HeapValue, Type, Value, ValueKind},
     },
@@ -55,7 +58,7 @@ impl Gc {
         self.span = span;
     }
 
-    pub fn read(&self, handle: Handle<HeapValue>) -> Result<&HeapValue, Error> {
+    pub fn read(&self, handle: Handle<HeapValue>) -> Result<&HeapValue, runtime::error::Error> {
         self.heap
             .get(handle)
             .ok_or_else(|| ErrorKind::Segfault.at(self.span))
@@ -64,6 +67,44 @@ impl Gc {
     pub fn alloc(&mut self, value: HeapValue) -> Handle<HeapValue> {
         self.heap.insert(value).handle()
     }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum FatalErrorKind {
+    #[error("invalid const at: {0}")]
+    InvalidConst(usize),
+    #[error("invalid var at: {0}")]
+    InvalidVar(usize),
+    #[error("stack is empty")]
+    StackEmpty,
+}
+
+impl FatalErrorKind {
+    pub fn at(self, span: Span) -> FatalError {
+        FatalError { kind: self, span }
+    }
+}
+
+#[derive(Debug)]
+pub struct FatalError {
+    pub kind: FatalErrorKind,
+    pub span: Span,
+}
+
+impl Display for FatalError {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        self.kind.fmt(f)
+    }
+}
+
+impl std::error::Error for FatalError {}
+
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    #[error("RuntimeError: {0}")]
+    Runtime(#[from] runtime::error::Error),
+    #[error("FatalError: {0}")]
+    Fatal(#[from] FatalError),
 }
 
 pub struct Vm {
@@ -114,7 +155,7 @@ impl Vm {
         self.module
             .consts
             .get(idx)
-            .ok_or_else(|| ErrorKind::InvalidConst(idx).at(self.span))
+            .ok_or_else(|| FatalErrorKind::InvalidConst(idx).at(self.span).into())
     }
 
     fn load_const(&mut self, idx: usize) -> Result<Value, Error> {
@@ -157,19 +198,19 @@ impl Vm {
     fn load_var(&self, idx: usize) -> Result<Value, Error> {
         match self.vars.get(&idx) {
             Some(value) => Ok(value.clone()),
-            None => Err(ErrorKind::InvalidVar(idx).at(self.span)),
+            None => Err(FatalErrorKind::InvalidVar(idx).at(self.span).into()),
         }
     }
 
     fn pop(&mut self) -> Result<Value, Error> {
         self.stack
             .pop()
-            .ok_or_else(|| ErrorKind::StackEmpty.at(self.span))
+            .ok_or_else(|| FatalErrorKind::StackEmpty.at(self.span).into())
     }
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
-            return Err(ErrorKind::TypeMismatch { left, right }.at(self.span));
+            return Err(ErrorKind::TypeMismatch { left, right }.at(self.span).into());
         }
 
         Ok(())
@@ -230,7 +271,7 @@ impl Vm {
                 self.stack.push(elem.clone());
                 Ok(())
             }
-            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span)),
+            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
         }
     }
 
@@ -307,7 +348,8 @@ impl Vm {
                             right: rhs.ty(),
                             op,
                         }
-                        .at(self.span))
+                        .at(self.span)
+                        .into())
                     }
                 };
 
