@@ -28,18 +28,9 @@ impl Display for Type {
 }
 
 macro_rules! extract {
-    ($value:expr, $name:ident) => {
-        match $value.kind {
-            ValueKind::$name(value) => value,
-            _ => unimplemented!(),
-        }
-    };
-}
-
-macro_rules! extract_heap {
-    ($value:expr, $name:ident) => {
+    ($ty:ident::$name:ident, $value:expr) => {
         match $value {
-            HeapValue::$name(value) => value,
+            $ty::$name(value) => value,
             _ => unimplemented!(),
         }
     };
@@ -53,11 +44,11 @@ pub enum HeapValue {
 
 impl HeapValue {
     pub fn buffer(&self) -> &[u8] {
-        extract_heap!(self, Buffer)
+        extract!(HeapValue::Buffer, self)
     }
 
     pub fn array(&self) -> &[Value] {
-        extract_heap!(self, Array)
+        extract!(HeapValue::Array, self)
     }
 }
 
@@ -91,27 +82,6 @@ impl Value {
         &self.kind
     }
 
-    pub fn new_int(i: i64) -> Self {
-        Self {
-            ty: Type::Int,
-            kind: ValueKind::Int(i),
-        }
-    }
-
-    pub fn new_float(f: f64) -> Self {
-        Self {
-            ty: Type::Float,
-            kind: ValueKind::Float(f),
-        }
-    }
-
-    pub fn new_bool(b: bool) -> Self {
-        Self {
-            ty: Type::Bool,
-            kind: ValueKind::Bool(b),
-        }
-    }
-
     pub fn new_str(handle: Handle<HeapValue>) -> Self {
         Self {
             ty: Type::Str,
@@ -134,25 +104,49 @@ impl Value {
     }
 
     pub fn int(self) -> i64 {
-        extract!(self, Int)
+        extract!(ValueKind::Int, self.kind)
     }
 
     pub fn float(self) -> f64 {
-        extract!(self, Float)
+        extract!(ValueKind::Float, self.kind)
     }
 
     pub fn bool(self) -> bool {
-        extract!(self, Bool)
+        extract!(ValueKind::Bool, self.kind)
     }
 
     pub fn func(self) -> Func {
-        extract!(self, Func)
+        extract!(ValueKind::Func, self.kind)
     }
 
     pub fn heap(self) -> Handle<HeapValue> {
-        match self.kind {
-            ValueKind::Heap(handle) => handle,
-            _ => unreachable!(),
+        extract!(ValueKind::Heap, self.kind)
+    }
+}
+
+impl From<i64> for Value {
+    fn from(value: i64) -> Self {
+        Self {
+            ty: Type::Int,
+            kind: ValueKind::Int(value),
+        }
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Self {
+            ty: Type::Float,
+            kind: ValueKind::Float(value),
+        }
+    }
+}
+
+impl From<bool> for Value {
+    fn from(value: bool) -> Self {
+        Self {
+            ty: Type::Bool,
+            kind: ValueKind::Bool(value),
         }
     }
 }

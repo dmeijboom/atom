@@ -1,9 +1,9 @@
 fn test() {
-    100 + 1 / "test"
+    100 + 1 / 2
 }
 
 fn calc() {
     test() + 1
 }
 
-[] ^ [calc()] ^ [1]
+calc()

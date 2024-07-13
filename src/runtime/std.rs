@@ -87,7 +87,7 @@ fn array() -> TypeDescr {
                     let value = gc.read(handle)?;
                     let array = value.array();
 
-                    Ok(Value::new_int(array.len() as i64))
+                    Ok((array.len() as i64).into())
                 },
                 true,
             ),

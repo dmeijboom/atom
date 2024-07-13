@@ -18,34 +18,31 @@ use crate::{
     },
 };
 
-macro_rules! compare_op {
-    ($lhs:ident $op:tt $rhs:ident) => {
-        match $lhs.ty() {
-            Type::Int => Value::new_bool($lhs.int() $op $rhs.int()),
-            Type::Float => Value::new_bool($lhs.float() $op $rhs.float()),
-            Type::Bool => Value::new_bool($lhs.bool() $op $rhs.bool()),
-            _ => unreachable!()
-        }
+macro_rules! unwrap {
+    (Int, $expr:expr) => {
+        $expr.int()
+    };
+
+    (Float, $expr:expr) => {
+        $expr.float()
+    };
+
+    (Bool, $expr:expr) => {
+        $expr.bool()
     };
 }
 
-macro_rules! binary_op {
-    ($lhs:ident $op:tt $rhs:ident) => {
+macro_rules! binary {
+    ($($ty:ident)|+, $lhs:ident $op:tt $rhs:ident) => {
         match $lhs.ty() {
-            Type::Int => Value::new_int($lhs.int() $op $rhs.int()),
-            Type::Float => Value::new_float($lhs.float() $op $rhs.float()),
-            _ => unreachable!(),
+            $(Type::$ty => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into()),+
+            , _ => unreachable!()
         }
     };
-}
 
-macro_rules! binary_op_int {
     ($lhs:ident $op:tt $rhs:ident) => {
-        match $lhs.ty() {
-            Type::Int => Value::new_int($lhs.int() $op $rhs.int()),
-            _ => unreachable!(),
-        }
-    };
+        binary!(Int | Float | Bool, $lhs $op $rhs)
+    }
 }
 
 #[derive(Default)]
@@ -195,9 +192,9 @@ impl Vm {
     fn load_const(&mut self, idx: usize) -> Result<Value, Error> {
         let const_ = self.get_const(idx)?.clone();
         match const_ {
-            Const::Int(i) => Ok(Value::new_int(i)),
-            Const::Float(f) => Ok(Value::new_float(f)),
-            Const::Bool(b) => Ok(Value::new_bool(b)),
+            Const::Int(i) => Ok(i.into()),
+            Const::Float(f) => Ok(f.into()),
+            Const::Bool(b) => Ok(b.into()),
             Const::Str(s) => {
                 let handle = self.gc.alloc(HeapValue::Buffer(s.into_bytes()));
                 Ok(Value::new_str(handle))
@@ -272,7 +269,7 @@ impl Vm {
 
         if value.bool() == cond {
             if push {
-                self.stack.push(Value::new_bool(cond));
+                self.stack.push(cond.into());
             }
 
             self.goto(idx);
@@ -406,17 +403,14 @@ impl Vm {
                 let lhs = self.pop()?;
 
                 self.check_type(lhs.ty(), rhs.ty())?;
-
-                let value = match op {
-                    CompareOp::Eq => compare_op!(lhs == rhs),
-                    CompareOp::Ne => compare_op!(lhs != rhs),
-                    CompareOp::Lt => compare_op!(lhs < rhs),
-                    CompareOp::Lte => compare_op!(lhs <= rhs),
-                    CompareOp::Gt => compare_op!(lhs > rhs),
-                    CompareOp::Gte => compare_op!(lhs >= rhs),
-                };
-
-                self.stack.push(value);
+                self.stack.push(match op {
+                    CompareOp::Eq => binary!(lhs == rhs),
+                    CompareOp::Ne => binary!(lhs != rhs),
+                    CompareOp::Lt => binary!(lhs < rhs),
+                    CompareOp::Lte => binary!(lhs <= rhs),
+                    CompareOp::Gt => binary!(lhs > rhs),
+                    CompareOp::Gte => binary!(lhs >= rhs),
+                });
             }
             Op::BinaryOp(op) => {
                 let rhs = self.pop()?;
@@ -425,13 +419,13 @@ impl Vm {
                 self.check_type(lhs.ty(), rhs.ty())?;
 
                 let value = match op {
-                    BinaryOp::Add if lhs.kind().is_number() => binary_op!(lhs + rhs),
-                    BinaryOp::Sub if lhs.kind().is_number() => binary_op!(lhs - rhs),
-                    BinaryOp::Mul if lhs.kind().is_number() => binary_op!(lhs * rhs),
-                    BinaryOp::Div if lhs.kind().is_number() => binary_op!(lhs / rhs),
-                    BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary_op_int!(lhs | rhs),
-                    BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary_op_int!(lhs & rhs),
-                    BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary_op_int!(lhs ^ rhs),
+                    BinaryOp::Add if lhs.kind().is_number() => binary!(Int | Float, lhs + rhs),
+                    BinaryOp::Sub if lhs.kind().is_number() => binary!(Int | Float, lhs - rhs),
+                    BinaryOp::Mul if lhs.kind().is_number() => binary!(Int | Float, lhs * rhs),
+                    BinaryOp::Div if lhs.kind().is_number() => binary!(Int | Float, lhs / rhs),
+                    BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary!(Int, lhs | rhs),
+                    BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary!(Int, lhs & rhs),
+                    BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary!(Int, lhs ^ rhs),
                     BinaryOp::BitwiseXor if matches!(lhs.ty(), Type::Array | Type::Str) => {
                         self.concat(lhs, rhs)?
                     }
@@ -471,7 +465,7 @@ impl Vm {
             Op::UnaryNot => {
                 let value = self.pop()?;
                 self.check_type(value.ty(), Type::Bool)?;
-                self.stack.push(Value::new_bool(!value.bool()));
+                self.stack.push((!value.bool()).into());
             }
         }
 
