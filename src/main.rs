@@ -3,7 +3,7 @@ use std::fs;
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
-use vm::Vm;
+use vm::VmDefault;
 
 mod ast;
 mod codes;
@@ -11,6 +11,7 @@ mod compiler;
 mod lexer;
 mod parser;
 mod runtime;
+mod stack;
 mod vm;
 
 #[derive(Debug, thiserror::Error)]
@@ -60,7 +61,7 @@ fn main() -> Result<(), Error> {
         println!("{}: {:?}", code.span.offset, code.op);
     }
 
-    let mut vm = Vm::new(module);
+    let mut vm = VmDefault::new(module);
     let value = vm.run()?;
 
     if let Some(value) = value {

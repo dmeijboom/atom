@@ -124,6 +124,15 @@ impl Value {
     }
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Self {
+            ty: Type::Int,
+            kind: ValueKind::Int(0),
+        }
+    }
+}
+
 impl From<i64> for Value {
     fn from(value: i64) -> Self {
         Self {

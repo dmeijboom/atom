@@ -16,7 +16,11 @@ use crate::{
         std::Registry,
         value::{HeapValue, Type, Value, ValueKind},
     },
+    stack::Stack,
 };
+
+// Default stack size should be roughly 500K (15625 * 32 bytes)
+pub const DEFAULT_STACK_SIZE: usize = 15625;
 
 macro_rules! unwrap {
     (Int, $expr:expr) => {
@@ -121,21 +125,23 @@ impl Call {
     }
 }
 
-pub struct Vm {
+pub type VmDefault = Vm<DEFAULT_STACK_SIZE>;
+
+pub struct Vm<const S: usize> {
     gc: Gc,
     span: Span,
     std: Registry,
     module: Module,
     cursor: Cursor,
-    stack: Vec<Value>,
+    stack: Stack<Value, S>,
     call_stack: Vec<Call>,
     vars: HashMap<usize, Value>,
 }
 
-impl Vm {
+impl<const S: usize> Vm<S> {
     pub fn new(module: Module) -> Self {
         Self {
-            stack: vec![],
+            stack: Stack::default(),
             gc: Gc::default(),
             call_stack: vec![],
             vars: HashMap::new(),
