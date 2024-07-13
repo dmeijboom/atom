@@ -1,6 +1,9 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
-use crate::{codes::BinaryOp, lexer::Span};
+use crate::{
+    codes::{BinaryOp, Func},
+    lexer::Span,
+};
 
 use super::value::Type;
 
@@ -8,8 +11,6 @@ use super::value::Type;
 pub enum ErrorKind {
     #[error("type mismatch: {left} != {right}")]
     TypeMismatch { left: Type, right: Type },
-    #[error("segmentation fault: heap value is nil")]
-    Segfault,
     #[error("index out of bounds: {0}")]
     IndexOutOfBounds(usize),
     #[error("cannot call non-function: {0}")]
@@ -39,15 +40,15 @@ impl ErrorKind {
 #[derive(Debug)]
 pub struct Call {
     pub span: Span,
-    pub name: String,
+    pub func: Rc<Func>,
     pub receiver: Option<Type>,
 }
 
 impl Call {
-    pub fn new(span: Span, name: String) -> Self {
+    pub fn new(span: Span, func: Rc<Func>) -> Self {
         Call {
             span,
-            name,
+            func,
             receiver: None,
         }
     }

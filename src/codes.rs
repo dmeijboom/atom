@@ -69,12 +69,12 @@ impl Eq for Const {}
 
 #[derive(Debug, Default, Clone)]
 pub struct Func {
-    pub name: usize,
+    pub name: String,
     pub codes: Rc<Vec<Code>>,
 }
 
 impl Func {
-    pub fn new(name: usize, codes: Vec<Code>) -> Self {
+    pub fn new(name: String, codes: Vec<Code>) -> Self {
         Self {
             name,
             codes: Rc::new(codes),

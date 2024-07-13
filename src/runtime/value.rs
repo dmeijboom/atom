@@ -1,6 +1,6 @@
-use std::fmt::Display;
+use std::{fmt::Display, rc::Rc};
 
-use broom::{trace::Trace, Handle};
+use safe_gc::{Collector, Gc, Trace};
 
 use crate::codes::Func;
 
@@ -52,14 +52,14 @@ impl HeapValue {
     }
 }
 
-impl Trace<Self> for HeapValue {
-    fn trace(&self, tracer: &mut broom::prelude::Tracer<Self>) {
+impl Trace for HeapValue {
+    fn trace(&self, collector: &mut Collector) {
         match self {
             HeapValue::Buffer(_) => {}
             HeapValue::Array(values) => {
                 for value in values {
-                    if let ValueKind::Heap(value) = value.kind {
-                        value.trace(tracer);
+                    if let ValueKind::Ptr(value) = value.kind {
+                        collector.edge(value);
                     }
                 }
             }
@@ -82,21 +82,21 @@ impl Value {
         &self.kind
     }
 
-    pub fn new_str(handle: Handle<HeapValue>) -> Self {
+    pub fn new_str(handle: Gc<HeapValue>) -> Self {
         Self {
             ty: Type::Str,
-            kind: ValueKind::Heap(handle),
+            kind: ValueKind::Ptr(handle),
         }
     }
 
-    pub fn new_array(handle: Handle<HeapValue>) -> Self {
+    pub fn new_array(handle: Gc<HeapValue>) -> Self {
         Self {
             ty: Type::Array,
-            kind: ValueKind::Heap(handle),
+            kind: ValueKind::Ptr(handle),
         }
     }
 
-    pub fn new_func(func: Func) -> Self {
+    pub fn new_func(func: Rc<Func>) -> Self {
         Self {
             ty: Type::Fn,
             kind: ValueKind::Func(func),
@@ -115,12 +115,12 @@ impl Value {
         extract!(ValueKind::Bool, self.kind)
     }
 
-    pub fn func(self) -> Func {
+    pub fn func(self) -> Rc<Func> {
         extract!(ValueKind::Func, self.kind)
     }
 
-    pub fn heap(self) -> Handle<HeapValue> {
-        extract!(ValueKind::Heap, self.kind)
+    pub fn heap(self) -> Gc<HeapValue> {
+        extract!(ValueKind::Ptr, self.kind)
     }
 }
 
@@ -165,8 +165,8 @@ pub enum ValueKind {
     Int(i64),
     Float(f64),
     Bool(bool),
-    Func(Func),
-    Heap(Handle<HeapValue>),
+    Func(Rc<Func>),
+    Ptr(Gc<HeapValue>),
 }
 
 impl Display for ValueKind {
@@ -175,7 +175,7 @@ impl Display for ValueKind {
             ValueKind::Int(i) => write!(fmt, "{i}"),
             ValueKind::Float(f) => write!(fmt, "{f}"),
             ValueKind::Bool(b) => write!(fmt, "{b}"),
-            ValueKind::Heap(..) => write!(fmt, "<heap>"),
+            ValueKind::Ptr(..) => write!(fmt, "<ptr>"),
             ValueKind::Func(..) => write!(fmt, "<func>"),
         }
     }

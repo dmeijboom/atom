@@ -6,4 +6,4 @@ fn calc() {
     test() + 1
 }
 
-calc()
+[] ^ [calc()] ^ [1]

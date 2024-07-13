@@ -48,7 +48,7 @@ struct Var {
 pub struct Module {
     pub codes: Rc<Vec<Code>>,
     pub consts: Vec<Const>,
-    pub funcs: HashMap<String, Func>,
+    pub funcs: HashMap<String, Rc<Func>>,
 }
 
 pub struct Compiler {
@@ -57,7 +57,7 @@ pub struct Compiler {
     vars: Vec<Var>,
     codes: Vec<Code>,
     consts: Vec<Const>,
-    funcs: HashMap<String, Func>,
+    funcs: HashMap<String, Rc<Func>>,
 }
 
 impl Compiler {
@@ -285,9 +285,8 @@ impl Compiler {
                 compiler.compile_body()?;
 
                 let codes = self.merge_back(compiler);
-                let idx = self.push_const(Const::Str(name.clone()));
-
-                self.funcs.insert(name, Func::new(idx, codes));
+                self.funcs
+                    .insert(name.clone(), Rc::new(Func::new(name, codes)));
             }
         }
 

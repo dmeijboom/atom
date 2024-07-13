@@ -2,17 +2,18 @@ use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
     mem,
+    rc::Rc,
 };
 
-use broom::{Handle, Heap};
+use safe_gc::Heap;
 
 use crate::{
-    codes::{BinaryOp, CompareOp, Const, Cursor, Op},
+    codes::{BinaryOp, CompareOp, Const, Cursor, Func, Op},
     compiler::Module,
     lexer::Span,
     runtime::{
         self,
-        error::ErrorKind,
+        error::{Call, ErrorKind},
         std::Registry,
         value::{HeapValue, Type, Value, ValueKind},
     },
@@ -46,28 +47,6 @@ macro_rules! binary {
 
     ($lhs:ident $op:tt $rhs:ident) => {
         binary!(Int | Float | Bool, $lhs $op $rhs)
-    }
-}
-
-#[derive(Default)]
-pub struct Gc {
-    heap: Heap<HeapValue>,
-    span: Span,
-}
-
-impl Gc {
-    pub fn at(&mut self, span: Span) {
-        self.span = span;
-    }
-
-    pub fn read(&self, handle: Handle<HeapValue>) -> Result<&HeapValue, runtime::error::Error> {
-        self.heap
-            .get(handle)
-            .ok_or_else(|| ErrorKind::Segfault.at(self.span))
-    }
-
-    pub fn alloc(&mut self, value: HeapValue) -> Handle<HeapValue> {
-        self.heap.insert(value).handle()
     }
 }
 
@@ -109,26 +88,10 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-struct Call {
-    span: Span,
-    name: usize,
-    receiver: Option<Type>,
-}
-
-impl Call {
-    pub fn new(span: Span, name: usize) -> Self {
-        Call {
-            span,
-            name,
-            receiver: None,
-        }
-    }
-}
-
 pub type VmDefault = Vm<DEFAULT_STACK_SIZE>;
 
 pub struct Vm<const S: usize> {
-    gc: Gc,
+    heap: Heap,
     span: Span,
     std: Registry,
     module: Module,
@@ -142,7 +105,7 @@ impl<const S: usize> Vm<S> {
     pub fn new(module: Module) -> Self {
         Self {
             stack: Stack::default(),
-            gc: Gc::default(),
+            heap: Heap::default(),
             call_stack: vec![],
             vars: HashMap::new(),
             span: Span::default(),
@@ -152,8 +115,8 @@ impl<const S: usize> Vm<S> {
         }
     }
 
-    fn push_call(&mut self, name: usize) {
-        self.call_stack.push(Call::new(self.span, name));
+    fn push_call(&mut self, func: Rc<Func>) {
+        self.call_stack.push(Call::new(self.span, func));
     }
 
     fn pop_call(&mut self) -> Option<Call> {
@@ -173,14 +136,12 @@ impl<const S: usize> Vm<S> {
 
         if let Some(code) = self.cursor.cur() {
             self.span = code.span;
-            self.gc.at(code.span);
         }
     }
 
     fn next(&mut self) -> Option<Op> {
         if let Some(code) = self.cursor.next() {
             self.span = code.span;
-            self.gc.at(code.span);
 
             Some(code.op)
         } else {
@@ -202,8 +163,8 @@ impl<const S: usize> Vm<S> {
             Const::Float(f) => Ok(f.into()),
             Const::Bool(b) => Ok(b.into()),
             Const::Str(s) => {
-                let handle = self.gc.alloc(HeapValue::Buffer(s.into_bytes()));
-                Ok(Value::new_str(handle))
+                let handle = self.heap.alloc(HeapValue::Buffer(s.into_bytes()));
+                Ok(Value::new_str(handle.unrooted()))
             }
         }
     }
@@ -230,7 +191,7 @@ impl<const S: usize> Vm<S> {
                 .at(self.span)
             })?;
 
-        let value = field.call(&mut self.gc, object)?;
+        let value = field.call(&mut self.heap, object)?;
         self.stack.push(value);
 
         Ok(())
@@ -296,7 +257,7 @@ impl<const S: usize> Vm<S> {
                 let func = callee.func();
                 let previous = self.with_cursor(Cursor::new(&func.codes));
 
-                self.push_call(func.name);
+                self.push_call(Rc::clone(&func));
 
                 if let Some(return_value) = self.run()? {
                     self.stack.push(return_value);
@@ -313,17 +274,17 @@ impl<const S: usize> Vm<S> {
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
         let ty = lhs.ty();
-        let lhs = self.gc.read(lhs.heap())?;
-        let rhs = self.gc.read(rhs.heap())?;
+        let lhs = self.heap.get::<HeapValue>(lhs.heap());
+        let rhs = self.heap.get::<HeapValue>(rhs.heap());
 
         Ok(match ty {
             Type::Array => {
                 let out = [lhs.array(), rhs.array()].concat();
-                Value::new_array(self.gc.alloc(HeapValue::Array(out)))
+                Value::new_array(self.heap.alloc(HeapValue::Array(out)).unrooted())
             }
             Type::Str => {
                 let out = [lhs.buffer(), rhs.buffer()].concat();
-                Value::new_str(self.gc.alloc(HeapValue::Buffer(out)))
+                Value::new_str(self.heap.alloc(HeapValue::Buffer(out)).unrooted())
             }
             _ => unreachable!(),
         })
@@ -339,8 +300,8 @@ impl<const S: usize> Vm<S> {
 
         values.reverse();
 
-        let handle = self.gc.alloc(HeapValue::Array(values));
-        self.stack.push(Value::new_array(handle));
+        let handle = self.heap.alloc(HeapValue::Array(values));
+        self.stack.push(Value::new_array(handle.unrooted()));
 
         Ok(())
     }
@@ -352,7 +313,7 @@ impl<const S: usize> Vm<S> {
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let heap = self.gc.read(array.heap())?;
+        let heap = self.heap.get::<HeapValue>(array.heap());
         let array = heap.array();
         let n = match elem.int() {
             n if n < 0 => array.len() as i64 + n,
@@ -372,7 +333,7 @@ impl<const S: usize> Vm<S> {
         let ty = value.ty();
 
         Ok(match value.kind() {
-            ValueKind::Heap(handle) => match self.gc.read(*handle)? {
+            ValueKind::Ptr(handle) => match self.heap.get(*handle) {
                 HeapValue::Buffer(buff) => match ty {
                     Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
                     _ => unreachable!(),
@@ -478,20 +439,10 @@ impl<const S: usize> Vm<S> {
         Ok(())
     }
 
-    fn build_trace(&self) -> Result<Vec<runtime::error::Call>, Error> {
-        self.call_stack
-            .iter()
-            .map(|call| {
-                let name = self.const_name(call.name)?;
-                Ok(runtime::error::Call::new(call.span, name.to_string()))
-            })
-            .collect::<Result<Vec<_>, _>>()
-    }
-
-    fn add_trace(&self, e: Error) -> Error {
+    fn add_trace(&mut self, e: Error) -> Error {
         match e {
             Error::Runtime(mut e) => {
-                e.trace = self.build_trace().ok();
+                e.trace = Some(mem::take(&mut self.call_stack));
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),

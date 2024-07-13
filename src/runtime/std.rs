@@ -1,13 +1,13 @@
 use std::collections::HashMap;
 
-use crate::vm::Gc;
+use safe_gc::Heap;
 
 use super::{
     error::Error,
     value::{Type, Value},
 };
 
-type FieldHandler = dyn Fn(&mut Gc, Value) -> Result<Value, Error>;
+type FieldHandler = dyn Fn(&mut Heap, Value) -> Result<Value, Error>;
 
 pub struct Field {
     pub readonly: bool,
@@ -17,7 +17,7 @@ pub struct Field {
 impl Field {
     pub fn new<F>(handler: F, readonly: bool) -> Self
     where
-        F: Fn(&mut Gc, Value) -> Result<Value, Error> + 'static,
+        F: Fn(&mut Heap, Value) -> Result<Value, Error> + 'static,
     {
         Field {
             readonly,
@@ -25,8 +25,8 @@ impl Field {
         }
     }
 
-    pub fn call(&self, gc: &mut Gc, this: Value) -> Result<Value, Error> {
-        (self.handler)(gc, this)
+    pub fn call(&self, heap: &mut Heap, this: Value) -> Result<Value, Error> {
+        (self.handler)(heap, this)
     }
 }
 
@@ -84,7 +84,7 @@ fn array() -> TypeDescr {
             Field::new(
                 |gc, value| {
                     let handle = value.heap();
-                    let value = gc.read(handle)?;
+                    let value = gc.get(handle);
                     let array = value.array();
 
                     Ok((array.len() as i64).into())
