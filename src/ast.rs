@@ -62,6 +62,7 @@ pub enum StmtKind {
     Return(Expr),
     Let(String, Expr),
     Assign(String, Expr),
+    If(Expr, Vec<Stmt>),
     Fn(String, Vec<String>, Vec<Stmt>),
 }
 

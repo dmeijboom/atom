@@ -38,8 +38,8 @@ fn main() -> Result<(), Error> {
     let parser = Parser::new(tokens);
     let stmts = parser.parse()?;
 
-    let compiler = Compiler::new(stmts);
-    let module = compiler.compile()?;
+    let compiler = Compiler::new();
+    let module = compiler.compile(stmts)?;
 
     for (i, (name, func)) in module.funcs.iter().enumerate() {
         if i > 0 {

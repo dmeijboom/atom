@@ -158,7 +158,7 @@ impl Value {
     }
 
     pub fn bool(self) -> bool {
-        (self.bits & TAG_MASK) >> 48 == Self::TRUE.bits
+        (self.bits & TAG_MASK) >> 48 == Tag::True as u64
     }
 
     pub fn func(self) -> Rc<Func> {

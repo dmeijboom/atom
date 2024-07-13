@@ -1,4 +1,5 @@
-"test";
-let name = "dillen";
+let age = 10;
 
-name ^ " meijboom"
+if !(age >= 100) {
+    age / 2
+}

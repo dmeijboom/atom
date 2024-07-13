@@ -330,6 +330,17 @@ impl Parser {
         Ok(StmtKind::Fn(name, args, body).at(span))
     }
 
+    fn if_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
+        self.advance();
+        let expr = self.expr(1)?;
+        self.expect(TokenKind::BracketLeft)?;
+        let body = self.body(false)?;
+        self.expect(TokenKind::BracketRight)?;
+
+        Ok(StmtKind::If(expr, body).at(span))
+    }
+
     fn assign_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         let name = self.ident()?;
@@ -348,6 +359,7 @@ impl Parser {
                 TokenKind::Eof => break,
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
                 TokenKind::Ident(_) if next == Some(&TokenKind::Eq) => self.assign_stmt()?,
                 TokenKind::BracketRight if !global => break,

@@ -53,7 +53,6 @@ pub struct Module {
 
 pub struct Compiler {
     scope: usize,
-    stmts: VecDeque<Stmt>,
     vars: Vec<Var>,
     codes: Vec<Code>,
     consts: Vec<Const>,
@@ -61,10 +60,9 @@ pub struct Compiler {
 }
 
 impl Compiler {
-    pub fn new(stmts: Vec<Stmt>) -> Self {
+    pub fn new() -> Self {
         Compiler {
             scope: 0,
-            stmts: VecDeque::from(stmts),
             vars: vec![],
             codes: vec![],
             consts: vec![],
@@ -72,35 +70,18 @@ impl Compiler {
         }
     }
 
-    fn fork(&mut self, stmts: Vec<Stmt>) -> Compiler {
-        let vars = mem::take(&mut self.vars);
-        let consts = mem::take(&mut self.consts);
-        let funcs = mem::take(&mut self.funcs);
-
-        Compiler {
-            scope: self.scope + 1,
-            stmts: VecDeque::from(stmts),
-            vars,
-            codes: vec![],
-            consts,
-            funcs,
-        }
+    fn push_scope(&mut self) -> Vec<Code> {
+        self.scope += 1;
+        mem::take(&mut self.codes)
     }
 
-    fn merge_back(&mut self, other: Compiler) -> Vec<Code> {
-        self.consts = other.consts;
-        self.vars = other.vars;
-        self.funcs = other.funcs;
-
-        other.codes
+    fn pop_scope(&mut self, codes: Vec<Code>) -> Vec<Code> {
+        self.scope -= 1;
+        mem::replace(&mut self.codes, codes)
     }
 
     fn loc(&self) -> usize {
         self.codes.len()
-    }
-
-    fn next(&mut self) -> Option<Stmt> {
-        self.stmts.pop_front()
     }
 
     fn push_const(&mut self, const_: Const) -> usize {
@@ -281,28 +262,36 @@ impl Compiler {
                     return Err(ErrorKind::FnAlreadyExists(name).at(stmt.span));
                 }
 
-                let mut compiler = self.fork(stmts);
-                compiler.compile_body()?;
+                let previous = self.push_scope();
+                self.compile_body(stmts)?;
 
-                let codes = self.merge_back(compiler);
+                let codes = self.pop_scope(previous);
                 self.funcs
                     .insert(name.clone(), Rc::new(Func::new(name, codes)));
+            }
+            StmtKind::If(expr, stmts) => {
+                self.expr(expr)?;
+                let idx = self.push_code(Op::JumpIfFalse(0).at(stmt.span));
+                self.scope += 1;
+                self.compile_body(stmts)?;
+                self.scope -= 1;
+                self.codes[idx] = Op::JumpIfFalse(self.loc()).at(stmt.span);
             }
         }
 
         Ok(())
     }
 
-    fn compile_body(&mut self) -> Result<(), Error> {
-        while let Some(stmt) = self.next() {
+    fn compile_body(&mut self, stmts: Vec<Stmt>) -> Result<(), Error> {
+        for stmt in stmts {
             self.stmt(stmt)?;
         }
 
         Ok(())
     }
 
-    pub fn compile(mut self) -> Result<Module, Error> {
-        self.compile_body()?;
+    pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, Error> {
+        self.compile_body(stmts)?;
 
         Ok(Module {
             codes: Rc::new(self.codes),
