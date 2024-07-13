@@ -31,8 +31,7 @@ dependencies = [
 [[package]]
 name = "safe-gc"
 version = "1.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed177e2e6c22ba30c74d40735b88ccc5ea843b94846c1c66bdf2dbe3cb98fcbd"
+source = "git+https://github.com/dmeijboom/safe-gc.git?branch=main#dc3c59d052df1d40fed536fd001506d93cf1a23a"
 
 [[package]]
 name = "syn"

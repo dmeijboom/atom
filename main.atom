@@ -1,9 +1,4 @@
-fn test() {
-    100 + 1 / 2
-}
+"test";
+let name = "dillen";
 
-fn calc() {
-    test() + 1
-}
-
-[] ^ [calc()] ^ [1]
+name ^ " meijboom"

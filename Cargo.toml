@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 safe-gc = "1.0.0"
 thiserror = "1.0.61"
+
+[patch.crates-io]
+safe-gc = { git = "https://github.com/dmeijboom/safe-gc.git", branch = "main" }

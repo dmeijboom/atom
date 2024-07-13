@@ -15,13 +15,13 @@ use crate::{
         self,
         error::{Call, ErrorKind},
         std::Registry,
-        value::{HeapValue, Type, Value, ValueKind},
+        value::{HeapValue, Type, Value},
     },
     stack::Stack,
 };
 
-// Default stack size should be roughly 500K (15625 * 32 bytes)
-pub const DEFAULT_STACK_SIZE: usize = 15625;
+// Default stack size should be roughly 500K (62500 * 8 bytes)
+pub const DEFAULT_STACK_SIZE: usize = 62500;
 
 macro_rules! unwrap {
     (Int, $expr:expr) => {
@@ -332,8 +332,8 @@ impl<const S: usize> Vm<S> {
     pub fn repr(&self, value: &Value) -> Result<String, Error> {
         let ty = value.ty();
 
-        Ok(match value.kind() {
-            ValueKind::Ptr(handle) => match self.heap.get(*handle) {
+        Ok(match value.ty() {
+            Type::Str | Type::Array => match self.heap.get(value.heap()) {
                 HeapValue::Buffer(buff) => match ty {
                     Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
                     _ => unreachable!(),
@@ -353,7 +353,10 @@ impl<const S: usize> Vm<S> {
                     s
                 }
             },
-            kind => format!("{kind}"),
+            Type::Int => format!("{}", value.int()),
+            Type::Float => format!("{}", value.float()),
+            Type::Bool => format!("{}", value.bool()),
+            Type::Fn => format!("{}(..)", value.func().name),
         })
     }
 
@@ -386,10 +389,10 @@ impl<const S: usize> Vm<S> {
                 self.check_type(lhs.ty(), rhs.ty())?;
 
                 let value = match op {
-                    BinaryOp::Add if lhs.kind().is_number() => binary!(Int | Float, lhs + rhs),
-                    BinaryOp::Sub if lhs.kind().is_number() => binary!(Int | Float, lhs - rhs),
-                    BinaryOp::Mul if lhs.kind().is_number() => binary!(Int | Float, lhs * rhs),
-                    BinaryOp::Div if lhs.kind().is_number() => binary!(Int | Float, lhs / rhs),
+                    BinaryOp::Add if lhs.is_number() => binary!(Int | Float, lhs + rhs),
+                    BinaryOp::Sub if lhs.is_number() => binary!(Int | Float, lhs - rhs),
+                    BinaryOp::Mul if lhs.is_number() => binary!(Int | Float, lhs * rhs),
+                    BinaryOp::Div if lhs.is_number() => binary!(Int | Float, lhs / rhs),
                     BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary!(Int, lhs | rhs),
                     BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary!(Int, lhs & rhs),
                     BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary!(Int, lhs ^ rhs),

@@ -4,6 +4,17 @@ use safe_gc::{Collector, Gc, Trace};
 
 use crate::codes::Func;
 
+#[repr(u64)]
+enum Tag {
+    Int,
+    Float,
+    Array,
+    Fn,
+    Str,
+    True,
+    False,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum Type {
     Int,
@@ -58,8 +69,8 @@ impl Trace for HeapValue {
             HeapValue::Buffer(_) => {}
             HeapValue::Array(values) => {
                 for value in values {
-                    if let ValueKind::Ptr(value) = value.kind {
-                        collector.edge(value);
+                    if matches!(value.ty(), Type::Array | Type::Str) {
+                        collector.edge(value.heap());
                     }
                 }
             }
@@ -67,122 +78,131 @@ impl Trace for HeapValue {
     }
 }
 
-#[derive(Debug, Clone)]
+const SIGN_BIT: u64 = 1 << 63;
+const QUIET_NAN: u64 = 0x7ff8_0000_0000_0000;
+const INT_MASK: u64 = 0xffff_ffff_ffff;
+const TAG_MASK: u64 = 0b111 << 48;
+
+fn handle_to_bits(handle: Gc<HeapValue>) -> u64 {
+    let (low, hi) = handle.into_raw_parts();
+    (hi as u64) << 32 | low as u64
+}
+
+#[derive(Debug, Clone, Copy)]
 pub struct Value {
-    ty: Type,
-    kind: ValueKind,
+    bits: u64,
 }
 
 impl Value {
-    pub fn ty(&self) -> Type {
-        self.ty
+    const FALSE: Self = Self::new_primitive(Tag::False);
+    const TRUE: Self = Self::new_primitive(Tag::True);
+
+    pub const fn ty(self) -> Type {
+        match (self.bits & TAG_MASK) >> 48 {
+            t if t == Tag::Int as u64 => Type::Int,
+            t if t == Tag::Float as u64 => Type::Float,
+            t if t == Tag::True as u64 || t == Tag::False as u64 => Type::Bool,
+            t if t == Tag::Array as u64 => Type::Array,
+            t if t == Tag::Fn as u64 => Type::Fn,
+            t if t == Tag::Str as u64 => Type::Str,
+            _ => unreachable!(),
+        }
     }
 
-    pub fn kind(&self) -> &ValueKind {
-        &self.kind
+    pub fn is_number(self) -> bool {
+        matches!(self.ty(), Type::Int | Type::Float)
+    }
+
+    const fn new_primitive(tag: Tag) -> Self {
+        Self {
+            bits: (tag as u64) << 48,
+        }
+    }
+
+    const fn new(tag: Tag, value: u64) -> Self {
+        Self {
+            bits: (tag as u64) << 48 | QUIET_NAN | value,
+        }
     }
 
     pub fn new_str(handle: Gc<HeapValue>) -> Self {
-        Self {
-            ty: Type::Str,
-            kind: ValueKind::Ptr(handle),
-        }
+        Self::new(Tag::Str, handle_to_bits(handle))
     }
 
     pub fn new_array(handle: Gc<HeapValue>) -> Self {
-        Self {
-            ty: Type::Array,
-            kind: ValueKind::Ptr(handle),
-        }
+        Self::new(Tag::Array, handle_to_bits(handle))
     }
 
     pub fn new_func(func: Rc<Func>) -> Self {
-        Self {
-            ty: Type::Fn,
-            kind: ValueKind::Func(func),
-        }
+        let value = Rc::into_raw(func);
+        Self::new(Tag::Fn, value as u64)
     }
 
     pub fn int(self) -> i64 {
-        extract!(ValueKind::Int, self.kind)
+        match self.ty() {
+            Type::Int => {
+                let bits = self.bits & INT_MASK;
+
+                if self.bits & SIGN_BIT != 0 {
+                    -(bits as i64)
+                } else {
+                    bits as i64
+                }
+            }
+            _ => unreachable!(),
+        }
     }
 
     pub fn float(self) -> f64 {
-        extract!(ValueKind::Float, self.kind)
+        f64::from_bits(self.bits)
     }
 
     pub fn bool(self) -> bool {
-        extract!(ValueKind::Bool, self.kind)
+        (self.bits & TAG_MASK) >> 48 == Self::TRUE.bits
     }
 
     pub fn func(self) -> Rc<Func> {
-        extract!(ValueKind::Func, self.kind)
+        unsafe {
+            let value = self.bits & INT_MASK;
+            let func = value as *const Func;
+
+            Rc::from_raw(func)
+        }
     }
 
     pub fn heap(self) -> Gc<HeapValue> {
-        extract!(ValueKind::Ptr, self.kind)
+        let value = self.bits & INT_MASK;
+        let low = value as u32;
+        let hi = (value >> 32) as u32;
+
+        Gc::from_raw_parts(low, hi)
     }
 }
 
 impl Default for Value {
     fn default() -> Self {
-        Self {
-            ty: Type::Int,
-            kind: ValueKind::Int(0),
-        }
+        Self::new_primitive(Tag::False)
     }
 }
 
 impl From<i64> for Value {
     fn from(value: i64) -> Self {
-        Self {
-            ty: Type::Int,
-            kind: ValueKind::Int(value),
-        }
+        Self::new(Tag::Int, value as u64)
     }
 }
 
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
-        Self {
-            ty: Type::Float,
-            kind: ValueKind::Float(value),
-        }
+        Self::new(Tag::Float, value.to_bits())
     }
 }
 
 impl From<bool> for Value {
     fn from(value: bool) -> Self {
-        Self {
-            ty: Type::Bool,
-            kind: ValueKind::Bool(value),
+        if value {
+            Self::TRUE
+        } else {
+            Self::FALSE
         }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub enum ValueKind {
-    Int(i64),
-    Float(f64),
-    Bool(bool),
-    Func(Rc<Func>),
-    Ptr(Gc<HeapValue>),
-}
-
-impl Display for ValueKind {
-    fn fmt(&self, fmt: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            ValueKind::Int(i) => write!(fmt, "{i}"),
-            ValueKind::Float(f) => write!(fmt, "{f}"),
-            ValueKind::Bool(b) => write!(fmt, "{b}"),
-            ValueKind::Ptr(..) => write!(fmt, "<ptr>"),
-            ValueKind::Func(..) => write!(fmt, "<func>"),
-        }
-    }
-}
-
-impl ValueKind {
-    pub fn is_number(&self) -> bool {
-        matches!(self, ValueKind::Int(_) | ValueKind::Float(_))
     }
 }
