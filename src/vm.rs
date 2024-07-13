@@ -478,9 +478,29 @@ impl Vm {
         Ok(())
     }
 
+    fn build_trace(&self) -> Result<Vec<runtime::error::Call>, Error> {
+        self.call_stack
+            .iter()
+            .map(|call| {
+                let name = self.const_name(call.name)?;
+                Ok(runtime::error::Call::new(call.span, name.to_string()))
+            })
+            .collect::<Result<Vec<_>, _>>()
+    }
+
+    fn add_trace(&self, e: Error) -> Error {
+        match e {
+            Error::Runtime(mut e) => {
+                e.trace = self.build_trace().ok();
+                Error::Runtime(e)
+            }
+            Error::Fatal(e) => Error::Fatal(e),
+        }
+    }
+
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
         while let Some(op) = self.next() {
-            self.eval(op)?;
+            self.eval(op).map_err(|e| self.add_trace(e))?;
         }
 
         Ok(self.stack.pop())

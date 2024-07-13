@@ -40,7 +40,11 @@ fn main() -> Result<(), Error> {
     let compiler = Compiler::new(stmts);
     let module = compiler.compile()?;
 
-    for (name, func) in module.funcs.iter() {
+    for (i, (name, func)) in module.funcs.iter().enumerate() {
+        if i > 0 {
+            println!();
+        }
+
         println!("{}:", name);
 
         for code in func.codes.iter() {

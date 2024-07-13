@@ -1,5 +1,9 @@
-fn calc() {
-    100 +1
+fn test() {
+    100 + 1 / "test"
 }
 
-[] ^ [calc()]
+fn calc() {
+    test() + 1
+}
+
+[] ^ [calc()] ^ [1]
