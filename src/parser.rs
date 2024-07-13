@@ -42,11 +42,11 @@ impl Parser {
         }
     }
 
-    fn hdr(&self) -> Option<&TokenKind> {
+    fn peek(&self) -> Option<&TokenKind> {
         self.tokens.front().map(|t| &t.kind)
     }
 
-    fn hdr2(&self) -> (Option<&TokenKind>, Option<&TokenKind>) {
+    fn peek2(&self) -> (Option<&TokenKind>, Option<&TokenKind>) {
         (
             self.tokens.front().map(|t| &t.kind),
             self.tokens.get(1).map(|t| &t.kind),
@@ -77,7 +77,7 @@ impl Parser {
     }
 
     fn accept(&mut self, kind: &TokenKind) -> bool {
-        if matches!(self.hdr(), Some(token) if token == kind) {
+        if matches!(self.peek(), Some(token) if token == kind) {
             self.advance();
             return true;
         }
@@ -164,7 +164,7 @@ impl Parser {
         let mut lhs = self.primary()?;
 
         loop {
-            lhs = match self.hdr2() {
+            lhs = match self.peek2() {
                 (Some(token), next) => match (token, next) {
                     (TokenKind::Dot, Some(TokenKind::Ident(_))) if min_prec <= PREC_CALL => {
                         self.advance();
@@ -274,7 +274,7 @@ impl Parser {
             return Ok(StmtKind::Expr(expr).at(span));
         }
 
-        match self.hdr() {
+        match self.peek() {
             Some(TokenKind::BracketRight | TokenKind::Eof) => Ok(StmtKind::Return(expr).at(span)),
             None => Err(Error::UnexpectedEof),
             _ => Err(Error::UnexpectedToken {
@@ -344,6 +344,13 @@ impl Parser {
     fn assign_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         let name = self.ident()?;
+
+        // @TODO: can we simplify this?
+        if matches!(self.peek2(), (Some(TokenKind::Eq), Some(TokenKind::Eq))) {
+            self.tokens.push_front(TokenKind::Ident(name).at(span));
+            return self.expr_stmt();
+        }
+
         self.expect(TokenKind::Eq)?;
         let value = self.expr(1)?;
         self.semi()?;
@@ -354,7 +361,7 @@ impl Parser {
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
         let mut stmts = vec![];
 
-        while let (Some(token), next) = self.hdr2() {
+        while let (Some(token), next) = self.peek2() {
             let stmt = match token {
                 TokenKind::Eof => break,
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,

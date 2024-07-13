@@ -1,5 +1,4 @@
 let age = 10;
 
-if !(age >= 100) {
-    age / 2
-}
+age = age == 10;
+!age
