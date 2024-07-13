@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use crate::lexer::Span;
 
 #[derive(Debug, Clone, Copy)]
@@ -29,6 +31,7 @@ pub enum Op {
     CompareOp(CompareOp),
     Store(usize),
     Load(usize),
+    LoadFunc(usize),
     Discard,
     Return,
     JumpIfFalse(usize),
@@ -36,6 +39,7 @@ pub enum Op {
     PushJumpIfFalse(usize),
     PushJumpIfTrue(usize),
     MakeArray(usize),
+    Call(usize),
     UnaryNot,
     LoadElement,
     LoadMember(usize),
@@ -63,7 +67,45 @@ pub enum Const {
 
 impl Eq for Const {}
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Clone)]
 pub struct Func {
-    pub codes: Vec<Code>,
+    pub name: usize,
+    pub codes: Rc<Vec<Code>>,
+}
+
+impl Func {
+    pub fn new(name: usize, codes: Vec<Code>) -> Self {
+        Self {
+            name,
+            codes: Rc::new(codes),
+        }
+    }
+}
+
+pub struct Cursor {
+    n: usize,
+    codes: Rc<Vec<Code>>,
+}
+
+impl Cursor {
+    pub fn new(codes: &Rc<Vec<Code>>) -> Self {
+        Self {
+            n: 0,
+            codes: Rc::clone(codes),
+        }
+    }
+
+    pub fn next(&mut self) -> Option<&Code> {
+        let code = self.codes.get(self.n);
+        self.n += 1;
+        code
+    }
+
+    pub fn cur(&self) -> Option<&Code> {
+        self.codes.get(self.n)
+    }
+
+    pub fn goto(&mut self, n: usize) {
+        self.n = n;
+    }
 }

@@ -2,12 +2,15 @@ use std::fmt::Display;
 
 use broom::{trace::Trace, Handle};
 
+use crate::codes::Func;
+
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum Type {
     Int,
     Float,
     Bool,
     Array,
+    Fn,
     Str,
 }
 
@@ -19,6 +22,7 @@ impl Display for Type {
             Type::Bool => write!(f, "Bool"),
             Type::Str => write!(f, "Str"),
             Type::Array => write!(f, "Array"),
+            Type::Fn => write!(f, "Fn"),
         }
     }
 }
@@ -122,6 +126,13 @@ impl Value {
         }
     }
 
+    pub fn new_func(func: Func) -> Self {
+        Self {
+            ty: Type::Fn,
+            kind: ValueKind::Func(func),
+        }
+    }
+
     pub fn int(self) -> i64 {
         extract!(self, Int)
     }
@@ -132,6 +143,10 @@ impl Value {
 
     pub fn bool(self) -> bool {
         extract!(self, Bool)
+    }
+
+    pub fn func(self) -> Func {
+        extract!(self, Func)
     }
 
     pub fn heap(self) -> Handle<HeapValue> {
@@ -147,6 +162,7 @@ pub enum ValueKind {
     Int(i64),
     Float(f64),
     Bool(bool),
+    Func(Func),
     Heap(Handle<HeapValue>),
 }
 
@@ -157,6 +173,7 @@ impl Display for ValueKind {
             ValueKind::Float(f) => write!(fmt, "{f}"),
             ValueKind::Bool(b) => write!(fmt, "{b}"),
             ValueKind::Heap(..) => write!(fmt, "<heap>"),
+            ValueKind::Func(..) => write!(fmt, "<func>"),
         }
     }
 }

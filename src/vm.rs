@@ -1,12 +1,13 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
+    mem,
 };
 
 use broom::{Handle, Heap};
 
 use crate::{
-    codes::{BinaryOp, CompareOp, Const, Op},
+    codes::{BinaryOp, CompareOp, Const, Cursor, Op},
     compiler::Module,
     lexer::Span,
     runtime::{
@@ -107,41 +108,74 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
+struct Call {
+    span: Span,
+    name: usize,
+    receiver: Option<Type>,
+}
+
+impl Call {
+    pub fn new(span: Span, name: usize) -> Self {
+        Call {
+            span,
+            name,
+            receiver: None,
+        }
+    }
+}
+
 pub struct Vm {
-    n: usize,
     gc: Gc,
     span: Span,
     std: Registry,
     module: Module,
+    cursor: Cursor,
     stack: Vec<Value>,
+    call_stack: Vec<Call>,
     vars: HashMap<usize, Value>,
 }
 
 impl Vm {
     pub fn new(module: Module) -> Self {
-        Vm {
-            module,
-            n: 0,
+        Self {
             stack: vec![],
             gc: Gc::default(),
+            call_stack: vec![],
             vars: HashMap::new(),
             span: Span::default(),
             std: runtime::std::registry(),
+            cursor: Cursor::new(&module.codes),
+            module,
         }
     }
 
-    fn goto(&mut self, n: usize) {
-        self.n = n;
+    fn push_call(&mut self, name: usize) {
+        self.call_stack.push(Call::new(self.span, name));
+    }
 
-        if let Some(code) = self.module.codes.get(n) {
+    fn pop_call(&mut self) -> Option<Call> {
+        self.call_stack.pop()
+    }
+
+    fn with_cursor(&mut self, cursor: Cursor) -> Cursor {
+        mem::replace(&mut self.cursor, cursor)
+    }
+
+    fn restore_cursor(&mut self, cursor: Cursor) {
+        self.cursor = cursor;
+    }
+
+    fn goto(&mut self, n: usize) {
+        self.cursor.goto(n);
+
+        if let Some(code) = self.cursor.cur() {
             self.span = code.span;
             self.gc.at(code.span);
         }
     }
 
     fn next(&mut self) -> Option<Op> {
-        if let Some(code) = self.module.codes.get(self.n) {
-            self.n += 1;
+        if let Some(code) = self.cursor.next() {
             self.span = code.span;
             self.gc.at(code.span);
 
@@ -171,20 +205,24 @@ impl Vm {
         }
     }
 
+    fn const_name(&self, idx: usize) -> Result<&str, Error> {
+        match self.get_const(idx)? {
+            Const::Str(name) => Ok(name.as_str()),
+            _ => unreachable!(),
+        }
+    }
+
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
         let object = self.pop()?;
-        let member = match self.get_const(idx)? {
-            Const::Str(name) => name,
-            _ => unreachable!(),
-        };
+        let member = self.const_name(idx)?;
         let field = self
             .std
             .get(object.ty())
             .and_then(|t| t.field(member))
             .ok_or_else(|| {
-                ErrorKind::NoSuchField {
+                ErrorKind::UnknownField {
                     ty: object.ty(),
-                    field: member.clone(),
+                    field: member.to_string(),
                 }
                 .at(self.span)
             })?;
@@ -192,6 +230,18 @@ impl Vm {
         let value = field.call(&mut self.gc, object)?;
         self.stack.push(value);
 
+        Ok(())
+    }
+
+    fn load_func(&mut self, idx: usize) -> Result<(), Error> {
+        let name = self.const_name(idx)?;
+        let func = self
+            .module
+            .funcs
+            .get(name)
+            .ok_or_else(|| ErrorKind::UnknownFunc(name.to_string()).at(self.span))?;
+
+        self.stack.push(Value::new_func(func.clone()));
         Ok(())
     }
 
@@ -229,6 +279,33 @@ impl Vm {
         }
 
         Ok(())
+    }
+
+    fn call(&mut self, args: usize) -> Result<(), Error> {
+        if args > 0 {
+            unimplemented!()
+        }
+
+        let callee = self.pop()?;
+
+        match callee.ty() {
+            Type::Fn => {
+                let func = callee.func();
+                let previous = self.with_cursor(Cursor::new(&func.codes));
+
+                self.push_call(func.name);
+
+                if let Some(return_value) = self.run()? {
+                    self.stack.push(return_value);
+                }
+
+                self.restore_cursor(previous);
+                self.pop_call();
+
+                Ok(())
+            }
+            ty => Err(ErrorKind::NotCallable(ty).at(self.span).into()),
+        }
     }
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
@@ -323,6 +400,7 @@ impl Vm {
                 self.stack.push(value);
             }
             Op::LoadMember(idx) => self.load_member(idx)?,
+            Op::LoadFunc(idx) => self.load_func(idx)?,
             Op::CompareOp(op) => {
                 let rhs = self.pop()?;
                 let lhs = self.pop()?;
@@ -383,6 +461,7 @@ impl Vm {
             }
             // @TODO: implement when we have functions
             Op::Return => {}
+            Op::Call(args) => self.call(args)?,
             Op::JumpIfTrue(idx) => self.jump_cond(idx, false, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
             Op::PushJumpIfTrue(idx) => self.jump_cond(idx, true, true)?,

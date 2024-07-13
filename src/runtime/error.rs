@@ -12,8 +12,12 @@ pub enum ErrorKind {
     Segfault,
     #[error("index out of bounds: {0}")]
     IndexOutOfBounds(usize),
+    #[error("cannot call non-function: {0}")]
+    NotCallable(Type),
     #[error("no such field '{field}' in {ty}")]
-    NoSuchField { ty: Type, field: String },
+    UnknownField { ty: Type, field: String },
+    #[error("no such function: {0}")]
+    UnknownFunc(String),
     #[error("unsupported operation '{op:?}' for {left} and {right}")]
     UnsupportedOp {
         left: Type,
@@ -24,7 +28,28 @@ pub enum ErrorKind {
 
 impl ErrorKind {
     pub fn at(self, span: Span) -> Error {
-        Error { kind: self, span }
+        Error {
+            kind: self,
+            span,
+            trace: None,
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct Call {
+    pub span: Span,
+    pub name: String,
+    pub receiver: Option<Type>,
+}
+
+impl Call {
+    pub fn new(span: Span, name: String) -> Self {
+        Call {
+            span,
+            name,
+            receiver: None,
+        }
     }
 }
 
@@ -32,6 +57,7 @@ impl ErrorKind {
 pub struct Error {
     pub kind: ErrorKind,
     pub span: Span,
+    pub trace: Option<Vec<Call>>,
 }
 
 impl Display for Error {

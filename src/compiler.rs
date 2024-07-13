@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
     mem,
+    rc::Rc,
 };
 
 use crate::{
@@ -45,7 +46,7 @@ struct Var {
 
 #[derive(Debug, Default)]
 pub struct Module {
-    pub codes: Vec<Code>,
+    pub codes: Rc<Vec<Code>>,
     pub consts: Vec<Const>,
     pub funcs: HashMap<String, Func>,
 }
@@ -136,6 +137,14 @@ impl Compiler {
         Ok(idx)
     }
 
+    fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Code, Error> {
+        let arg_count = args.len();
+        self.expr(callee)?;
+        self.expr_list(args)?;
+
+        Ok(Op::Call(arg_count).at(span))
+    }
+
     fn load_var(&mut self, span: Span, name: &str) -> Result<usize, Error> {
         self.vars
             .iter()
@@ -168,6 +177,19 @@ impl Compiler {
         }
 
         Ok(())
+    }
+
+    fn load_name(&mut self, span: Span, name: String) -> Result<Code, Error> {
+        match self.load_var(span, &name) {
+            Ok(idx) => Ok(Op::Load(idx).at(span)),
+            Err(e) => match self.funcs.contains_key(&name) {
+                true => {
+                    let idx = self.push_const(Const::Str(name));
+                    Ok(Op::LoadFunc(idx).at(span))
+                }
+                false => Err(e),
+            },
+        }
     }
 
     fn expr(&mut self, expr: Expr) -> Result<(), Error> {
@@ -218,8 +240,8 @@ impl Compiler {
                 self.expr(*elem)?;
                 Op::LoadElement.at(expr.span)
             }
-            ExprKind::Ident(name) => Op::Load(self.load_var(expr.span, &name)?).at(expr.span),
-            ExprKind::Call(_, _) => todo!(),
+            ExprKind::Ident(name) => self.load_name(expr.span, name)?,
+            ExprKind::Call(callee, args) => self.call(expr.span, *callee, args)?,
             ExprKind::Literal(lit) => Op::LoadConst(match lit {
                 Literal::Bool(b) => self.push_const(Const::Bool(b)),
                 Literal::Int(i) => self.push_const(Const::Int(i)),
@@ -263,7 +285,9 @@ impl Compiler {
                 compiler.compile_body()?;
 
                 let codes = self.merge_back(compiler);
-                self.funcs.insert(name, Func { codes });
+                let idx = self.push_const(Const::Str(name.clone()));
+
+                self.funcs.insert(name, Func::new(idx, codes));
             }
         }
 
@@ -282,7 +306,7 @@ impl Compiler {
         self.compile_body()?;
 
         Ok(Module {
-            codes: self.codes,
+            codes: Rc::new(self.codes),
             consts: self.consts,
             funcs: self.funcs,
         })
