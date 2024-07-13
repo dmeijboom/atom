@@ -272,10 +272,14 @@ impl Vm {
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let n = elem.int() as usize;
         let heap = self.gc.read(array.heap())?;
+        let array = heap.array();
+        let n = match elem.int() {
+            n if n < 0 => array.len() as i64 + n,
+            n => n,
+        } as usize;
 
-        match heap.array().get(n) {
+        match array.get(n) {
             Some(elem) => {
                 self.stack.push(elem.clone());
                 Ok(())

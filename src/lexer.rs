@@ -134,6 +134,15 @@ impl<'a> Lexer<'a> {
         self.source.get(self.n)
     }
 
+    fn accept(&mut self, expected: char) -> bool {
+        if self.hdr() == Some(&expected) {
+            self.advance();
+            return true;
+        }
+
+        false
+    }
+
     fn advance(&mut self) {
         self.n += 1;
     }
@@ -182,6 +191,10 @@ impl<'a> Lexer<'a> {
         let mut dot = false;
         let span = self.span();
         let mut num = String::new();
+
+        if self.accept('-') {
+            num.push('-');
+        }
 
         loop {
             match self.next_and_hdr() {
@@ -236,7 +249,9 @@ impl<'a> Lexer<'a> {
             let span = self.span();
             let token = match self.next_and_hdr() {
                 (Some(c), _) if c.is_whitespace() => continue,
-                (Some(c), Some(n)) if c.is_ascii_digit() || (c == &'.' && n.is_ascii_digit()) => {
+                (Some(c), Some(n))
+                    if c.is_ascii_digit() || (matches!(c, '.' | '-') && n.is_ascii_digit()) =>
+                {
                     self.move_back();
                     self.number()?
                 }
