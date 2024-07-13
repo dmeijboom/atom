@@ -7,14 +7,428 @@
 		},
 		{
 			"include": "#strings"
+		},
+		{
+			"include": "#operators"
+		},
+		{
+			"include": "#constants"
+		},
+		{
+			"include": "#string_literals"
+		},
+		{
+			"include": "#string_escaped_char"
+		},
+		{
+			"include": "#terminators"
+		},
+		{
+			"include": "#numeric_literals"
 		}
 	],
 	"repository": {
+		"numeric_literals": {
+			"match": "(?<!\\w)\\.?\\d(?:(?:[0-9a-zA-Z_\\.])|(?<=[eEpP])[+-])*",
+			"captures": {
+				"0": {
+					"patterns": [
+						{
+							"begin": "(?=.)",
+							"end": "(?:\\n|$)",
+							"patterns": [
+								{
+									"match": "(?:(?:(?:(?:(?:\\G(?=[0-9.])(?!0[xXbBoO])([0-9](?:[0-9]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)((?:(?<=[0-9])\\.|\\.(?=[0-9])))([0-9](?:[0-9]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)?(?:(?<!_)([eE])(\\+?)(\\-?)((?:[0-9](?:[0-9]|(?:(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)))?(i(?!\\w))?(?:\\n|$)|\\G(?=[0-9.])(?!0[xXbBoO])([0-9](?:[0-9]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(?<!_)([eE])(\\+?)(\\-?)((?:[0-9](?:[0-9]|(?:(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*))(i(?!\\w))?(?:\\n|$))|\\G((?:(?<=[0-9])\\.|\\.(?=[0-9])))([0-9](?:[0-9]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(?:(?<!_)([eE])(\\+?)(\\-?)((?:[0-9](?:[0-9]|(?:(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)))?(i(?!\\w))?(?:\\n|$))|(\\G0[xX])_?([0-9a-fA-F](?:[0-9a-fA-F]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)((?:(?<=[0-9a-fA-F])\\.|\\.(?=[0-9a-fA-F])))([0-9a-fA-F](?:[0-9a-fA-F]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)?(?<!_)([pP])(\\+?)(\\-?)((?:[0-9](?:[0-9]|(?:(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*))(i(?!\\w))?(?:\\n|$))|(\\G0[xX])_?([0-9a-fA-F](?:[0-9a-fA-F]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(?<!_)([pP])(\\+?)(\\-?)((?:[0-9](?:[0-9]|(?:(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*))(i(?!\\w))?(?:\\n|$))|(\\G0[xX])((?:(?<=[0-9a-fA-F])\\.|\\.(?=[0-9a-fA-F])))([0-9a-fA-F](?:[0-9a-fA-F]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(?<!_)([pP])(\\+?)(\\-?)((?:[0-9](?:[0-9]|(?:(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*))(i(?!\\w))?(?:\\n|$))",
+									"captures": {
+										"1": {
+											"name": "constant.numeric.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"2": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"3": {
+											"name": "constant.numeric.decimal.point.atom"
+										},
+										"4": {
+											"name": "constant.numeric.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"5": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"6": {
+											"name": "keyword.other.unit.exponent.decimal.atom"
+										},
+										"7": {
+											"name": "keyword.operator.plus.exponent.decimal.atom"
+										},
+										"8": {
+											"name": "keyword.operator.minus.exponent.decimal.atom"
+										},
+										"9": {
+											"name": "constant.numeric.exponent.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"10": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"11": {
+											"name": "constant.numeric.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"12": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"13": {
+											"name": "keyword.other.unit.exponent.decimal.atom"
+										},
+										"14": {
+											"name": "keyword.operator.plus.exponent.decimal.atom"
+										},
+										"15": {
+											"name": "keyword.operator.minus.exponent.decimal.atom"
+										},
+										"16": {
+											"name": "constant.numeric.exponent.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"17": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"18": {
+											"name": "constant.numeric.decimal.point.atom"
+										},
+										"19": {
+											"name": "constant.numeric.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"20": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"21": {
+											"name": "keyword.other.unit.exponent.decimal.atom"
+										},
+										"22": {
+											"name": "keyword.operator.plus.exponent.decimal.atom"
+										},
+										"23": {
+											"name": "keyword.operator.minus.exponent.decimal.atom"
+										},
+										"24": {
+											"name": "constant.numeric.exponent.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"25": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"26": {
+											"name": "keyword.other.unit.hexadecimal.atom"
+										},
+										"27": {
+											"name": "constant.numeric.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"28": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"29": {
+											"name": "constant.numeric.hexadecimal.atom"
+										},
+										"30": {
+											"name": "constant.numeric.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"31": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"32": {
+											"name": "keyword.other.unit.exponent.hexadecimal.atom"
+										},
+										"33": {
+											"name": "keyword.operator.plus.exponent.hexadecimal.atom"
+										},
+										"34": {
+											"name": "keyword.operator.minus.exponent.hexadecimal.atom"
+										},
+										"35": {
+											"name": "constant.numeric.exponent.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"36": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"37": {
+											"name": "keyword.other.unit.hexadecimal.atom"
+										},
+										"38": {
+											"name": "constant.numeric.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"39": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"40": {
+											"name": "keyword.other.unit.exponent.hexadecimal.atom"
+										},
+										"41": {
+											"name": "keyword.operator.plus.exponent.hexadecimal.atom"
+										},
+										"42": {
+											"name": "keyword.operator.minus.exponent.hexadecimal.atom"
+										},
+										"43": {
+											"name": "constant.numeric.exponent.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"44": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"45": {
+											"name": "keyword.other.unit.hexadecimal.atom"
+										},
+										"46": {
+											"name": "constant.numeric.hexadecimal.atom"
+										},
+										"47": {
+											"name": "constant.numeric.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"48": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"49": {
+											"name": "keyword.other.unit.exponent.hexadecimal.atom"
+										},
+										"50": {
+											"name": "keyword.operator.plus.exponent.hexadecimal.atom"
+										},
+										"51": {
+											"name": "keyword.operator.minus.exponent.hexadecimal.atom"
+										},
+										"52": {
+											"name": "constant.numeric.exponent.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"53": {
+											"name": "keyword.other.unit.imaginary.atom"
+										}
+									}
+								},
+								{
+									"match": "(?:(?:(?:\\G(?=[0-9.])(?!0[xXbBoO])([0-9](?:[0-9]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(i(?!\\w))?(?:\\n|$)|(\\G0[bB])_?([01](?:[01]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(i(?!\\w))?(?:\\n|$))|(\\G0[oO]?)_?((?:[0-7]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))+)(i(?!\\w))?(?:\\n|$))|(\\G0[xX])_?([0-9a-fA-F](?:[0-9a-fA-F]|((?<=[0-9a-fA-F])_(?=[0-9a-fA-F])))*)(i(?!\\w))?(?:\\n|$))",
+									"captures": {
+										"1": {
+											"name": "constant.numeric.decimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"2": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"3": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"4": {
+											"name": "keyword.other.unit.binary.atom"
+										},
+										"5": {
+											"name": "constant.numeric.binary.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"6": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"7": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"8": {
+											"name": "keyword.other.unit.octal.atom"
+										},
+										"9": {
+											"name": "constant.numeric.octal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"10": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"11": {
+											"name": "keyword.other.unit.imaginary.atom"
+										},
+										"12": {
+											"name": "keyword.other.unit.hexadecimal.atom"
+										},
+										"13": {
+											"name": "constant.numeric.hexadecimal.atom",
+											"patterns": [
+												{
+													"match": "(?<=[0-9a-fA-F])_(?=[0-9a-fA-F])",
+													"name": "punctuation.separator.constant.numeric.atom"
+												}
+											]
+										},
+										"14": {
+											"name": "punctuation.separator.constant.numeric.atom"
+										},
+										"15": {
+											"name": "keyword.other.unit.imaginary.atom"
+										}
+									}
+								},
+								{
+									"match": "(?:(?:[0-9a-zA-Z_\\.])|(?<=[eEpP])[+-])+",
+									"name": "invalid.illegal.constant.numeric.atom"
+								}
+							]
+						}
+					]
+				}
+			}
+		},
+		"terminators": {
+			"comment": "Terminators",
+			"match": ";",
+			"name": "punctuation.terminator.atom"
+		},
+		"string_literals": {
+			"patterns": [
+				{
+					"comment": "Interpreted string literals",
+					"begin": "\"",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.begin.atom"
+						}
+					},
+					"end": "\"",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.string.end.atom"
+						}
+					},
+					"name": "string.quoted.double.atom",
+					"patterns": [
+						{
+							"include": "#string_escaped_char"
+						},
+						{
+							"include": "#string_placeholder"
+						}
+					]
+				}
+			]
+		},
+		"string_escaped_char": {
+			"patterns": [
+				{
+					"match": "\\\\([0-7]{3}|[abfnrtv\\\\'\"]|x[0-9a-fA-F]{2}|u[0-9a-fA-F]{4}|U[0-9a-fA-F]{8})",
+					"name": "constant.character.escape.atom"
+				},
+				{
+					"match": "\\\\[^0-7xuUabfnrtv\\'\"]",
+					"name": "invalid.illegal.unknown-escape.atom"
+				}
+			]
+		},
+		"constants": {
+			"patterns": [
+				{
+					"name": "constant.language.boolean.atom",
+					"match": "\\b(true|false)\\b"
+				}
+			]
+		},
 		"keywords": {
-			"patterns": [{
-				"name": "keyword.control.atom",
-				"match": "\\b(if|else|elif|for|let|fn|return)\\b"
-			}]
+			"patterns": [
+				{
+					"name": "keyword.control.atom",
+					"match": "\\b(if|else|elif|for|let|fn|return)\\b"
+				}
+			]
 		},
 		"strings": {
 			"name": "string.quoted.double.atom",
@@ -24,6 +438,31 @@
 				{
 					"name": "constant.character.escape.atom",
 					"match": "\\\\."
+				}
+			]
+		},
+		"operators": {
+			"comment": "Note that the order here is very important!",
+			"patterns": [
+				{
+					"match": "(==|!=|<=|>=|<(?!<)|>(?!>))",
+					"name": "keyword.operator.comparison.atom"
+				},
+				{
+					"match": "(&&|\\|\\||!)",
+					"name": "keyword.operator.logical.atom"
+				},
+				{
+					"match": "(=|\\+=|\\-=|\\|=|\\^=|\\*=|/=|:=|%=|<<=|>>=|&\\^=|&=)",
+					"name": "keyword.operator.assignment.atom"
+				},
+				{
+					"match": "(\\+|\\-|\\*|/|%)",
+					"name": "keyword.operator.arithmetic.atom"
+				},
+				{
+					"match": "(&(?!\\^)|\\||\\^|&\\^|<<|>>|\\~)",
+					"name": "keyword.operator.arithmetic.bitwise.atom"
 				}
 			]
 		}
