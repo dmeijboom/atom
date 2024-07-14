@@ -361,7 +361,7 @@ mod tests {
         let mut compiler = Compiler::new();
 
         compiler.push_var(Span::default(), "n".to_string()).unwrap();
-        compiler.push_scope();
+        compiler.push_scope(vec![]);
 
         let expected = compiler.push_var(Span::default(), "n".to_string()).unwrap();
         let actual = compiler.load_var(Span::default(), "n", false).unwrap();

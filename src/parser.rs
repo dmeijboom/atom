@@ -1,4 +1,4 @@
-use std::{borrow::Cow, cmp::Ordering, collections::VecDeque};
+use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
     ast::{BinaryOp, Expr, ExprKind, Literal, Stmt, StmtKind, UnaryOp},
@@ -165,15 +165,17 @@ impl Parser {
 
         loop {
             lhs = match self.peek2() {
-                (Some(token), next) => match (token, next) {
-                    (TokenKind::Dot, Some(TokenKind::Ident(_))) if min_prec <= PREC_CALL => {
+                (Some(token), next) => match token {
+                    TokenKind::Dot
+                        if matches!(next, Some(TokenKind::Ident(_))) && min_prec <= PREC_CALL =>
+                    {
                         self.advance();
                         let span = lhs.span;
                         let name = self.ident()?;
 
                         ExprKind::Member(Box::new(lhs), name).at(span)
                     }
-                    (TokenKind::SqrBracketLeft, _) if min_prec <= PREC_CALL => {
+                    TokenKind::SqrBracketLeft if min_prec <= PREC_CALL => {
                         self.advance();
                         let rhs = self.expr(1)?;
                         self.expect(TokenKind::SqrBracketRight)?;
@@ -181,80 +183,56 @@ impl Parser {
 
                         ExprKind::CompMember(Box::new(lhs), Box::new(rhs)).at(span)
                     }
-                    (TokenKind::ParentLeft, _) if min_prec <= PREC_CALL => {
+                    TokenKind::ParentLeft if min_prec <= PREC_CALL => {
                         self.advance();
                         let args = self.expr_list(TokenKind::ParentRight, 1)?;
                         let span = lhs.span;
 
                         ExprKind::Call(Box::new(lhs), args).at(span)
                     }
-                    (TokenKind::Mul, _) if min_prec <= PREC_MUL => {
+                    TokenKind::Mul if min_prec <= PREC_MUL => {
                         self.binary(lhs, BinaryOp::Mul, PREC_MUL)?
                     }
-                    (TokenKind::Div, _) if min_prec <= PREC_MUL => {
+                    TokenKind::Div if min_prec <= PREC_MUL => {
                         self.binary(lhs, BinaryOp::Div, PREC_MUL)?
                     }
-                    (TokenKind::Add, _) if min_prec <= PREC_ADD => {
+                    TokenKind::Add if min_prec <= PREC_ADD => {
                         self.binary(lhs, BinaryOp::Add, PREC_ADD)?
                     }
-                    (TokenKind::Sub, _) if min_prec <= PREC_ADD => {
+                    TokenKind::Sub if min_prec <= PREC_ADD => {
                         self.binary(lhs, BinaryOp::Sub, PREC_ADD)?
                     }
-                    (TokenKind::Lt, Some(TokenKind::Eq)) => match min_prec.cmp(&PREC_REL) {
-                        Ordering::Less | Ordering::Equal => {
-                            self.advance();
-                            self.binary(lhs, BinaryOp::Lte, PREC_REL)?
-                        }
-                        Ordering::Greater => break,
-                    },
-                    (TokenKind::Gt, Some(TokenKind::Eq)) => match min_prec.cmp(&PREC_REL) {
-                        Ordering::Less | Ordering::Equal => {
-                            self.advance();
-                            self.binary(lhs, BinaryOp::Gte, PREC_REL)?
-                        }
-                        Ordering::Greater => break,
-                    },
-                    (TokenKind::Lt, _) if min_prec <= PREC_REL => {
+                    TokenKind::Lte if min_prec <= PREC_REL => {
+                        self.binary(lhs, BinaryOp::Lte, PREC_REL)?
+                    }
+                    TokenKind::Gte if min_prec <= PREC_REL => {
+                        self.binary(lhs, BinaryOp::Gte, PREC_REL)?
+                    }
+                    TokenKind::Lt if min_prec <= PREC_REL => {
                         self.binary(lhs, BinaryOp::Lt, PREC_REL)?
                     }
-                    (TokenKind::Gt, _) if min_prec <= PREC_REL => {
+                    TokenKind::Gt if min_prec <= PREC_REL => {
                         self.binary(lhs, BinaryOp::Gt, PREC_REL)?
                     }
-                    (TokenKind::Eq, Some(TokenKind::Eq)) => match min_prec.cmp(&PREC_EQ) {
-                        Ordering::Less | Ordering::Equal => {
-                            self.advance();
-                            self.binary(lhs, BinaryOp::Eq, PREC_EQ)?
-                        }
-                        Ordering::Greater => break,
-                    },
-                    (TokenKind::Not, Some(TokenKind::Eq)) => match min_prec.cmp(&PREC_EQ) {
-                        Ordering::Less | Ordering::Equal => {
-                            self.advance();
-                            self.binary(lhs, BinaryOp::Ne, PREC_EQ)?
-                        }
-                        Ordering::Greater => break,
-                    },
-                    (TokenKind::And, Some(TokenKind::And)) => match min_prec.cmp(&PREC_LAN) {
-                        Ordering::Less | Ordering::Equal => {
-                            self.advance();
-                            self.binary(lhs, BinaryOp::LogicalAnd, PREC_LAN)?
-                        }
-                        Ordering::Greater => break,
-                    },
-                    (TokenKind::Or, Some(TokenKind::Or)) => match min_prec.cmp(&PREC_LOR) {
-                        Ordering::Less | Ordering::Equal => {
-                            self.advance();
-                            self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
-                        }
-                        Ordering::Greater => break,
-                    },
-                    (TokenKind::And, _) if min_prec <= PREC_BAN => {
+                    TokenKind::Eq if min_prec <= PREC_EQ => {
+                        self.binary(lhs, BinaryOp::Eq, PREC_EQ)?
+                    }
+                    TokenKind::Ne if min_prec <= PREC_EQ => {
+                        self.binary(lhs, BinaryOp::Ne, PREC_EQ)?
+                    }
+                    TokenKind::And if min_prec <= PREC_LAN => {
+                        self.binary(lhs, BinaryOp::LogicalAnd, PREC_LAN)?
+                    }
+                    TokenKind::Or if min_prec <= PREC_LOR => {
+                        self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
+                    }
+                    TokenKind::BitwiseAnd if min_prec <= PREC_BAN => {
                         self.binary(lhs, BinaryOp::BitwiseAnd, PREC_BAN)?
                     }
-                    (TokenKind::Pow, _) if min_prec <= PREC_XOR => {
+                    TokenKind::BitwiseXor if min_prec <= PREC_XOR => {
                         self.binary(lhs, BinaryOp::BitwiseXor, PREC_XOR)?
                     }
-                    (TokenKind::Or, _) if min_prec <= PREC_BOR => {
+                    TokenKind::BitwiseOr if min_prec <= PREC_BOR => {
                         self.binary(lhs, BinaryOp::BitwiseOr, PREC_BOR)?
                     }
                     _ => break,
@@ -310,7 +288,7 @@ impl Parser {
         let span = self.span();
         self.advance();
         let name = self.ident()?;
-        self.expect(TokenKind::Eq)?;
+        self.expect(TokenKind::Assign)?;
         let value = self.expr(1)?;
         self.semi()?;
 
@@ -344,14 +322,7 @@ impl Parser {
     fn assign_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         let name = self.ident()?;
-
-        // @TODO: can we simplify this?
-        if matches!(self.peek2(), (Some(TokenKind::Eq), Some(TokenKind::Eq))) {
-            self.tokens.push_front(TokenKind::Ident(name).at(span));
-            return self.expr_stmt();
-        }
-
-        self.expect(TokenKind::Eq)?;
+        self.expect(TokenKind::Assign)?;
         let value = self.expr(1)?;
         self.semi()?;
 
@@ -368,7 +339,7 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
-                TokenKind::Ident(_) if next == Some(&TokenKind::Eq) => self.assign_stmt()?,
+                TokenKind::Ident(_) if next == Some(&TokenKind::Assign) => self.assign_stmt()?,
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
             };

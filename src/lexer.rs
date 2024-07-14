@@ -44,13 +44,19 @@ pub enum TokenKind {
     Sub,
     Mul,
     Div,
+    Assign,
     Eq,
-    Not,
+    Ne,
     Lt,
+    Lte,
     Gt,
+    Gte,
+    Not,
     And,
     Or,
-    Pow,
+    BitwiseAnd,
+    BitwiseOr,
+    BitwiseXor,
     BoolLit(bool),
     IntLit(i64),
     FloatLit(f64),
@@ -83,13 +89,19 @@ impl Display for TokenKind {
             Self::Sub => write!(f, "-"),
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
-            Self::Eq => write!(f, "="),
+            Self::Assign => write!(f, "="),
+            Self::Eq => write!(f, "=="),
+            Self::Ne => write!(f, "!="),
             Self::Not => write!(f, "!"),
             Self::Lt => write!(f, "<"),
             Self::Gt => write!(f, ">"),
-            Self::And => write!(f, "&"),
-            Self::Or => write!(f, "|"),
-            Self::Pow => write!(f, "^"),
+            Self::Lte => write!(f, "<="),
+            Self::Gte => write!(f, ">="),
+            Self::And => write!(f, "&&"),
+            Self::Or => write!(f, "||"),
+            Self::BitwiseAnd => write!(f, "&"),
+            Self::BitwiseOr => write!(f, "|"),
+            Self::BitwiseXor => write!(f, "^"),
             Self::BoolLit(true) => write!(f, "true"),
             Self::BoolLit(false) => write!(f, "false"),
             Self::IntLit(value) => write!(f, "{}", value),
@@ -255,6 +267,30 @@ impl<'a> Lexer<'a> {
                     self.move_back();
                     self.number()?
                 }
+                (Some('&'), Some('&')) => {
+                    self.advance();
+                    TokenKind::And.at(span)
+                }
+                (Some('|'), Some('|')) => {
+                    self.advance();
+                    TokenKind::Or.at(span)
+                }
+                (Some('!'), Some('=')) => {
+                    self.advance();
+                    TokenKind::Ne.at(span)
+                }
+                (Some('='), Some('=')) => {
+                    self.advance();
+                    TokenKind::Eq.at(span)
+                }
+                (Some('<'), Some('=')) => {
+                    self.advance();
+                    TokenKind::Lte.at(span)
+                }
+                (Some('>'), Some('=')) => {
+                    self.advance();
+                    TokenKind::Gte.at(span)
+                }
                 (Some('{'), _) => TokenKind::BracketLeft.at(span),
                 (Some('}'), _) => TokenKind::BracketRight.at(span),
                 (Some('['), _) => TokenKind::SqrBracketLeft.at(span),
@@ -269,11 +305,11 @@ impl<'a> Lexer<'a> {
                 (Some('-'), _) => TokenKind::Sub.at(span),
                 (Some('*'), _) => TokenKind::Mul.at(span),
                 (Some('/'), _) => TokenKind::Div.at(span),
-                (Some('&'), _) => TokenKind::And.at(span),
-                (Some('|'), _) => TokenKind::Or.at(span),
-                (Some('^'), _) => TokenKind::Pow.at(span),
+                (Some('&'), _) => TokenKind::BitwiseAnd.at(span),
+                (Some('|'), _) => TokenKind::BitwiseOr.at(span),
+                (Some('^'), _) => TokenKind::BitwiseXor.at(span),
                 (Some('!'), _) => TokenKind::Not.at(span),
-                (Some('='), _) => TokenKind::Eq.at(span),
+                (Some('='), _) => TokenKind::Assign.at(span),
                 (Some('<'), _) => TokenKind::Lt.at(span),
                 (Some('>'), _) => TokenKind::Gt.at(span),
                 (Some('"'), _) => self.string(span)?,

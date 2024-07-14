@@ -225,8 +225,8 @@ impl<const S: usize, const C: usize> Vm<S, C> {
     }
 
     fn load_var(&self, idx: usize) -> Result<Value, Error> {
-        match self.vars.get(&idx) {
-            Some(value) => Ok(value.clone()),
+        match self.vars.get(&idx).copied() {
+            Some(value) => Ok(value),
             None => Err(FatalErrorKind::InvalidVar(idx).at(self.span).into()),
         }
     }
@@ -355,9 +355,9 @@ impl<const S: usize, const C: usize> Vm<S, C> {
             n => n,
         } as usize;
 
-        match array.get(n) {
+        match array.get(n).copied() {
             Some(elem) => {
-                self.stack.push(elem.clone());
+                self.stack.push(elem);
                 Ok(())
             }
             None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
@@ -392,7 +392,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
             Type::Float => format!("{}", value.float()),
             Type::Bool => format!("{}", value.bool()),
             Type::Fn => format!("{}(..)", value.func().name),
-            Type::Nil => format!("Nil"),
+            Type::Nil => "Nil".to_string(),
         })
     }
 
