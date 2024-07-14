@@ -27,9 +27,7 @@ impl<T: Default + Debug, const N: usize> Stack<T, N> {
 
     #[cfg_attr(feature = "tracing", instrument(level = Level::TRACE, skip_all, fields(size = self.size, ?value), ret))]
     pub fn push(&mut self, value: T) {
-        if self.size >= N {
-            panic!("stack size exceeded");
-        }
+        assert!(self.size < N, "stack size exceeded");
 
         self.data[self.size] = value;
         self.size += 1;

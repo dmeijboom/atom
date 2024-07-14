@@ -17,3 +17,6 @@ tracing-subscriber = { version = "0.3.18", features = [
 
 [patch.crates-io]
 safe-gc = { git = "https://github.com/dmeijboom/safe-gc.git", branch = "main" }
+
+[profile.release]
+debug = true

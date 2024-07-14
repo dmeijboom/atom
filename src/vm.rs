@@ -1,5 +1,5 @@
 use std::{
-    collections::HashMap,
+    cmp::Ordering,
     fmt::{self, Display, Formatter},
     mem::{self, size_of},
     rc::Rc,
@@ -53,6 +53,14 @@ macro_rules! binary {
     }
 }
 
+fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
+    match vec.len().cmp(&len) {
+        Ordering::Less => vec.resize(len, T::default()),
+        Ordering::Equal => {}
+        Ordering::Greater => vec.truncate(len),
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum FatalErrorKind {
     #[error("invalid const at: {0}")]
@@ -98,7 +106,7 @@ pub enum Error {
 #[derive(Debug, Default, Clone)]
 struct CallState {
     call: Call,
-    locals: HashMap<usize, Value>,
+    locals: Vec<Value>,
 }
 
 pub type VmDefault = Vm<MAX_STACK_SIZE, MAX_CALL_STACK_SIZE>;
@@ -109,16 +117,16 @@ pub struct Vm<const S: usize, const C: usize> {
     std: Registry,
     module: Module,
     cursor: Cursor,
+    vars: Vec<Value>,
     stack: Stack<Value, S>,
     call_stack: Stack<CallState, C>,
-    vars: HashMap<usize, Value>,
 }
 
 impl<const S: usize, const C: usize> Vm<S, C> {
     pub fn new(module: Module) -> Self {
         Self {
+            vars: vec![],
             heap: Heap::default(),
-            vars: HashMap::new(),
             span: Span::default(),
             stack: Stack::default(),
             call_stack: Stack::default(),
@@ -128,23 +136,28 @@ impl<const S: usize, const C: usize> Vm<S, C> {
         }
     }
 
-    fn reset_call(&mut self, func: Rc<Func>) -> Result<(), Error> {
-        let state = self
+    fn call_state(&mut self) -> Result<&mut CallState, Error> {
+        Ok(self
             .call_stack
             .back_mut()
-            .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?;
+            .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?)
+    }
+
+    fn reset_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
+        let span = self.span;
+        let state = self.call_state()?;
 
         state.call.func = func;
-        state.call.span = self.span;
-        state.locals.clear();
+        state.call.span = span;
+        resize(&mut state.locals, arg_count);
 
         Ok(())
     }
 
-    fn push_call(&mut self, func: Rc<Func>) {
+    fn push_call(&mut self, func: Rc<Func>, arg_count: usize) {
         self.call_stack.push(CallState {
             call: Call::new(self.span, func),
-            locals: HashMap::new(),
+            locals: vec![Value::NIL; arg_count],
         });
     }
 
@@ -239,7 +252,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
     }
 
     fn load_var(&self, idx: usize) -> Result<Value, Error> {
-        match self.vars.get(&idx).copied() {
+        match self.vars.get(idx).copied() {
             Some(value) => Ok(value),
             None => Err(FatalErrorKind::InvalidVar(idx).at(self.span).into()),
         }
@@ -247,7 +260,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
         match self.call_stack.back() {
-            Some(state) => match state.locals.get(&idx).cloned() {
+            Some(state) => match state.locals.get(idx).copied() {
                 Some(value) => {
                     self.stack.push(value);
                     Ok(())
@@ -296,19 +309,13 @@ impl<const S: usize, const C: usize> Vm<S, C> {
                 let previous = self.fork(Cursor::new(&func.codes));
 
                 if tail_call {
-                    self.reset_call(func)?;
+                    self.reset_call(func, arg_count)?;
                 } else {
-                    self.push_call(func);
+                    self.push_call(func, arg_count);
                 }
 
                 for i in 0..arg_count {
-                    let value = self.pop()?;
-                    let state = self
-                        .call_stack
-                        .back_mut()
-                        .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?;
-
-                    state.locals.insert(arg_count - i - 1, value);
+                    self.call_state()?.locals[arg_count - i - 1] = self.pop()?;
                 }
 
                 match self.run()? {
@@ -471,8 +478,9 @@ impl<const S: usize, const C: usize> Vm<S, C> {
                 self.stack.push(value);
             }
             Op::Store(idx) => {
+                resize(&mut self.vars, idx + 1);
                 let value = self.pop()?;
-                self.vars.insert(idx, value);
+                self.vars[idx] = value;
             }
             Op::Load(idx) => {
                 let value = self.load_var(idx)?;
