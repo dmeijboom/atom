@@ -1,11 +1,14 @@
-use std::fs;
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
+use clap::Parser;
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
-use compiler::Compiler;
+use compiler::{Compiler, Module};
 use lexer::Lexer;
-use parser::Parser;
 use vm::VmDefault;
 
 mod ast;
@@ -31,24 +34,40 @@ enum Error {
     Runtime(#[from] vm::Error),
 }
 
-fn main() -> Result<(), Error> {
-    #[cfg(feature = "tracing")]
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
+#[derive(Parser)]
+struct Opts {
+    #[clap(subcommand)]
+    cmd: Cmd,
+}
 
-    let source = fs::read_to_string("main.atom")?;
+#[derive(Parser)]
+enum Cmd {
+    Run {
+        source: PathBuf,
+    },
+    Compile {
+        source: PathBuf,
+
+        #[clap(short, long)]
+        verbose: bool,
+    },
+}
+
+fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
+    let source = fs::read_to_string(source)?;
     let chars = source.chars().collect::<Vec<_>>();
 
     let mut lexer = Lexer::new(&chars);
     let tokens = lexer.lex()?;
 
-    let parser = Parser::new(tokens);
+    let parser = parser::Parser::new(tokens);
     let stmts = parser.parse()?;
 
     let compiler = Compiler::new();
-    let module = compiler.compile(stmts)?;
+    Ok(compiler.compile(stmts)?)
+}
 
+fn print_module(module: &Module) {
     for (i, (name, func)) in module.funcs.iter().enumerate() {
         if i > 0 {
             println!();
@@ -68,12 +87,33 @@ fn main() -> Result<(), Error> {
     for code in module.codes.iter() {
         println!("{}: {:?}", code.span.offset, code.op);
     }
+}
 
-    let mut vm = VmDefault::new(module);
-    let value = vm.run()?;
+fn main() -> Result<(), Error> {
+    #[cfg(feature = "tracing")]
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
 
-    if let Some(value) = value {
-        println!("\n{} ({})", vm.repr(&value)?, value.ty());
+    let opts = Opts::parse();
+
+    match opts.cmd {
+        Cmd::Run { source } => {
+            let module = compile(&source)?;
+            let mut vm = VmDefault::new(module);
+            let value = vm.run()?;
+
+            if let Some(value) = value {
+                println!("\n{} ({})", vm.repr(&value)?, value.ty());
+            }
+        }
+        Cmd::Compile { source, verbose } => {
+            let module = compile(&source)?;
+
+            if verbose {
+                print_module(&module);
+            }
+        }
     }
 
     Ok(())
