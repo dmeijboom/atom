@@ -175,7 +175,7 @@ impl Parser {
                     }
                     (TokenKind::SqrBracketLeft, _) if min_prec <= PREC_CALL => {
                         self.advance();
-                        let rhs = self.expr(PREC_CALL + 1)?;
+                        let rhs = self.expr(1)?;
                         self.expect(TokenKind::SqrBracketRight)?;
                         let span = lhs.span;
 
@@ -183,7 +183,7 @@ impl Parser {
                     }
                     (TokenKind::ParentLeft, _) if min_prec <= PREC_CALL => {
                         self.advance();
-                        let args = self.expr_list(TokenKind::ParentRight, PREC_CALL + 1)?;
+                        let args = self.expr_list(TokenKind::ParentRight, 1)?;
                         let span = lhs.span;
 
                         ExprKind::Call(Box::new(lhs), args).at(span)

@@ -1,9 +1,4 @@
-use std::{
-    collections::{HashMap, VecDeque},
-    fmt::Display,
-    mem,
-    rc::Rc,
-};
+use std::{collections::HashMap, fmt::Display, mem, rc::Rc};
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
@@ -237,6 +232,37 @@ impl Compiler {
         Ok(())
     }
 
+    fn func(
+        &mut self,
+        span: Span,
+        name: String,
+        args: Vec<String>,
+        stmts: Vec<Stmt>,
+    ) -> Result<(), Error> {
+        if self.funcs.contains_key(&name) {
+            return Err(ErrorKind::FnAlreadyExists(name).at(span));
+        }
+
+        self.funcs.insert(name.clone(), Rc::new(Func::default()));
+
+        let previous = self.push_scope();
+
+        for (i, arg) in args.into_iter().enumerate() {
+            let idx = self.push_var(span, arg)?;
+
+            self.push_code(Op::LoadArg(i).at(span));
+            self.push_code(Op::Store(idx).at(span));
+        }
+
+        self.compile_body(stmts)?;
+
+        let codes = self.pop_scope(previous);
+        self.funcs
+            .insert(name.clone(), Rc::new(Func::with_codes(name, codes)));
+
+        Ok(())
+    }
+
     fn stmt(&mut self, stmt: Stmt) -> Result<(), Error> {
         match stmt.kind {
             StmtKind::Let(name, expr) => {
@@ -257,18 +283,7 @@ impl Compiler {
                 self.expr(expr)?;
                 self.push_code(Op::Return.at(stmt.span));
             }
-            StmtKind::Fn(name, _, stmts) => {
-                if self.funcs.contains_key(&name) {
-                    return Err(ErrorKind::FnAlreadyExists(name).at(stmt.span));
-                }
-
-                let previous = self.push_scope();
-                self.compile_body(stmts)?;
-
-                let codes = self.pop_scope(previous);
-                self.funcs
-                    .insert(name.clone(), Rc::new(Func::new(name, codes)));
-            }
+            StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
             StmtKind::If(expr, stmts) => {
                 self.expr(expr)?;
                 let idx = self.push_code(Op::JumpIfFalse(0).at(stmt.span));

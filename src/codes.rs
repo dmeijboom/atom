@@ -32,10 +32,10 @@ pub enum Op {
     Store(usize),
     Load(usize),
     LoadFunc(usize),
+    LoadArg(usize),
     Discard,
     Return,
     JumpIfFalse(usize),
-    JumpIfTrue(usize),
     PushJumpIfFalse(usize),
     PushJumpIfTrue(usize),
     MakeArray(usize),
@@ -74,7 +74,14 @@ pub struct Func {
 }
 
 impl Func {
-    pub fn new(name: String, codes: Vec<Code>) -> Self {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            codes: Rc::default(),
+        }
+    }
+
+    pub fn with_codes(name: String, codes: Vec<Code>) -> Self {
         Self {
             name,
             codes: Rc::new(codes),
@@ -107,5 +114,9 @@ impl Cursor {
 
     pub fn goto(&mut self, n: usize) {
         self.n = n;
+    }
+
+    pub fn goto_end(&mut self) {
+        self.n = self.codes.len();
     }
 }

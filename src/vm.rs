@@ -17,11 +17,13 @@ use crate::{
         std::Registry,
         value::{HeapValue, Type, Value},
     },
-    stack::Stack,
+    stack::{Registers, Stack},
 };
 
 // Default stack size should be roughly 500K (62500 * 8 bytes)
-pub const DEFAULT_STACK_SIZE: usize = 62500;
+pub const MAX_STACK_SIZE: usize = 62500;
+pub const MAX_CALL_STACK_SIZE: usize = 5000;
+pub const MAX_ARG_COUNT: usize = 128;
 
 macro_rules! unwrap {
     (Int, $expr:expr) => {
@@ -56,6 +58,8 @@ pub enum FatalErrorKind {
     InvalidConst(usize),
     #[error("invalid var at: {0}")]
     InvalidVar(usize),
+    #[error("invalid argument at: {0}")]
+    InvalidArg(usize),
     #[error("stack is empty")]
     StackEmpty,
 }
@@ -88,27 +92,29 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-pub type VmDefault = Vm<DEFAULT_STACK_SIZE>;
+pub type VmDefault = Vm<MAX_STACK_SIZE, MAX_CALL_STACK_SIZE, MAX_ARG_COUNT>;
 
-pub struct Vm<const S: usize> {
+pub struct Vm<const S: usize, const C: usize, const A: usize> {
     heap: Heap,
     span: Span,
     std: Registry,
     module: Module,
     cursor: Cursor,
+    args: Registers<Value, A>,
     stack: Stack<Value, S>,
-    call_stack: Vec<Call>,
+    call_stack: Stack<Call, C>,
     vars: HashMap<usize, Value>,
 }
 
-impl<const S: usize> Vm<S> {
+impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
     pub fn new(module: Module) -> Self {
         Self {
-            stack: Stack::default(),
             heap: Heap::default(),
-            call_stack: vec![],
             vars: HashMap::new(),
             span: Span::default(),
+            stack: Stack::default(),
+            args: Registers::default(),
+            call_stack: Stack::default(),
             std: runtime::std::registry(),
             cursor: Cursor::new(&module.codes),
             module,
@@ -197,6 +203,16 @@ impl<const S: usize> Vm<S> {
         Ok(())
     }
 
+    fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
+        let value = self
+            .args
+            .get(idx)
+            .ok_or_else(|| FatalErrorKind::InvalidArg(idx).at(self.span))?;
+        self.stack.push(value);
+
+        Ok(())
+    }
+
     fn load_func(&mut self, idx: usize) -> Result<(), Error> {
         let name = self.const_name(idx)?;
         let func = self
@@ -245,9 +261,14 @@ impl<const S: usize> Vm<S> {
         Ok(())
     }
 
-    fn call(&mut self, args: usize) -> Result<(), Error> {
-        if args > 0 {
-            unimplemented!()
+    fn call(&mut self, arg_count: usize) -> Result<(), Error> {
+        self.args.clear();
+
+        if arg_count > 0 {
+            for i in 0..arg_count {
+                let value = self.pop()?;
+                self.args.set(arg_count - i - 1, value);
+            }
         }
 
         let callee = self.pop()?;
@@ -357,6 +378,7 @@ impl<const S: usize> Vm<S> {
             Type::Float => format!("{}", value.float()),
             Type::Bool => format!("{}", value.bool()),
             Type::Fn => format!("{}(..)", value.func().name),
+            Type::Nil => format!("Nil"),
         })
     }
 
@@ -366,6 +388,7 @@ impl<const S: usize> Vm<S> {
                 let value = self.load_const(idx)?;
                 self.stack.push(value);
             }
+            Op::LoadArg(idx) => self.load_arg(idx)?,
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
             Op::CompareOp(op) => {
@@ -423,10 +446,8 @@ impl<const S: usize> Vm<S> {
             Op::Discard => {
                 self.stack.pop();
             }
-            // @TODO: implement when we have functions
-            Op::Return => {}
+            Op::Return => self.cursor.goto_end(),
             Op::Call(args) => self.call(args)?,
-            Op::JumpIfTrue(idx) => self.jump_cond(idx, false, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
             Op::PushJumpIfTrue(idx) => self.jump_cond(idx, true, true)?,
             Op::PushJumpIfFalse(idx) => self.jump_cond(idx, true, false)?,
@@ -445,7 +466,7 @@ impl<const S: usize> Vm<S> {
     fn add_trace(&mut self, e: Error) -> Error {
         match e {
             Error::Runtime(mut e) => {
-                e.trace = Some(mem::take(&mut self.call_stack));
+                e.trace = Some(self.call_stack.to_vec());
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),
@@ -453,6 +474,8 @@ impl<const S: usize> Vm<S> {
     }
 
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
+        self.cursor.goto(0);
+
         while let Some(op) = self.next() {
             self.eval(op).map_err(|e| self.add_trace(e))?;
         }

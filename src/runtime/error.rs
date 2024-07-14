@@ -37,7 +37,7 @@ impl ErrorKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Default, Clone)]
 pub struct Call {
     pub span: Span,
     pub func: Rc<Func>,

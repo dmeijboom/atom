@@ -13,6 +13,7 @@ enum Tag {
     Str,
     True,
     False,
+    Nil,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
@@ -23,6 +24,7 @@ pub enum Type {
     Array,
     Fn,
     Str,
+    Nil,
 }
 
 impl Display for Type {
@@ -34,6 +36,7 @@ impl Display for Type {
             Type::Str => write!(f, "Str"),
             Type::Array => write!(f, "Array"),
             Type::Fn => write!(f, "Fn"),
+            Type::Nil => write!(f, "Nil"),
         }
     }
 }
@@ -96,6 +99,7 @@ pub struct Value {
 impl Value {
     const FALSE: Self = Self::new_primitive(Tag::False);
     const TRUE: Self = Self::new_primitive(Tag::True);
+    const NIL: Self = Self::new_primitive(Tag::Nil);
 
     pub const fn ty(self) -> Type {
         match (self.bits & TAG_MASK) >> 48 {
@@ -105,6 +109,7 @@ impl Value {
             t if t == Tag::Array as u64 => Type::Array,
             t if t == Tag::Fn as u64 => Type::Fn,
             t if t == Tag::Str as u64 => Type::Str,
+            t if t == Tag::Nil as u64 => Type::Nil,
             _ => unreachable!(),
         }
     }
@@ -181,13 +186,20 @@ impl Value {
 
 impl Default for Value {
     fn default() -> Self {
-        Self::new_primitive(Tag::False)
+        Self::NIL
     }
 }
 
 impl From<i64> for Value {
     fn from(value: i64) -> Self {
-        Self::new(Tag::Int, value as u64)
+        Self::new(
+            Tag::Int,
+            if value < 0 {
+                SIGN_BIT | value.unsigned_abs()
+            } else {
+                value as u64
+            },
+        )
     }
 }
 
