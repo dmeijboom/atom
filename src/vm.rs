@@ -6,6 +6,7 @@ use std::{
 };
 
 use safe_gc::Heap;
+use smallvec::SmallVec;
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
 
@@ -19,12 +20,7 @@ use crate::{
         std::Registry,
         value::{HeapValue, Type, Value},
     },
-    stack::Stack,
 };
-
-// Total stack size limit should be roughly 500K
-pub const MAX_STACK_SIZE: usize = 300000 / size_of::<Value>();
-pub const MAX_CALL_STACK_SIZE: usize = 200000 / size_of::<CallState>();
 
 macro_rules! unwrap {
     (Int, $expr:expr) => {
@@ -104,73 +100,74 @@ pub enum Error {
 }
 
 #[derive(Debug, Default, Clone)]
-struct CallState {
+struct Frame {
     call: Call,
     locals: Vec<Value>,
+    return_addr: Cursor,
 }
 
-pub type VmDefault = Vm<MAX_STACK_SIZE, MAX_CALL_STACK_SIZE>;
+const DEFAULT_STACK_SIZE: usize = 100000 / size_of::<Value>();
+const DEFAULT_CALL_STACK_SIZE: usize = 100000 / size_of::<Frame>();
 
-pub struct Vm<const S: usize, const C: usize> {
+pub struct Vm {
     heap: Heap,
     span: Span,
     std: Registry,
     module: Module,
     cursor: Cursor,
+    returned: bool,
     vars: Vec<Value>,
-    stack: Stack<Value, S>,
-    call_stack: Stack<CallState, C>,
+    stack: SmallVec<[Value; DEFAULT_STACK_SIZE]>,
+    call_stack: SmallVec<[Frame; DEFAULT_CALL_STACK_SIZE]>,
 }
 
-impl<const S: usize, const C: usize> Vm<S, C> {
+impl Vm {
     pub fn new(module: Module) -> Self {
         Self {
             vars: vec![],
+            returned: false,
             heap: Heap::default(),
             span: Span::default(),
-            stack: Stack::default(),
-            call_stack: Stack::default(),
+            stack: SmallVec::default(),
             std: runtime::std::registry(),
-            cursor: Cursor::new(&module.codes),
+            call_stack: SmallVec::default(),
+            cursor: Cursor::new(Rc::clone(&module.codes)),
             module,
         }
     }
 
-    fn call_state(&mut self) -> Result<&mut CallState, Error> {
+    fn call_frame(&mut self) -> Result<&mut Frame, Error> {
         Ok(self
             .call_stack
-            .back_mut()
+            .last_mut()
             .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?)
     }
 
-    fn reset_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
-        let span = self.span;
-        let state = self.call_state()?;
+    fn replace_cursor(&mut self, cursor: impl Into<Cursor>) -> Cursor {
+        mem::replace(&mut self.cursor, cursor.into())
+    }
 
-        state.call.func = func;
-        state.call.span = span;
+    fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
+        let return_addr = self.cursor.clone();
+        let state = self.call_frame()?;
+
+        state.return_addr = return_addr;
         resize(&mut state.locals, arg_count);
+
+        self.returned = false;
+        self.cursor.goto(0);
 
         Ok(())
     }
 
     fn push_call(&mut self, func: Rc<Func>, arg_count: usize) {
-        self.call_stack.push(CallState {
+        let return_addr = self.replace_cursor(&func.codes);
+
+        self.call_stack.push(Frame {
             call: Call::new(self.span, func),
             locals: vec![Value::NIL; arg_count],
+            return_addr,
         });
-    }
-
-    fn pop_call(&mut self) {
-        self.call_stack.pop();
-    }
-
-    fn fork(&mut self, cursor: Cursor) -> Cursor {
-        mem::replace(&mut self.cursor, cursor)
-    }
-
-    fn restore(&mut self, cursor: Cursor) {
-        self.cursor = cursor;
     }
 
     fn goto(&mut self, n: usize) {
@@ -184,7 +181,6 @@ impl<const S: usize, const C: usize> Vm<S, C> {
     fn next(&mut self) -> Option<Op> {
         if let Some(code) = self.cursor.next() {
             self.span = code.span;
-
             Some(code.op)
         } else {
             None
@@ -247,7 +243,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
             .get(name)
             .ok_or_else(|| ErrorKind::UnknownFunc(name.to_string()).at(self.span))?;
 
-        self.stack.push(Value::new_func(func.clone()));
+        self.stack.push(Value::new_func(Rc::clone(func)));
         Ok(())
     }
 
@@ -259,7 +255,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
     }
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
-        match self.call_stack.back() {
+        match self.call_stack.last() {
             Some(state) => match state.locals.get(idx).copied() {
                 Some(value) => {
                     self.stack.push(value);
@@ -306,27 +302,15 @@ impl<const S: usize, const C: usize> Vm<S, C> {
         match callee.ty() {
             Type::Fn => {
                 let func = callee.func();
-                let previous = self.fork(Cursor::new(&func.codes));
 
                 if tail_call {
-                    self.reset_call(func, arg_count)?;
+                    self.push_tail_call(arg_count)?;
                 } else {
                     self.push_call(func, arg_count);
                 }
 
                 for i in 0..arg_count {
-                    self.call_state()?.locals[arg_count - i - 1] = self.pop()?;
-                }
-
-                match self.run()? {
-                    Some(value) => self.stack.push(value),
-                    None => self.stack.push(Value::NIL),
-                }
-
-                self.restore(previous);
-
-                if !tail_call {
-                    self.pop_call();
+                    self.call_frame()?.locals[arg_count - i - 1] = self.pop()?;
                 }
 
                 Ok(())
@@ -490,7 +474,10 @@ impl<const S: usize, const C: usize> Vm<S, C> {
             Op::Discard => {
                 self.stack.pop();
             }
-            Op::Return => self.cursor.goto_end(),
+            Op::Return => {
+                self.returned = true;
+                self.cursor.goto_end();
+            }
             Op::Call(args) => self.call(args, false)?,
             Op::TailCall(args) => self.call(args, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
@@ -511,13 +498,8 @@ impl<const S: usize, const C: usize> Vm<S, C> {
     fn add_trace(&mut self, e: Error) -> Error {
         match e {
             Error::Runtime(mut e) => {
-                e.trace = Some(
-                    self.call_stack
-                        .to_vec()
-                        .into_iter()
-                        .map(|s| s.call)
-                        .collect::<Vec<_>>(),
-                );
+                let call_stack = mem::take(&mut self.call_stack);
+                e.trace = Some(call_stack.into_iter().map(|s| s.call).collect::<Vec<_>>());
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),
@@ -525,10 +507,22 @@ impl<const S: usize, const C: usize> Vm<S, C> {
     }
 
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
-        self.cursor.goto(0);
+        loop {
+            while let Some(op) = self.next() {
+                self.eval(op).map_err(|e| self.add_trace(e))?;
+            }
 
-        while let Some(op) = self.next() {
-            self.eval(op).map_err(|e| self.add_trace(e))?;
+            match self.call_stack.pop() {
+                Some(state) => {
+                    if !self.returned {
+                        self.stack.push(Value::NIL);
+                    }
+
+                    self.returned = false;
+                    self.cursor = state.return_addr;
+                }
+                None => break,
+            }
         }
 
         Ok(self.stack.pop())

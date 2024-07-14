@@ -83,34 +83,38 @@ impl Func {
     }
 }
 
+#[derive(Debug, Default, Clone)]
 pub struct Cursor {
-    n: usize,
+    pos: usize,
     codes: Rc<Vec<Code>>,
 }
 
 impl Cursor {
-    pub fn new(codes: &Rc<Vec<Code>>) -> Self {
-        Self {
-            n: 0,
-            codes: Rc::clone(codes),
-        }
+    pub fn new(codes: Rc<Vec<Code>>) -> Self {
+        Self { pos: 0, codes }
     }
 
     pub fn next(&mut self) -> Option<&Code> {
-        let code = self.codes.get(self.n);
-        self.n += 1;
+        let code = self.codes.get(self.pos);
+        self.pos += 1;
         code
     }
 
     pub fn cur(&self) -> Option<&Code> {
-        self.codes.get(self.n)
+        self.codes.get(self.pos)
     }
 
     pub fn goto(&mut self, n: usize) {
-        self.n = n;
+        self.pos = n;
     }
 
     pub fn goto_end(&mut self) {
-        self.n = self.codes.len();
+        self.pos = self.codes.len();
+    }
+}
+
+impl From<&Rc<Vec<Code>>> for Cursor {
+    fn from(codes: &Rc<Vec<Code>>) -> Self {
+        Cursor::new(Rc::clone(codes))
     }
 }

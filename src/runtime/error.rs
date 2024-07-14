@@ -44,16 +44,11 @@ impl ErrorKind {
 pub struct Call {
     pub span: Span,
     pub func: Rc<Func>,
-    pub receiver: Option<Type>,
 }
 
 impl Call {
     pub fn new(span: Span, func: Rc<Func>) -> Self {
-        Call {
-            span,
-            func,
-            receiver: None,
-        }
+        Call { span, func }
     }
 }
 

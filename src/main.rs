@@ -9,7 +9,7 @@ use tracing_subscriber::EnvFilter;
 
 use compiler::{Compiler, Module};
 use lexer::Lexer;
-use vm::VmDefault;
+use vm::Vm;
 
 mod ast;
 mod codes;
@@ -17,7 +17,6 @@ mod compiler;
 mod lexer;
 mod parser;
 mod runtime;
-mod stack;
 mod vm;
 
 #[derive(Debug, thiserror::Error)]
@@ -99,8 +98,8 @@ fn main() -> Result<(), Error> {
 
     match opts.cmd {
         Cmd::Run { source } => {
-            let module = compile(&source)?;
-            let mut vm = VmDefault::new(module);
+            let module = compile(source)?;
+            let mut vm = Vm::new(module);
             let value = vm.run()?;
 
             if let Some(value) = value {
@@ -108,7 +107,7 @@ fn main() -> Result<(), Error> {
             }
         }
         Cmd::Compile { source, verbose } => {
-            let module = compile(&source)?;
+            let module = compile(source)?;
 
             if verbose {
                 print_module(&module);

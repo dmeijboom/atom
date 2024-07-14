@@ -5,6 +5,8 @@ use std::{
     rc::Rc,
 };
 
+use rustc_hash::FxHashMap;
+
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
     codes::{BinaryOp, Code, CompareOp, Const, Func, Op},
@@ -55,7 +57,7 @@ struct Local {
 pub struct Module {
     pub codes: Rc<Vec<Code>>,
     pub consts: Vec<Const>,
-    pub funcs: HashMap<String, Rc<Func>>,
+    pub funcs: FxHashMap<String, Rc<Func>>,
 }
 
 pub struct Compiler {
@@ -63,8 +65,8 @@ pub struct Compiler {
     vars: Vec<Var>,
     codes: Vec<Code>,
     consts: Vec<Const>,
+    funcs: FxHashMap<String, Rc<Func>>,
     locals: VecDeque<HashMap<String, Local>>,
-    funcs: HashMap<String, Rc<Func>>,
 }
 
 impl Compiler {
@@ -74,7 +76,7 @@ impl Compiler {
             vars: vec![],
             codes: vec![],
             consts: vec![],
-            funcs: HashMap::new(),
+            funcs: FxHashMap::default(),
             locals: VecDeque::default(),
         }
     }
@@ -334,10 +336,19 @@ impl Compiler {
     }
 
     fn optimize_tail_call(&mut self) {
-        for code in self.codes.iter_mut().rev() {
-            if let Op::Call(idx) = code.op {
-                code.op = Op::TailCall(idx);
-                break;
+        let n = self.codes.len() - 2;
+
+        if let Some(code) = self.codes.last_mut() {
+            match code.op {
+                Op::Call(idx) => code.op = Op::TailCall(idx),
+                Op::Return => {
+                    if let Some(code) = self.codes.get_mut(n) {
+                        if let Op::Call(idx) = code.op {
+                            code.op = Op::TailCall(idx);
+                        }
+                    }
+                }
+                _ => {}
             }
         }
     }
