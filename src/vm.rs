@@ -6,6 +6,7 @@ use std::{
 };
 
 use safe_gc::Heap;
+#[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
 
 use crate::{
@@ -125,6 +126,19 @@ impl<const S: usize, const C: usize> Vm<S, C> {
             cursor: Cursor::new(&module.codes),
             module,
         }
+    }
+
+    fn reset_call(&mut self, func: Rc<Func>) -> Result<(), Error> {
+        let state = self
+            .call_stack
+            .back_mut()
+            .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?;
+
+        state.call.func = func;
+        state.call.span = self.span;
+        state.locals.clear();
+
+        Ok(())
     }
 
     fn push_call(&mut self, func: Rc<Func>) {
@@ -273,7 +287,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
         Ok(())
     }
 
-    fn call(&mut self, arg_count: usize) -> Result<(), Error> {
+    fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
         let callee = self.pop()?;
 
         match callee.ty() {
@@ -281,7 +295,11 @@ impl<const S: usize, const C: usize> Vm<S, C> {
                 let func = callee.func();
                 let previous = self.fork(Cursor::new(&func.codes));
 
-                self.push_call(Rc::clone(&func));
+                if tail_call {
+                    self.reset_call(func)?;
+                } else {
+                    self.push_call(func);
+                }
 
                 for i in 0..arg_count {
                     let value = self.pop()?;
@@ -299,7 +317,10 @@ impl<const S: usize, const C: usize> Vm<S, C> {
                 }
 
                 self.restore(previous);
-                self.pop_call();
+
+                if !tail_call {
+                    self.pop_call();
+                }
 
                 Ok(())
             }
@@ -396,7 +417,7 @@ impl<const S: usize, const C: usize> Vm<S, C> {
         })
     }
 
-    #[instrument(level = Level::DEBUG, skip(self), ret(Debug))]
+    #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
@@ -462,7 +483,8 @@ impl<const S: usize, const C: usize> Vm<S, C> {
                 self.stack.pop();
             }
             Op::Return => self.cursor.goto_end(),
-            Op::Call(args) => self.call(args)?,
+            Op::Call(args) => self.call(args, false)?,
+            Op::TailCall(args) => self.call(args, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
             Op::PushJumpIfTrue(idx) => self.jump_cond(idx, true, true)?,
             Op::PushJumpIfFalse(idx) => self.jump_cond(idx, true, false)?,

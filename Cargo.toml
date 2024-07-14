@@ -3,11 +3,16 @@ name = "atom"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+tracing = ["dep:tracing", "dep:tracing-subscriber"]
+
 [dependencies]
 safe-gc = "1.0.0"
 thiserror = "1.0.61"
-tracing = "0.1.40"
-tracing-subscriber = { version = "0.3.18", features = ["env-filter"] }
+tracing = { version = "0.1.40", optional = true }
+tracing-subscriber = { version = "0.3.18", features = [
+    "env-filter",
+], optional = true }
 
 [patch.crates-io]
 safe-gc = { git = "https://github.com/dmeijboom/safe-gc.git", branch = "main" }

@@ -1,9 +1,11 @@
 use std::fs;
 
+#[cfg(feature = "tracing")]
+use tracing_subscriber::EnvFilter;
+
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
-use tracing_subscriber::EnvFilter;
 use vm::VmDefault;
 
 mod ast;
@@ -30,6 +32,7 @@ enum Error {
 }
 
 fn main() -> Result<(), Error> {
+    #[cfg(feature = "tracing")]
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env())
         .init();

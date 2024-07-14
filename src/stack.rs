@@ -1,5 +1,6 @@
 use std::{fmt::Debug, mem};
 
+#[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
 
 pub struct Stack<T: Default + Debug, const N: usize> {
@@ -24,7 +25,7 @@ impl<T: Default + Debug, const N: usize> Stack<T, N> {
         self.data.get_mut(self.size - 1)
     }
 
-    #[instrument(level = Level::TRACE, skip_all, fields(size = self.size, ?value), ret)]
+    #[cfg_attr(feature = "tracing", instrument(level = Level::TRACE, skip_all, fields(size = self.size, ?value), ret))]
     pub fn push(&mut self, value: T) {
         if self.size >= N {
             panic!("stack size exceeded");
@@ -34,7 +35,7 @@ impl<T: Default + Debug, const N: usize> Stack<T, N> {
         self.size += 1;
     }
 
-    #[instrument(level = Level::TRACE, skip_all, fields(size = self.size), ret(Debug))]
+    #[cfg_attr(feature = "tracing", instrument(level = Level::TRACE, skip_all, fields(size = self.size), ret(Debug)))]
     pub fn pop(&mut self) -> Option<T> {
         if self.size == 0 {
             return None;

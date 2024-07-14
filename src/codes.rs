@@ -39,6 +39,7 @@ pub enum Op {
     PushJumpIfTrue(usize),
     MakeArray(usize),
     Call(usize),
+    TailCall(usize),
     UnaryNot,
     LoadElement,
     LoadMember(usize),

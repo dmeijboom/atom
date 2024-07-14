@@ -290,7 +290,7 @@ impl Compiler {
 
         self.funcs.insert(name.clone(), Rc::new(Func::default()));
         let previous = self.push_scope(args);
-        self.compile_body(stmts)?;
+        self.compile_body(stmts, true)?;
 
         let codes = self.pop_scope(previous);
         self.funcs
@@ -324,7 +324,7 @@ impl Compiler {
                 self.expr(expr)?;
                 let idx = self.push_code(Op::JumpIfFalse(0).at(stmt.span));
                 self.scope += 1;
-                self.compile_body(stmts)?;
+                self.compile_body(stmts, false)?;
                 self.scope -= 1;
                 self.codes[idx] = Op::JumpIfFalse(self.loc()).at(stmt.span);
             }
@@ -333,16 +333,29 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_body(&mut self, stmts: Vec<Stmt>) -> Result<(), Error> {
+    fn optimize_tail_call(&mut self) {
+        for code in self.codes.iter_mut().rev() {
+            if let Op::Call(idx) = code.op {
+                code.op = Op::TailCall(idx);
+                break;
+            }
+        }
+    }
+
+    fn compile_body(&mut self, stmts: Vec<Stmt>, func: bool) -> Result<(), Error> {
         for stmt in stmts {
             self.stmt(stmt)?;
+        }
+
+        if func {
+            self.optimize_tail_call();
         }
 
         Ok(())
     }
 
     pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, Error> {
-        self.compile_body(stmts)?;
+        self.compile_body(stmts, false)?;
 
         Ok(Module {
             codes: Rc::new(self.codes),
