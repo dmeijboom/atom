@@ -1,4 +1,7 @@
-use std::{fmt::Display, rc::Rc};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use safe_gc::{Collector, Gc, Trace};
 
@@ -91,7 +94,7 @@ fn handle_to_bits(handle: Gc<HeapValue>) -> u64 {
     (hi as u64) << 32 | low as u64
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 pub struct Value {
     bits: u64,
 }
@@ -99,8 +102,8 @@ pub struct Value {
 impl Value {
     const FALSE: Self = Self::new_primitive(Tag::False);
     const TRUE: Self = Self::new_primitive(Tag::True);
-    const NIL: Self = Self::new_primitive(Tag::Nil);
     const NAN: Self = Self::new_primitive(Tag::Float);
+    pub const NIL: Self = Self::new_primitive(Tag::Nil);
 
     pub const fn ty(self) -> Type {
         if self.bits == Self::NAN.bits || (self.bits & QUIET_NAN) != QUIET_NAN {
@@ -192,6 +195,28 @@ impl Value {
 impl Default for Value {
     fn default() -> Self {
         Self::NIL
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.ty() {
+            Type::Int => write!(f, "{}", self.int()),
+            Type::Float => write!(f, "{}", self.float()),
+            Type::Bool => write!(f, "{}", self.bool()),
+            Type::Array => write!(f, "Array"),
+            Type::Fn => write!(f, "Fn"),
+            Type::Str => write!(f, "Str"),
+            Type::Nil => write!(f, "Nil"),
+        }
+    }
+}
+
+impl Debug for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Value{{")?;
+        std::fmt::Display::fmt(&self, f)?;
+        write!(f, "}}")
     }
 }
 

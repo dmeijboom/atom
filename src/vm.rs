@@ -1,11 +1,12 @@
 use std::{
     collections::HashMap,
     fmt::{self, Display, Formatter},
-    mem,
+    mem::{self, size_of},
     rc::Rc,
 };
 
 use safe_gc::Heap;
+use tracing::{instrument, Level};
 
 use crate::{
     codes::{BinaryOp, CompareOp, Const, Cursor, Func, Op},
@@ -17,13 +18,12 @@ use crate::{
         std::Registry,
         value::{HeapValue, Type, Value},
     },
-    stack::{Registers, Stack},
+    stack::Stack,
 };
 
-// Default stack size should be roughly 500K (62500 * 8 bytes)
-pub const MAX_STACK_SIZE: usize = 62500;
-pub const MAX_CALL_STACK_SIZE: usize = 5000;
-pub const MAX_ARG_COUNT: usize = 128;
+// Total stack size limit should be roughly 500K
+pub const MAX_STACK_SIZE: usize = 300000 / size_of::<Value>();
+pub const MAX_CALL_STACK_SIZE: usize = 200000 / size_of::<CallState>();
 
 macro_rules! unwrap {
     (Int, $expr:expr) => {
@@ -62,6 +62,8 @@ pub enum FatalErrorKind {
     InvalidArg(usize),
     #[error("stack is empty")]
     StackEmpty,
+    #[error("call stack is empty")]
+    CallStackEmpty,
 }
 
 impl FatalErrorKind {
@@ -92,28 +94,32 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-pub type VmDefault = Vm<MAX_STACK_SIZE, MAX_CALL_STACK_SIZE, MAX_ARG_COUNT>;
+#[derive(Debug, Default, Clone)]
+struct CallState {
+    call: Call,
+    locals: HashMap<usize, Value>,
+}
 
-pub struct Vm<const S: usize, const C: usize, const A: usize> {
+pub type VmDefault = Vm<MAX_STACK_SIZE, MAX_CALL_STACK_SIZE>;
+
+pub struct Vm<const S: usize, const C: usize> {
     heap: Heap,
     span: Span,
     std: Registry,
     module: Module,
     cursor: Cursor,
-    args: Registers<Value, A>,
     stack: Stack<Value, S>,
-    call_stack: Stack<Call, C>,
+    call_stack: Stack<CallState, C>,
     vars: HashMap<usize, Value>,
 }
 
-impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
+impl<const S: usize, const C: usize> Vm<S, C> {
     pub fn new(module: Module) -> Self {
         Self {
             heap: Heap::default(),
             vars: HashMap::new(),
             span: Span::default(),
             stack: Stack::default(),
-            args: Registers::default(),
             call_stack: Stack::default(),
             std: runtime::std::registry(),
             cursor: Cursor::new(&module.codes),
@@ -122,18 +128,21 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
     }
 
     fn push_call(&mut self, func: Rc<Func>) {
-        self.call_stack.push(Call::new(self.span, func));
+        self.call_stack.push(CallState {
+            call: Call::new(self.span, func),
+            locals: HashMap::new(),
+        });
     }
 
-    fn pop_call(&mut self) -> Option<Call> {
-        self.call_stack.pop()
+    fn pop_call(&mut self) {
+        self.call_stack.pop();
     }
 
-    fn with_cursor(&mut self, cursor: Cursor) -> Cursor {
+    fn fork(&mut self, cursor: Cursor) -> Cursor {
         mem::replace(&mut self.cursor, cursor)
     }
 
-    fn restore_cursor(&mut self, cursor: Cursor) {
+    fn restore(&mut self, cursor: Cursor) {
         self.cursor = cursor;
     }
 
@@ -203,16 +212,6 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
         Ok(())
     }
 
-    fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
-        let value = self
-            .args
-            .get(idx)
-            .ok_or_else(|| FatalErrorKind::InvalidArg(idx).at(self.span))?;
-        self.stack.push(value);
-
-        Ok(())
-    }
-
     fn load_func(&mut self, idx: usize) -> Result<(), Error> {
         let name = self.const_name(idx)?;
         let func = self
@@ -229,6 +228,19 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
         match self.vars.get(&idx) {
             Some(value) => Ok(value.clone()),
             None => Err(FatalErrorKind::InvalidVar(idx).at(self.span).into()),
+        }
+    }
+
+    fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
+        match self.call_stack.back() {
+            Some(state) => match state.locals.get(&idx).cloned() {
+                Some(value) => {
+                    self.stack.push(value);
+                    Ok(())
+                }
+                None => Err(FatalErrorKind::InvalidArg(idx).at(self.span).into()),
+            },
+            None => Err(FatalErrorKind::StackEmpty.at(self.span).into()),
         }
     }
 
@@ -262,29 +274,31 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
     }
 
     fn call(&mut self, arg_count: usize) -> Result<(), Error> {
-        self.args.clear();
-
-        if arg_count > 0 {
-            for i in 0..arg_count {
-                let value = self.pop()?;
-                self.args.set(arg_count - i - 1, value);
-            }
-        }
-
         let callee = self.pop()?;
 
         match callee.ty() {
             Type::Fn => {
                 let func = callee.func();
-                let previous = self.with_cursor(Cursor::new(&func.codes));
+                let previous = self.fork(Cursor::new(&func.codes));
 
                 self.push_call(Rc::clone(&func));
 
-                if let Some(return_value) = self.run()? {
-                    self.stack.push(return_value);
+                for i in 0..arg_count {
+                    let value = self.pop()?;
+                    let state = self
+                        .call_stack
+                        .back_mut()
+                        .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?;
+
+                    state.locals.insert(arg_count - i - 1, value);
                 }
 
-                self.restore_cursor(previous);
+                match self.run()? {
+                    Some(value) => self.stack.push(value),
+                    None => self.stack.push(Value::NIL),
+                }
+
+                self.restore(previous);
                 self.pop_call();
 
                 Ok(())
@@ -382,13 +396,13 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
         })
     }
 
+    #[instrument(level = Level::DEBUG, skip(self), ret(Debug))]
     fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
                 let value = self.load_const(idx)?;
                 self.stack.push(value);
             }
-            Op::LoadArg(idx) => self.load_arg(idx)?,
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
             Op::CompareOp(op) => {
@@ -443,6 +457,7 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
                 let value = self.load_var(idx)?;
                 self.stack.push(value);
             }
+            Op::LoadArg(idx) => self.load_arg(idx)?,
             Op::Discard => {
                 self.stack.pop();
             }
@@ -466,7 +481,13 @@ impl<const S: usize, const C: usize, const A: usize> Vm<S, C, A> {
     fn add_trace(&mut self, e: Error) -> Error {
         match e {
             Error::Runtime(mut e) => {
-                e.trace = Some(self.call_stack.to_vec());
+                e.trace = Some(
+                    self.call_stack
+                        .to_vec()
+                        .into_iter()
+                        .map(|s| s.call)
+                        .collect::<Vec<_>>(),
+                );
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),

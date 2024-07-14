@@ -3,6 +3,7 @@ use std::fs;
 use compiler::Compiler;
 use lexer::Lexer;
 use parser::Parser;
+use tracing_subscriber::EnvFilter;
 use vm::VmDefault;
 
 mod ast;
@@ -29,6 +30,10 @@ enum Error {
 }
 
 fn main() -> Result<(), Error> {
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
     let source = fs::read_to_string("main.atom")?;
     let chars = source.chars().collect::<Vec<_>>();
 

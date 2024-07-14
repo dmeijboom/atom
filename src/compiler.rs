@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fmt::Display, mem, rc::Rc};
+use std::{
+    collections::{HashMap, VecDeque},
+    fmt::Display,
+    mem,
+    rc::Rc,
+};
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
@@ -34,9 +39,16 @@ impl Display for Error {
 
 impl std::error::Error for Error {}
 
+#[derive(Debug)]
 struct Var {
+    index: usize,
     name: String,
     scope: usize,
+}
+
+#[derive(Debug)]
+struct Local {
+    index: usize,
 }
 
 #[derive(Debug, Default)]
@@ -51,6 +63,7 @@ pub struct Compiler {
     vars: Vec<Var>,
     codes: Vec<Code>,
     consts: Vec<Const>,
+    locals: VecDeque<HashMap<String, Local>>,
     funcs: HashMap<String, Rc<Func>>,
 }
 
@@ -62,16 +75,27 @@ impl Compiler {
             codes: vec![],
             consts: vec![],
             funcs: HashMap::new(),
+            locals: VecDeque::default(),
         }
     }
 
-    fn push_scope(&mut self) -> Vec<Code> {
+    fn push_scope(&mut self, locals: Vec<String>) -> Vec<Code> {
+        let locals = locals
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| (n, Local { index: i }))
+            .collect();
+
         self.scope += 1;
+        self.locals.push_front(locals);
+
         mem::take(&mut self.codes)
     }
 
     fn pop_scope(&mut self, codes: Vec<Code>) -> Vec<Code> {
         self.scope -= 1;
+        self.locals.pop_front();
+
         mem::replace(&mut self.codes, codes)
     }
 
@@ -96,18 +120,18 @@ impl Compiler {
     }
 
     fn push_var(&mut self, span: Span, name: String) -> Result<usize, Error> {
-        if let Ok(idx) = self.load_var(span, &name) {
+        if let Ok(idx) = self.load_var(span, &name, true) {
             return Ok(idx);
         }
 
         let idx = self.vars.len();
 
         self.vars.push(Var {
+            index: idx,
             name,
             scope: self.scope,
         });
 
-        // @TODO: there has to be a smarter way to do this..
         self.vars.sort_by(|a, b| b.scope.cmp(&a.scope));
 
         Ok(idx)
@@ -115,16 +139,33 @@ impl Compiler {
 
     fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Code, Error> {
         let arg_count = args.len();
-        self.expr(callee)?;
         self.expr_list(args)?;
+        self.expr(callee)?;
 
         Ok(Op::Call(arg_count).at(span))
     }
 
-    fn load_var(&mut self, span: Span, name: &str) -> Result<usize, Error> {
+    fn load_local(&mut self, name: &str) -> Option<usize> {
+        if let Some(locals) = self.locals.front() {
+            return locals.get(name).map(|l| l.index);
+        }
+
+        None
+    }
+
+    fn load_var(&mut self, span: Span, name: &str, strict_scope: bool) -> Result<usize, Error> {
         self.vars
             .iter()
-            .position(|v| v.name == name)
+            .filter(|v| {
+                v.name == name
+                    && if strict_scope {
+                        v.scope == self.scope
+                    } else {
+                        v.scope <= self.scope
+                    }
+            })
+            .map(|v| v.index)
+            .next()
             .ok_or_else(|| ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
@@ -155,15 +196,19 @@ impl Compiler {
         Ok(())
     }
 
+    // Load a name based in the following order: var > local > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Code, Error> {
-        match self.load_var(span, &name) {
+        match self.load_var(span, &name, false) {
             Ok(idx) => Ok(Op::Load(idx).at(span)),
-            Err(e) => match self.funcs.contains_key(&name) {
-                true => {
-                    let idx = self.push_const(Const::Str(name));
-                    Ok(Op::LoadFunc(idx).at(span))
-                }
-                false => Err(e),
+            Err(e) => match self.load_local(&name) {
+                Some(idx) => Ok(Op::LoadArg(idx).at(span)),
+                None => match self.funcs.contains_key(&name) {
+                    true => {
+                        let idx = self.push_const(Const::Str(name));
+                        Ok(Op::LoadFunc(idx).at(span))
+                    }
+                    false => Err(e),
+                },
             },
         }
     }
@@ -244,16 +289,7 @@ impl Compiler {
         }
 
         self.funcs.insert(name.clone(), Rc::new(Func::default()));
-
-        let previous = self.push_scope();
-
-        for (i, arg) in args.into_iter().enumerate() {
-            let idx = self.push_var(span, arg)?;
-
-            self.push_code(Op::LoadArg(i).at(span));
-            self.push_code(Op::Store(idx).at(span));
-        }
-
+        let previous = self.push_scope(args);
         self.compile_body(stmts)?;
 
         let codes = self.pop_scope(previous);
@@ -271,7 +307,7 @@ impl Compiler {
                 self.push_code(Op::Store(idx).at(stmt.span));
             }
             StmtKind::Assign(name, expr) => {
-                let idx = self.load_var(stmt.span, &name)?;
+                let idx = self.load_var(stmt.span, &name, false)?;
                 self.expr(expr)?;
                 self.push_code(Op::Store(idx).at(stmt.span));
             }
@@ -313,5 +349,23 @@ impl Compiler {
             consts: self.consts,
             funcs: self.funcs,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_scope() {
+        let mut compiler = Compiler::new();
+
+        compiler.push_var(Span::default(), "n".to_string()).unwrap();
+        compiler.push_scope();
+
+        let expected = compiler.push_var(Span::default(), "n".to_string()).unwrap();
+        let actual = compiler.load_var(Span::default(), "n", false).unwrap();
+
+        assert_eq!(expected, actual);
     }
 }

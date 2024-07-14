@@ -1,4 +1,7 @@
-use std::{fmt::Display, rc::Rc};
+use std::{
+    fmt::{Debug, Display},
+    rc::Rc,
+};
 
 use crate::{
     codes::{BinaryOp, Func},
@@ -37,7 +40,7 @@ impl ErrorKind {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub struct Call {
     pub span: Span,
     pub func: Rc<Func>,
@@ -54,6 +57,20 @@ impl Call {
     }
 }
 
+impl Display for Call {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}(..)", self.func.name)
+    }
+}
+
+impl Debug for Call {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Call{{")?;
+        std::fmt::Display::fmt(&self, f)?;
+        write!(f, "}}")
+    }
+}
+
 #[derive(Debug)]
 pub struct Error {
     pub kind: ErrorKind,
@@ -63,7 +80,7 @@ pub struct Error {
 
 impl Display for Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.kind.fmt(f)
+        std::fmt::Display::fmt(&self.kind, f)
     }
 }
 

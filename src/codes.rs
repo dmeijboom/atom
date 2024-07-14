@@ -32,7 +32,6 @@ pub enum Op {
     Store(usize),
     Load(usize),
     LoadFunc(usize),
-    LoadArg(usize),
     Discard,
     Return,
     JumpIfFalse(usize),
@@ -43,6 +42,7 @@ pub enum Op {
     UnaryNot,
     LoadElement,
     LoadMember(usize),
+    LoadArg(usize),
 }
 
 impl Op {
@@ -74,13 +74,6 @@ pub struct Func {
 }
 
 impl Func {
-    pub fn new(name: String) -> Self {
-        Self {
-            name,
-            codes: Rc::default(),
-        }
-    }
-
     pub fn with_codes(name: String, codes: Vec<Code>) -> Self {
         Self {
             name,
