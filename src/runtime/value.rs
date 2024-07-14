@@ -100,8 +100,13 @@ impl Value {
     const FALSE: Self = Self::new_primitive(Tag::False);
     const TRUE: Self = Self::new_primitive(Tag::True);
     const NIL: Self = Self::new_primitive(Tag::Nil);
+    const NAN: Self = Self::new_primitive(Tag::Float);
 
     pub const fn ty(self) -> Type {
+        if self.bits == Self::NAN.bits || (self.bits & QUIET_NAN) != QUIET_NAN {
+            return Type::Float;
+        }
+
         match (self.bits & TAG_MASK) >> 48 {
             t if t == Tag::Int as u64 => Type::Int,
             t if t == Tag::Float as u64 => Type::Float,
@@ -120,7 +125,7 @@ impl Value {
 
     const fn new_primitive(tag: Tag) -> Self {
         Self {
-            bits: (tag as u64) << 48,
+            bits: (tag as u64) << 48 | QUIET_NAN,
         }
     }
 
@@ -192,6 +197,10 @@ impl Default for Value {
 
 impl From<i64> for Value {
     fn from(value: i64) -> Self {
+        if value.unsigned_abs() > INT_MASK {
+            panic!("integer overflow");
+        }
+
         Self::new(
             Tag::Int,
             if value < 0 {
@@ -205,7 +214,9 @@ impl From<i64> for Value {
 
 impl From<f64> for Value {
     fn from(value: f64) -> Self {
-        Self::new(Tag::Float, value.to_bits())
+        Self {
+            bits: value.to_bits(),
+        }
     }
 }
 
@@ -216,5 +227,39 @@ impl From<bool> for Value {
         } else {
             Self::FALSE
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_int() {
+        for i in -1000000..1000000 {
+            let value = Value::from(i);
+            assert_eq!(value.int(), i);
+        }
+    }
+
+    #[test]
+    fn test_float() {
+        let mut i = -10000.0;
+
+        while i < 10000.0 {
+            let value = Value::from(i);
+            assert_eq!(value.float(), i);
+
+            i += 0.1;
+        }
+    }
+
+    #[test]
+    fn test_bool() {
+        let value = Value::from(true);
+        assert_eq!(value.bool(), true);
+
+        let value = Value::from(false);
+        assert_eq!(value.bool(), false);
     }
 }
