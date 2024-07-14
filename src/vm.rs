@@ -102,7 +102,8 @@ pub enum Error {
 #[derive(Debug, Default, Clone)]
 struct Frame {
     call: Call,
-    locals: Vec<Value>,
+    // Locals (in reversed order)
+    locals: SmallVec<[Value; 8]>,
     return_addr: Cursor,
 }
 
@@ -152,7 +153,7 @@ impl Vm {
         let state = self.call_frame()?;
 
         state.return_addr = return_addr;
-        resize(&mut state.locals, arg_count);
+        state.locals.resize(arg_count, Value::NIL);
 
         self.returned = false;
         self.cursor.goto(0);
@@ -165,7 +166,7 @@ impl Vm {
 
         self.call_stack.push(Frame {
             call: Call::new(self.span, func),
-            locals: vec![Value::NIL; arg_count],
+            locals: SmallVec::with_capacity(arg_count),
             return_addr,
         });
     }
@@ -256,7 +257,7 @@ impl Vm {
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
         match self.call_stack.last() {
-            Some(state) => match state.locals.get(idx).copied() {
+            Some(state) => match state.locals.get(state.locals.len() - idx - 1).copied() {
                 Some(value) => {
                     self.stack.push(value);
                     Ok(())
@@ -309,8 +310,9 @@ impl Vm {
                     self.push_call(func, arg_count);
                 }
 
-                for i in 0..arg_count {
-                    self.call_frame()?.locals[arg_count - i - 1] = self.pop()?;
+                for _ in 0..arg_count {
+                    let value = self.pop()?;
+                    self.call_frame()?.locals.push(value);
                 }
 
                 Ok(())
