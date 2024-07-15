@@ -322,6 +322,12 @@ impl Vm {
             Type::Fn => {
                 let func = callee.func();
 
+                if arg_count != func.arg_count {
+                    return Err(ErrorKind::ArgCountMismatch { func, arg_count }
+                        .at(self.span)
+                        .into());
+                }
+
                 if tail_call {
                     self.push_tail_call(arg_count)?;
                 } else {

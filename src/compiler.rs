@@ -286,12 +286,14 @@ impl Compiler {
         }
 
         let idx = self.funcs.len();
-        self.funcs.push(Rc::new(Func::new(name.clone())));
+        let arg_count = args.len();
+
+        self.funcs.push(Rc::new(Func::new(name.clone(), arg_count)));
         let previous = self.push_scope(args);
         self.compile_body(stmts, true)?;
 
         let codes = self.pop_scope(previous);
-        self.funcs[idx] = Rc::new(Func::with_codes(name, codes));
+        self.funcs[idx] = Rc::new(Func::with_codes(name, arg_count, codes));
 
         Ok(())
     }

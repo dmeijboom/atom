@@ -18,6 +18,8 @@ pub enum ErrorKind {
     IndexOutOfBounds(usize),
     #[error("cannot call non-function: {0}")]
     NotCallable(Type),
+    #[error("invalid argument count on '{}(..)': expected {}, got: {arg_count}", func.name, func.arg_count)]
+    ArgCountMismatch { arg_count: usize, func: Rc<Func> },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
     #[error("unsupported operation '{op:?}' for {left} and {right}")]
