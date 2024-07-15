@@ -3,12 +3,9 @@ use std::{
     rc::Rc,
 };
 
-use crate::{
-    codes::{BinaryOp, Func},
-    lexer::Span,
-};
+use crate::{codes::BinaryOp, lexer::Span};
 
-use super::value::Type;
+use super::{function::Func, value::Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {

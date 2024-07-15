@@ -7,8 +7,9 @@ use std::{
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
-    codes::{BinaryOp, Code, CompareOp, Const, Func, Op},
+    codes::{BinaryOp, Code, CompareOp, Const, Op},
     lexer::Span,
+    runtime::{function::Func, std::StdLib},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -51,14 +52,25 @@ struct Local {
     index: usize,
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct Module {
-    pub codes: Rc<Vec<Code>>,
+    pub codes: Rc<[Code]>,
     pub consts: Vec<Const>,
     pub funcs: Vec<Rc<Func>>,
 }
 
-pub struct Compiler {
+impl Default for Module {
+    fn default() -> Self {
+        Self {
+            codes: Rc::new([]),
+            consts: vec![],
+            funcs: vec![],
+        }
+    }
+}
+
+pub struct Compiler<'a> {
+    std: &'a StdLib,
     scope: usize,
     vars: Vec<Var>,
     codes: Vec<Code>,
@@ -67,10 +79,11 @@ pub struct Compiler {
     locals: VecDeque<HashMap<String, Local>>,
 }
 
-impl Compiler {
-    pub fn new() -> Self {
+impl<'a> Compiler<'a> {
+    pub fn new(std: &'a StdLib) -> Self {
         Compiler {
             scope: 0,
+            std,
             vars: vec![],
             codes: vec![],
             funcs: vec![],
@@ -196,7 +209,7 @@ impl Compiler {
         Ok(())
     }
 
-    // Load a name based in the following order: var > local > func
+    // Load a name based in the following order: var > local > vm func > std func
     fn load_name(&mut self, span: Span, name: String) -> Result<Code, Error> {
         match self.load_var(span, &name, false) {
             Ok(idx) => Ok(Op::Load(idx).at(span)),
@@ -204,7 +217,10 @@ impl Compiler {
                 Some(idx) => Ok(Op::LoadArg(idx).at(span)),
                 None => match self.funcs.iter().position(|f| f.name == name) {
                     Some(idx) => Ok(Op::LoadFunc(idx).at(span)),
-                    None => Err(e),
+                    None => match self.std.funcs.iter().position(|f| f.name == name) {
+                        Some(idx) => Ok(Op::LoadNativeFunc(idx).at(span)),
+                        None => Err(e),
+                    },
                 },
             },
         }
@@ -366,7 +382,7 @@ impl Compiler {
         self.compile_body(stmts, false)?;
 
         Ok(Module {
-            codes: Rc::new(self.codes),
+            codes: self.codes.into(),
             consts: self.consts,
             funcs: self.funcs,
         })
@@ -375,11 +391,14 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
+    use crate::runtime::std::stdlib;
+
     use super::*;
 
     #[test]
     fn test_scope() {
-        let mut compiler = Compiler::new();
+        let lib = stdlib();
+        let mut compiler = Compiler::new(&lib);
 
         compiler.push_var(Span::default(), "n".to_string()).unwrap();
         compiler.push_scope(vec![]);

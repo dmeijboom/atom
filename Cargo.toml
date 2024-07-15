@@ -15,6 +15,7 @@ tracing = { version = "0.1.40", optional = true }
 tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
+wyhash2 = "0.2.1"
 
 [patch.crates-io]
 safe-gc = { git = "https://github.com/dmeijboom/safe-gc.git", branch = "main" }

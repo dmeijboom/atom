@@ -70,6 +70,7 @@ dependencies = [
  "tinyvec",
  "tracing",
  "tracing-subscriber",
+ "wyhash2",
 ]
 
 [[package]]
@@ -162,6 +163,12 @@ name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "78ca9ab1a0babb1e7d5695e3530886289c18cf2f87ec19a575a0abdce112e3a3"
+
+[[package]]
+name = "no-std-compat"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
 
 [[package]]
 name = "nu-ansi-term"
@@ -508,3 +515,12 @@ name = "windows_x86_64_msvc"
 version = "0.52.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+
+[[package]]
+name = "wyhash2"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9433c7c86e328a8197038c9fc31f6e5c81f9c7bdc087d86e266680236af1af1b"
+dependencies = [
+ "no-std-compat",
+]

@@ -11,13 +11,14 @@ use tinyvec::TinyVec;
 use tracing::{instrument, Level};
 
 use crate::{
-    codes::{BinaryOp, CompareOp, Const, Cursor, Func, Op},
+    codes::{BinaryOp, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
     runtime::{
         self,
         error::{Call, ErrorKind},
-        std::Registry,
+        function::{Cursor, Exec, Func},
+        std::StdLib,
         value::{HeapValue, Type, Value},
     },
 };
@@ -104,16 +105,16 @@ struct Frame {
     call: Call,
     // Locals (in reversed order)
     locals: TinyVec<[Value; 8]>,
-    return_addr: Cursor,
+    return_addr: Option<Cursor>,
 }
 
 const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
 const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
 
-pub struct Vm {
+pub struct Vm<'a> {
     heap: Heap,
     span: Span,
-    std: Registry,
+    std: &'a StdLib,
     module: Module,
     cursor: Cursor,
     returned: bool,
@@ -124,8 +125,8 @@ pub struct Vm {
     consts: [Value; MAX_CONST_SIZE],
 }
 
-impl Vm {
-    pub fn new(mut module: Module) -> Self {
+impl<'a> Vm<'a> {
+    pub fn new(std: &'a StdLib, mut module: Module) -> Self {
         let mut heap = Heap::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];
 
@@ -142,12 +143,12 @@ impl Vm {
         }
 
         Self {
+            std,
             vars: vec![],
             consts,
             returned: false,
             heap,
             span: Span::default(),
-            std: runtime::std::registry(),
             call_stack: vec![],
             stack_len: 0,
             stack: [Value::NIL; MAX_STACK_SIZE],
@@ -167,6 +168,17 @@ impl Vm {
         Ok(())
     }
 
+    fn pop_n(&mut self, n: usize) -> TinyVec<[Value; 8]> {
+        let mut values = TinyVec::with_capacity(n);
+
+        for _ in 0..n {
+            values.push(self.pop());
+        }
+
+        values.reverse();
+        values
+    }
+
     fn pop(&mut self) -> Value {
         let value = self.stack[self.stack_len - 1];
         self.stack_len -= 1;
@@ -184,15 +196,15 @@ impl Vm {
         self.call_stack.pop()
     }
 
-    fn replace_cursor(&mut self, cursor: impl Into<Cursor>) -> Cursor {
-        mem::replace(&mut self.cursor, cursor.into())
+    fn replace_cursor(&mut self, cursor: Cursor) -> Cursor {
+        mem::replace(&mut self.cursor, cursor)
     }
 
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
         let return_addr = self.cursor.clone();
         let state = self.call_frame()?;
 
-        state.return_addr = return_addr;
+        state.return_addr = Some(return_addr);
         state.locals.resize(arg_count, Value::NIL);
 
         self.returned = false;
@@ -201,13 +213,13 @@ impl Vm {
         Ok(())
     }
 
-    fn push_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
-        let return_addr = self.replace_cursor(&func.codes);
+    fn push_call(&mut self, func: Rc<Func>, cursor: Cursor, arg_count: usize) -> Result<(), Error> {
+        let return_addr = self.replace_cursor(cursor);
 
         self.call_stack.push(Frame {
             call: Call::new(self.span, func),
             locals: TinyVec::with_capacity(arg_count),
-            return_addr,
+            return_addr: Some(return_addr),
         });
 
         Ok(())
@@ -249,7 +261,8 @@ impl Vm {
         let member = self.const_name(idx)?;
         let field = self
             .std
-            .get(object.ty())
+            .types
+            .get(&object.ty())
             .and_then(|t| t.field(member))
             .ok_or_else(|| {
                 ErrorKind::UnknownField {
@@ -263,6 +276,10 @@ impl Vm {
         self.push(value)?;
 
         Ok(())
+    }
+
+    fn load_native_func(&mut self, idx: usize) -> Result<(), Error> {
+        self.push(Value::new_func(Rc::clone(&self.std.funcs[idx])))
     }
 
     fn load_func(&mut self, idx: usize) -> Result<(), Error> {
@@ -328,15 +345,25 @@ impl Vm {
                         .into());
                 }
 
-                if tail_call {
-                    self.push_tail_call(arg_count)?;
-                } else {
-                    self.push_call(func, arg_count)?;
-                }
+                match &func.exec {
+                    Exec::Vm(codes) => {
+                        if tail_call {
+                            self.push_tail_call(arg_count)?;
+                        } else {
+                            let cursor = Cursor::new(Rc::clone(codes));
+                            self.push_call(func, cursor, arg_count)?;
+                        }
 
-                for _ in 0..arg_count {
-                    let value = self.pop();
-                    self.call_frame()?.locals.push(value);
+                        for _ in 0..arg_count {
+                            let value = self.pop();
+                            self.call_frame()?.locals.push(value);
+                        }
+                    }
+                    Exec::Handler(handler) => {
+                        let args = self.pop_n(arg_count);
+                        let value = (handler)(&mut self.heap, args)?;
+                        self.push(value)?;
+                    }
                 }
 
                 Ok(())
@@ -398,6 +425,7 @@ impl Vm {
         }
     }
 
+    #[allow(dead_code)]
     pub fn repr(&self, value: &Value) -> Result<String, Error> {
         let ty = value.ty();
 
@@ -497,6 +525,7 @@ impl Vm {
             }
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
+            Op::LoadNativeFunc(idx) => self.load_native_func(idx)?,
             Op::CompareOp(op) => self.compare(op)?,
             Op::BinaryOp(op) => self.binary(op)?,
             Op::Store(idx) => self.store(idx)?,
@@ -550,7 +579,10 @@ impl Vm {
                     }
 
                     self.returned = false;
-                    self.cursor = state.return_addr;
+                    self.cursor = match state.return_addr {
+                        Some(cursor) => cursor,
+                        None => break,
+                    };
                 }
                 None => break,
             }

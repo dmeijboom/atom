@@ -4,6 +4,10 @@ use std::{
 };
 
 use clap::Parser;
+use runtime::{
+    function::Exec,
+    std::{stdlib, StdLib},
+};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -52,7 +56,7 @@ enum Cmd {
     },
 }
 
-fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
+fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
     let source = fs::read_to_string(source)?;
     let chars = source.chars().collect::<Vec<_>>();
 
@@ -62,7 +66,7 @@ fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
     let parser = parser::Parser::new(tokens);
     let stmts = parser.parse()?;
 
-    let compiler = Compiler::new();
+    let compiler = Compiler::new(&std);
     Ok(compiler.compile(stmts)?)
 }
 
@@ -74,8 +78,13 @@ fn print_module(module: &Module) {
 
         println!("{}:", func.name);
 
-        for code in func.codes.iter() {
-            println!("{}: {:?}", code.span.offset, code.op);
+        match &func.exec {
+            Exec::Vm(codes) => {
+                for code in codes.iter() {
+                    println!("{}: {:?}", code.span.offset, code.op);
+                }
+            }
+            Exec::Handler(_) => println!("<native>"),
         }
     }
 
@@ -95,19 +104,16 @@ fn main() -> Result<(), Error> {
         .init();
 
     let opts = Opts::parse();
+    let std = stdlib();
 
     match opts.cmd {
         Cmd::Run { source } => {
-            let module = compile(source)?;
-            let mut vm = Vm::new(module);
-            let value = vm.run()?;
-
-            if let Some(value) = value {
-                println!("\n{} ({})", vm.repr(&value)?, value.ty());
-            }
+            let module = compile(&std, source)?;
+            let mut vm = Vm::new(&std, module);
+            vm.run()?;
         }
         Cmd::Compile { source, verbose } => {
-            let module = compile(source)?;
+            let module = compile(&std, source)?;
 
             if verbose {
                 print_module(&module);

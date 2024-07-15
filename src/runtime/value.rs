@@ -5,7 +5,7 @@ use std::{
 
 use safe_gc::{Collector, Gc, Trace};
 
-use crate::codes::Func;
+use super::function::Func;
 
 #[repr(u64)]
 enum Tag {

@@ -1,11 +1,36 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, rc::Rc};
 
 use safe_gc::Heap;
+use tinyvec::TinyVec;
+use wyhash2::WyHash;
 
 use super::{
     error::Error,
+    function::Func,
     value::{Type, Value},
 };
+
+pub struct StdLib {
+    pub types: TypeRegistry,
+    pub funcs: [Rc<Func>; 1],
+}
+
+pub fn stdlib() -> StdLib {
+    let mut types = TypeRegistry::default();
+    types.insert(Type::Array, array());
+    let funcs = [Rc::new(Func::with_handler(
+        "println".to_string(),
+        1,
+        |_, args| {
+            println!("{}", args[0]);
+            Ok(Value::NIL)
+        }
+    ))];
+
+    StdLib { types, funcs }
+}
+
+pub type TypeRegistry = HashMap<Type, TypeDescr, WyHash>;
 
 type FieldHandler = dyn Fn(&mut Heap, Value) -> Result<Value, Error>;
 
@@ -58,24 +83,26 @@ impl TypeDescrBuilder {
     }
 }
 
-#[derive(Default)]
-pub struct Registry {
-    types: HashMap<Type, TypeDescr>,
-}
+pub type FnHandler = dyn Fn(&mut Heap, TinyVec<[Value; 8]>) -> Result<Value, Error>;
 
-impl Registry {
-    #[inline]
-    pub fn get(&self, ty: Type) -> Option<&TypeDescr> {
-        self.types.get(&ty)
-    }
-}
-
-pub fn registry() -> Registry {
-    let mut registry = Registry::default();
-    registry.types.insert(Type::Array, array());
-
-    registry
-}
+//pub struct Func {
+//    pub name: &'static str,
+//    pub arg_count: usize,
+//    pub handler: Rc<FnHandler>,
+//}
+//
+//impl Func {
+//    pub fn new<F>(name: &'static str, arg_count: usize, handler: F) -> Self
+//    where
+//        F: Fn(&mut Heap, TinyVec<[Value; 8]>) -> Result<Value, Error> + 'static,
+//    {
+//        Self {
+//            name,
+//            arg_count,
+//            handler: Rc::new(handler),
+//        }
+//    }
+//}
 
 fn array() -> TypeDescr {
     TypeDescrBuilder::default()

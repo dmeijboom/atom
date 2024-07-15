@@ -1,5 +1,5 @@
-fn test(a, b) {
-    a / b
+fn test() {
+    10
 }
 
-test(10, 5, 3)
+println(test())
