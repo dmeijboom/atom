@@ -1,0 +1,9 @@
+fn factorial(n, acc) {
+    if n == 1 {
+        return acc;
+    }
+
+    factorial(n - 1, n * acc)
+}
+
+factorial(15, 1)
