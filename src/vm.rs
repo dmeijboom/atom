@@ -6,7 +6,7 @@ use std::{
 };
 
 use safe_gc::Heap;
-use smallvec::SmallVec;
+use tinyvec::TinyVec;
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
 
@@ -65,8 +65,12 @@ pub enum FatalErrorKind {
     InvalidVar(usize),
     #[error("invalid argument at: {0}")]
     InvalidArg(usize),
+    #[error("invalid fn at: {0}")]
+    InvalidFn(usize),
     #[error("stack is empty")]
     StackEmpty,
+    #[error("maximum stack exceeded")]
+    MaxStackExceeded,
     #[error("call stack is empty")]
     CallStackEmpty,
 }
@@ -103,12 +107,11 @@ pub enum Error {
 struct Frame {
     call: Call,
     // Locals (in reversed order)
-    locals: SmallVec<[Value; 8]>,
+    locals: TinyVec<[Value; 8]>,
     return_addr: Cursor,
 }
 
-const DEFAULT_STACK_SIZE: usize = 100000 / size_of::<Value>();
-const DEFAULT_CALL_STACK_SIZE: usize = 100000 / size_of::<Frame>();
+const DEFAULT_STACK_SIZE: usize = 200000 / size_of::<Value>();
 
 pub struct Vm {
     heap: Heap,
@@ -118,8 +121,9 @@ pub struct Vm {
     cursor: Cursor,
     returned: bool,
     vars: Vec<Value>,
-    stack: SmallVec<[Value; DEFAULT_STACK_SIZE]>,
-    call_stack: SmallVec<[Frame; DEFAULT_CALL_STACK_SIZE]>,
+    stack_len: usize,
+    call_stack: Vec<Frame>,
+    stack: [Value; DEFAULT_STACK_SIZE],
 }
 
 impl Vm {
@@ -129,12 +133,35 @@ impl Vm {
             returned: false,
             heap: Heap::default(),
             span: Span::default(),
-            stack: SmallVec::default(),
             std: runtime::std::registry(),
-            call_stack: SmallVec::default(),
+            call_stack: vec![],
+            stack_len: 0,
+            stack: [Value::NIL; DEFAULT_STACK_SIZE],
             cursor: Cursor::new(Rc::clone(&module.codes)),
             module,
         }
+    }
+
+    fn push(&mut self, value: Value) -> Result<(), Error> {
+        if self.stack_len == self.stack.len() {
+            return Err(FatalErrorKind::MaxStackExceeded.at(self.span).into());
+        }
+
+        self.stack[self.stack_len] = value;
+        self.stack_len += 1;
+
+        Ok(())
+    }
+
+    fn pop(&mut self) -> Result<Value, Error> {
+        if self.stack_len == 0 {
+            return Err(FatalErrorKind::StackEmpty.at(self.span).into());
+        }
+
+        let value = self.stack[self.stack_len - 1];
+        self.stack_len -= 1;
+
+        Ok(value)
     }
 
     fn call_frame(&mut self) -> Result<&mut Frame, Error> {
@@ -142,6 +169,10 @@ impl Vm {
             .call_stack
             .last_mut()
             .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?)
+    }
+
+    fn pop_frame(&mut self) -> Option<Frame> {
+        self.call_stack.pop()
     }
 
     fn replace_cursor(&mut self, cursor: impl Into<Cursor>) -> Cursor {
@@ -161,14 +192,16 @@ impl Vm {
         Ok(())
     }
 
-    fn push_call(&mut self, func: Rc<Func>, arg_count: usize) {
+    fn push_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
         let return_addr = self.replace_cursor(&func.codes);
 
         self.call_stack.push(Frame {
             call: Call::new(self.span, func),
-            locals: SmallVec::with_capacity(arg_count),
+            locals: TinyVec::with_capacity(arg_count),
             return_addr,
         });
+
+        Ok(())
     }
 
     fn goto(&mut self, n: usize) {
@@ -231,20 +264,19 @@ impl Vm {
             })?;
 
         let value = field.call(&mut self.heap, object)?;
-        self.stack.push(value);
+        self.push(value)?;
 
         Ok(())
     }
 
     fn load_func(&mut self, idx: usize) -> Result<(), Error> {
-        let name = self.const_name(idx)?;
         let func = self
             .module
             .funcs
-            .get(name)
-            .ok_or_else(|| ErrorKind::UnknownFunc(name.to_string()).at(self.span))?;
+            .get(idx)
+            .ok_or_else(|| FatalErrorKind::InvalidFn(idx).at(self.span))?;
 
-        self.stack.push(Value::new_func(Rc::clone(func)));
+        self.push(Value::new_func(Rc::clone(func)))?;
         Ok(())
     }
 
@@ -256,22 +288,12 @@ impl Vm {
     }
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
-        match self.call_stack.last() {
-            Some(state) => match state.locals.get(state.locals.len() - idx - 1).copied() {
-                Some(value) => {
-                    self.stack.push(value);
-                    Ok(())
-                }
-                None => Err(FatalErrorKind::InvalidArg(idx).at(self.span).into()),
-            },
-            None => Err(FatalErrorKind::StackEmpty.at(self.span).into()),
-        }
-    }
+        let frame = self.call_frame()?;
 
-    fn pop(&mut self) -> Result<Value, Error> {
-        self.stack
-            .pop()
-            .ok_or_else(|| FatalErrorKind::StackEmpty.at(self.span).into())
+        match frame.locals.get(frame.locals.len() - idx - 1).copied() {
+            Some(value) => self.push(value),
+            None => Err(FatalErrorKind::InvalidArg(idx).at(self.span).into()),
+        }
     }
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
@@ -288,7 +310,7 @@ impl Vm {
 
         if value.bool() == cond {
             if push {
-                self.stack.push(cond.into());
+                self.push(cond.into())?;
             }
 
             self.goto(idx);
@@ -307,7 +329,7 @@ impl Vm {
                 if tail_call {
                     self.push_tail_call(arg_count)?;
                 } else {
-                    self.push_call(func, arg_count);
+                    self.push_call(func, arg_count)?;
                 }
 
                 for _ in 0..arg_count {
@@ -350,7 +372,7 @@ impl Vm {
         values.reverse();
 
         let handle = self.heap.alloc(HeapValue::Array(values));
-        self.stack.push(Value::new_array(handle.unrooted()));
+        self.push(Value::new_array(handle.unrooted()))?;
 
         Ok(())
     }
@@ -370,10 +392,7 @@ impl Vm {
         } as usize;
 
         match array.get(n).copied() {
-            Some(elem) => {
-                self.stack.push(elem);
-                Ok(())
-            }
+            Some(elem) => self.push(elem),
             None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
         }
     }
@@ -410,71 +429,81 @@ impl Vm {
         })
     }
 
+    fn compare(&mut self, op: CompareOp) -> Result<(), Error> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+
+        self.check_type(lhs.ty(), rhs.ty())?;
+        self.push(match op {
+            CompareOp::Eq => binary!(lhs == rhs),
+            CompareOp::Ne => binary!(lhs != rhs),
+            CompareOp::Lt => binary!(lhs < rhs),
+            CompareOp::Lte => binary!(lhs <= rhs),
+            CompareOp::Gt => binary!(lhs > rhs),
+            CompareOp::Gte => binary!(lhs >= rhs),
+        })
+    }
+
+    fn binary(&mut self, op: BinaryOp) -> Result<(), Error> {
+        let rhs = self.pop()?;
+        let lhs = self.pop()?;
+
+        self.check_type(lhs.ty(), rhs.ty())?;
+
+        let value = match op {
+            BinaryOp::Add if lhs.is_number() => binary!(Int | Float, lhs + rhs),
+            BinaryOp::Sub if lhs.is_number() => binary!(Int | Float, lhs - rhs),
+            BinaryOp::Mul if lhs.is_number() => binary!(Int | Float, lhs * rhs),
+            BinaryOp::Div if lhs.is_number() => binary!(Int | Float, lhs / rhs),
+            BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary!(Int, lhs | rhs),
+            BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary!(Int, lhs & rhs),
+            BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary!(Int, lhs ^ rhs),
+            BinaryOp::BitwiseXor if matches!(lhs.ty(), Type::Array | Type::Str) => {
+                self.concat(lhs, rhs)?
+            }
+            op => {
+                return Err(ErrorKind::UnsupportedOp {
+                    left: lhs.ty(),
+                    right: rhs.ty(),
+                    op,
+                }
+                .at(self.span)
+                .into())
+            }
+        };
+
+        self.push(value)
+    }
+
+    fn store(&mut self, idx: usize) -> Result<(), Error> {
+        resize(&mut self.vars, idx + 1);
+        let value = self.pop()?;
+        self.vars[idx] = value;
+
+        Ok(())
+    }
+
+    fn load(&mut self, idx: usize) -> Result<(), Error> {
+        let value = self.load_var(idx)?;
+        self.push(value)
+    }
+
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
                 let value = self.load_const(idx)?;
-                self.stack.push(value);
+                self.push(value)?;
             }
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
-            Op::CompareOp(op) => {
-                let rhs = self.pop()?;
-                let lhs = self.pop()?;
-
-                self.check_type(lhs.ty(), rhs.ty())?;
-                self.stack.push(match op {
-                    CompareOp::Eq => binary!(lhs == rhs),
-                    CompareOp::Ne => binary!(lhs != rhs),
-                    CompareOp::Lt => binary!(lhs < rhs),
-                    CompareOp::Lte => binary!(lhs <= rhs),
-                    CompareOp::Gt => binary!(lhs > rhs),
-                    CompareOp::Gte => binary!(lhs >= rhs),
-                });
-            }
-            Op::BinaryOp(op) => {
-                let rhs = self.pop()?;
-                let lhs = self.pop()?;
-
-                self.check_type(lhs.ty(), rhs.ty())?;
-
-                let value = match op {
-                    BinaryOp::Add if lhs.is_number() => binary!(Int | Float, lhs + rhs),
-                    BinaryOp::Sub if lhs.is_number() => binary!(Int | Float, lhs - rhs),
-                    BinaryOp::Mul if lhs.is_number() => binary!(Int | Float, lhs * rhs),
-                    BinaryOp::Div if lhs.is_number() => binary!(Int | Float, lhs / rhs),
-                    BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary!(Int, lhs | rhs),
-                    BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary!(Int, lhs & rhs),
-                    BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary!(Int, lhs ^ rhs),
-                    BinaryOp::BitwiseXor if matches!(lhs.ty(), Type::Array | Type::Str) => {
-                        self.concat(lhs, rhs)?
-                    }
-                    op => {
-                        return Err(ErrorKind::UnsupportedOp {
-                            left: lhs.ty(),
-                            right: rhs.ty(),
-                            op,
-                        }
-                        .at(self.span)
-                        .into())
-                    }
-                };
-
-                self.stack.push(value);
-            }
-            Op::Store(idx) => {
-                resize(&mut self.vars, idx + 1);
-                let value = self.pop()?;
-                self.vars[idx] = value;
-            }
-            Op::Load(idx) => {
-                let value = self.load_var(idx)?;
-                self.stack.push(value);
-            }
+            Op::CompareOp(op) => self.compare(op)?,
+            Op::BinaryOp(op) => self.binary(op)?,
+            Op::Store(idx) => self.store(idx)?,
+            Op::Load(idx) => self.load(idx)?,
             Op::LoadArg(idx) => self.load_arg(idx)?,
             Op::Discard => {
-                self.stack.pop();
+                self.pop()?;
             }
             Op::Return => {
                 self.returned = true;
@@ -490,7 +519,7 @@ impl Vm {
             Op::UnaryNot => {
                 let value = self.pop()?;
                 self.check_type(value.ty(), Type::Bool)?;
-                self.stack.push((!value.bool()).into());
+                self.push((!value.bool()).into())?;
             }
         }
 
@@ -514,10 +543,10 @@ impl Vm {
                 self.eval(op).map_err(|e| self.add_trace(e))?;
             }
 
-            match self.call_stack.pop() {
+            match self.pop_frame() {
                 Some(state) => {
                     if !self.returned {
-                        self.stack.push(Value::NIL);
+                        self.push(Value::NIL)?;
                     }
 
                     self.returned = false;
@@ -527,6 +556,6 @@ impl Vm {
             }
         }
 
-        Ok(self.stack.pop())
+        Ok(self.pop().ok())
     }
 }

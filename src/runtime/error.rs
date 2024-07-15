@@ -20,8 +20,6 @@ pub enum ErrorKind {
     NotCallable(Type),
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
-    #[error("no such function: {0}")]
-    UnknownFunc(String),
     #[error("unsupported operation '{op:?}' for {left} and {right}")]
     UnsupportedOp {
         left: Type,

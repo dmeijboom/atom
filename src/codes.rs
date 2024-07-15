@@ -75,6 +75,13 @@ pub struct Func {
 }
 
 impl Func {
+    pub fn new(name: String) -> Self {
+        Self {
+            name,
+            codes: Rc::default(),
+        }
+    }
+
     pub fn with_codes(name: String, codes: Vec<Code>) -> Self {
         Self {
             name,

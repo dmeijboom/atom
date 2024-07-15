@@ -5,8 +5,6 @@ use std::{
     rc::Rc,
 };
 
-use rustc_hash::FxHashMap;
-
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
     codes::{BinaryOp, Code, CompareOp, Const, Func, Op},
@@ -57,7 +55,7 @@ struct Local {
 pub struct Module {
     pub codes: Rc<Vec<Code>>,
     pub consts: Vec<Const>,
-    pub funcs: FxHashMap<String, Rc<Func>>,
+    pub funcs: Vec<Rc<Func>>,
 }
 
 pub struct Compiler {
@@ -65,7 +63,7 @@ pub struct Compiler {
     vars: Vec<Var>,
     codes: Vec<Code>,
     consts: Vec<Const>,
-    funcs: FxHashMap<String, Rc<Func>>,
+    funcs: Vec<Rc<Func>>,
     locals: VecDeque<HashMap<String, Local>>,
 }
 
@@ -75,8 +73,8 @@ impl Compiler {
             scope: 0,
             vars: vec![],
             codes: vec![],
+            funcs: vec![],
             consts: vec![],
-            funcs: FxHashMap::default(),
             locals: VecDeque::default(),
         }
     }
@@ -204,12 +202,9 @@ impl Compiler {
             Ok(idx) => Ok(Op::Load(idx).at(span)),
             Err(e) => match self.load_local(&name) {
                 Some(idx) => Ok(Op::LoadArg(idx).at(span)),
-                None => match self.funcs.contains_key(&name) {
-                    true => {
-                        let idx = self.push_const(Const::Str(name));
-                        Ok(Op::LoadFunc(idx).at(span))
-                    }
-                    false => Err(e),
+                None => match self.funcs.iter().position(|f| f.name == name) {
+                    Some(idx) => Ok(Op::LoadFunc(idx).at(span)),
+                    None => Err(e),
                 },
             },
         }
@@ -286,17 +281,17 @@ impl Compiler {
         args: Vec<String>,
         stmts: Vec<Stmt>,
     ) -> Result<(), Error> {
-        if self.funcs.contains_key(&name) {
+        if self.funcs.iter().any(|f| f.name == name) {
             return Err(ErrorKind::FnAlreadyExists(name).at(span));
         }
 
-        self.funcs.insert(name.clone(), Rc::new(Func::default()));
+        let idx = self.funcs.len();
+        self.funcs.push(Rc::new(Func::new(name.clone())));
         let previous = self.push_scope(args);
         self.compile_body(stmts, true)?;
 
         let codes = self.pop_scope(previous);
-        self.funcs
-            .insert(name.clone(), Rc::new(Func::with_codes(name, codes)));
+        self.funcs[idx] = Rc::new(Func::with_codes(name, codes));
 
         Ok(())
     }

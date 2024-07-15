@@ -65,10 +65,9 @@ name = "atom"
 version = "0.1.0"
 dependencies = [
  "clap",
- "rustc-hash",
  "safe-gc",
- "smallvec",
  "thiserror",
+ "tinyvec",
  "tracing",
  "tracing-subscriber",
 ]
@@ -255,12 +254,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
 
 [[package]]
-name = "rustc-hash"
-version = "2.0.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "583034fd73374156e66797ed8e5b0d5690409c9226b22d87cb7f19821c05d152"
-
-[[package]]
 name = "safe-gc"
 version = "1.0.0"
 source = "git+https://github.com/dmeijboom/safe-gc.git?branch=main#dc3c59d052df1d40fed536fd001506d93cf1a23a"
@@ -326,6 +319,21 @@ dependencies = [
  "cfg-if",
  "once_cell",
 ]
+
+[[package]]
+name = "tinyvec"
+version = "1.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "445e881f4f6d382d5f27c034e25eb92edd7c784ceab92a0937db7f2e9471b938"
+dependencies = [
+ "tinyvec_macros",
+]
+
+[[package]]
+name = "tinyvec_macros"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1f3ccbac311fea05f86f61904b462b55fb3df8837a366dfc601a0161d0532f20"
 
 [[package]]
 name = "tracing"

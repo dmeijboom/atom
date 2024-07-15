@@ -67,12 +67,12 @@ fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
 }
 
 fn print_module(module: &Module) {
-    for (i, (name, func)) in module.funcs.iter().enumerate() {
+    for (i, func) in module.funcs.iter().enumerate() {
         if i > 0 {
             println!();
         }
 
-        println!("{}:", name);
+        println!("{}:", func.name);
 
         for code in func.codes.iter() {
             println!("{}: {:?}", code.span.offset, code.op);
