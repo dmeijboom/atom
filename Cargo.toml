@@ -20,4 +20,6 @@ tracing-subscriber = { version = "0.3.18", features = [
 safe-gc = { git = "https://github.com/dmeijboom/safe-gc.git", branch = "main" }
 
 [profile.release]
+lto = true
 debug = true
+codegen-units = 1

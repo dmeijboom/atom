@@ -65,8 +65,6 @@ pub enum FatalErrorKind {
     InvalidArg(usize),
     #[error("invalid fn at: {0}")]
     InvalidFn(usize),
-    #[error("stack is empty")]
-    StackEmpty,
     #[error("maximum stack exceeded")]
     MaxStackExceeded,
     #[error("call stack is empty")]
@@ -169,15 +167,10 @@ impl Vm {
         Ok(())
     }
 
-    fn pop(&mut self) -> Result<Value, Error> {
-        if self.stack_len == 0 {
-            return Err(FatalErrorKind::StackEmpty.at(self.span).into());
-        }
-
+    fn pop(&mut self) -> Value {
         let value = self.stack[self.stack_len - 1];
         self.stack_len -= 1;
-
-        Ok(value)
+        value
     }
 
     fn call_frame(&mut self) -> Result<&mut Frame, Error> {
@@ -252,7 +245,7 @@ impl Vm {
     }
 
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
-        let object = self.pop()?;
+        let object = self.pop();
         let member = self.const_name(idx)?;
         let field = self
             .std
@@ -308,7 +301,7 @@ impl Vm {
     }
 
     fn jump_cond(&mut self, idx: usize, push: bool, cond: bool) -> Result<(), Error> {
-        let value = self.pop()?;
+        let value = self.pop();
         self.check_type(value.ty(), Type::Bool)?;
 
         if value.bool() == cond {
@@ -323,7 +316,7 @@ impl Vm {
     }
 
     fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
-        let callee = self.pop()?;
+        let callee = self.pop();
 
         match callee.ty() {
             Type::Fn => {
@@ -336,7 +329,7 @@ impl Vm {
                 }
 
                 for _ in 0..arg_count {
-                    let value = self.pop()?;
+                    let value = self.pop();
                     self.call_frame()?.locals.push(value);
                 }
 
@@ -368,8 +361,7 @@ impl Vm {
         let mut values = vec![];
 
         for _ in 0..size {
-            let value = self.pop()?;
-            values.push(value);
+            values.push(self.pop());
         }
 
         values.reverse();
@@ -381,8 +373,8 @@ impl Vm {
     }
 
     fn load_elem(&mut self) -> Result<(), Error> {
-        let elem = self.pop()?;
-        let array = self.pop()?;
+        let elem = self.pop();
+        let array = self.pop();
 
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
@@ -433,8 +425,8 @@ impl Vm {
     }
 
     fn compare(&mut self, op: CompareOp) -> Result<(), Error> {
-        let rhs = self.pop()?;
-        let lhs = self.pop()?;
+        let rhs = self.pop();
+        let lhs = self.pop();
 
         self.check_type(lhs.ty(), rhs.ty())?;
         self.push(match op {
@@ -448,8 +440,8 @@ impl Vm {
     }
 
     fn binary(&mut self, op: BinaryOp) -> Result<(), Error> {
-        let rhs = self.pop()?;
-        let lhs = self.pop()?;
+        let rhs = self.pop();
+        let lhs = self.pop();
 
         self.check_type(lhs.ty(), rhs.ty())?;
 
@@ -480,7 +472,7 @@ impl Vm {
 
     fn store(&mut self, idx: usize) -> Result<(), Error> {
         resize(&mut self.vars, idx + 1);
-        let value = self.pop()?;
+        let value = self.pop();
         self.vars[idx] = value;
 
         Ok(())
@@ -505,7 +497,7 @@ impl Vm {
             Op::Load(idx) => self.load(idx)?,
             Op::LoadArg(idx) => self.load_arg(idx)?,
             Op::Discard => {
-                self.pop()?;
+                self.pop();
             }
             Op::Return => {
                 self.returned = true;
@@ -519,7 +511,7 @@ impl Vm {
             Op::MakeArray(len) => self.make_array(len)?,
             Op::LoadElement => self.load_elem()?,
             Op::UnaryNot => {
-                let value = self.pop()?;
+                let value = self.pop();
                 self.check_type(value.ty(), Type::Bool)?;
                 self.push((!value.bool()).into())?;
             }
@@ -558,6 +550,10 @@ impl Vm {
             }
         }
 
-        Ok(self.pop().ok())
+        if self.stack_len > 0 {
+            return Ok(Some(self.pop()));
+        }
+
+        Ok(None)
     }
 }
