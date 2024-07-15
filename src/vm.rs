@@ -59,8 +59,6 @@ fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FatalErrorKind {
-    #[error("invalid const at: {0}")]
-    InvalidConst(usize),
     #[error("invalid var at: {0}")]
     InvalidVar(usize),
     #[error("invalid argument at: {0}")]
@@ -103,7 +101,7 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default)]
 struct Frame {
     call: Call,
     // Locals (in reversed order)
@@ -111,7 +109,8 @@ struct Frame {
     return_addr: Cursor,
 }
 
-const DEFAULT_STACK_SIZE: usize = 200000 / size_of::<Value>();
+const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
+const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
 
 pub struct Vm {
     heap: Heap,
@@ -121,22 +120,39 @@ pub struct Vm {
     cursor: Cursor,
     returned: bool,
     vars: Vec<Value>,
-    stack_len: usize,
     call_stack: Vec<Frame>,
-    stack: [Value; DEFAULT_STACK_SIZE],
+    stack_len: usize,
+    stack: [Value; MAX_STACK_SIZE],
+    consts: [Value; MAX_CONST_SIZE],
 }
 
 impl Vm {
-    pub fn new(module: Module) -> Self {
+    pub fn new(mut module: Module) -> Self {
+        let mut heap = Heap::default();
+        let mut consts = [Value::NIL; MAX_CONST_SIZE];
+
+        for (i, const_) in module.consts.drain(..).enumerate() {
+            consts[i] = match const_ {
+                Const::Int(i) => Value::from(i),
+                Const::Float(f) => Value::from(f),
+                Const::Bool(b) => Value::from(b),
+                Const::Str(s) => {
+                    let root = heap.alloc(HeapValue::Buffer(s.into_bytes()));
+                    Value::new_str(root.unrooted())
+                }
+            };
+        }
+
         Self {
             vars: vec![],
+            consts,
             returned: false,
-            heap: Heap::default(),
+            heap,
             span: Span::default(),
             std: runtime::std::registry(),
             call_stack: vec![],
             stack_len: 0,
-            stack: [Value::NIL; DEFAULT_STACK_SIZE],
+            stack: [Value::NIL; MAX_STACK_SIZE],
             cursor: Cursor::new(Rc::clone(&module.codes)),
             module,
         }
@@ -221,29 +237,16 @@ impl Vm {
         }
     }
 
-    fn get_const(&self, idx: usize) -> Result<&Const, Error> {
-        self.module
-            .consts
-            .get(idx)
-            .ok_or_else(|| FatalErrorKind::InvalidConst(idx).at(self.span).into())
-    }
-
-    fn load_const(&mut self, idx: usize) -> Result<Value, Error> {
-        let const_ = self.get_const(idx)?.clone();
-        match const_ {
-            Const::Int(i) => Ok(i.into()),
-            Const::Float(f) => Ok(f.into()),
-            Const::Bool(b) => Ok(b.into()),
-            Const::Str(s) => {
-                let handle = self.heap.alloc(HeapValue::Buffer(s.into_bytes()));
-                Ok(Value::new_str(handle.unrooted()))
-            }
-        }
-    }
-
     fn const_name(&self, idx: usize) -> Result<&str, Error> {
-        match self.get_const(idx)? {
-            Const::Str(name) => Ok(name.as_str()),
+        let value = self.consts[idx];
+
+        match value.ty() {
+            Type::Str => {
+                let heap = value.heap();
+                let heap_value = self.heap.get(heap);
+
+                unsafe { Ok(std::str::from_utf8_unchecked(heap_value.buffer())) }
+            }
             _ => unreachable!(),
         }
     }
@@ -492,8 +495,7 @@ impl Vm {
     fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
             Op::LoadConst(idx) => {
-                let value = self.load_const(idx)?;
-                self.push(value)?;
+                self.push(self.consts[idx])?;
             }
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
