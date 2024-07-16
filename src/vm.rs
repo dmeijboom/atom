@@ -10,7 +10,7 @@ use safe_gc::Heap;
 use tracing::{instrument, Level};
 
 use crate::{
-    codes::{Code, Const, Op},
+    opcode::{Const, Op, Opcode},
     compiler::Module,
     lexer::Span,
     reuse_vec::ReuseVec,
@@ -149,7 +149,7 @@ pub struct Vm<'a> {
     returned: bool,
     vars: Vec<Value>,
     stack_len: usize,
-    codes: Rc<[Code]>,
+    codes: Rc<[Opcode]>,
     call_stack: ReuseVec<Frame>,
     stack: [Value; MAX_STACK_SIZE],
     consts: [Value; MAX_CONST_SIZE],
@@ -549,8 +549,8 @@ impl<'a> Vm<'a> {
     }
 
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
-    fn eval(&mut self, op: Op) -> Result<(), Error> {
-        match op {
+    fn eval(&mut self, op_code: Opcode) -> Result<(), Error> {
+        match op_code.op() {
             Op::Add => self.add()?,
             Op::Sub => self.sub()?,
             Op::Mul => self.mul()?,
@@ -564,21 +564,21 @@ impl<'a> Vm<'a> {
             Op::BitwiseAnd => self.bitwise_and()?,
             Op::BitwiseOr => self.bitwise_or()?,
             Op::BitwiseXor => self.bitwise_xor()?,
-            Op::LoadConst(idx) => self.load_const(idx)?,
-            Op::LoadMember(idx) => self.load_member(idx)?,
-            Op::LoadFunc(idx) => self.load_func(idx)?,
-            Op::LoadNativeFunc(idx) => self.load_native_func(idx)?,
-            Op::Store(idx) => self.store(idx)?,
-            Op::Load(idx) => self.load(idx)?,
-            Op::LoadArg(idx) => self.load_arg(idx)?,
+            Op::LoadConst => self.load_const(op_code.code())?,
+            Op::LoadMember => self.load_member(op_code.code())?,
+            Op::LoadFunc => self.load_func(op_code.code())?,
+            Op::LoadNativeFunc => self.load_native_func(op_code.code())?,
+            Op::Store => self.store(op_code.code())?,
+            Op::Load => self.load(op_code.code())?,
+            Op::LoadArg => self.load_arg(op_code.code())?,
             Op::Discard => self.discard(),
             Op::Return => self.ret()?,
-            Op::Call(args) => self.call(args, false)?,
-            Op::TailCall(args) => self.call(args, true)?,
-            Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
-            Op::PushJumpIfTrue(idx) => self.jump_cond(idx, true, true)?,
-            Op::PushJumpIfFalse(idx) => self.jump_cond(idx, true, false)?,
-            Op::MakeArray(len) => self.make_array(len)?,
+            Op::Call => self.call(op_code.code(), false)?,
+            Op::TailCall => self.call(op_code.code(), true)?,
+            Op::JumpIfFalse => self.jump_cond(op_code.code(), false, false)?,
+            Op::PushJumpIfTrue => self.jump_cond(op_code.code(), true, true)?,
+            Op::PushJumpIfFalse => self.jump_cond(op_code.code(), true, false)?,
+            Op::MakeArray => self.make_array(op_code.code())?,
             Op::LoadElement => self.load_elem()?,
             Op::UnaryNot => self.not()?,
         }
@@ -597,13 +597,13 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn next(&mut self) -> Result<Option<Op>, Error> {
+    fn next(&mut self) -> Result<Option<Opcode>, Error> {
         match self.codes.get(self.pos) {
-            Some(code) => {
+            Some(op_code) => {
                 self.pos += 1;
-                self.span = code.span;
+                self.span = op_code.span;
 
-                Ok(Some(code.op))
+                Ok(Some(op_code.clone()))
             }
             None => Ok(None),
         }
@@ -626,7 +626,7 @@ impl<'a> Vm<'a> {
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
         let mut start = || loop {
             match self.next()? {
-                Some(op) => self.eval(op)?,
+                Some(op_code) => self.eval(op_code)?,
                 None => {
                     if !self.returned {
                         self.push(Value::NIL)?;

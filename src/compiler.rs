@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
-    codes::{Code, Const, Op},
+    opcode::{Const, Op, Opcode},
     lexer::Span,
     runtime::{
         function::{Exec, Func},
@@ -57,7 +57,7 @@ struct Local {
 
 #[derive(Debug)]
 pub struct Module {
-    pub codes: Rc<[Code]>,
+    pub codes: Rc<[Opcode]>,
     pub consts: Vec<Const>,
     pub funcs: Vec<Rc<Func>>,
 }
@@ -76,7 +76,7 @@ pub struct Compiler<'a> {
     std: &'a StdLib,
     scope: usize,
     vars: Vec<Var>,
-    codes: Vec<Code>,
+    codes: Vec<Opcode>,
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
     scope_funcs: HashMap<usize, Weak<Func>>,
@@ -97,7 +97,7 @@ impl<'a> Compiler<'a> {
         }
     }
 
-    fn push_scope(&mut self, locals: Vec<String>, func: Option<Weak<Func>>) -> Vec<Code> {
+    fn push_scope(&mut self, locals: Vec<String>, func: Option<Weak<Func>>) -> Vec<Opcode> {
         let locals = locals
             .into_iter()
             .enumerate()
@@ -114,7 +114,7 @@ impl<'a> Compiler<'a> {
         mem::take(&mut self.codes)
     }
 
-    fn pop_scope(&mut self, codes: Vec<Code>) -> Vec<Code> {
+    fn pop_scope(&mut self, codes: Vec<Opcode>) -> Vec<Opcode> {
         self.scope_funcs.remove(&self.scope);
         self.scope -= 1;
         self.locals.pop_front();
@@ -136,7 +136,7 @@ impl<'a> Compiler<'a> {
         idx
     }
 
-    fn push_code(&mut self, code: Code) -> usize {
+    fn push_code(&mut self, code: Opcode) -> usize {
         let idx = self.codes.len();
         self.codes.push(code);
         idx
@@ -160,12 +160,12 @@ impl<'a> Compiler<'a> {
         Ok(idx)
     }
 
-    fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Code, Error> {
+    fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, Error> {
         let arg_count = args.len();
         self.expr_list(args)?;
         self.expr(callee)?;
 
-        Ok(Op::Call(arg_count).at(span))
+        Ok(Opcode::with_code(Op::Call, arg_count).at(span))
     }
 
     fn load_local(&mut self, name: &str) -> Option<usize> {
@@ -193,20 +193,16 @@ impl<'a> Compiler<'a> {
     }
 
     fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), Error> {
-        let idx = self.push_code(
-            match cond {
-                true => Op::PushJumpIfTrue(0),
-                false => Op::PushJumpIfFalse(0),
-            }
-            .at(Span::default()),
-        );
+        let idx = self.push_code(match cond {
+            true => Opcode::new(Op::PushJumpIfTrue),
+            false => Opcode::new(Op::PushJumpIfFalse),
+        });
 
         self.expr(rhs)?;
         self.codes[idx] = match cond {
-            true => Op::PushJumpIfTrue(self.loc()),
-            false => Op::PushJumpIfFalse(self.loc()),
-        }
-        .at(span);
+            true => Opcode::with_code(Op::PushJumpIfTrue, self.loc()).at(span),
+            false => Opcode::with_code(Op::PushJumpIfFalse, self.loc()).at(span),
+        };
 
         Ok(())
     }
@@ -220,15 +216,15 @@ impl<'a> Compiler<'a> {
     }
 
     // Load a name based in the following order: var > local > vm func > std func
-    fn load_name(&mut self, span: Span, name: String) -> Result<Code, Error> {
+    fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, Error> {
         match self.load_var(span, &name, false) {
-            Ok(idx) => Ok(Op::Load(idx).at(span)),
+            Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
             Err(e) => match self.load_local(&name) {
-                Some(idx) => Ok(Op::LoadArg(idx).at(span)),
+                Some(idx) => Ok(Opcode::with_code(Op::LoadArg, idx).at(span)),
                 None => match self.funcs.iter().position(|f| f.name == name) {
-                    Some(idx) => Ok(Op::LoadFunc(idx).at(span)),
+                    Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
                     None => match self.std.funcs.iter().position(|f| f.name == name) {
-                        Some(idx) => Ok(Op::LoadNativeFunc(idx).at(span)),
+                        Some(idx) => Ok(Opcode::with_code(Op::LoadNativeFunc, idx).at(span)),
                         None => Err(e),
                     },
                 },
@@ -242,28 +238,28 @@ impl<'a> Compiler<'a> {
                 ast::UnaryOp::Not => {
                     let span = expr.span;
                     self.expr(*unary_expr)?;
-                    Op::UnaryNot.at(span)
+                    Opcode::new(Op::UnaryNot).at(span)
                 }
             },
             ExprKind::Binary(lhs, op, rhs) => {
                 self.expr(*lhs)?;
 
                 let code = match op {
-                    ast::BinaryOp::Add => Op::Add.at(expr.span),
-                    ast::BinaryOp::Sub => Op::Sub.at(expr.span),
-                    ast::BinaryOp::Mul => Op::Mul.at(expr.span),
-                    ast::BinaryOp::Div => Op::Div.at(expr.span),
-                    ast::BinaryOp::Eq => Op::Eq.at(expr.span),
-                    ast::BinaryOp::Ne => Op::Ne.at(expr.span),
-                    ast::BinaryOp::Gt => Op::Gt.at(expr.span),
-                    ast::BinaryOp::Gte => Op::Gte.at(expr.span),
-                    ast::BinaryOp::Lt => Op::Lt.at(expr.span),
-                    ast::BinaryOp::Lte => Op::Lte.at(expr.span),
+                    ast::BinaryOp::Add => Opcode::new(Op::Add).at(expr.span),
+                    ast::BinaryOp::Sub => Opcode::new(Op::Sub).at(expr.span),
+                    ast::BinaryOp::Mul => Opcode::new(Op::Mul).at(expr.span),
+                    ast::BinaryOp::Div => Opcode::new(Op::Div).at(expr.span),
+                    ast::BinaryOp::Eq => Opcode::new(Op::Eq).at(expr.span),
+                    ast::BinaryOp::Ne => Opcode::new(Op::Ne).at(expr.span),
+                    ast::BinaryOp::Gt => Opcode::new(Op::Gt).at(expr.span),
+                    ast::BinaryOp::Gte => Opcode::new(Op::Gte).at(expr.span),
+                    ast::BinaryOp::Lt => Opcode::new(Op::Lt).at(expr.span),
+                    ast::BinaryOp::Lte => Opcode::new(Op::Lte).at(expr.span),
                     ast::BinaryOp::LogicalOr => return self.logical(expr.span, *rhs, true),
                     ast::BinaryOp::LogicalAnd => return self.logical(expr.span, *rhs, false),
-                    ast::BinaryOp::BitwiseOr => Op::BitwiseOr.at(expr.span),
-                    ast::BinaryOp::BitwiseAnd => Op::BitwiseAnd.at(expr.span),
-                    ast::BinaryOp::BitwiseXor => Op::BitwiseXor.at(expr.span),
+                    ast::BinaryOp::BitwiseOr => Opcode::new(Op::BitwiseOr).at(expr.span),
+                    ast::BinaryOp::BitwiseAnd => Opcode::new(Op::BitwiseAnd).at(expr.span),
+                    ast::BinaryOp::BitwiseXor => Opcode::new(Op::BitwiseXor).at(expr.span),
                 };
 
                 self.expr(*rhs)?;
@@ -272,26 +268,29 @@ impl<'a> Compiler<'a> {
             ExprKind::Array(items) => {
                 let len = items.len();
                 self.expr_list(items)?;
-                Op::MakeArray(len).at(expr.span)
+                Opcode::with_code(Op::MakeArray, len).at(expr.span)
             }
             ExprKind::Member(object, member) => {
                 self.expr(*object)?;
                 let idx = self.push_const(Const::Str(member));
-                Op::LoadMember(idx).at(expr.span)
+                Opcode::with_code(Op::LoadMember, idx).at(expr.span)
             }
             ExprKind::CompMember(object, elem) => {
                 self.expr(*object)?;
                 self.expr(*elem)?;
-                Op::LoadElement.at(expr.span)
+                Opcode::new(Op::LoadElement).at(expr.span)
             }
             ExprKind::Ident(name) => self.load_name(expr.span, name)?,
             ExprKind::Call(callee, args) => self.call(expr.span, *callee, args)?,
-            ExprKind::Literal(lit) => Op::LoadConst(match lit {
-                Literal::Bool(b) => self.push_const(Const::Bool(b)),
-                Literal::Int(i) => self.push_const(Const::Int(i)),
-                Literal::Float(f) => self.push_const(Const::Float(f)),
-                Literal::String(s) => self.push_const(Const::Str(s)),
-            })
+            ExprKind::Literal(lit) => Opcode::with_code(
+                Op::LoadConst,
+                match lit {
+                    Literal::Bool(b) => self.push_const(Const::Bool(b)),
+                    Literal::Int(i) => self.push_const(Const::Int(i)),
+                    Literal::Float(f) => self.push_const(Const::Float(f)),
+                    Literal::String(s) => self.push_const(Const::Str(s)),
+                },
+            )
             .at(expr.span),
         };
 
@@ -335,29 +334,29 @@ impl<'a> Compiler<'a> {
             StmtKind::Let(name, expr) => {
                 self.expr(expr)?;
                 let idx = self.push_var(stmt.span, name)?;
-                self.push_code(Op::Store(idx).at(stmt.span));
+                self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
             }
             StmtKind::Assign(name, expr) => {
                 let idx = self.load_var(stmt.span, &name, false)?;
                 self.expr(expr)?;
-                self.push_code(Op::Store(idx).at(stmt.span));
+                self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
             }
             StmtKind::Expr(expr) => {
                 self.expr(expr)?;
-                self.push_code(Op::Discard.at(stmt.span));
+                self.push_code(Opcode::new(Op::Discard).at(stmt.span));
             }
             StmtKind::Return(expr) => {
                 self.expr(expr)?;
-                self.push_code(Op::Return.at(stmt.span));
+                self.push_code(Opcode::new(Op::Return).at(stmt.span));
             }
             StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
             StmtKind::If(expr, stmts) => {
                 self.expr(expr)?;
-                let idx = self.push_code(Op::JumpIfFalse(0).at(stmt.span));
+                let idx = self.push_code(Opcode::new(Op::JumpIfFalse));
                 self.scope += 1;
                 self.compile_body(stmts, false)?;
                 self.scope -= 1;
-                self.codes[idx] = Op::JumpIfFalse(self.loc()).at(stmt.span);
+                self.codes[idx] = Opcode::with_code(Op::JumpIfFalse, self.loc()).at(stmt.span);
             }
         }
 
@@ -367,13 +366,16 @@ impl<'a> Compiler<'a> {
     fn optimize_tail_call(&mut self) {
         let n = self.codes.len() - 2;
 
-        if let Some(code) = self.codes.last_mut() {
-            match code.op {
-                Op::Call(idx) => code.op = Op::TailCall(idx),
+        if let Some(op_code) = self.codes.last_mut() {
+            match op_code.op() {
+                Op::Call => {
+                    *op_code = Opcode::with_code(Op::TailCall, op_code.code()).at(op_code.span);
+                }
                 Op::Return => {
-                    if let Some(code) = self.codes.get_mut(n) {
-                        if let Op::Call(idx) = code.op {
-                            code.op = Op::TailCall(idx);
+                    if let Some(op_code) = self.codes.get_mut(n) {
+                        if let Op::Call = op_code.op() {
+                            *op_code =
+                                Opcode::with_code(Op::TailCall, op_code.code()).at(op_code.span);
                         }
                     }
                 }

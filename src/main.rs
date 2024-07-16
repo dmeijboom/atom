@@ -16,7 +16,7 @@ use lexer::Lexer;
 use vm::Vm;
 
 mod ast;
-mod codes;
+mod opcode;
 mod compiler;
 mod lexer;
 mod parser;
@@ -81,8 +81,13 @@ fn print_module(module: &Module) {
 
         match &func.exec {
             Exec::Vm(codes) => {
-                for code in codes.iter() {
-                    println!("{}: {:?}", code.span.offset, code.op);
+                for op_code in codes.iter() {
+                    println!(
+                        "{}: {:?} {}",
+                        op_code.span.offset,
+                        op_code.op(),
+                        op_code.code()
+                    );
                 }
             }
             Exec::Handler(_) => println!("<native>"),
@@ -93,8 +98,13 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for code in module.codes.iter() {
-        println!("{}: {:?}", code.span.offset, code.op);
+    for op_code in module.codes.iter() {
+        println!(
+            "{}: {:?} {}",
+            op_code.span.offset,
+            op_code.op(),
+            op_code.code()
+        );
     }
 }
 

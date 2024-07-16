@@ -2,12 +2,12 @@ use std::{fmt::Debug, rc::Rc};
 
 use safe_gc::Heap;
 
-use crate::codes::Code;
+use crate::opcode::Opcode;
 
 use super::{error::Error, std::FnHandler, value::Value};
 
 pub enum Exec {
-    Vm(Rc<[Code]>),
+    Vm(Rc<[Opcode]>),
     Handler(Box<FnHandler>),
 }
 
@@ -44,7 +44,7 @@ impl Func {
         }
     }
 
-    pub fn codes(&self) -> Rc<[Code]> {
+    pub fn codes(&self) -> Rc<[Opcode]> {
         match &self.exec {
             Exec::Vm(codes) => Rc::clone(codes),
             Exec::Handler(_) => Rc::new([]),
