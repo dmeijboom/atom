@@ -6,7 +6,6 @@ use std::{
 };
 
 use safe_gc::Heap;
-use tinyvec::TinyVec;
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
 
@@ -14,6 +13,7 @@ use crate::{
     codes::{BinaryOp, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
+    reuse_vec::ReuseVec,
     runtime::{
         self,
         error::{Call, ErrorKind},
@@ -104,7 +104,7 @@ pub enum Error {
 struct Frame {
     call: Call,
     // Locals (in reversed order)
-    locals: TinyVec<[Value; 8]>,
+    locals: Vec<Value>,
     return_addr: Option<Cursor>,
 }
 
@@ -119,8 +119,8 @@ pub struct Vm<'a> {
     cursor: Cursor,
     returned: bool,
     vars: Vec<Value>,
-    call_stack: Vec<Frame>,
     stack_len: usize,
+    call_stack: ReuseVec<Frame>,
     stack: [Value; MAX_STACK_SIZE],
     consts: [Value; MAX_CONST_SIZE],
 }
@@ -149,8 +149,8 @@ impl<'a> Vm<'a> {
             returned: false,
             heap,
             span: Span::default(),
-            call_stack: vec![],
             stack_len: 0,
+            call_stack: ReuseVec::default(),
             stack: [Value::NIL; MAX_STACK_SIZE],
             cursor: Cursor::new(Rc::clone(&module.codes)),
             module,
@@ -168,8 +168,8 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn pop_n(&mut self, n: usize) -> TinyVec<[Value; 8]> {
-        let mut values = TinyVec::with_capacity(n);
+    fn pop_n(&mut self, n: usize) -> Vec<Value> {
+        let mut values = Vec::with_capacity(n);
 
         for _ in 0..n {
             values.push(self.pop());
@@ -192,8 +192,12 @@ impl<'a> Vm<'a> {
             .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?)
     }
 
-    fn pop_frame(&mut self) -> Option<Frame> {
-        self.call_stack.pop()
+    fn pop_frame(&mut self) -> Option<Cursor> {
+        if let Some(frame) = self.call_stack.pop() {
+            return mem::take(&mut frame.return_addr);
+        }
+
+        None
     }
 
     fn replace_cursor(&mut self, cursor: Cursor) -> Cursor {
@@ -213,11 +217,18 @@ impl<'a> Vm<'a> {
     fn push_call(&mut self, func: Rc<Func>, cursor: Cursor, arg_count: usize) -> Result<(), Error> {
         let return_addr = self.replace_cursor(cursor);
 
-        self.call_stack.push(Frame {
-            call: Call::new(self.span, func),
-            locals: TinyVec::with_capacity(arg_count),
-            return_addr: Some(return_addr),
-        });
+        // Check if we can re-use the current frame
+        if let Some(frame) = self.call_stack.push_and_reuse() {
+            frame.call = Call::new(self.span, func);
+            frame.locals.truncate(arg_count);
+            frame.return_addr = Some(return_addr);
+        } else {
+            self.call_stack.push(Frame {
+                call: Call::new(self.span, func),
+                locals: Vec::with_capacity(arg_count),
+                return_addr: Some(return_addr),
+            });
+        }
 
         Ok(())
     }
@@ -570,13 +581,13 @@ impl<'a> Vm<'a> {
             }
 
             match self.pop_frame() {
-                Some(state) => {
+                Some(return_addr) => {
                     if !self.returned {
                         self.push(Value::NIL)?;
                     }
 
                     self.returned = false;
-                    self.cursor = state.return_addr.unwrap();
+                    self.cursor = return_addr;
                 }
                 None => break,
             }

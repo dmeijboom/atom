@@ -1,7 +1,6 @@
 use std::{collections::HashMap, rc::Rc};
 
 use safe_gc::Heap;
-use tinyvec::TinyVec;
 use wyhash2::WyHash;
 
 use super::{
@@ -24,7 +23,7 @@ pub fn stdlib() -> StdLib {
         |_, args| {
             println!("{}", args[0]);
             Ok(Value::NIL)
-        }
+        },
     ))];
 
     StdLib { types, funcs }
@@ -83,7 +82,7 @@ impl TypeDescrBuilder {
     }
 }
 
-pub type FnHandler = dyn Fn(&mut Heap, TinyVec<[Value; 8]>) -> Result<Value, Error>;
+pub type FnHandler = dyn Fn(&mut Heap, Vec<Value>) -> Result<Value, Error>;
 
 //pub struct Func {
 //    pub name: &'static str,

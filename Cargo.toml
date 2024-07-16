@@ -10,7 +10,6 @@ tracing = ["dep:tracing", "dep:tracing-subscriber"]
 clap = { version = "4.5.9", features = ["derive"] }
 safe-gc = "1.0.0"
 thiserror = "1.0.61"
-tinyvec = { version = "1.8.0", features = ["alloc"] }
 tracing = { version = "0.1.40", optional = true }
 tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",

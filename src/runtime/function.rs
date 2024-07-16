@@ -1,7 +1,6 @@
 use std::{fmt::Debug, rc::Rc};
 
 use safe_gc::Heap;
-use tinyvec::TinyVec;
 
 use crate::codes::Code;
 
@@ -44,7 +43,7 @@ impl Func {
 
     pub fn with_handler<F>(name: String, arg_count: usize, handler: F) -> Self
     where
-        F: Fn(&mut Heap, TinyVec<[Value; 8]>) -> Result<Value, Error> + 'static,
+        F: Fn(&mut Heap, Vec<Value>) -> Result<Value, Error> + 'static,
     {
         Self {
             name,

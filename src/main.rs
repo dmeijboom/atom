@@ -20,6 +20,7 @@ mod codes;
 mod compiler;
 mod lexer;
 mod parser;
+mod reuse_vec;
 mod runtime;
 mod vm;
 
