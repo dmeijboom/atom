@@ -548,6 +548,7 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval(&mut self, op_code: Opcode) -> Result<(), Error> {
         match op_code.op() {
