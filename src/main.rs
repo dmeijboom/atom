@@ -66,7 +66,7 @@ fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
     let parser = parser::Parser::new(tokens);
     let stmts = parser.parse()?;
 
-    let compiler = Compiler::new(&std);
+    let compiler = Compiler::new(std);
     Ok(compiler.compile(stmts)?)
 }
 

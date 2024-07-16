@@ -1,5 +1,9 @@
-fn test() {
-    10
+fn factorial(n, acc) {
+    if n == 1 {
+        return acc;
+    }
+
+    factorial(n - 1, n * acc)
 }
 
-println(test())
+println(factorial(2, 1));

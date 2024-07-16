@@ -201,11 +201,8 @@ impl<'a> Vm<'a> {
     }
 
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
-        let return_addr = self.cursor.clone();
-        let state = self.call_frame()?;
-
-        state.return_addr = Some(return_addr);
-        state.locals.resize(arg_count, Value::NIL);
+        let frame = self.call_frame()?;
+        frame.locals.resize(arg_count, Value::NIL);
 
         self.returned = false;
         self.cursor.goto(0);
@@ -579,10 +576,7 @@ impl<'a> Vm<'a> {
                     }
 
                     self.returned = false;
-                    self.cursor = match state.return_addr {
-                        Some(cursor) => cursor,
-                        None => break,
-                    };
+                    self.cursor = state.return_addr.unwrap();
                 }
                 None => break,
             }

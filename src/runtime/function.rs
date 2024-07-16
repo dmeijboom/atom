@@ -65,7 +65,7 @@ impl Debug for Func {
 
 #[derive(Debug, Clone)]
 pub struct Cursor {
-    pos: usize,
+    pub pos: usize,
     codes: Rc<[Code]>,
 }
 
