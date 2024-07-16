@@ -33,14 +33,6 @@ impl Func {
         }
     }
 
-    pub fn with_codes(name: String, arg_count: usize, codes: Vec<Code>) -> Self {
-        Self {
-            name,
-            arg_count,
-            exec: Exec::Vm(codes.into()),
-        }
-    }
-
     pub fn with_handler<F>(name: String, arg_count: usize, handler: F) -> Self
     where
         F: Fn(&mut Heap, Vec<Value>) -> Result<Value, Error> + 'static,
@@ -51,6 +43,13 @@ impl Func {
             exec: Exec::Handler(Box::new(handler)),
         }
     }
+
+    pub fn codes(&self) -> Rc<[Code]> {
+        match &self.exec {
+            Exec::Vm(codes) => Rc::clone(codes),
+            Exec::Handler(_) => Rc::new([]),
+        }
+    }
 }
 
 impl Debug for Func {
@@ -59,35 +58,5 @@ impl Debug for Func {
             .field("name", &self.name)
             .field("arg_count", &self.arg_count)
             .finish()
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct Cursor {
-    pub pos: usize,
-    codes: Rc<[Code]>,
-}
-
-impl Cursor {
-    pub fn new(codes: Rc<[Code]>) -> Self {
-        Self { pos: 0, codes }
-    }
-
-    pub fn next(&mut self) -> Option<&Code> {
-        let code = self.codes.get(self.pos);
-        self.pos += 1;
-        code
-    }
-
-    pub fn cur(&self) -> Option<&Code> {
-        self.codes.get(self.pos)
-    }
-
-    pub fn goto(&mut self, n: usize) {
-        self.pos = n;
-    }
-
-    pub fn goto_end(&mut self) {
-        self.pos = self.codes.len();
     }
 }

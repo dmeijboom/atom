@@ -2,14 +2,17 @@ use std::{
     collections::{HashMap, VecDeque},
     fmt::Display,
     mem,
-    rc::Rc,
+    rc::{Rc, Weak},
 };
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
     codes::{BinaryOp, Code, CompareOp, Const, Op},
     lexer::Span,
-    runtime::{function::Func, std::StdLib},
+    runtime::{
+        function::{Exec, Func},
+        std::StdLib,
+    },
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -76,6 +79,7 @@ pub struct Compiler<'a> {
     codes: Vec<Code>,
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
+    scope_funcs: HashMap<usize, Weak<Func>>,
     locals: VecDeque<HashMap<String, Local>>,
 }
 
@@ -89,10 +93,11 @@ impl<'a> Compiler<'a> {
             funcs: vec![],
             consts: vec![],
             locals: VecDeque::default(),
+            scope_funcs: HashMap::default(),
         }
     }
 
-    fn push_scope(&mut self, locals: Vec<String>) -> Vec<Code> {
+    fn push_scope(&mut self, locals: Vec<String>, func: Option<Weak<Func>>) -> Vec<Code> {
         let locals = locals
             .into_iter()
             .enumerate()
@@ -102,10 +107,15 @@ impl<'a> Compiler<'a> {
         self.scope += 1;
         self.locals.push_front(locals);
 
+        if let Some(func) = func {
+            self.scope_funcs.insert(self.scope, func);
+        }
+
         mem::take(&mut self.codes)
     }
 
     fn pop_scope(&mut self, codes: Vec<Code>) -> Vec<Code> {
+        self.scope_funcs.remove(&self.scope);
         self.scope -= 1;
         self.locals.pop_front();
 
@@ -304,12 +314,18 @@ impl<'a> Compiler<'a> {
         let idx = self.funcs.len();
         let arg_count = args.len();
 
-        self.funcs.push(Rc::new(Func::new(name.clone(), arg_count)));
-        let previous = self.push_scope(args);
+        let func = Rc::new(Func::new(name.clone(), arg_count));
+        let weak = Rc::downgrade(&func);
+
+        self.funcs.push(func);
+        let previous = self.push_scope(args, Some(weak));
         self.compile_body(stmts, true)?;
 
         let codes = self.pop_scope(previous);
-        self.funcs[idx] = Rc::new(Func::with_codes(name, arg_count, codes));
+        let func = Rc::get_mut(&mut self.funcs[idx]).unwrap();
+
+        func.arg_count = arg_count;
+        func.exec = Exec::Vm(codes.into());
 
         Ok(())
     }
@@ -401,7 +417,7 @@ mod tests {
         let mut compiler = Compiler::new(&lib);
 
         compiler.push_var(Span::default(), "n".to_string()).unwrap();
-        compiler.push_scope(vec![]);
+        compiler.push_scope(vec![], None);
 
         let expected = compiler.push_var(Span::default(), "n".to_string()).unwrap();
         let actual = compiler.load_var(Span::default(), "n", false).unwrap();

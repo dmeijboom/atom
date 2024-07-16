@@ -51,7 +51,7 @@ impl Op {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Code {
     pub op: Op,
     pub span: Span,

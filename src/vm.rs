@@ -10,14 +10,14 @@ use safe_gc::Heap;
 use tracing::{instrument, Level};
 
 use crate::{
-    codes::{BinaryOp, CompareOp, Const, Op},
+    codes::{BinaryOp, Code, CompareOp, Const, Op},
     compiler::Module,
     lexer::Span,
     reuse_vec::ReuseVec,
     runtime::{
         self,
         error::{Call, ErrorKind},
-        function::{Cursor, Exec, Func},
+        function::{Exec, Func},
         std::StdLib,
         value::{HeapValue, Type, Value},
     },
@@ -105,21 +105,35 @@ struct Frame {
     call: Call,
     // Locals (in reversed order)
     locals: Vec<Value>,
-    return_addr: Option<Cursor>,
+    return_pos: usize,
 }
 
 const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
 const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
 
+fn top_frame(module: &Module) -> Frame {
+    Frame {
+        call: Call::new(
+            Span::default(),
+            Rc::new(Func {
+                exec: Exec::Vm(Rc::clone(&module.codes)),
+                ..Func::default()
+            }),
+        ),
+        ..Frame::default()
+    }
+}
+
 pub struct Vm<'a> {
     heap: Heap,
     span: Span,
+    pos: usize,
     std: &'a StdLib,
     module: Module,
-    cursor: Cursor,
     returned: bool,
     vars: Vec<Value>,
     stack_len: usize,
+    codes: Rc<[Code]>,
     call_stack: ReuseVec<Frame>,
     stack: [Value; MAX_STACK_SIZE],
     consts: [Value; MAX_CONST_SIZE],
@@ -142,17 +156,21 @@ impl<'a> Vm<'a> {
             };
         }
 
+        let mut call_stack = ReuseVec::default();
+        call_stack.push(top_frame(&module));
+
         Self {
             std,
             vars: vec![],
             consts,
             returned: false,
             heap,
+            pos: 0,
             span: Span::default(),
             stack_len: 0,
-            call_stack: ReuseVec::default(),
+            call_stack,
             stack: [Value::NIL; MAX_STACK_SIZE],
-            cursor: Cursor::new(Rc::clone(&module.codes)),
+            codes: Rc::clone(&module.codes),
             module,
         }
     }
@@ -192,41 +210,35 @@ impl<'a> Vm<'a> {
             .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?)
     }
 
-    fn pop_frame(&mut self) -> Option<Cursor> {
-        if let Some(frame) = self.call_stack.pop() {
-            return mem::take(&mut frame.return_addr);
-        }
-
-        None
-    }
-
-    fn replace_cursor(&mut self, cursor: Cursor) -> Cursor {
-        mem::replace(&mut self.cursor, cursor)
-    }
-
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
         let frame = self.call_frame()?;
         frame.locals.resize(arg_count, Value::NIL);
 
         self.returned = false;
-        self.cursor.goto(0);
+        self.pos = 0;
 
         Ok(())
     }
 
-    fn push_call(&mut self, func: Rc<Func>, cursor: Cursor, arg_count: usize) -> Result<(), Error> {
-        let return_addr = self.replace_cursor(cursor);
+    fn push_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
+        let return_pos = self.pos;
+
+        self.pos = 0;
+        self.codes = match func.exec {
+            Exec::Vm(ref codes) => Rc::clone(codes),
+            _ => unreachable!(),
+        };
 
         // Check if we can re-use the current frame
         if let Some(frame) = self.call_stack.push_and_reuse() {
             frame.call = Call::new(self.span, func);
             frame.locals.truncate(arg_count);
-            frame.return_addr = Some(return_addr);
+            frame.return_pos = return_pos;
         } else {
             self.call_stack.push(Frame {
                 call: Call::new(self.span, func),
                 locals: Vec::with_capacity(arg_count),
-                return_addr: Some(return_addr),
+                return_pos,
             });
         }
 
@@ -234,19 +246,10 @@ impl<'a> Vm<'a> {
     }
 
     fn goto(&mut self, n: usize) {
-        self.cursor.goto(n);
+        self.pos = n;
 
-        if let Some(code) = self.cursor.cur() {
+        if let Some(code) = self.codes.get(self.pos) {
             self.span = code.span;
-        }
-    }
-
-    fn next(&mut self) -> Option<Op> {
-        if let Some(code) = self.cursor.next() {
-            self.span = code.span;
-            Some(code.op)
-        } else {
-            None
         }
     }
 
@@ -354,12 +357,11 @@ impl<'a> Vm<'a> {
                 }
 
                 match &func.exec {
-                    Exec::Vm(codes) => {
+                    Exec::Vm(_) => {
                         if tail_call {
                             self.push_tail_call(arg_count)?;
                         } else {
-                            let cursor = Cursor::new(Rc::clone(codes));
-                            self.push_call(func, cursor, arg_count)?;
+                            self.push_call(func, arg_count)?;
                         }
 
                         for _ in 0..arg_count {
@@ -433,37 +435,10 @@ impl<'a> Vm<'a> {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn repr(&self, value: &Value) -> Result<String, Error> {
-        let ty = value.ty();
-
-        Ok(match value.ty() {
-            Type::Str | Type::Array => match self.heap.get(value.heap()) {
-                HeapValue::Buffer(buff) => match ty {
-                    Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
-                    _ => unreachable!(),
-                },
-                HeapValue::Array(items) => {
-                    let mut s = String::from("[");
-
-                    for (i, item) in items.iter().enumerate() {
-                        if i > 0 {
-                            s.push_str(", ");
-                        }
-
-                        s.push_str(&self.repr(item)?);
-                    }
-
-                    s.push(']');
-                    s
-                }
-            },
-            Type::Int => format!("{}", value.int()),
-            Type::Float => format!("{}", value.float()),
-            Type::Bool => format!("{}", value.bool()),
-            Type::Fn => format!("{}(..)", value.func().name),
-            Type::Nil => "Nil".to_string(),
-        })
+    fn not(&mut self) -> Result<(), Error> {
+        let value = self.pop();
+        self.check_type(value.ty(), Type::Bool)?;
+        self.push((!value.bool()).into())
     }
 
     fn compare(&mut self, op: CompareOp) -> Result<(), Error> {
@@ -525,12 +500,25 @@ impl<'a> Vm<'a> {
         self.push(value)
     }
 
+    fn load_const(&mut self, idx: usize) -> Result<(), Error> {
+        self.push(self.consts[idx])
+    }
+
+    fn discard(&mut self) {
+        self.pop();
+    }
+
+    fn ret(&mut self) -> Result<(), Error> {
+        self.returned = true;
+        self.pos = self.codes.len();
+
+        Ok(())
+    }
+
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
-            Op::LoadConst(idx) => {
-                self.push(self.consts[idx])?;
-            }
+            Op::LoadConst(idx) => self.load_const(idx)?,
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
             Op::LoadNativeFunc(idx) => self.load_native_func(idx)?,
@@ -539,13 +527,8 @@ impl<'a> Vm<'a> {
             Op::Store(idx) => self.store(idx)?,
             Op::Load(idx) => self.load(idx)?,
             Op::LoadArg(idx) => self.load_arg(idx)?,
-            Op::Discard => {
-                self.pop();
-            }
-            Op::Return => {
-                self.returned = true;
-                self.cursor.goto_end();
-            }
+            Op::Discard => self.discard(),
+            Op::Return => self.ret()?,
             Op::Call(args) => self.call(args, false)?,
             Op::TailCall(args) => self.call(args, true)?,
             Op::JumpIfFalse(idx) => self.jump_cond(idx, false, false)?,
@@ -553,11 +536,7 @@ impl<'a> Vm<'a> {
             Op::PushJumpIfFalse(idx) => self.jump_cond(idx, true, false)?,
             Op::MakeArray(len) => self.make_array(len)?,
             Op::LoadElement => self.load_elem()?,
-            Op::UnaryNot => {
-                let value = self.pop();
-                self.check_type(value.ty(), Type::Bool)?;
-                self.push((!value.bool()).into())?;
-            }
+            Op::UnaryNot => self.not()?,
         }
 
         Ok(())
@@ -574,29 +553,55 @@ impl<'a> Vm<'a> {
         }
     }
 
+    fn next(&mut self) -> Result<Option<Op>, Error> {
+        match self.codes.get(self.pos) {
+            Some(code) => {
+                self.pos += 1;
+                self.span = code.span;
+
+                Ok(Some(code.op))
+            }
+            None => Ok(None),
+        }
+    }
+
+    fn post_call(&mut self) -> Result<bool, Error> {
+        if let Some(frame) = self.call_stack.pop() {
+            self.returned = false;
+            self.pos = frame.return_pos;
+
+            if let Some(frame) = self.call_stack.last() {
+                self.codes = frame.call.func.codes();
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
+    }
+
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
-        loop {
-            while let Some(op) = self.next() {
-                self.eval(op).map_err(|e| self.add_trace(e))?;
-            }
-
-            match self.pop_frame() {
-                Some(return_addr) => {
-                    if !self.returned {
-                        self.push(Value::NIL)?;
-                    }
-
-                    self.returned = false;
-                    self.cursor = return_addr;
+        let mut start = || {
+            loop {
+                while let Some(op) = self.next()? {
+                    self.eval(op)?;
                 }
-                None => break,
+
+                if !self.returned {
+                    self.push(Value::NIL)?;
+                }
+
+                if !self.post_call()? {
+                    break;
+                }
             }
-        }
 
-        if self.stack_len > 0 {
-            return Ok(Some(self.pop()));
-        }
+            if self.stack_len > 0 {
+                return Ok(Some(self.pop()));
+            }
 
-        Ok(None)
+            Ok(None)
+        };
+
+        start().map_err(|e| self.add_trace(e))
     }
 }

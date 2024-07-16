@@ -1,9 +1,4 @@
-fn factorial(n, acc) {
-    if n == 1 {
-        return acc;
-    }
+let names = ["henk", "denk"];
+let display = repr(names ^ ["flenk"]);
 
-    factorial(n - 1, n * acc)
-}
-
-println(factorial(2, 1));
+println("display: " ^ display);

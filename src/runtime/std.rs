@@ -6,25 +6,77 @@ use wyhash2::WyHash;
 use super::{
     error::Error,
     function::Func,
-    value::{Type, Value},
+    value::{HeapValue, Type, Value},
 };
+
+pub fn repr(heap: &Heap, value: &Value) -> Result<String, Error> {
+    let ty = value.ty();
+
+    Ok(match value.ty() {
+        Type::Str | Type::Array => match heap.get(value.heap()) {
+            HeapValue::Buffer(buff) => match ty {
+                Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
+                _ => unreachable!(),
+            },
+            HeapValue::Array(items) => {
+                let mut s = String::from("[");
+
+                for (i, item) in items.iter().enumerate() {
+                    if i > 0 {
+                        s.push_str(", ");
+                    }
+
+                    s.push_str(&repr(heap, item)?);
+                }
+
+                s.push(']');
+                s
+            }
+        },
+        Type::Int => format!("{}", value.int()),
+        Type::Float => format!("{}", value.float()),
+        Type::Bool => format!("{}", value.bool()),
+        Type::Fn => format!("{}(..)", value.func().name),
+        Type::Nil => "".to_string(),
+    })
+}
 
 pub struct StdLib {
     pub types: TypeRegistry,
-    pub funcs: [Rc<Func>; 1],
+    pub funcs: [Rc<Func>; 2],
 }
 
 pub fn stdlib() -> StdLib {
     let mut types = TypeRegistry::default();
     types.insert(Type::Array, array());
-    let funcs = [Rc::new(Func::with_handler(
-        "println".to_string(),
-        1,
-        |_, args| {
-            println!("{}", args[0]);
-            Ok(Value::NIL)
-        },
-    ))];
+    let funcs = [
+        Rc::new(Func::with_handler("repr".to_string(), 1, |heap, args| {
+            let s = repr(heap, &args[0])?;
+            let heap = heap.alloc(HeapValue::Buffer(s.into_bytes()));
+
+            Ok(Value::new_str(heap.unrooted()))
+        })),
+        Rc::new(Func::with_handler(
+            "println".to_string(),
+            1,
+            |heap, args| {
+                let arg = args[0];
+
+                match arg.ty() {
+                    Type::Str => {
+                        let handle = arg.heap();
+                        let value = heap.get(handle);
+                        let buffer = value.buffer();
+
+                        println!("{}", String::from_utf8_lossy(buffer));
+                    }
+                    _ => println!("{}", repr(heap, &arg)?),
+                }
+
+                Ok(Value::NIL)
+            },
+        )),
+    ];
 
     StdLib { types, funcs }
 }
@@ -83,25 +135,6 @@ impl TypeDescrBuilder {
 }
 
 pub type FnHandler = dyn Fn(&mut Heap, Vec<Value>) -> Result<Value, Error>;
-
-//pub struct Func {
-//    pub name: &'static str,
-//    pub arg_count: usize,
-//    pub handler: Rc<FnHandler>,
-//}
-//
-//impl Func {
-//    pub fn new<F>(name: &'static str, arg_count: usize, handler: F) -> Self
-//    where
-//        F: Fn(&mut Heap, TinyVec<[Value; 8]>) -> Result<Value, Error> + 'static,
-//    {
-//        Self {
-//            name,
-//            arg_count,
-//            handler: Rc::new(handler),
-//        }
-//    }
-//}
 
 fn array() -> TypeDescr {
     TypeDescrBuilder::default()

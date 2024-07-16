@@ -36,6 +36,14 @@ impl<T> ReuseVec<T> {
         item
     }
 
+    pub fn last(&mut self) -> Option<&T> {
+        if self.len == 0 {
+            return None;
+        }
+
+        self.data.get(self.len - 1)
+    }
+
     pub fn last_mut(&mut self) -> Option<&mut T> {
         if self.len == 0 {
             return None;
