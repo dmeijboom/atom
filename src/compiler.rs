@@ -7,7 +7,7 @@ use std::{
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
-    codes::{BinaryOp, Code, CompareOp, Const, Op},
+    codes::{Code, Const, Op},
     lexer::Span,
     runtime::{
         function::{Exec, Func},
@@ -249,21 +249,21 @@ impl<'a> Compiler<'a> {
                 self.expr(*lhs)?;
 
                 let code = match op {
-                    ast::BinaryOp::Add => Op::BinaryOp(BinaryOp::Add).at(expr.span),
-                    ast::BinaryOp::Sub => Op::BinaryOp(BinaryOp::Sub).at(expr.span),
-                    ast::BinaryOp::Mul => Op::BinaryOp(BinaryOp::Mul).at(expr.span),
-                    ast::BinaryOp::Div => Op::BinaryOp(BinaryOp::Div).at(expr.span),
-                    ast::BinaryOp::Eq => Op::CompareOp(CompareOp::Eq).at(expr.span),
-                    ast::BinaryOp::Ne => Op::CompareOp(CompareOp::Ne).at(expr.span),
-                    ast::BinaryOp::Gt => Op::CompareOp(CompareOp::Gt).at(expr.span),
-                    ast::BinaryOp::Gte => Op::CompareOp(CompareOp::Gte).at(expr.span),
-                    ast::BinaryOp::Lt => Op::CompareOp(CompareOp::Lt).at(expr.span),
-                    ast::BinaryOp::Lte => Op::CompareOp(CompareOp::Lte).at(expr.span),
+                    ast::BinaryOp::Add => Op::Add.at(expr.span),
+                    ast::BinaryOp::Sub => Op::Sub.at(expr.span),
+                    ast::BinaryOp::Mul => Op::Mul.at(expr.span),
+                    ast::BinaryOp::Div => Op::Div.at(expr.span),
+                    ast::BinaryOp::Eq => Op::Eq.at(expr.span),
+                    ast::BinaryOp::Ne => Op::Ne.at(expr.span),
+                    ast::BinaryOp::Gt => Op::Gt.at(expr.span),
+                    ast::BinaryOp::Gte => Op::Gte.at(expr.span),
+                    ast::BinaryOp::Lt => Op::Lt.at(expr.span),
+                    ast::BinaryOp::Lte => Op::Lte.at(expr.span),
                     ast::BinaryOp::LogicalOr => return self.logical(expr.span, *rhs, true),
                     ast::BinaryOp::LogicalAnd => return self.logical(expr.span, *rhs, false),
-                    ast::BinaryOp::BitwiseOr => Op::BinaryOp(BinaryOp::BitwiseOr).at(expr.span),
-                    ast::BinaryOp::BitwiseAnd => Op::BinaryOp(BinaryOp::BitwiseAnd).at(expr.span),
-                    ast::BinaryOp::BitwiseXor => Op::BinaryOp(BinaryOp::BitwiseXor).at(expr.span),
+                    ast::BinaryOp::BitwiseOr => Op::BitwiseOr.at(expr.span),
+                    ast::BinaryOp::BitwiseAnd => Op::BitwiseAnd.at(expr.span),
+                    ast::BinaryOp::BitwiseXor => Op::BitwiseXor.at(expr.span),
                 };
 
                 self.expr(*rhs)?;

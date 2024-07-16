@@ -3,7 +3,7 @@ use std::{
     rc::Rc,
 };
 
-use crate::{codes::BinaryOp, lexer::Span};
+use crate::lexer::Span;
 
 use super::{function::Func, value::Type};
 
@@ -19,11 +19,11 @@ pub enum ErrorKind {
     ArgCountMismatch { arg_count: usize, func: Rc<Func> },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
-    #[error("unsupported operation '{op:?}' for {left} and {right}")]
+    #[error("unsupported operation: {left} {op} {right}")]
     UnsupportedOp {
         left: Type,
         right: Type,
-        op: BinaryOp,
+        op: &'static str,
     },
 }
 

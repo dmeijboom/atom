@@ -10,7 +10,7 @@ use safe_gc::Heap;
 use tracing::{instrument, Level};
 
 use crate::{
-    codes::{BinaryOp, Code, CompareOp, Const, Op},
+    codes::{Code, Const, Op},
     compiler::Module,
     lexer::Span,
     reuse_vec::ReuseVec,
@@ -38,15 +38,31 @@ macro_rules! unwrap {
 }
 
 macro_rules! binary {
-    ($($ty:ident)|+, $lhs:ident $op:tt $rhs:ident) => {
-        match $lhs.ty() {
+    ($self:ident: $($ty:ident)|+, $lhs:expr, $op:tt, $rhs:expr) => {{
+        $self.push(match $lhs.ty() {
             $(Type::$ty => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into()),+
-            , _ => unreachable!()
-        }
-    };
+            , _ => return Err(ErrorKind::UnsupportedOp {
+                left: $lhs.ty(),
+                right: $rhs.ty(),
+                op: stringify!($op),
+            }
+            .at($self.span)
+            .into()),
+        })?;
 
-    ($lhs:ident $op:tt $rhs:ident) => {
-        binary!(Int | Float | Bool, $lhs $op $rhs)
+        Ok(())
+    }};
+
+    ($self:ident: $($ty:ident)|+, lhs $op:tt rhs) => {{
+        let rhs = $self.pop();
+        let lhs = $self.pop();
+
+        $self.check_type(lhs.ty(), rhs.ty())?;
+        binary!($self: $($ty)|+, lhs, $op, rhs)
+    }};
+
+    ($self:ident: lhs $op:tt rhs) => {
+        binary!($self: Int | Float | Bool, lhs $op rhs)
     }
 }
 
@@ -441,50 +457,67 @@ impl<'a> Vm<'a> {
         self.push((!value.bool()).into())
     }
 
-    fn compare(&mut self, op: CompareOp) -> Result<(), Error> {
-        let rhs = self.pop();
-        let lhs = self.pop();
-
-        self.check_type(lhs.ty(), rhs.ty())?;
-        self.push(match op {
-            CompareOp::Eq => binary!(lhs == rhs),
-            CompareOp::Ne => binary!(lhs != rhs),
-            CompareOp::Lt => binary!(lhs < rhs),
-            CompareOp::Lte => binary!(lhs <= rhs),
-            CompareOp::Gt => binary!(lhs > rhs),
-            CompareOp::Gte => binary!(lhs >= rhs),
-        })
+    fn eq(&mut self) -> Result<(), Error> {
+        binary!(self: lhs == rhs)
     }
 
-    fn binary(&mut self, op: BinaryOp) -> Result<(), Error> {
+    fn ne(&mut self) -> Result<(), Error> {
+        binary!(self: lhs != rhs)
+    }
+
+    fn lt(&mut self) -> Result<(), Error> {
+        binary!(self: lhs < rhs)
+    }
+
+    fn lte(&mut self) -> Result<(), Error> {
+        binary!(self: lhs <= rhs)
+    }
+
+    fn gt(&mut self) -> Result<(), Error> {
+        binary!(self: lhs > rhs)
+    }
+
+    fn gte(&mut self) -> Result<(), Error> {
+        binary!(self: lhs >= rhs)
+    }
+
+    fn add(&mut self) -> Result<(), Error> {
+        binary!(self: Int | Float, lhs + rhs)
+    }
+
+    fn sub(&mut self) -> Result<(), Error> {
+        binary!(self: Int | Float, lhs - rhs)
+    }
+
+    fn mul(&mut self) -> Result<(), Error> {
+        binary!(self: Int | Float, lhs * rhs)
+    }
+
+    fn div(&mut self) -> Result<(), Error> {
+        binary!(self: Int | Float, lhs / rhs)
+    }
+
+    fn bitwise_and(&mut self) -> Result<(), Error> {
+        binary!(self: Int, lhs & rhs)
+    }
+
+    fn bitwise_or(&mut self) -> Result<(), Error> {
+        binary!(self: Int, lhs | rhs)
+    }
+
+    fn bitwise_xor(&mut self) -> Result<(), Error> {
         let rhs = self.pop();
         let lhs = self.pop();
 
         self.check_type(lhs.ty(), rhs.ty())?;
 
-        let value = match op {
-            BinaryOp::Add if lhs.is_number() => binary!(Int | Float, lhs + rhs),
-            BinaryOp::Sub if lhs.is_number() => binary!(Int | Float, lhs - rhs),
-            BinaryOp::Mul if lhs.is_number() => binary!(Int | Float, lhs * rhs),
-            BinaryOp::Div if lhs.is_number() => binary!(Int | Float, lhs / rhs),
-            BinaryOp::BitwiseOr if lhs.ty() == Type::Int => binary!(Int, lhs | rhs),
-            BinaryOp::BitwiseAnd if lhs.ty() == Type::Int => binary!(Int, lhs & rhs),
-            BinaryOp::BitwiseXor if lhs.ty() == Type::Int => binary!(Int, lhs ^ rhs),
-            BinaryOp::BitwiseXor if matches!(lhs.ty(), Type::Array | Type::Str) => {
-                self.concat(lhs, rhs)?
-            }
-            op => {
-                return Err(ErrorKind::UnsupportedOp {
-                    left: lhs.ty(),
-                    right: rhs.ty(),
-                    op,
-                }
-                .at(self.span)
-                .into())
-            }
-        };
+        if matches!(lhs.ty(), Type::Array | Type::Str) {
+            let value = self.concat(lhs, rhs)?;
+            self.push(value)?;
+            return Ok(());
+        }
 
-        self.push(value)
+        binary!(self: Int, lhs, ^, rhs)
     }
 
     fn store(&mut self, idx: usize) -> Result<(), Error> {
@@ -518,12 +551,23 @@ impl<'a> Vm<'a> {
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval(&mut self, op: Op) -> Result<(), Error> {
         match op {
+            Op::Add => self.add()?,
+            Op::Sub => self.sub()?,
+            Op::Mul => self.mul()?,
+            Op::Div => self.div()?,
+            Op::Eq => self.eq()?,
+            Op::Ne => self.ne()?,
+            Op::Lt => self.lt()?,
+            Op::Lte => self.lte()?,
+            Op::Gt => self.gt()?,
+            Op::Gte => self.gte()?,
+            Op::BitwiseAnd => self.bitwise_and()?,
+            Op::BitwiseOr => self.bitwise_or()?,
+            Op::BitwiseXor => self.bitwise_xor()?,
             Op::LoadConst(idx) => self.load_const(idx)?,
             Op::LoadMember(idx) => self.load_member(idx)?,
             Op::LoadFunc(idx) => self.load_func(idx)?,
             Op::LoadNativeFunc(idx) => self.load_native_func(idx)?,
-            Op::CompareOp(op) => self.compare(op)?,
-            Op::BinaryOp(op) => self.binary(op)?,
             Op::Store(idx) => self.store(idx)?,
             Op::Load(idx) => self.load(idx)?,
             Op::LoadArg(idx) => self.load_arg(idx)?,
@@ -580,26 +624,23 @@ impl<'a> Vm<'a> {
     }
 
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
-        let mut start = || {
-            loop {
-                while let Some(op) = self.next()? {
-                    self.eval(op)?;
-                }
+        let mut start = || loop {
+            match self.next()? {
+                Some(op) => self.eval(op)?,
+                None => {
+                    if !self.returned {
+                        self.push(Value::NIL)?;
+                    }
 
-                if !self.returned {
-                    self.push(Value::NIL)?;
-                }
-
-                if !self.post_call()? {
-                    break;
+                    if !self.post_call()? {
+                        return Ok(if self.stack_len > 0 {
+                            Some(self.pop())
+                        } else {
+                            None
+                        });
+                    }
                 }
             }
-
-            if self.stack_len > 0 {
-                return Ok(Some(self.pop()));
-            }
-
-            Ok(None)
         };
 
         start().map_err(|e| self.add_trace(e))

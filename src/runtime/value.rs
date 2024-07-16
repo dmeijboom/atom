@@ -122,10 +122,6 @@ impl Value {
         }
     }
 
-    pub fn is_number(self) -> bool {
-        matches!(self.ty(), Type::Int | Type::Float)
-    }
-
     const fn new_primitive(tag: Tag) -> Self {
         Self {
             bits: (tag as u64) << 48 | QUIET_NAN,

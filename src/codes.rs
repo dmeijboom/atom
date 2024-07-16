@@ -1,7 +1,14 @@
 use crate::lexer::Span;
 
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, Copy)]
-pub enum BinaryOp {
+pub enum Op {
+    Eq,
+    Ne,
+    Lt,
+    Lte,
+    Gt,
+    Gte,
     Add,
     Sub,
     Mul,
@@ -9,24 +16,7 @@ pub enum BinaryOp {
     BitwiseOr,
     BitwiseAnd,
     BitwiseXor,
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum CompareOp {
-    Eq,
-    Ne,
-    Lt,
-    Lte,
-    Gt,
-    Gte,
-}
-
-#[allow(clippy::enum_variant_names)]
-#[derive(Debug, Clone, Copy)]
-pub enum Op {
     LoadConst(usize),
-    BinaryOp(BinaryOp),
-    CompareOp(CompareOp),
     Store(usize),
     Load(usize),
     LoadFunc(usize),
