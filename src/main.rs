@@ -4,6 +4,7 @@ use std::{
 };
 
 use clap::Parser;
+use opcode::{Op, Opcode};
 use runtime::{
     function::Exec,
     std::{stdlib, StdLib},
@@ -16,9 +17,9 @@ use lexer::Lexer;
 use vm::Vm;
 
 mod ast;
-mod opcode;
 mod compiler;
 mod lexer;
+mod opcode;
 mod parser;
 mod reuse_vec;
 mod runtime;
@@ -71,6 +72,34 @@ fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
     Ok(compiler.compile(stmts)?)
 }
 
+fn print_opcode(opcode: &Opcode) {
+    match opcode.op() {
+        Op::Store
+        | Op::Load
+        | Op::LoadFunc
+        | Op::LoadNativeFunc
+        | Op::JumpIfFalse
+        | Op::PushJumpIfFalse
+        | Op::PushJumpIfTrue
+        | Op::MakeArray
+        | Op::Call
+        | Op::TailCall
+        | Op::LoadElement
+        | Op::LoadMember
+        | Op::LoadArg => println!(
+            "{}: {:?} {}",
+            opcode.span.offset,
+            opcode.op(),
+            opcode.code()
+        ),
+        Op::DirectCall => {
+            let (hi, low) = opcode.code2();
+            println!("{}: {:?} {} {}", opcode.span.offset, opcode.op(), hi, low,)
+        }
+        _ => println!("{}: {:?}", opcode.span.offset, opcode.op(),),
+    }
+}
+
 fn print_module(module: &Module) {
     for (i, func) in module.funcs.iter().enumerate() {
         if i > 0 {
@@ -81,13 +110,8 @@ fn print_module(module: &Module) {
 
         match &func.exec {
             Exec::Vm(codes) => {
-                for op_code in codes.iter() {
-                    println!(
-                        "{}: {:?} {}",
-                        op_code.span.offset,
-                        op_code.op(),
-                        op_code.code()
-                    );
+                for opcode in codes.iter() {
+                    print_opcode(opcode);
                 }
             }
             Exec::Handler(_) => println!("<native>"),
@@ -98,13 +122,8 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for op_code in module.codes.iter() {
-        println!(
-            "{}: {:?} {}",
-            op_code.span.offset,
-            op_code.op(),
-            op_code.code()
-        );
+    for opcode in module.codes.iter() {
+        print_opcode(opcode);
     }
 }
 

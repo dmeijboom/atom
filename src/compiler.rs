@@ -7,8 +7,8 @@ use std::{
 
 use crate::{
     ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
-    opcode::{Const, Op, Opcode},
     lexer::Span,
+    opcode::{Const, Op, Opcode},
     runtime::{
         function::{Exec, Func},
         std::StdLib,
@@ -164,6 +164,20 @@ impl<'a> Compiler<'a> {
         let arg_count = args.len();
         self.expr_list(args)?;
         self.expr(callee)?;
+
+        let last = self.codes.last_mut();
+
+        if let Some(last) = last {
+            let max = u32::MAX as usize;
+            let code = last.code();
+
+            if last.op() == Op::LoadFunc && code <= max && arg_count <= max {
+                self.codes.pop();
+                return Ok(
+                    Opcode::with_code2(Op::DirectCall, code as u32, arg_count as u32).at(span),
+                );
+            }
+        }
 
         Ok(Opcode::with_code(Op::Call, arg_count).at(span))
     }
@@ -366,16 +380,16 @@ impl<'a> Compiler<'a> {
     fn optimize_tail_call(&mut self) {
         let n = self.codes.len() - 2;
 
-        if let Some(op_code) = self.codes.last_mut() {
-            match op_code.op() {
+        if let Some(opcode) = self.codes.last_mut() {
+            match opcode.op() {
                 Op::Call => {
-                    *op_code = Opcode::with_code(Op::TailCall, op_code.code()).at(op_code.span);
+                    *opcode = Opcode::with_code(Op::TailCall, opcode.code()).at(opcode.span);
                 }
                 Op::Return => {
-                    if let Some(op_code) = self.codes.get_mut(n) {
-                        if let Op::Call = op_code.op() {
-                            *op_code =
-                                Opcode::with_code(Op::TailCall, op_code.code()).at(op_code.span);
+                    if let Some(opcode) = self.codes.get_mut(n) {
+                        if let Op::Call = opcode.op() {
+                            *opcode =
+                                Opcode::with_code(Op::TailCall, opcode.code()).at(opcode.span);
                         }
                     }
                 }

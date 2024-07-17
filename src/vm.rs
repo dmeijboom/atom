@@ -10,9 +10,9 @@ use safe_gc::Heap;
 use tracing::{instrument, Level};
 
 use crate::{
-    opcode::{Const, Op, Opcode},
     compiler::Module,
     lexer::Span,
+    opcode::{Const, Op, Opcode},
     reuse_vec::ReuseVec,
     runtime::{
         self,
@@ -309,15 +309,19 @@ impl<'a> Vm<'a> {
         self.push(Value::new_func(Rc::clone(&self.std.funcs[idx])))
     }
 
-    fn load_func(&mut self, idx: usize) -> Result<(), Error> {
+    fn get_func(&mut self, idx: usize) -> Result<Rc<Func>, Error> {
         let func = self
             .module
             .funcs
             .get(idx)
             .ok_or_else(|| FatalErrorKind::InvalidFn(idx).at(self.span))?;
 
-        self.push(Value::new_func(Rc::clone(func)))?;
-        Ok(())
+        Ok(Rc::clone(func))
+    }
+
+    fn load_func(&mut self, idx: usize) -> Result<(), Error> {
+        let func = self.get_func(idx)?;
+        self.push(Value::new_func(func))
     }
 
     fn load_var(&self, idx: usize) -> Result<Value, Error> {
@@ -359,43 +363,56 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
-        let callee = self.pop();
+    fn direct_call(&mut self, codes: (u32, u32)) -> Result<(), Error> {
+        let (idx, arg_count) = codes;
+        let func = self.get_func(idx as usize)?;
+        self.call(arg_count as usize, false, Some(func))
+    }
 
-        match callee.ty() {
-            Type::Fn => {
-                let func = callee.func();
-
-                if arg_count != func.arg_count {
-                    return Err(ErrorKind::ArgCountMismatch { func, arg_count }
-                        .at(self.span)
-                        .into());
+    fn call(
+        &mut self,
+        arg_count: usize,
+        tail_call: bool,
+        func: Option<Rc<Func>>,
+    ) -> Result<(), Error> {
+        let func = match func {
+            Some(func) => func,
+            None => {
+                let callee = self.pop();
+                match callee.ty() {
+                    Type::Fn => callee.func(),
+                    ty => return Err(ErrorKind::NotCallable(ty).at(self.span).into()),
                 }
-
-                match &func.exec {
-                    Exec::Vm(_) => {
-                        if tail_call {
-                            self.push_tail_call(arg_count)?;
-                        } else {
-                            self.push_call(func, arg_count)?;
-                        }
-
-                        for _ in 0..arg_count {
-                            let value = self.pop();
-                            self.call_frame()?.locals.push(value);
-                        }
-                    }
-                    Exec::Handler(handler) => {
-                        let args = self.pop_n(arg_count);
-                        let value = (handler)(&mut self.heap, args)?;
-                        self.push(value)?;
-                    }
-                }
-
-                Ok(())
             }
-            ty => Err(ErrorKind::NotCallable(ty).at(self.span).into()),
+        };
+
+        if arg_count != func.arg_count {
+            return Err(ErrorKind::ArgCountMismatch { func, arg_count }
+                .at(self.span)
+                .into());
         }
+
+        match &func.exec {
+            Exec::Vm(_) => {
+                if tail_call {
+                    self.push_tail_call(arg_count)?;
+                } else {
+                    self.push_call(func, arg_count)?;
+                }
+
+                for _ in 0..arg_count {
+                    let value = self.pop();
+                    self.call_frame()?.locals.push(value);
+                }
+            }
+            Exec::Handler(handler) => {
+                let args = self.pop_n(arg_count);
+                let value = (handler)(&mut self.heap, args)?;
+                self.push(value)?;
+            }
+        }
+
+        Ok(())
     }
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
@@ -550,8 +567,8 @@ impl<'a> Vm<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
-    fn eval(&mut self, op_code: Opcode) -> Result<(), Error> {
-        match op_code.op() {
+    fn eval(&mut self, opcode: Opcode) -> Result<(), Error> {
+        match opcode.op() {
             Op::Add => self.add()?,
             Op::Sub => self.sub()?,
             Op::Mul => self.mul()?,
@@ -565,21 +582,22 @@ impl<'a> Vm<'a> {
             Op::BitwiseAnd => self.bitwise_and()?,
             Op::BitwiseOr => self.bitwise_or()?,
             Op::BitwiseXor => self.bitwise_xor()?,
-            Op::LoadConst => self.load_const(op_code.code())?,
-            Op::LoadMember => self.load_member(op_code.code())?,
-            Op::LoadFunc => self.load_func(op_code.code())?,
-            Op::LoadNativeFunc => self.load_native_func(op_code.code())?,
-            Op::Store => self.store(op_code.code())?,
-            Op::Load => self.load(op_code.code())?,
-            Op::LoadArg => self.load_arg(op_code.code())?,
+            Op::LoadConst => self.load_const(opcode.code())?,
+            Op::LoadMember => self.load_member(opcode.code())?,
+            Op::LoadFunc => self.load_func(opcode.code())?,
+            Op::LoadNativeFunc => self.load_native_func(opcode.code())?,
+            Op::Store => self.store(opcode.code())?,
+            Op::Load => self.load(opcode.code())?,
+            Op::LoadArg => self.load_arg(opcode.code())?,
             Op::Discard => self.discard(),
             Op::Return => self.ret()?,
-            Op::Call => self.call(op_code.code(), false)?,
-            Op::TailCall => self.call(op_code.code(), true)?,
-            Op::JumpIfFalse => self.jump_cond(op_code.code(), false, false)?,
-            Op::PushJumpIfTrue => self.jump_cond(op_code.code(), true, true)?,
-            Op::PushJumpIfFalse => self.jump_cond(op_code.code(), true, false)?,
-            Op::MakeArray => self.make_array(op_code.code())?,
+            Op::Call => self.call(opcode.code(), false, None)?,
+            Op::DirectCall => self.direct_call(opcode.code2())?,
+            Op::TailCall => self.call(opcode.code(), true, None)?,
+            Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
+            Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
+            Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,
+            Op::MakeArray => self.make_array(opcode.code())?,
             Op::LoadElement => self.load_elem()?,
             Op::UnaryNot => self.not()?,
         }
@@ -600,11 +618,11 @@ impl<'a> Vm<'a> {
 
     fn next(&mut self) -> Result<Option<Opcode>, Error> {
         match self.codes.get(self.pos) {
-            Some(op_code) => {
+            Some(opcode) => {
                 self.pos += 1;
-                self.span = op_code.span;
+                self.span = opcode.span;
 
-                Ok(Some(op_code.clone()))
+                Ok(Some(opcode.clone()))
             }
             None => Ok(None),
         }
@@ -627,7 +645,7 @@ impl<'a> Vm<'a> {
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
         let mut start = || loop {
             match self.next()? {
-                Some(op_code) => self.eval(op_code)?,
+                Some(opcode) => self.eval(opcode)?,
                 None => {
                     if !self.returned {
                         self.push(Value::NIL)?;
