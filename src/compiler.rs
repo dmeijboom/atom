@@ -6,7 +6,7 @@ use std::{
 };
 
 use crate::{
-    ast::{self, Expr, ExprKind, Literal, Stmt, StmtKind},
+    ast::{self, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind},
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
@@ -142,6 +142,10 @@ impl<'a> Compiler<'a> {
         idx
     }
 
+    fn replace_code(&mut self, idx: usize, code: usize) {
+        self.codes[idx] = Opcode::with_code(self.codes[idx].op(), code);
+    }
+
     fn push_var(&mut self, span: Span, name: String) -> Result<usize, Error> {
         if let Ok(idx) = self.load_var(span, &name, true) {
             return Ok(idx);
@@ -208,15 +212,12 @@ impl<'a> Compiler<'a> {
 
     fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), Error> {
         let idx = self.push_code(match cond {
-            true => Opcode::new(Op::PushJumpIfTrue),
-            false => Opcode::new(Op::PushJumpIfFalse),
+            true => Opcode::new(Op::PushJumpIfTrue).at(span),
+            false => Opcode::new(Op::PushJumpIfFalse).at(span),
         });
 
         self.expr(rhs)?;
-        self.codes[idx] = match cond {
-            true => Opcode::with_code(Op::PushJumpIfTrue, self.loc()).at(span),
-            false => Opcode::with_code(Op::PushJumpIfFalse, self.loc()).at(span),
-        };
+        self.replace_code(idx, self.loc());
 
         Ok(())
     }
@@ -343,6 +344,40 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn if_stmt(&mut self, IfStmt(expr, stmts, alt): IfStmt) -> Result<(), Error> {
+        let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
+        let end_block = if let Some(expr) = expr {
+            self.expr(expr)?;
+            Some(self.push_code(Opcode::new(Op::JumpIfFalse)))
+        } else {
+            None
+        };
+
+        self.scope += 1;
+        self.compile_body(stmts, false)?;
+        self.scope -= 1;
+
+        match alt {
+            Some(alt) => {
+                let end_stmt = self.push_code(Opcode::new(Op::Jump).at(span));
+
+                if let Some(idx) = end_block {
+                    self.replace_code(idx, self.loc());
+                }
+
+                self.if_stmt(*alt)?;
+                self.replace_code(end_stmt, self.loc());
+            }
+            None => {
+                if let Some(idx) = end_block {
+                    self.replace_code(idx, self.loc());
+                }
+            }
+        }
+
+        Ok(())
+    }
+
     fn stmt(&mut self, stmt: Stmt) -> Result<(), Error> {
         match stmt.kind {
             StmtKind::Let(name, expr) => {
@@ -364,14 +399,7 @@ impl<'a> Compiler<'a> {
                 self.push_code(Opcode::new(Op::Return).at(stmt.span));
             }
             StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
-            StmtKind::If(expr, stmts) => {
-                self.expr(expr)?;
-                let idx = self.push_code(Opcode::new(Op::JumpIfFalse));
-                self.scope += 1;
-                self.compile_body(stmts, false)?;
-                self.scope -= 1;
-                self.codes[idx] = Opcode::with_code(Op::JumpIfFalse, self.loc()).at(stmt.span);
-            }
+            StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
         }
 
         Ok(())

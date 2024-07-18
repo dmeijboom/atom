@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
-    ast::{BinaryOp, Expr, ExprKind, Literal, Stmt, StmtKind, UnaryOp},
+    ast::{BinaryOp, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
     lexer::{Span, Token, TokenKind},
 };
 
@@ -295,15 +295,21 @@ impl Parser {
         Ok(StmtKind::Let(name, value).at(span))
     }
 
+    fn block(&mut self) -> Result<Vec<Stmt>, Error> {
+        self.expect(TokenKind::BracketLeft)?;
+        let body = self.body(false)?;
+        self.expect(TokenKind::BracketRight)?;
+
+        Ok(body)
+    }
+
     fn fn_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         self.advance();
         let name = self.ident()?;
         self.expect(TokenKind::ParentLeft)?;
         let args = self.arg_list(TokenKind::ParentRight)?;
-        self.expect(TokenKind::BracketLeft)?;
-        let body = self.body(false)?;
-        self.expect(TokenKind::BracketRight)?;
+        let body = self.block()?;
 
         Ok(StmtKind::Fn(name, args, body).at(span))
     }
@@ -312,11 +318,36 @@ impl Parser {
         let span = self.span();
         self.advance();
         let expr = self.expr(1)?;
-        self.expect(TokenKind::BracketLeft)?;
-        let body = self.body(false)?;
-        self.expect(TokenKind::BracketRight)?;
+        let body = self.block()?;
 
-        Ok(StmtKind::If(expr, body).at(span))
+        let mut if_stmt = Box::new(IfStmt(Some(expr), body, None));
+        let mut cur = &mut if_stmt;
+
+        loop {
+            if let Some(TokenKind::Keyword(keyword)) = self.peek() {
+                match keyword.as_str() {
+                    "elif" => {
+                        self.advance();
+                        let expr = self.expr(1)?;
+                        let body = self.block()?;
+
+                        cur.2 = Some(Box::new(IfStmt(Some(expr), body, None)));
+                        cur = cur.2.as_mut().unwrap();
+
+                        continue;
+                    }
+                    "else" => {
+                        self.advance();
+                        cur.2 = Some(Box::new(IfStmt(None, self.block()?, None)));
+                    }
+                    _ => {}
+                }
+            }
+
+            break;
+        }
+
+        Ok(StmtKind::If(*if_stmt).at(span))
     }
 
     fn assign_stmt(&mut self) -> Result<Stmt, Error> {

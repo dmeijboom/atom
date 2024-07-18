@@ -600,6 +600,7 @@ impl<'a> Vm<'a> {
             Op::Call => self.call(opcode.code(), false, None)?,
             Op::DirectCall => self.direct_call(opcode.code2())?,
             Op::TailCall => self.call(opcode.code(), true, None)?,
+            Op::Jump => self.goto(opcode.code()),
             Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
             Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
             Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,

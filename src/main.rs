@@ -72,13 +72,20 @@ fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
     Ok(compiler.compile(stmts)?)
 }
 
-fn print_opcode(opcode: &Opcode) {
+fn print_opcode(i: usize, opcode: &Opcode) {
+    let mut prefix = format!("{i}:");
+
+    while prefix.len() < 5 {
+        prefix.push(' ');
+    }
+
     match opcode.op() {
         Op::Store
         | Op::Load
         | Op::LoadFunc
         | Op::LoadNativeFunc
         | Op::LoadConst
+        | Op::Jump
         | Op::JumpIfFalse
         | Op::PushJumpIfFalse
         | Op::PushJumpIfTrue
@@ -87,17 +94,12 @@ fn print_opcode(opcode: &Opcode) {
         | Op::TailCall
         | Op::LoadElement
         | Op::LoadMember
-        | Op::LoadArg => println!(
-            "{}: {:?} {}",
-            opcode.span.offset,
-            opcode.op(),
-            opcode.code()
-        ),
+        | Op::LoadArg => println!("{prefix} {:?} {}", opcode.op(), opcode.code()),
         Op::DirectCall => {
             let (hi, low) = opcode.code2();
-            println!("{}: {:?} {} {}", opcode.span.offset, opcode.op(), hi, low,)
+            println!("{prefix} {:?} {} {}", opcode.op(), hi, low,)
         }
-        _ => println!("{}: {:?}", opcode.span.offset, opcode.op(),),
+        _ => println!("{prefix} {:?}", opcode.op(),),
     }
 }
 
@@ -111,8 +113,8 @@ fn print_module(module: &Module) {
 
         match &func.exec {
             Exec::Vm(codes) => {
-                for opcode in codes.iter() {
-                    print_opcode(opcode);
+                for (i, opcode) in codes.iter().enumerate() {
+                    print_opcode(i, opcode);
                 }
             }
             Exec::Handler(_) => println!("<native>"),
@@ -123,8 +125,8 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for opcode in module.codes.iter() {
-        print_opcode(opcode);
+    for (i, opcode) in module.codes.iter().enumerate() {
+        print_opcode(i, opcode);
     }
 }
 

@@ -1,5 +1,3 @@
-fn test(x, y) {
-    [x, y]
-}
+let n = true || false;
 
-println(test(10, 20));
+println(n);

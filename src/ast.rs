@@ -57,12 +57,15 @@ pub struct Expr {
 }
 
 #[derive(Debug)]
+pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
+
+#[derive(Debug)]
 pub enum StmtKind {
     Expr(Expr),
     Return(Expr),
     Let(String, Expr),
     Assign(String, Expr),
-    If(Expr, Vec<Stmt>),
+    If(IfStmt),
     Fn(String, Vec<String>, Vec<Stmt>),
 }
 
