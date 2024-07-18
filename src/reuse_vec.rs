@@ -7,10 +7,14 @@ pub struct ReuseVec<T> {
 }
 
 impl<T> ReuseVec<T> {
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub fn push_and_reuse(&mut self) -> Option<&mut T> {
         if self.data.len() > self.len {
             self.len += 1;
-            return self.last_mut();
+            return Some(self.last_mut());
         }
 
         None
@@ -36,20 +40,12 @@ impl<T> ReuseVec<T> {
         item
     }
 
-    pub fn last(&mut self) -> Option<&T> {
-        if self.len == 0 {
-            return None;
-        }
-
-        self.data.get(self.len - 1)
+    pub fn last(&self) -> &T {
+        &self.data[self.len - 1]
     }
 
-    pub fn last_mut(&mut self) -> Option<&mut T> {
-        if self.len == 0 {
-            return None;
-        }
-
-        self.data.get_mut(self.len - 1)
+    pub fn last_mut(&mut self) -> &mut T {
+        &mut self.data[self.len - 1]
     }
 
     pub fn into_iter(mut self) -> IntoIter<T> {

@@ -81,8 +81,6 @@ pub enum FatalErrorKind {
     InvalidFn(usize),
     #[error("maximum stack exceeded")]
     MaxStackExceeded,
-    #[error("call stack is empty")]
-    CallStackEmpty,
 }
 
 impl FatalErrorKind {
@@ -216,15 +214,12 @@ impl<'a> Vm<'a> {
         value
     }
 
-    fn call_frame(&mut self) -> Result<&mut Frame, Error> {
-        Ok(self
-            .call_stack
-            .last_mut()
-            .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?)
+    fn call_frame(&mut self) -> Result<&Frame, Error> {
+        Ok(self.call_stack.last())
     }
 
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
-        let frame = self.call_frame()?;
+        let frame = self.call_stack.last_mut();
         frame.locals.resize(arg_count, Value::NIL);
 
         self.returned = false;
@@ -400,10 +395,7 @@ impl<'a> Vm<'a> {
                     self.push_call(func, arg_count)?;
                 }
 
-                let frame = self
-                    .call_stack
-                    .last_mut()
-                    .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?;
+                let frame = self.call_stack.last_mut();
 
                 for i in 0..arg_count {
                     frame.locals[i] = self.stack[self.stack_len - i - 1];
@@ -640,8 +632,8 @@ impl<'a> Vm<'a> {
             self.returned = false;
             self.pos = frame.return_pos;
 
-            if let Some(frame) = self.call_stack.last() {
-                self.codes = frame.call.func.codes();
+            if !self.call_stack.is_empty() {
+                self.codes = self.call_stack.last().call.func.codes();
                 return Ok(true);
             }
         }
