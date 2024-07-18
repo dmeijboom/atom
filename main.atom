@@ -1,3 +1,6 @@
-let n = true || false;
+let i = 0;
 
-println(n);
+for i < 10 {
+    println(i);
+    i = i + 1;
+}

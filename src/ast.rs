@@ -61,11 +61,12 @@ pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
 #[derive(Debug)]
 pub enum StmtKind {
+    If(IfStmt),
     Expr(Expr),
     Return(Expr),
     Let(String, Expr),
     Assign(String, Expr),
-    If(IfStmt),
+    For(Expr, Vec<Stmt>),
     Fn(String, Vec<String>, Vec<Stmt>),
 }
 

@@ -122,7 +122,7 @@ impl<'a> Compiler<'a> {
         mem::replace(&mut self.codes, codes)
     }
 
-    fn loc(&self) -> usize {
+    fn pos(&self) -> usize {
         self.codes.len()
     }
 
@@ -217,7 +217,7 @@ impl<'a> Compiler<'a> {
         });
 
         self.expr(rhs)?;
-        self.replace_code(idx, self.loc());
+        self.replace_code(idx, self.pos());
 
         Ok(())
     }
@@ -344,6 +344,19 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn for_loop(&mut self, expr: Expr, stmts: Vec<Stmt>) -> Result<(), Error> {
+        let span = expr.span;
+        let pos = self.pos();
+
+        self.expr(expr)?;
+        let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
+        self.compile_body(stmts, false)?;
+        self.push_code(Opcode::with_code(Op::Jump, pos));
+        self.replace_code(idx, self.pos());
+
+        Ok(())
+    }
+
     fn if_stmt(&mut self, IfStmt(expr, stmts, alt): IfStmt) -> Result<(), Error> {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
         let end_block = if let Some(expr) = expr {
@@ -362,15 +375,15 @@ impl<'a> Compiler<'a> {
                 let end_stmt = self.push_code(Opcode::new(Op::Jump).at(span));
 
                 if let Some(idx) = end_block {
-                    self.replace_code(idx, self.loc());
+                    self.replace_code(idx, self.pos());
                 }
 
                 self.if_stmt(*alt)?;
-                self.replace_code(end_stmt, self.loc());
+                self.replace_code(end_stmt, self.pos());
             }
             None => {
                 if let Some(idx) = end_block {
-                    self.replace_code(idx, self.loc());
+                    self.replace_code(idx, self.pos());
                 }
             }
         }
@@ -380,6 +393,7 @@ impl<'a> Compiler<'a> {
 
     fn stmt(&mut self, stmt: Stmt) -> Result<(), Error> {
         match stmt.kind {
+            StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
                 self.expr(expr)?;
                 let idx = self.push_var(stmt.span, name)?;
@@ -399,7 +413,7 @@ impl<'a> Compiler<'a> {
                 self.push_code(Opcode::new(Op::Return).at(stmt.span));
             }
             StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
-            StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
+            StmtKind::For(expr, stmts) => self.for_loop(expr, stmts)?,
         }
 
         Ok(())
