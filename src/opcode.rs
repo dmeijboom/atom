@@ -12,6 +12,7 @@ pub enum Op {
     Add,
     Sub,
     Mul,
+    Rem,
     Div,
     BitwiseOr,
     BitwiseAnd,
@@ -37,7 +38,7 @@ pub enum Op {
     LoadArg,
 }
 
-const TAG_MASK: u64 = 0b11111 << 48;
+const TAG_MASK: u64 = 0b111111 << 48;
 const INT_MASK: u64 = 0xffff_ffff_ffff;
 
 #[derive(Debug, Clone)]
@@ -79,6 +80,7 @@ impl Opcode {
             o if o == Op::Sub as u64 => Op::Sub,
             o if o == Op::Mul as u64 => Op::Mul,
             o if o == Op::Div as u64 => Op::Div,
+            o if o == Op::Rem as u64 => Op::Rem,
             o if o == Op::BitwiseOr as u64 => Op::BitwiseOr,
             o if o == Op::BitwiseAnd as u64 => Op::BitwiseAnd,
             o if o == Op::BitwiseXor as u64 => Op::BitwiseXor,

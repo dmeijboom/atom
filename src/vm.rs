@@ -512,6 +512,10 @@ impl<'a> Vm<'a> {
         binary!(self: Int | Float, lhs / rhs)
     }
 
+    fn rem(&mut self) -> Result<(), Error> {
+        binary!(self: Int | Float, lhs % rhs)
+    }
+
     fn bitwise_and(&mut self) -> Result<(), Error> {
         binary!(self: Int, lhs & rhs)
     }
@@ -536,9 +540,11 @@ impl<'a> Vm<'a> {
     }
 
     fn store(&mut self, idx: usize) -> Result<(), Error> {
-        resize(&mut self.vars, idx + 1);
-        let value = self.pop();
-        self.vars[idx] = value;
+        if self.vars.len() <= idx {
+            resize(&mut self.vars, idx + 1);
+        }
+
+        self.vars[idx] = self.pop();
 
         Ok(())
     }
@@ -571,6 +577,7 @@ impl<'a> Vm<'a> {
             Op::Sub => self.sub()?,
             Op::Mul => self.mul()?,
             Op::Div => self.div()?,
+            Op::Rem => self.rem()?,
             Op::Eq => self.eq()?,
             Op::Ne => self.ne()?,
             Op::Lt => self.lt()?,

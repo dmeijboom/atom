@@ -253,6 +253,8 @@ impl From<bool> for Value {
 
 #[cfg(test)]
 mod tests {
+    use safe_gc::Heap;
+
     use super::*;
 
     #[test]
@@ -282,5 +284,25 @@ mod tests {
 
         let value = Value::from(false);
         assert_eq!(value.bool(), false);
+    }
+
+    #[test]
+    fn test_string() {
+        let mut heap = Heap::new();
+
+        let gc = heap.alloc(HeapValue::Buffer(b"hello".to_vec()));
+        let value = Value::new_str(gc.unrooted());
+
+        assert_eq!(value.ty(), Type::Str);
+
+        let gc = value.heap();
+        let heap_value = heap.get(gc);
+
+        match heap_value {
+            HeapValue::Buffer(buffer) => {
+                assert_eq!(buffer, b"hello");
+            }
+            HeapValue::Array(_) => unreachable!(),
+        }
     }
 }

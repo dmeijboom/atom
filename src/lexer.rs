@@ -44,6 +44,7 @@ pub enum TokenKind {
     Sub,
     Mul,
     Div,
+    Rem,
     Assign,
     Eq,
     Ne,
@@ -89,6 +90,7 @@ impl Display for TokenKind {
             Self::Sub => write!(f, "-"),
             Self::Mul => write!(f, "*"),
             Self::Div => write!(f, "/"),
+            Self::Rem => write!(f, "%"),
             Self::Assign => write!(f, "="),
             Self::Eq => write!(f, "=="),
             Self::Ne => write!(f, "!="),
@@ -312,6 +314,7 @@ impl<'a> Lexer<'a> {
                 (Some('='), _) => TokenKind::Assign.at(span),
                 (Some('<'), _) => TokenKind::Lt.at(span),
                 (Some('>'), _) => TokenKind::Gt.at(span),
+                (Some('%'), _) => TokenKind::Rem.at(span),
                 (Some('"'), _) => self.string(span)?,
                 (Some('_' | 'a'..='z' | 'A'..='Z'), _) => {
                     self.move_back();

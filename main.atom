@@ -1,6 +1,4 @@
-let i = 0;
+let a = 1;
+let b = 2;
 
-for i < 10 {
-    println(i);
-    i = i + 1;
-}
+println(b);

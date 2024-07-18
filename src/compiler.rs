@@ -263,6 +263,7 @@ impl<'a> Compiler<'a> {
                     ast::BinaryOp::Add => Opcode::new(Op::Add).at(expr.span),
                     ast::BinaryOp::Sub => Opcode::new(Op::Sub).at(expr.span),
                     ast::BinaryOp::Mul => Opcode::new(Op::Mul).at(expr.span),
+                    ast::BinaryOp::Rem => Opcode::new(Op::Rem).at(expr.span),
                     ast::BinaryOp::Div => Opcode::new(Op::Div).at(expr.span),
                     ast::BinaryOp::Eq => Opcode::new(Op::Eq).at(expr.span),
                     ast::BinaryOp::Ne => Opcode::new(Op::Ne).at(expr.span),

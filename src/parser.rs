@@ -190,6 +190,9 @@ impl Parser {
 
                         ExprKind::Call(Box::new(lhs), args).at(span)
                     }
+                    TokenKind::Rem if min_prec <= PREC_MUL => {
+                        self.binary(lhs, BinaryOp::Rem, PREC_MUL)?
+                    }
                     TokenKind::Mul if min_prec <= PREC_MUL => {
                         self.binary(lhs, BinaryOp::Mul, PREC_MUL)?
                     }
