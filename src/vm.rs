@@ -1,5 +1,4 @@
 use std::{
-    cmp::Ordering,
     fmt::{self, Display, Formatter},
     mem::{self, size_of},
     rc::Rc,
@@ -67,10 +66,8 @@ macro_rules! binary {
 }
 
 fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
-    match vec.len().cmp(&len) {
-        Ordering::Less => vec.resize(len, T::default()),
-        Ordering::Equal => {}
-        Ordering::Greater => vec.truncate(len),
+    if vec.len() != len {
+        vec.resize_with(len, || T::default());
     }
 }
 
@@ -248,12 +245,15 @@ impl<'a> Vm<'a> {
         // Check if we can re-use the current frame
         if let Some(frame) = self.call_stack.push_and_reuse() {
             frame.call = Call::new(self.span, func);
-            frame.locals.truncate(arg_count);
             frame.return_pos = return_pos;
+            resize(&mut frame.locals, arg_count);
         } else {
+            let mut locals = Vec::with_capacity(arg_count);
+            resize(&mut locals, arg_count);
+
             self.call_stack.push(Frame {
                 call: Call::new(self.span, func),
-                locals: Vec::with_capacity(arg_count),
+                locals,
                 return_pos,
             });
         }
@@ -400,10 +400,16 @@ impl<'a> Vm<'a> {
                     self.push_call(func, arg_count)?;
                 }
 
-                for _ in 0..arg_count {
-                    let value = self.pop();
-                    self.call_frame()?.locals.push(value);
+                let frame = self
+                    .call_stack
+                    .last_mut()
+                    .ok_or_else(|| FatalErrorKind::CallStackEmpty.at(self.span))?;
+
+                for i in 0..arg_count {
+                    frame.locals[i] = self.stack[self.stack_len - i - 1];
                 }
+
+                self.stack_len -= arg_count;
             }
             Exec::Handler(handler) => {
                 let args = self.pop_n(arg_count);

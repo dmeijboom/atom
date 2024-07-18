@@ -78,6 +78,7 @@ fn print_opcode(opcode: &Opcode) {
         | Op::Load
         | Op::LoadFunc
         | Op::LoadNativeFunc
+        | Op::LoadConst
         | Op::JumpIfFalse
         | Op::PushJumpIfFalse
         | Op::PushJumpIfTrue

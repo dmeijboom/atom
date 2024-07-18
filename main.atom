@@ -1,4 +1,5 @@
-let names = ["henk", "denk"];
-let display = repr(names ^ ["flenk"]);
+fn test(x, y) {
+    [x, y]
+}
 
-println("display: " ^ display);
+println(test(10, 20));
