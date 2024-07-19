@@ -1,9 +1,10 @@
 string = ""
 
-for num in range(1,101):
-    if num % 3 == 0:
+for i in range(0, 101):
+    if i % 3 == 0:
         string = string + "Fizz"
-    if num % 4 == 0:
+
+    if i % 4 == 0:
         string = string + "Buzz"
 
 print(string)

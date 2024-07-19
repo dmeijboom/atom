@@ -1,6 +1,0 @@
-let names = ["dillen"];
-let copy = names;
-
-names.push("harry");
-
-println(copy);
