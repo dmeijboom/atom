@@ -116,9 +116,9 @@ impl Gc {
         unsafe { &handle.ptr.as_ref().data }
     }
 
-    //pub fn get_mut<T: Trace>(&self, mut handle: Handle<T>) -> &mut T {
-    //    unsafe { &mut handle.ptr.as_mut().data }
-    //}
+    pub fn get_mut<T: Trace>(&mut self, mut handle: Handle<T>) -> &mut T {
+        unsafe { &mut handle.ptr.as_mut().data }
+    }
 
     pub fn sweep(&mut self) {
         self.cycle_allocated = 0;

@@ -2,7 +2,11 @@ use std::{fmt::Debug, rc::Rc};
 
 use crate::{gc::Gc, opcode::Opcode};
 
-use super::{error::Error, std::FnHandler, value::Value};
+use super::{
+    error::Error,
+    std::FnHandler,
+    value::{Type, Value},
+};
 
 pub enum Exec {
     Vm(Rc<[Opcode]>),
@@ -20,6 +24,7 @@ pub struct Func {
     pub name: String,
     pub exec: Exec,
     pub arg_count: usize,
+    pub receiver: Option<Type>,
 }
 
 impl Func {
@@ -28,6 +33,7 @@ impl Func {
             name,
             arg_count,
             exec: Exec::default(),
+            receiver: None,
         }
     }
 
@@ -38,8 +44,14 @@ impl Func {
         Self {
             name,
             arg_count,
+            receiver: None,
             exec: Exec::Handler(Box::new(handler)),
         }
+    }
+
+    pub fn with_receiver(mut self, receiver: Type) -> Self {
+        self.receiver = Some(receiver);
+        self
     }
 
     pub fn codes(&self) -> Rc<[Opcode]> {

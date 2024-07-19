@@ -101,19 +101,36 @@ impl Field {
     }
 }
 
-#[derive(Default)]
 pub struct TypeDescr {
-    fields: HashMap<&'static str, Field>,
+    ty: Type,
+    methods: HashMap<&'static str, Rc<Func>, WyHash>,
+    fields: HashMap<&'static str, Field, WyHash>,
 }
 
 impl TypeDescr {
+    pub fn new(ty: Type) -> Self {
+        Self {
+            ty,
+            methods: HashMap::default(),
+            fields: HashMap::default(),
+        }
+    }
+
+    fn builder(self) -> TypeDescrBuilder {
+        TypeDescrBuilder { descr: self }
+    }
+
     #[inline]
     pub fn field(&self, name: &str) -> Option<&Field> {
         self.fields.get(name)
     }
+
+    #[inline]
+    pub fn method(&self, name: &str) -> Option<&Rc<Func>> {
+        self.methods.get(name)
+    }
 }
 
-#[derive(Default)]
 struct TypeDescrBuilder {
     descr: TypeDescr,
 }
@@ -121,6 +138,13 @@ struct TypeDescrBuilder {
 impl TypeDescrBuilder {
     fn field(mut self, name: &'static str, field: Field) -> Self {
         self.descr.fields.insert(name, field);
+        self
+    }
+
+    fn method(mut self, name: &'static str, method: Func) -> Self {
+        self.descr
+            .methods
+            .insert(name, Rc::new(method.with_receiver(self.descr.ty)));
         self
     }
 
@@ -132,7 +156,8 @@ impl TypeDescrBuilder {
 pub type FnHandler = dyn Fn(&mut Gc, Vec<Value>) -> Result<Value, Error>;
 
 fn array() -> TypeDescr {
-    TypeDescrBuilder::default()
+    TypeDescr::new(Type::Array)
+        .builder()
         .field(
             "length",
             Field::new(
@@ -142,6 +167,15 @@ fn array() -> TypeDescr {
                 },
                 true,
             ),
+        )
+        .method(
+            "push",
+            Func::with_handler("push".to_string(), 1, |gc, args| {
+                let vec = gc.get_mut(args[0].array());
+                vec.push(args[1]);
+
+                Ok(Value::NIL)
+            }),
         )
         .build()
 }

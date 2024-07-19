@@ -225,17 +225,6 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn pop_n(&mut self, n: usize) -> Vec<Value> {
-        let mut values = Vec::with_capacity(n);
-
-        for _ in 0..n {
-            values.push(self.pop());
-        }
-
-        values.reverse();
-        values
-    }
-
     fn pop(&mut self) -> Value {
         let value = self.stack[self.stack_len - 1];
         self.stack_len -= 1;
@@ -307,23 +296,28 @@ impl<'a> Vm<'a> {
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
         let object = self.pop();
         let member = self.const_name(idx)?;
-        let field = self
-            .std
-            .types
-            .get(&object.ty())
-            .and_then(|t| t.field(member))
-            .ok_or_else(|| {
-                ErrorKind::UnknownField {
-                    ty: object.ty(),
-                    field: member.to_string(),
-                }
-                .at(self.span)
-            })?;
+        let ty = self.std.types.get(&object.ty());
 
-        let value = field.call(&mut self.gc, object)?;
-        self.push(value)?;
+        if let Some(ty) = ty {
+            if let Some(field) = ty.field(member) {
+                let value = field.call(&mut self.gc, object)?;
+                self.push(value)?;
+                return Ok(());
+            }
 
-        Ok(())
+            if let Some(method) = ty.method(member) {
+                self.push(object)?;
+                self.push(Value::new_func(Rc::clone(method)))?;
+                return Ok(());
+            }
+        }
+
+        Err(ErrorKind::UnknownField {
+            ty: object.ty(),
+            field: member.to_string(),
+        }
+        .at(self.span)
+        .into())
     }
 
     fn load_native_func(&mut self, idx: usize) -> Result<(), Error> {
@@ -413,24 +407,41 @@ impl<'a> Vm<'a> {
                 .into());
         }
 
+        let offset = if func.receiver.is_some() { 1 } else { 0 };
+
         match &func.exec {
             Exec::Vm(_) => {
                 if tail_call {
-                    self.push_tail_call(arg_count)?;
+                    self.push_tail_call(arg_count + offset)?;
                 } else {
-                    self.push_call(func, arg_count)?;
+                    self.push_call(func, arg_count + offset)?;
                 }
 
                 let frame = self.call_stack.last_mut();
 
-                for i in 0..arg_count {
-                    frame.locals[i] = self.stack[self.stack_len - i - 1];
+                if offset > 0 {
+                    frame.locals[0] = self.stack[self.stack_len - 1];
+                    self.stack_len -= 1;
                 }
 
-                self.stack_len -= arg_count;
+                for i in 0..arg_count {
+                    frame.locals[i + offset] = self.stack[self.stack_len - 1];
+                    self.stack_len -= 1;
+                }
             }
             Exec::Handler(handler) => {
-                let args = self.pop_n(arg_count);
+                let mut args = vec![];
+                resize(&mut args, arg_count + offset);
+
+                if offset > 0 {
+                    args[0] = self.pop();
+                }
+
+                for i in 0..arg_count {
+                    args[i + offset] = self.stack[self.stack_len - 1];
+                    self.stack_len -= 1;
+                }
+
                 let value = (handler)(&mut self.gc, args)?;
                 self.push(value)?;
             }

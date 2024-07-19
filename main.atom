@@ -1,10 +1,6 @@
-let i = 0;
+let names = ["dillen"];
+let copy = names;
 
-for i < 10000 {
-    let name = ["dillen", 100];
-    let example = name ^ [" " ^ "meijboom" ^ "bananas" ^ "skabamas"];
+names.push("harry");
 
-    i = i + 1;
-}
-
-println("finished");
+println(copy);
