@@ -44,46 +44,6 @@ impl Display for Type {
     }
 }
 
-macro_rules! extract {
-    ($ty:ident::$name:ident, $value:expr) => {
-        match $value {
-            $ty::$name(value) => value,
-            _ => unimplemented!(),
-        }
-    };
-}
-
-#[derive(Debug)]
-pub enum HeapValue {
-    Buffer(Vec<u8>),
-    Array(Vec<Value>),
-}
-
-impl HeapValue {
-    pub fn buffer(&self) -> &[u8] {
-        extract!(HeapValue::Buffer, self)
-    }
-
-    pub fn array(&self) -> &[Value] {
-        extract!(HeapValue::Array, self)
-    }
-}
-
-impl Trace for HeapValue {
-    fn trace(&self, gc: &mut Gc) {
-        match self {
-            HeapValue::Buffer(_) => {}
-            HeapValue::Array(items) => {
-                for item in items.iter() {
-                    if matches!(item.ty(), Type::Array | Type::Str) {
-                        gc.mark(item.handle());
-                    }
-                }
-            }
-        }
-    }
-}
-
 const SIGN_BIT: u64 = 1 << 63;
 const QUIET_NAN: u64 = 0x7ff8_0000_0000_0000;
 const INT_MASK: u64 = 0xffff_ffff_ffff;
@@ -99,11 +59,6 @@ impl Value {
     const TRUE: Self = Self::new_primitive(Tag::True);
     const NAN: Self = Self::new_primitive(Tag::Float);
     pub const NIL: Self = Self::new_primitive(Tag::Nil);
-
-    pub const fn is_handle(&self) -> bool {
-        let t = (self.bits & TAG_MASK) >> 48;
-        t == Tag::Array as u64 || t == Tag::Str as u64
-    }
 
     pub const fn ty(&self) -> Type {
         if self.bits == Self::NAN.bits || (self.bits & QUIET_NAN) != QUIET_NAN {
@@ -134,11 +89,11 @@ impl Value {
         }
     }
 
-    pub fn new_str(handle: Handle<HeapValue>) -> Self {
+    pub fn new_str(handle: Handle<Vec<u8>>) -> Self {
         Self::new(Tag::Str, handle.addr() as u64)
     }
 
-    pub fn new_array(handle: Handle<HeapValue>) -> Self {
+    pub fn new_array(handle: Handle<Vec<Value>>) -> Self {
         Self::new(Tag::Array, handle.addr() as u64)
     }
 
@@ -179,9 +134,24 @@ impl Value {
         }
     }
 
-    pub fn handle(self) -> Handle<HeapValue> {
+    pub fn buffer(self) -> Handle<Vec<u8>> {
         let addr = self.bits & INT_MASK;
         Handle::from_addr(addr as usize).unwrap()
+    }
+
+    pub fn array(self) -> Handle<Vec<Value>> {
+        let addr = self.bits & INT_MASK;
+        Handle::from_addr(addr as usize).unwrap()
+    }
+}
+
+impl Trace for Value {
+    fn trace(&self, gc: &mut Gc) {
+        match self.ty() {
+            Type::Array => gc.mark(self.array()),
+            Type::Str => gc.mark(self.buffer()),
+            _ => {}
+        }
     }
 }
 
@@ -287,19 +257,12 @@ mod tests {
     fn test_string() {
         let mut gc = Gc::default();
 
-        let handle = gc.alloc(HeapValue::Buffer(b"hello".to_vec()));
+        let handle = gc.alloc(b"hello".to_vec());
         let value = Value::new_str(handle);
 
         assert_eq!(value.ty(), Type::Str);
 
-        let handle = value.handle();
-        let heap_value = gc.get(handle);
-
-        match heap_value {
-            HeapValue::Buffer(buffer) => {
-                assert_eq!(buffer, b"hello");
-            }
-            HeapValue::Array(_) => unreachable!(),
-        }
+        let buff = gc.get(value.buffer());
+        assert_eq!(buff, b"hello");
     }
 }

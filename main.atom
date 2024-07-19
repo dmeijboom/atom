@@ -1,8 +1,10 @@
 let i = 0;
 
 for i < 10000 {
-    let name = "dillen";
-    let example = name ^ " " ^ "meijboom" ^ "bananas" ^ "skabamas";
+    let name = ["dillen", 100];
+    let example = name ^ [" " ^ "meijboom" ^ "bananas" ^ "skabamas"];
 
     i = i + 1;
 }
+
+println("finished");

@@ -48,8 +48,8 @@ impl<T> ReuseVec<T> {
         &mut self.data[self.len - 1]
     }
 
-    pub fn iter_mut(&mut self) -> std::slice::IterMut<T> {
-        self.data[0..self.len].iter_mut()
+    pub fn iter(&mut self) -> std::slice::Iter<T> {
+        self.data[0..self.len].iter()
     }
 
     pub fn into_iter(mut self) -> IntoIter<T> {

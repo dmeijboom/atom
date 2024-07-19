@@ -1,7 +1,26 @@
 use std::{mem, ptr::NonNull};
 
+macro_rules! impl_trace {
+    ($($ty:ty),+) => {
+        $(impl Trace for $ty {
+            fn trace(&self, _gc: &mut Gc) {
+            }
+        })+
+    };
+}
+
 pub trait Trace {
     fn trace(&self, gc: &mut Gc);
+}
+
+impl_trace!(u8, u16, u32, u64, i8, i16, i32, i64, usize, bool, f32, f64);
+
+impl<T: Trace> Trace for Vec<T> {
+    fn trace(&self, gc: &mut Gc) {
+        for item in self.iter() {
+            item.trace(gc);
+        }
+    }
 }
 
 trait AnyHandle {

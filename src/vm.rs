@@ -18,7 +18,7 @@ use crate::{
         error::{Call, ErrorKind},
         function::{Exec, Func},
         std::StdLib,
-        value::{HeapValue, Type, Value},
+        value::{Type, Value},
     },
 };
 
@@ -161,7 +161,7 @@ impl<'a> Vm<'a> {
                 Const::Float(f) => Value::from(f),
                 Const::Bool(b) => Value::from(b),
                 Const::Str(s) => {
-                    let handle = gc.alloc(HeapValue::Buffer(s.into_bytes()));
+                    let handle = gc.alloc(s.into_bytes());
                     Value::new_str(handle)
                 }
             };
@@ -191,20 +191,23 @@ impl<'a> Vm<'a> {
             return;
         }
 
-        for const_ in self.consts.iter_mut().filter(|v| v.is_handle()) {
-            self.gc.mark(const_.handle());
+        let mut try_mark = |value: &Value| match value.ty() {
+            Type::Array => self.gc.mark(value.array()),
+            Type::Str => self.gc.mark(value.buffer()),
+            _ => {}
+        };
+
+        for const_ in self.consts.iter() {
+            try_mark(const_);
         }
 
-        for item in self.stack[0..self.stack_len]
-            .iter_mut()
-            .filter(|v| v.is_handle())
-        {
-            self.gc.mark(item.handle());
+        for item in self.stack[0..self.stack_len].iter() {
+            try_mark(item);
         }
 
-        for frame in self.call_stack.iter_mut() {
-            for local in frame.locals.iter().filter(|v| v.is_handle()) {
-                self.gc.mark(local.handle());
+        for frame in self.call_stack.iter() {
+            for local in frame.locals.iter() {
+                try_mark(local);
             }
         }
 
@@ -294,10 +297,8 @@ impl<'a> Vm<'a> {
 
         match value.ty() {
             Type::Str => {
-                let heap = value.handle();
-                let heap_value = self.gc.get(heap);
-
-                unsafe { Ok(std::str::from_utf8_unchecked(heap_value.buffer())) }
+                let buff = self.gc.get(value.buffer());
+                unsafe { Ok(std::str::from_utf8_unchecked(buff)) }
             }
             _ => unreachable!(),
         }
@@ -440,16 +441,18 @@ impl<'a> Vm<'a> {
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
         let ty = lhs.ty();
-        let lhs = self.gc.get::<HeapValue>(lhs.handle());
-        let rhs = self.gc.get::<HeapValue>(rhs.handle());
         let value = match ty {
             Type::Array => {
-                let out = [lhs.array(), rhs.array()].concat();
-                Value::new_array(self.gc.alloc(HeapValue::Array(out)))
+                let lhs = self.gc.get(lhs.array());
+                let rhs = self.gc.get(rhs.array());
+                let out = [lhs.as_slice(), rhs.as_slice()].concat();
+                Value::new_array(self.gc.alloc(out))
             }
             Type::Str => {
-                let out = [lhs.buffer(), rhs.buffer()].concat();
-                Value::new_str(self.gc.alloc(HeapValue::Buffer(out)))
+                let lhs = self.gc.get(lhs.buffer());
+                let rhs = self.gc.get(rhs.buffer());
+                let out = [lhs.as_slice(), rhs.as_slice()].concat();
+                Value::new_str(self.gc.alloc(out))
             }
             _ => unreachable!(),
         };
@@ -466,7 +469,7 @@ impl<'a> Vm<'a> {
 
         values.reverse();
 
-        let handle = self.gc.alloc(HeapValue::Array(values));
+        let handle = self.gc.alloc(values);
         self.push(Value::new_array(handle))?;
         self.try_collect_gc();
 
@@ -480,14 +483,13 @@ impl<'a> Vm<'a> {
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let heap = self.gc.get::<HeapValue>(array.handle());
-        let array = heap.array();
+        let vec = self.gc.get(array.array());
         let n = match elem.int() {
-            n if n < 0 => array.len() as i64 + n,
+            n if n < 0 => vec.len() as i64 + n,
             n => n,
         } as usize;
 
-        match array.get(n).copied() {
+        match vec.get(n).copied() {
             Some(elem) => self.push(elem),
             None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
         }

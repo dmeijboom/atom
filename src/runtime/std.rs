@@ -7,33 +7,30 @@ use crate::gc::Gc;
 use super::{
     error::Error,
     function::Func,
-    value::{HeapValue, Type, Value},
+    value::{Type, Value},
 };
 
 pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
-    let ty = value.ty();
-
     Ok(match value.ty() {
-        Type::Str | Type::Array => match gc.get(value.handle()) {
-            HeapValue::Buffer(buff) => match ty {
-                Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
-                _ => unreachable!(),
-            },
-            HeapValue::Array(items) => {
-                let mut s = String::from("[");
+        Type::Array => {
+            let vec = gc.get(value.array());
+            let mut s = String::from("[");
 
-                for (i, item) in items.iter().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
-                    }
-
-                    s.push_str(&repr(gc, item)?);
+            for (i, item) in vec.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(", ");
                 }
 
-                s.push(']');
-                s
+                s.push_str(&repr(gc, item)?);
             }
-        },
+
+            s.push(']');
+            s
+        }
+        Type::Str => {
+            let buff = gc.get(value.buffer());
+            format!("\"{}\"", String::from_utf8_lossy(buff))
+        }
         Type::Int => format!("{}", value.int()),
         Type::Float => format!("{}", value.float()),
         Type::Bool => format!("{}", value.bool()),
@@ -53,7 +50,7 @@ pub fn stdlib() -> StdLib {
     let funcs = [
         Rc::new(Func::with_handler("repr".to_string(), 1, |gc, args| {
             let s = repr(gc, &args[0])?;
-            let handle = gc.alloc(HeapValue::Buffer(s.into_bytes()));
+            let handle = gc.alloc(s.into_bytes());
 
             Ok(Value::new_str(handle))
         })),
@@ -65,11 +62,8 @@ pub fn stdlib() -> StdLib {
 
                 match arg.ty() {
                     Type::Str => {
-                        let handle = arg.handle();
-                        let value = heap.get(handle);
-                        let buffer = value.buffer();
-
-                        println!("{}", String::from_utf8_lossy(buffer));
+                        let buff = heap.get(arg.buffer());
+                        println!("{}", String::from_utf8_lossy(buff));
                     }
                     _ => println!("{}", repr(heap, &arg)?),
                 }
@@ -143,11 +137,8 @@ fn array() -> TypeDescr {
             "length",
             Field::new(
                 |gc, value| {
-                    let handle = value.handle();
-                    let value = gc.get(handle);
-                    let array = value.array();
-
-                    Ok((array.len() as i64).into())
+                    let vec = gc.get(value.array());
+                    Ok((vec.len() as i64).into())
                 },
                 true,
             ),
