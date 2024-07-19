@@ -41,10 +41,15 @@ pub enum TokenKind {
     Colon,
     Semi,
     Add,
+    AddAssign,
     Sub,
+    SubAssign,
     Mul,
+    MulAssign,
     Div,
+    DivAssign,
     Rem,
+    RemAssign,
     Assign,
     Eq,
     Ne,
@@ -87,10 +92,15 @@ impl Display for TokenKind {
             Self::Colon => write!(f, ":"),
             Self::Semi => write!(f, ";"),
             Self::Add => write!(f, "+"),
+            Self::AddAssign => write!(f, "+="),
             Self::Sub => write!(f, "-"),
+            Self::SubAssign => write!(f, "-="),
             Self::Mul => write!(f, "*"),
+            Self::MulAssign => write!(f, "*="),
             Self::Div => write!(f, "/"),
+            Self::DivAssign => write!(f, "/="),
             Self::Rem => write!(f, "%"),
+            Self::RemAssign => write!(f, "%="),
             Self::Assign => write!(f, "="),
             Self::Eq => write!(f, "=="),
             Self::Ne => write!(f, "!="),
@@ -293,6 +303,31 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     TokenKind::Gte.at(span)
                 }
+                (Some('+'), Some('=')) => {
+                    self.advance();
+                    TokenKind::AddAssign.at(span)
+                }
+                (Some('-'), Some('=')) => {
+                    self.advance();
+                    TokenKind::SubAssign.at(span)
+                }
+                (Some('*'), Some('=')) => {
+                    self.advance();
+                    TokenKind::MulAssign.at(span)
+                }
+                (Some('/'), Some('=')) => {
+                    self.advance();
+                    TokenKind::DivAssign.at(span)
+                }
+                (Some('%'), Some('=')) => {
+                    self.advance();
+                    TokenKind::RemAssign.at(span)
+                }
+                (Some('+'), _) => TokenKind::Add.at(span),
+                (Some('-'), _) => TokenKind::Sub.at(span),
+                (Some('*'), _) => TokenKind::Mul.at(span),
+                (Some('/'), _) => TokenKind::Div.at(span),
+                (Some('%'), _) => TokenKind::Rem.at(span),
                 (Some('{'), _) => TokenKind::BracketLeft.at(span),
                 (Some('}'), _) => TokenKind::BracketRight.at(span),
                 (Some('['), _) => TokenKind::SqrBracketLeft.at(span),
@@ -303,10 +338,6 @@ impl<'a> Lexer<'a> {
                 (Some(';'), _) => TokenKind::Semi.at(span),
                 (Some('.'), _) => TokenKind::Dot.at(span),
                 (Some(','), _) => TokenKind::Comma.at(span),
-                (Some('+'), _) => TokenKind::Add.at(span),
-                (Some('-'), _) => TokenKind::Sub.at(span),
-                (Some('*'), _) => TokenKind::Mul.at(span),
-                (Some('/'), _) => TokenKind::Div.at(span),
                 (Some('&'), _) => TokenKind::BitwiseAnd.at(span),
                 (Some('|'), _) => TokenKind::BitwiseOr.at(span),
                 (Some('^'), _) => TokenKind::BitwiseXor.at(span),
@@ -314,7 +345,6 @@ impl<'a> Lexer<'a> {
                 (Some('='), _) => TokenKind::Assign.at(span),
                 (Some('<'), _) => TokenKind::Lt.at(span),
                 (Some('>'), _) => TokenKind::Gt.at(span),
-                (Some('%'), _) => TokenKind::Rem.at(span),
                 (Some('"'), _) => self.string(span)?,
                 (Some('_' | 'a'..='z' | 'A'..='Z'), _) => {
                     self.move_back();

@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
-    ast::{BinaryOp, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
+    ast::{AssignOp, BinaryOp, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
     lexer::{Span, Token, TokenKind},
 };
 
@@ -16,7 +16,6 @@ const PREC_ADD: u8 = 8;
 const PREC_MUL: u8 = 9;
 const PREC_PRE: u8 = 10;
 const PREC_CALL: u8 = 11;
-//const PREC_GROUP: u8 = 12;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -223,12 +222,6 @@ impl Parser {
                     TokenKind::Ne if min_prec <= PREC_EQ => {
                         self.binary(lhs, BinaryOp::Ne, PREC_EQ)?
                     }
-                    TokenKind::And if min_prec <= PREC_LAN => {
-                        self.binary(lhs, BinaryOp::LogicalAnd, PREC_LAN)?
-                    }
-                    TokenKind::Or if min_prec <= PREC_LOR => {
-                        self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
-                    }
                     TokenKind::BitwiseAnd if min_prec <= PREC_BAN => {
                         self.binary(lhs, BinaryOp::BitwiseAnd, PREC_BAN)?
                     }
@@ -237,6 +230,12 @@ impl Parser {
                     }
                     TokenKind::BitwiseOr if min_prec <= PREC_BOR => {
                         self.binary(lhs, BinaryOp::BitwiseOr, PREC_BOR)?
+                    }
+                    TokenKind::And if min_prec <= PREC_LAN => {
+                        self.binary(lhs, BinaryOp::LogicalAnd, PREC_LAN)?
+                    }
+                    TokenKind::Or if min_prec <= PREC_LOR => {
+                        self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
                     }
                     _ => break,
                 },
@@ -362,14 +361,14 @@ impl Parser {
         Ok(StmtKind::For(expr, body).at(span))
     }
 
-    fn assign_stmt(&mut self) -> Result<Stmt, Error> {
+    fn assign_stmt(&mut self, op: Option<AssignOp>) -> Result<Stmt, Error> {
         let span = self.span();
         let name = self.ident()?;
-        self.expect(TokenKind::Assign)?;
+        self.advance();
         let value = self.expr(1)?;
         self.semi()?;
 
-        Ok(StmtKind::Assign(name, value).at(span))
+        Ok(StmtKind::Assign(op, name, value).at(span))
     }
 
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
@@ -383,7 +382,15 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
-                TokenKind::Ident(_) if next == Some(&TokenKind::Assign) => self.assign_stmt()?,
+                TokenKind::Ident(_) => match next {
+                    Some(&TokenKind::Assign) => self.assign_stmt(None)?,
+                    Some(&TokenKind::AddAssign) => self.assign_stmt(Some(AssignOp::Add))?,
+                    Some(&TokenKind::SubAssign) => self.assign_stmt(Some(AssignOp::Sub))?,
+                    Some(&TokenKind::MulAssign) => self.assign_stmt(Some(AssignOp::Mul))?,
+                    Some(&TokenKind::RemAssign) => self.assign_stmt(Some(AssignOp::Rem))?,
+                    Some(&TokenKind::DivAssign) => self.assign_stmt(Some(AssignOp::Div))?,
+                    _ => self.expr_stmt()?,
+                },
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
             };

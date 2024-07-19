@@ -400,8 +400,18 @@ impl<'a> Compiler<'a> {
                 let idx = self.push_var(stmt.span, name)?;
                 self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
             }
-            StmtKind::Assign(name, expr) => {
+            StmtKind::Assign(op, name, mut expr) => {
                 let idx = self.load_var(stmt.span, &name, false)?;
+
+                if let Some(op) = op {
+                    expr = ExprKind::Binary(
+                        Box::new(ExprKind::Ident(name).at(stmt.span)),
+                        op.into(),
+                        Box::new(expr),
+                    )
+                    .at(stmt.span);
+                }
+
                 self.expr(expr)?;
                 self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
             }

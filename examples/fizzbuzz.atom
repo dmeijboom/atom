@@ -10,7 +10,7 @@ for i < 101 {
         string = string ^ "Buzz";
     }
 
-    i = i + 1;
+    i += 1;
 }
 
 println(string);

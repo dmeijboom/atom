@@ -1,6 +1,27 @@
 use crate::lexer::Span;
 
 #[derive(Debug)]
+pub enum AssignOp {
+    Add,
+    Sub,
+    Mul,
+    Rem,
+    Div,
+}
+
+impl From<AssignOp> for BinaryOp {
+    fn from(op: AssignOp) -> Self {
+        match op {
+            AssignOp::Add => BinaryOp::Add,
+            AssignOp::Sub => BinaryOp::Sub,
+            AssignOp::Mul => BinaryOp::Mul,
+            AssignOp::Rem => BinaryOp::Rem,
+            AssignOp::Div => BinaryOp::Div,
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum UnaryOp {
     Not,
 }
@@ -66,9 +87,9 @@ pub enum StmtKind {
     Expr(Expr),
     Return(Expr),
     Let(String, Expr),
-    Assign(String, Expr),
     For(Expr, Vec<Stmt>),
     Fn(String, Vec<String>, Vec<Stmt>),
+    Assign(Option<AssignOp>, String, Expr),
 }
 
 impl StmtKind {
