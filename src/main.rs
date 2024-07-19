@@ -24,6 +24,7 @@ mod opcode;
 mod parser;
 mod reuse_vec;
 mod runtime;
+mod stack;
 mod vm;
 
 #[derive(Debug, thiserror::Error)]

@@ -20,6 +20,7 @@ use crate::{
         std::StdLib,
         value::{Type, Value},
     },
+    stack::Stack,
 };
 
 macro_rules! unwrap {
@@ -53,8 +54,8 @@ macro_rules! binary {
     }};
 
     ($self:ident: $($ty:ident)|+, lhs $op:tt rhs) => {{
-        let rhs = $self.pop();
-        let lhs = $self.pop();
+        let rhs = $self.stack.pop();
+        let lhs = $self.stack.pop();
 
         $self.check_type(lhs.ty(), rhs.ty())?;
         binary!($self: $($ty)|+, lhs, $op, rhs)
@@ -143,10 +144,9 @@ pub struct Vm<'a> {
     module: Module,
     returned: bool,
     vars: Vec<Value>,
-    stack_len: usize,
     codes: Rc<[Opcode]>,
     call_stack: ReuseVec<Frame>,
-    stack: [Value; MAX_STACK_SIZE],
+    stack: Stack<Value, MAX_STACK_SIZE>,
     consts: [Value; MAX_CONST_SIZE],
 }
 
@@ -178,9 +178,8 @@ impl<'a> Vm<'a> {
             gc,
             pos: 0,
             span: Span::default(),
-            stack_len: 0,
             call_stack,
-            stack: [Value::NIL; MAX_STACK_SIZE],
+            stack: Stack::default(),
             codes: Rc::clone(&module.codes),
             module,
         }
@@ -201,7 +200,7 @@ impl<'a> Vm<'a> {
             try_mark(const_);
         }
 
-        for item in self.stack[0..self.stack_len].iter() {
+        for item in self.stack.iter() {
             try_mark(item);
         }
 
@@ -215,20 +214,12 @@ impl<'a> Vm<'a> {
     }
 
     fn push(&mut self, value: Value) -> Result<(), Error> {
-        if self.stack_len == self.stack.len() {
+        if self.stack.is_full() {
             return Err(FatalErrorKind::MaxStackExceeded.at(self.span).into());
         }
 
-        self.stack[self.stack_len] = value;
-        self.stack_len += 1;
-
+        self.stack.push(value);
         Ok(())
-    }
-
-    fn pop(&mut self) -> Value {
-        let value = self.stack[self.stack_len - 1];
-        self.stack_len -= 1;
-        value
     }
 
     fn call_frame(&mut self) -> Result<&Frame, Error> {
@@ -294,7 +285,7 @@ impl<'a> Vm<'a> {
     }
 
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
-        let object = self.pop();
+        let object = self.stack.pop();
         let member = self.const_name(idx)?;
         let ty = self.std.types.get(&object.ty());
 
@@ -364,7 +355,7 @@ impl<'a> Vm<'a> {
     }
 
     fn jump_cond(&mut self, idx: usize, push: bool, cond: bool) -> Result<(), Error> {
-        let value = self.pop();
+        let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
 
         if value.bool() == cond {
@@ -393,7 +384,7 @@ impl<'a> Vm<'a> {
         let func = match func {
             Some(func) => func,
             None => {
-                let callee = self.pop();
+                let callee = self.stack.pop();
                 match callee.ty() {
                     Type::Fn => callee.func(),
                     ty => return Err(ErrorKind::NotCallable(ty).at(self.span).into()),
@@ -420,13 +411,11 @@ impl<'a> Vm<'a> {
                 let frame = self.call_stack.last_mut();
 
                 if offset > 0 {
-                    frame.locals[0] = self.stack[self.stack_len - 1];
-                    self.stack_len -= 1;
+                    frame.locals[0] = self.stack.pop();
                 }
 
                 for i in 0..arg_count {
-                    frame.locals[i + offset] = self.stack[self.stack_len - 1];
-                    self.stack_len -= 1;
+                    frame.locals[i + offset] = self.stack.pop();
                 }
             }
             Exec::Handler(handler) => {
@@ -434,12 +423,11 @@ impl<'a> Vm<'a> {
                 resize(&mut args, arg_count + offset);
 
                 if offset > 0 {
-                    args[0] = self.pop();
+                    args[0] = self.stack.pop();
                 }
 
                 for i in 0..arg_count {
-                    args[i + offset] = self.stack[self.stack_len - 1];
-                    self.stack_len -= 1;
+                    args[i + offset] = self.stack.pop();
                 }
 
                 let value = (handler)(&mut self.gc, args)?;
@@ -475,7 +463,7 @@ impl<'a> Vm<'a> {
         let mut values = vec![];
 
         for _ in 0..size {
-            values.push(self.pop());
+            values.push(self.stack.pop());
         }
 
         values.reverse();
@@ -488,8 +476,8 @@ impl<'a> Vm<'a> {
     }
 
     fn load_elem(&mut self) -> Result<(), Error> {
-        let elem = self.pop();
-        let array = self.pop();
+        let elem = self.stack.pop();
+        let array = self.stack.pop();
 
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
@@ -507,7 +495,7 @@ impl<'a> Vm<'a> {
     }
 
     fn not(&mut self) -> Result<(), Error> {
-        let value = self.pop();
+        let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
         self.push((!value.bool()).into())
     }
@@ -565,8 +553,8 @@ impl<'a> Vm<'a> {
     }
 
     fn bitwise_xor(&mut self) -> Result<(), Error> {
-        let rhs = self.pop();
-        let lhs = self.pop();
+        let rhs = self.stack.pop();
+        let lhs = self.stack.pop();
 
         self.check_type(lhs.ty(), rhs.ty())?;
 
@@ -586,8 +574,7 @@ impl<'a> Vm<'a> {
             resize(&mut self.vars, idx + 1);
         }
 
-        self.vars[idx] = self.pop();
-
+        self.vars[idx] = self.stack.pop();
         Ok(())
     }
 
@@ -601,7 +588,7 @@ impl<'a> Vm<'a> {
     }
 
     fn discard(&mut self) {
-        self.pop();
+        self.stack.pop();
     }
 
     fn ret(&mut self) -> Result<(), Error> {
@@ -613,41 +600,48 @@ impl<'a> Vm<'a> {
 
     #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
-    fn eval(&mut self, opcode: Opcode) -> Result<(), Error> {
-        match opcode.op() {
-            Op::Add => self.add()?,
-            Op::Sub => self.sub()?,
-            Op::Mul => self.mul()?,
-            Op::Div => self.div()?,
-            Op::Rem => self.rem()?,
-            Op::Eq => self.eq()?,
-            Op::Ne => self.ne()?,
-            Op::Lt => self.lt()?,
-            Op::Lte => self.lte()?,
-            Op::Gt => self.gt()?,
-            Op::Gte => self.gte()?,
-            Op::BitwiseAnd => self.bitwise_and()?,
-            Op::BitwiseOr => self.bitwise_or()?,
-            Op::BitwiseXor => self.bitwise_xor()?,
-            Op::LoadConst => self.load_const(opcode.code())?,
-            Op::LoadMember => self.load_member(opcode.code())?,
-            Op::LoadFunc => self.load_func(opcode.code())?,
-            Op::LoadNativeFunc => self.load_native_func(opcode.code())?,
-            Op::Store => self.store(opcode.code())?,
-            Op::Load => self.load(opcode.code())?,
-            Op::LoadArg => self.load_arg(opcode.code())?,
-            Op::Discard => self.discard(),
-            Op::Return => self.ret()?,
-            Op::Call => self.call(opcode.code(), false, None)?,
-            Op::DirectCall => self.direct_call(opcode.code2())?,
-            Op::TailCall => self.call(opcode.code(), true, None)?,
-            Op::Jump => self.goto(opcode.code()),
-            Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
-            Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
-            Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,
-            Op::MakeArray => self.make_array(opcode.code())?,
-            Op::LoadElement => self.load_elem()?,
-            Op::UnaryNot => self.not()?,
+    fn eval_loop(&mut self) -> Result<(), Error> {
+        while self.pos < self.codes.len() {
+            let opcode = &self.codes[self.pos];
+
+            self.pos += 1;
+            self.span = opcode.span;
+
+            match opcode.op() {
+                Op::Add => self.add()?,
+                Op::Sub => self.sub()?,
+                Op::Mul => self.mul()?,
+                Op::Div => self.div()?,
+                Op::Rem => self.rem()?,
+                Op::Eq => self.eq()?,
+                Op::Ne => self.ne()?,
+                Op::Lt => self.lt()?,
+                Op::Lte => self.lte()?,
+                Op::Gt => self.gt()?,
+                Op::Gte => self.gte()?,
+                Op::BitwiseAnd => self.bitwise_and()?,
+                Op::BitwiseOr => self.bitwise_or()?,
+                Op::BitwiseXor => self.bitwise_xor()?,
+                Op::LoadConst => self.load_const(opcode.code())?,
+                Op::LoadMember => self.load_member(opcode.code())?,
+                Op::LoadFunc => self.load_func(opcode.code())?,
+                Op::LoadNativeFunc => self.load_native_func(opcode.code())?,
+                Op::Store => self.store(opcode.code())?,
+                Op::Load => self.load(opcode.code())?,
+                Op::LoadArg => self.load_arg(opcode.code())?,
+                Op::Discard => self.discard(),
+                Op::Return => self.ret()?,
+                Op::Call => self.call(opcode.code(), false, None)?,
+                Op::DirectCall => self.direct_call(opcode.code2())?,
+                Op::TailCall => self.call(opcode.code(), true, None)?,
+                Op::Jump => self.goto(opcode.code()),
+                Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
+                Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
+                Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,
+                Op::MakeArray => self.make_array(opcode.code())?,
+                Op::LoadElement => self.load_elem()?,
+                Op::UnaryNot => self.not()?,
+            }
         }
 
         Ok(())
@@ -661,18 +655,6 @@ impl<'a> Vm<'a> {
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),
-        }
-    }
-
-    fn next(&mut self) -> Result<Option<Opcode>, Error> {
-        match self.codes.get(self.pos) {
-            Some(opcode) => {
-                self.pos += 1;
-                self.span = opcode.span;
-
-                Ok(Some(opcode.clone()))
-            }
-            None => Ok(None),
         }
     }
 
@@ -692,21 +674,18 @@ impl<'a> Vm<'a> {
 
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
         let mut start = || loop {
-            match self.next()? {
-                Some(opcode) => self.eval(opcode)?,
-                None => {
-                    if !self.returned {
-                        self.push(Value::NIL)?;
-                    }
+            self.eval_loop()?;
 
-                    if !self.post_call()? {
-                        return Ok(if self.stack_len > 0 {
-                            Some(self.pop())
-                        } else {
-                            None
-                        });
-                    }
-                }
+            if !self.returned {
+                self.push(Value::NIL)?;
+            }
+
+            if !self.post_call()? {
+                return Ok(if !self.stack.is_empty() {
+                    Some(self.stack.pop())
+                } else {
+                    None
+                });
             }
         };
 
