@@ -1,8 +1,6 @@
 use std::{fmt::Debug, rc::Rc};
 
-use safe_gc::Heap;
-
-use crate::opcode::Opcode;
+use crate::{gc::Gc, opcode::Opcode};
 
 use super::{error::Error, std::FnHandler, value::Value};
 
@@ -35,7 +33,7 @@ impl Func {
 
     pub fn with_handler<F>(name: String, arg_count: usize, handler: F) -> Self
     where
-        F: Fn(&mut Heap, Vec<Value>) -> Result<Value, Error> + 'static,
+        F: Fn(&mut Gc, Vec<Value>) -> Result<Value, Error> + 'static,
     {
         Self {
             name,

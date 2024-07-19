@@ -1,7 +1,8 @@
 use std::{collections::HashMap, rc::Rc};
 
-use safe_gc::Heap;
 use wyhash2::WyHash;
+
+use crate::gc::Gc;
 
 use super::{
     error::Error,
@@ -9,11 +10,11 @@ use super::{
     value::{HeapValue, Type, Value},
 };
 
-pub fn repr(heap: &Heap, value: &Value) -> Result<String, Error> {
+pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
     let ty = value.ty();
 
     Ok(match value.ty() {
-        Type::Str | Type::Array => match heap.get(value.heap()) {
+        Type::Str | Type::Array => match gc.get(value.handle()) {
             HeapValue::Buffer(buff) => match ty {
                 Type::Str => format!("\"{}\"", String::from_utf8_lossy(buff)),
                 _ => unreachable!(),
@@ -26,7 +27,7 @@ pub fn repr(heap: &Heap, value: &Value) -> Result<String, Error> {
                         s.push_str(", ");
                     }
 
-                    s.push_str(&repr(heap, item)?);
+                    s.push_str(&repr(gc, item)?);
                 }
 
                 s.push(']');
@@ -50,11 +51,11 @@ pub fn stdlib() -> StdLib {
     let mut types = TypeRegistry::default();
     types.insert(Type::Array, array());
     let funcs = [
-        Rc::new(Func::with_handler("repr".to_string(), 1, |heap, args| {
-            let s = repr(heap, &args[0])?;
-            let heap = heap.alloc(HeapValue::Buffer(s.into_bytes()));
+        Rc::new(Func::with_handler("repr".to_string(), 1, |gc, args| {
+            let s = repr(gc, &args[0])?;
+            let handle = gc.alloc(HeapValue::Buffer(s.into_bytes()));
 
-            Ok(Value::new_str(heap.unrooted()))
+            Ok(Value::new_str(handle))
         })),
         Rc::new(Func::with_handler(
             "println".to_string(),
@@ -64,7 +65,7 @@ pub fn stdlib() -> StdLib {
 
                 match arg.ty() {
                     Type::Str => {
-                        let handle = arg.heap();
+                        let handle = arg.handle();
                         let value = heap.get(handle);
                         let buffer = value.buffer();
 
@@ -83,7 +84,7 @@ pub fn stdlib() -> StdLib {
 
 pub type TypeRegistry = HashMap<Type, TypeDescr, WyHash>;
 
-type FieldHandler = dyn Fn(&mut Heap, Value) -> Result<Value, Error>;
+type FieldHandler = dyn Fn(&mut Gc, Value) -> Result<Value, Error>;
 
 pub struct Field {
     pub readonly: bool,
@@ -93,7 +94,7 @@ pub struct Field {
 impl Field {
     pub fn new<F>(handler: F, readonly: bool) -> Self
     where
-        F: Fn(&mut Heap, Value) -> Result<Value, Error> + 'static,
+        F: Fn(&mut Gc, Value) -> Result<Value, Error> + 'static,
     {
         Field {
             readonly,
@@ -101,8 +102,8 @@ impl Field {
         }
     }
 
-    pub fn call(&self, heap: &mut Heap, this: Value) -> Result<Value, Error> {
-        (self.handler)(heap, this)
+    pub fn call(&self, gc: &mut Gc, this: Value) -> Result<Value, Error> {
+        (self.handler)(gc, this)
     }
 }
 
@@ -134,7 +135,7 @@ impl TypeDescrBuilder {
     }
 }
 
-pub type FnHandler = dyn Fn(&mut Heap, Vec<Value>) -> Result<Value, Error>;
+pub type FnHandler = dyn Fn(&mut Gc, Vec<Value>) -> Result<Value, Error>;
 
 fn array() -> TypeDescr {
     TypeDescrBuilder::default()
@@ -142,7 +143,7 @@ fn array() -> TypeDescr {
             "length",
             Field::new(
                 |gc, value| {
-                    let handle = value.heap();
+                    let handle = value.handle();
                     let value = gc.get(handle);
                     let array = value.array();
 

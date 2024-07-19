@@ -18,6 +18,7 @@ use vm::Vm;
 
 mod ast;
 mod compiler;
+mod gc;
 mod lexer;
 mod opcode;
 mod parser;

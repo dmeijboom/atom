@@ -7,17 +7,13 @@ edition = "2021"
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
+wyhash2 = "0.2.1"
 clap = { version = "4.5.9", features = ["derive"] }
-safe-gc = "1.0.0"
 thiserror = "1.0.61"
 tracing = { version = "0.1.40", optional = true }
 tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
-wyhash2 = "0.2.1"
-
-[patch.crates-io]
-safe-gc = { git = "https://github.com/dmeijboom/safe-gc.git", branch = "main" }
 
 [profile.release]
 lto = true

@@ -65,7 +65,6 @@ name = "atom"
 version = "0.1.0"
 dependencies = [
  "clap",
- "safe-gc",
  "thiserror",
  "tracing",
  "tracing-subscriber",
@@ -258,11 +257,6 @@ name = "regex-syntax"
 version = "0.8.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7a66a03ae7c801facd77a29370b4faec201768915ac14a721ba36f20bc9c209b"
-
-[[package]]
-name = "safe-gc"
-version = "1.0.0"
-source = "git+https://github.com/dmeijboom/safe-gc.git?branch=main#dc3c59d052df1d40fed536fd001506d93cf1a23a"
 
 [[package]]
 name = "sharded-slab"

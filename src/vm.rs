@@ -4,12 +4,12 @@ use std::{
     rc::Rc,
 };
 
-use safe_gc::Heap;
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
 
 use crate::{
     compiler::Module,
+    gc::Gc,
     lexer::Span,
     opcode::{Const, Op, Opcode},
     reuse_vec::ReuseVec,
@@ -136,7 +136,7 @@ fn top_frame(module: &Module) -> Frame {
 }
 
 pub struct Vm<'a> {
-    heap: Heap,
+    gc: Gc,
     span: Span,
     pos: usize,
     std: &'a StdLib,
@@ -152,7 +152,7 @@ pub struct Vm<'a> {
 
 impl<'a> Vm<'a> {
     pub fn new(std: &'a StdLib, mut module: Module) -> Self {
-        let mut heap = Heap::default();
+        let mut gc = Gc::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];
 
         for (i, const_) in module.consts.drain(..).enumerate() {
@@ -161,8 +161,8 @@ impl<'a> Vm<'a> {
                 Const::Float(f) => Value::from(f),
                 Const::Bool(b) => Value::from(b),
                 Const::Str(s) => {
-                    let root = heap.alloc(HeapValue::Buffer(s.into_bytes()));
-                    Value::new_str(root.unrooted())
+                    let handle = gc.alloc(HeapValue::Buffer(s.into_bytes()));
+                    Value::new_str(handle)
                 }
             };
         }
@@ -175,7 +175,7 @@ impl<'a> Vm<'a> {
             vars: vec![],
             consts,
             returned: false,
-            heap,
+            gc,
             pos: 0,
             span: Span::default(),
             stack_len: 0,
@@ -184,6 +184,31 @@ impl<'a> Vm<'a> {
             codes: Rc::clone(&module.codes),
             module,
         }
+    }
+
+    fn try_collect_gc(&mut self) {
+        if !self.gc.should_run() {
+            return;
+        }
+
+        for const_ in self.consts.iter_mut().filter(|v| v.is_handle()) {
+            self.gc.mark(const_.handle());
+        }
+
+        for item in self.stack[0..self.stack_len]
+            .iter_mut()
+            .filter(|v| v.is_handle())
+        {
+            self.gc.mark(item.handle());
+        }
+
+        for frame in self.call_stack.iter_mut() {
+            for local in frame.locals.iter().filter(|v| v.is_handle()) {
+                self.gc.mark(local.handle());
+            }
+        }
+
+        self.gc.sweep();
     }
 
     fn push(&mut self, value: Value) -> Result<(), Error> {
@@ -269,8 +294,8 @@ impl<'a> Vm<'a> {
 
         match value.ty() {
             Type::Str => {
-                let heap = value.heap();
-                let heap_value = self.heap.get(heap);
+                let heap = value.handle();
+                let heap_value = self.gc.get(heap);
 
                 unsafe { Ok(std::str::from_utf8_unchecked(heap_value.buffer())) }
             }
@@ -294,7 +319,7 @@ impl<'a> Vm<'a> {
                 .at(self.span)
             })?;
 
-        let value = field.call(&mut self.heap, object)?;
+        let value = field.call(&mut self.gc, object)?;
         self.push(value)?;
 
         Ok(())
@@ -405,7 +430,7 @@ impl<'a> Vm<'a> {
             }
             Exec::Handler(handler) => {
                 let args = self.pop_n(arg_count);
-                let value = (handler)(&mut self.heap, args)?;
+                let value = (handler)(&mut self.gc, args)?;
                 self.push(value)?;
             }
         }
@@ -415,20 +440,21 @@ impl<'a> Vm<'a> {
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
         let ty = lhs.ty();
-        let lhs = self.heap.get::<HeapValue>(lhs.heap());
-        let rhs = self.heap.get::<HeapValue>(rhs.heap());
-
-        Ok(match ty {
+        let lhs = self.gc.get::<HeapValue>(lhs.handle());
+        let rhs = self.gc.get::<HeapValue>(rhs.handle());
+        let value = match ty {
             Type::Array => {
                 let out = [lhs.array(), rhs.array()].concat();
-                Value::new_array(self.heap.alloc(HeapValue::Array(out)).unrooted())
+                Value::new_array(self.gc.alloc(HeapValue::Array(out)))
             }
             Type::Str => {
                 let out = [lhs.buffer(), rhs.buffer()].concat();
-                Value::new_str(self.heap.alloc(HeapValue::Buffer(out)).unrooted())
+                Value::new_str(self.gc.alloc(HeapValue::Buffer(out)))
             }
             _ => unreachable!(),
-        })
+        };
+
+        Ok(value)
     }
 
     fn make_array(&mut self, size: usize) -> Result<(), Error> {
@@ -440,8 +466,9 @@ impl<'a> Vm<'a> {
 
         values.reverse();
 
-        let handle = self.heap.alloc(HeapValue::Array(values));
-        self.push(Value::new_array(handle.unrooted()))?;
+        let handle = self.gc.alloc(HeapValue::Array(values));
+        self.push(Value::new_array(handle))?;
+        self.try_collect_gc();
 
         Ok(())
     }
@@ -453,7 +480,7 @@ impl<'a> Vm<'a> {
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let heap = self.heap.get::<HeapValue>(array.heap());
+        let heap = self.gc.get::<HeapValue>(array.handle());
         let array = heap.array();
         let n = match elem.int() {
             n if n < 0 => array.len() as i64 + n,
@@ -533,6 +560,8 @@ impl<'a> Vm<'a> {
         if matches!(lhs.ty(), Type::Array | Type::Str) {
             let value = self.concat(lhs, rhs)?;
             self.push(value)?;
+            self.try_collect_gc();
+
             return Ok(());
         }
 

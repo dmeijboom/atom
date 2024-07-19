@@ -10,5 +10,5 @@ The goal is to create a language which is fun to build with a clean and minimali
 - Basic types: Int, Float, Str, Array
 - Tail call optimization
 - Hand-written lexer/recursive descent parser with precedence climbing
-- Garbage collector (powered by [safe-gc](https://crates.io/crates/safe-gc))
+- Simple mark and sweep garbage collector
 - NaN tagging (heavily based on [nanoval](https://github.com/phkeese/nanoval))
