@@ -17,14 +17,13 @@ use lexer::Lexer;
 use vm::Vm;
 
 mod ast;
+mod collections;
 mod compiler;
 mod gc;
 mod lexer;
 mod opcode;
 mod parser;
-mod reuse_vec;
 mod runtime;
-mod stack;
 mod vm;
 
 #[derive(Debug, thiserror::Error)]

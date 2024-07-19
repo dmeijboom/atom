@@ -8,11 +8,11 @@ use std::{
 use tracing::{instrument, Level};
 
 use crate::{
+    collections::{ReuseVec, Stack},
     compiler::Module,
     gc::Gc,
     lexer::Span,
     opcode::{Const, Op, Opcode},
-    reuse_vec::ReuseVec,
     runtime::{
         self,
         error::{Call, ErrorKind},
@@ -20,7 +20,6 @@ use crate::{
         std::StdLib,
         value::{Type, Value},
     },
-    stack::Stack,
 };
 
 macro_rules! unwrap {
