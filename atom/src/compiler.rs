@@ -247,6 +247,32 @@ impl<'a> Compiler<'a> {
         }
     }
 
+    fn assign(
+        &mut self,
+        span: Span,
+        op: Option<ast::AssignOp>,
+        lhs: Expr,
+        mut rhs: Expr,
+    ) -> Result<Opcode, Error> {
+        let name = match lhs.kind {
+            ExprKind::Ident(name) => name,
+            _ => unimplemented!(),
+        };
+        let idx = self.load_var(rhs.span, &name, false)?;
+
+        if let Some(op) = op {
+            rhs = ExprKind::Binary(
+                Box::new(ExprKind::Ident(name).at(span)),
+                op.into(),
+                Box::new(rhs),
+            )
+            .at(span);
+        }
+
+        self.expr(rhs)?;
+        Ok(Opcode::with_code(Op::Store, idx).at(span))
+    }
+
     fn expr(&mut self, expr: Expr) -> Result<(), Error> {
         let code = match expr.kind {
             ExprKind::Unary(op, unary_expr) => match op {
@@ -256,6 +282,7 @@ impl<'a> Compiler<'a> {
                     Opcode::new(Op::UnaryNot).at(span)
                 }
             },
+            ExprKind::Assign(op, lhs, rhs) => self.assign(expr.span, op, *lhs, *rhs)?,
             ExprKind::Binary(lhs, op, rhs) => {
                 self.expr(*lhs)?;
 
@@ -361,7 +388,7 @@ impl<'a> Compiler<'a> {
         span: Span,
         pre: Stmt,
         expr: Expr,
-        post: Stmt,
+        post: Expr,
         body: Vec<Stmt>,
     ) -> Result<(), Error> {
         self.stmt(pre)?;
@@ -369,7 +396,7 @@ impl<'a> Compiler<'a> {
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
         self.compile_body(body, false)?;
-        self.stmt(post)?;
+        self.expr(post)?;
 
         self.push_code(Opcode::with_code(Op::Jump, pos));
         self.replace_code(idx, self.pos());
@@ -419,24 +446,13 @@ impl<'a> Compiler<'a> {
                 let idx = self.push_var(stmt.span, name)?;
                 self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
             }
-            StmtKind::Assign(op, name, mut expr) => {
-                let idx = self.load_var(stmt.span, &name, false)?;
-
-                if let Some(op) = op {
-                    expr = ExprKind::Binary(
-                        Box::new(ExprKind::Ident(name).at(stmt.span)),
-                        op.into(),
-                        Box::new(expr),
-                    )
-                    .at(stmt.span);
-                }
-
-                self.expr(expr)?;
-                self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
-            }
             StmtKind::Expr(expr) => {
+                let assignment = expr.is_assign();
                 self.expr(expr)?;
-                self.push_code(Opcode::new(Op::Discard).at(stmt.span));
+
+                if !assignment {
+                    self.push_code(Opcode::new(Op::Discard).at(stmt.span));
+                }
             }
             StmtKind::Return(expr) => {
                 self.expr(expr)?;
@@ -445,7 +461,7 @@ impl<'a> Compiler<'a> {
             StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
             StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
             StmtKind::ForCond(pre, expr, post, body) => {
-                self.for_cond_stmt(stmt.span, *pre, expr, *post, body)?
+                self.for_cond_stmt(stmt.span, *pre, expr, post, body)?
             }
         }
 

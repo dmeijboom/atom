@@ -64,6 +64,7 @@ pub enum ExprKind {
     Ident(String),
     Call(Box<Expr>, Vec<Expr>),
     Literal(Literal),
+    Assign(Option<AssignOp>, Box<Expr>, Box<Expr>),
 }
 
 impl ExprKind {
@@ -78,6 +79,12 @@ pub struct Expr {
     pub span: Span,
 }
 
+impl Expr {
+    pub fn is_assign(&self) -> bool {
+        matches!(self.kind, ExprKind::Assign(_, _, _))
+    }
+}
+
 #[derive(Debug)]
 pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
@@ -88,9 +95,8 @@ pub enum StmtKind {
     Return(Expr),
     Let(String, Expr),
     For(Expr, Vec<Stmt>),
-    ForCond(Box<Stmt>, Expr, Box<Stmt>, Vec<Stmt>),
+    ForCond(Box<Stmt>, Expr, Expr, Vec<Stmt>),
     Fn(String, Vec<String>, Vec<Stmt>),
-    Assign(Option<AssignOp>, String, Expr),
 }
 
 impl StmtKind {

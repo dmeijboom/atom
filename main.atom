@@ -1,5 +1,0 @@
-let names = ["John", "James", "Jack"];
-
-for let i = 0; i < names.len(); i += 1 {
-    println(names[i]);
-}

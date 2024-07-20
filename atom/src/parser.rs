@@ -5,6 +5,7 @@ use crate::{
     lexer::{Span, Token, TokenKind},
 };
 
+const PREC_ASS: u8 = 0;
 const PREC_LOR: u8 = 1;
 const PREC_LAN: u8 = 2;
 const PREC_BOR: u8 = 3;
@@ -159,6 +160,14 @@ impl Parser {
         Ok(ExprKind::Binary(Box::new(lhs), op, Box::new(rhs)).at(span))
     }
 
+    fn assign(&mut self, lhs: Expr, op: Option<AssignOp>) -> Result<Expr, Error> {
+        let span = lhs.span;
+        self.advance();
+        let rhs = self.expr(1)?;
+
+        Ok(ExprKind::Assign(op, Box::new(lhs), Box::new(rhs)).at(span))
+    }
+
     fn expr(&mut self, min_prec: u8) -> Result<Expr, Error> {
         let mut lhs = self.primary()?;
 
@@ -237,6 +246,22 @@ impl Parser {
                     TokenKind::Or if min_prec <= PREC_LOR => {
                         self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
                     }
+                    TokenKind::Assign if min_prec <= PREC_ASS => self.assign(lhs, None)?,
+                    TokenKind::AddAssign if min_prec <= PREC_ASS => {
+                        self.assign(lhs, Some(AssignOp::Add))?
+                    }
+                    TokenKind::SubAssign if min_prec <= PREC_ASS => {
+                        self.assign(lhs, Some(AssignOp::Sub))?
+                    }
+                    TokenKind::MulAssign if min_prec <= PREC_ASS => {
+                        self.assign(lhs, Some(AssignOp::Mul))?
+                    }
+                    TokenKind::DivAssign if min_prec <= PREC_ASS => {
+                        self.assign(lhs, Some(AssignOp::Div))?
+                    }
+                    TokenKind::RemAssign if min_prec <= PREC_ASS => {
+                        self.assign(lhs, Some(AssignOp::Rem))?
+                    }
                     _ => break,
                 },
                 (None, _) => break,
@@ -248,7 +273,7 @@ impl Parser {
 
     fn expr_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
-        let expr = self.expr(1)?;
+        let expr = self.expr(0)?;
 
         if self.accept(&TokenKind::Semi) {
             return Ok(StmtKind::Expr(expr).at(span));
@@ -355,78 +380,30 @@ impl Parser {
     fn for_cond_stmt(&mut self, span: Span, pre: Stmt) -> Result<Stmt, Error> {
         let expr = self.expr(1)?;
         self.semi()?;
-        let post = if self.is_assign() {
-            self.assign_stmt(true)?
-        } else {
-            let expr = self.expr(1)?;
-            let span = expr.span;
-            StmtKind::Expr(expr).at(span)
-        };
+        let post = self.expr(0)?;
         let body = self.block()?;
 
-        Ok(StmtKind::ForCond(Box::new(pre), expr, Box::new(post), body).at(span))
+        Ok(StmtKind::ForCond(Box::new(pre), expr, post, body).at(span))
     }
 
     fn for_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         self.advance();
 
-        match self.peek() {
-            Some(TokenKind::Keyword(keyword)) if keyword == "let" => {
-                let stmt = self.let_stmt()?;
-                self.for_cond_stmt(span, stmt)
-            }
-            _ => {
-                let expr = self.expr(1)?;
-
-                if self.accept(&TokenKind::Semi) {
-                    let span = expr.span;
-                    return self.for_cond_stmt(span, StmtKind::Expr(expr).at(span));
-                }
-
-                let body = self.block()?;
-                Ok(StmtKind::For(expr, body).at(span))
-            }
-        }
-    }
-
-    fn assign_stmt(&mut self, open: bool) -> Result<Stmt, Error> {
-        let span = self.span();
-        let name = self.ident()?;
-        let op = match self.next().map(|t| t.kind) {
-            Some(TokenKind::Assign) => None,
-            Some(TokenKind::AddAssign) => Some(AssignOp::Add),
-            Some(TokenKind::SubAssign) => Some(AssignOp::Sub),
-            Some(TokenKind::MulAssign) => Some(AssignOp::Mul),
-            Some(TokenKind::RemAssign) => Some(AssignOp::Rem),
-            Some(TokenKind::DivAssign) => Some(AssignOp::Div),
-            _ => unreachable!(),
-        };
-
-        let value = self.expr(1)?;
-
-        if !open {
-            self.semi()?;
+        if matches!(self.peek(), Some(TokenKind::Keyword(ref keyword)) if keyword == "let") {
+            let pre = self.let_stmt()?;
+            return self.for_cond_stmt(span, pre);
         }
 
-        Ok(StmtKind::Assign(op, name, value).at(span))
-    }
+        let expr = self.expr(0)?;
 
-    fn is_assign(&self) -> bool {
-        matches!(
-            self.peek2(),
-            (
-                Some(TokenKind::Ident(_)),
-                Some(
-                    TokenKind::Assign
-                        | TokenKind::AddAssign
-                        | TokenKind::SubAssign
-                        | TokenKind::MulAssign
-                        | TokenKind::RemAssign
-                        | TokenKind::DivAssign
-                )
-            )
-        )
+        if self.accept(&TokenKind::Semi) {
+            let span = expr.span;
+            return self.for_cond_stmt(span, StmtKind::Expr(expr).at(span));
+        }
+
+        let body = self.block()?;
+        Ok(StmtKind::For(expr, body).at(span))
     }
 
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
@@ -440,7 +417,6 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
-                TokenKind::Ident(_) if self.is_assign() => self.assign_stmt(false)?,
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
             };
