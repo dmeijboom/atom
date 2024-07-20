@@ -1,7 +1,6 @@
-let i = 0;
 let string = "";
 
-for i < 101 {
+for let i = 0; i < 101; i += 1 {
     if i % 3 == 0 {
         string = string ^ "Fizz";
     }
@@ -9,8 +8,6 @@ for i < 101 {
     if i % 4 == 0 {
         string = string ^ "Buzz";
     }
-
-    i += 1;
 }
 
 println(string);

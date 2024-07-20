@@ -352,29 +352,87 @@ impl Parser {
         Ok(StmtKind::If(*if_stmt).at(span))
     }
 
+    fn for_cond_stmt(&mut self, span: Span, pre: Stmt) -> Result<Stmt, Error> {
+        let expr = self.expr(1)?;
+        self.semi()?;
+        let post = if self.is_assign() {
+            self.assign_stmt(true)?
+        } else {
+            let expr = self.expr(1)?;
+            let span = expr.span;
+            StmtKind::Expr(expr).at(span)
+        };
+        let body = self.block()?;
+
+        Ok(StmtKind::ForCond(Box::new(pre), expr, Box::new(post), body).at(span))
+    }
+
     fn for_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         self.advance();
-        let expr = self.expr(1)?;
-        let body = self.block()?;
 
-        Ok(StmtKind::For(expr, body).at(span))
+        match self.peek() {
+            Some(TokenKind::Keyword(keyword)) if keyword == "let" => {
+                let stmt = self.let_stmt()?;
+                self.for_cond_stmt(span, stmt)
+            }
+            _ => {
+                let expr = self.expr(1)?;
+
+                if self.accept(&TokenKind::Semi) {
+                    let span = expr.span;
+                    return self.for_cond_stmt(span, StmtKind::Expr(expr).at(span));
+                }
+
+                let body = self.block()?;
+                Ok(StmtKind::For(expr, body).at(span))
+            }
+        }
     }
 
-    fn assign_stmt(&mut self, op: Option<AssignOp>) -> Result<Stmt, Error> {
+    fn assign_stmt(&mut self, open: bool) -> Result<Stmt, Error> {
         let span = self.span();
         let name = self.ident()?;
-        self.advance();
+        let op = match self.next().map(|t| t.kind) {
+            Some(TokenKind::Assign) => None,
+            Some(TokenKind::AddAssign) => Some(AssignOp::Add),
+            Some(TokenKind::SubAssign) => Some(AssignOp::Sub),
+            Some(TokenKind::MulAssign) => Some(AssignOp::Mul),
+            Some(TokenKind::RemAssign) => Some(AssignOp::Rem),
+            Some(TokenKind::DivAssign) => Some(AssignOp::Div),
+            _ => unreachable!(),
+        };
+
         let value = self.expr(1)?;
-        self.semi()?;
+
+        if !open {
+            self.semi()?;
+        }
 
         Ok(StmtKind::Assign(op, name, value).at(span))
+    }
+
+    fn is_assign(&self) -> bool {
+        matches!(
+            self.peek2(),
+            (
+                Some(TokenKind::Ident(_)),
+                Some(
+                    TokenKind::Assign
+                        | TokenKind::AddAssign
+                        | TokenKind::SubAssign
+                        | TokenKind::MulAssign
+                        | TokenKind::RemAssign
+                        | TokenKind::DivAssign
+                )
+            )
+        )
     }
 
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
         let mut stmts = vec![];
 
-        while let (Some(token), next) = self.peek2() {
+        while let Some(token) = self.peek() {
             let stmt = match token {
                 TokenKind::Eof => break,
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
@@ -382,15 +440,7 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
-                TokenKind::Ident(_) => match next {
-                    Some(&TokenKind::Assign) => self.assign_stmt(None)?,
-                    Some(&TokenKind::AddAssign) => self.assign_stmt(Some(AssignOp::Add))?,
-                    Some(&TokenKind::SubAssign) => self.assign_stmt(Some(AssignOp::Sub))?,
-                    Some(&TokenKind::MulAssign) => self.assign_stmt(Some(AssignOp::Mul))?,
-                    Some(&TokenKind::RemAssign) => self.assign_stmt(Some(AssignOp::Rem))?,
-                    Some(&TokenKind::DivAssign) => self.assign_stmt(Some(AssignOp::Div))?,
-                    _ => self.expr_stmt()?,
-                },
+                TokenKind::Ident(_) if self.is_assign() => self.assign_stmt(false)?,
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,
             };

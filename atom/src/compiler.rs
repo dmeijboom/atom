@@ -345,13 +345,32 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn for_loop(&mut self, expr: Expr, stmts: Vec<Stmt>) -> Result<(), Error> {
-        let span = expr.span;
+    fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), Error> {
         let pos = self.pos();
-
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
-        self.compile_body(stmts, false)?;
+        self.compile_body(body, false)?;
+        self.push_code(Opcode::with_code(Op::Jump, pos));
+        self.replace_code(idx, self.pos());
+
+        Ok(())
+    }
+
+    fn for_cond_stmt(
+        &mut self,
+        span: Span,
+        pre: Stmt,
+        expr: Expr,
+        post: Stmt,
+        body: Vec<Stmt>,
+    ) -> Result<(), Error> {
+        self.stmt(pre)?;
+        let pos = self.pos();
+        self.expr(expr)?;
+        let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
+        self.compile_body(body, false)?;
+        self.stmt(post)?;
+
         self.push_code(Opcode::with_code(Op::Jump, pos));
         self.replace_code(idx, self.pos());
 
@@ -424,7 +443,10 @@ impl<'a> Compiler<'a> {
                 self.push_code(Opcode::new(Op::Return).at(stmt.span));
             }
             StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
-            StmtKind::For(expr, stmts) => self.for_loop(expr, stmts)?,
+            StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
+            StmtKind::ForCond(pre, expr, post, body) => {
+                self.for_cond_stmt(stmt.span, *pre, expr, *post, body)?
+            }
         }
 
         Ok(())

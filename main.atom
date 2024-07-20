@@ -1,3 +1,5 @@
 let names = ["John", "James", "Jack"];
 
-println(names.len());
+for let i = 0; i < names.len(); i += 1 {
+    println(names[i]);
+}

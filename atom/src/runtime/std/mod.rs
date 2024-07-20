@@ -23,6 +23,7 @@ pub struct Field {
 }
 
 impl Field {
+    #[allow(dead_code)]
     pub fn new<F>(handler: F, readonly: bool) -> Self
     where
         F: Fn(&mut Gc, Value) -> Result<Value, Error> + 'static,
@@ -73,6 +74,7 @@ struct TypeDescrBuilder {
 }
 
 impl TypeDescrBuilder {
+    #[allow(dead_code)]
     fn field(mut self, name: &'static str, field: Field) -> Self {
         self.descr.fields.insert(name, field);
         self
