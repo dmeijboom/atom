@@ -246,20 +246,20 @@ impl Parser {
                     TokenKind::Or if min_prec <= PREC_LOR => {
                         self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
                     }
-                    TokenKind::Assign if min_prec <= PREC_ASS => self.assign(lhs, None)?,
-                    TokenKind::AddAssign if min_prec <= PREC_ASS => {
+                    TokenKind::Assign if min_prec == PREC_ASS => self.assign(lhs, None)?,
+                    TokenKind::AddAssign if min_prec == PREC_ASS => {
                         self.assign(lhs, Some(AssignOp::Add))?
                     }
-                    TokenKind::SubAssign if min_prec <= PREC_ASS => {
+                    TokenKind::SubAssign if min_prec == PREC_ASS => {
                         self.assign(lhs, Some(AssignOp::Sub))?
                     }
-                    TokenKind::MulAssign if min_prec <= PREC_ASS => {
+                    TokenKind::MulAssign if min_prec == PREC_ASS => {
                         self.assign(lhs, Some(AssignOp::Mul))?
                     }
-                    TokenKind::DivAssign if min_prec <= PREC_ASS => {
+                    TokenKind::DivAssign if min_prec == PREC_ASS => {
                         self.assign(lhs, Some(AssignOp::Div))?
                     }
-                    TokenKind::RemAssign if min_prec <= PREC_ASS => {
+                    TokenKind::RemAssign if min_prec == PREC_ASS => {
                         self.assign(lhs, Some(AssignOp::Rem))?
                     }
                     _ => break,
