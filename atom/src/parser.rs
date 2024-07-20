@@ -315,11 +315,16 @@ impl Parser {
         let span = self.span();
         self.advance();
         let name = self.ident()?;
+
+        if self.accept(&TokenKind::Semi) {
+            return Ok(StmtKind::Let(name, None).at(span));
+        }
+
         self.expect(TokenKind::Assign)?;
         let value = self.expr(1)?;
         self.semi()?;
 
-        Ok(StmtKind::Let(name, value).at(span))
+        Ok(StmtKind::Let(name, Some(value)).at(span))
     }
 
     fn block(&mut self) -> Result<Vec<Stmt>, Error> {

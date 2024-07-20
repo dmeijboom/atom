@@ -93,8 +93,8 @@ pub enum StmtKind {
     If(IfStmt),
     Expr(Expr),
     Return(Expr),
-    Let(String, Expr),
     For(Expr, Vec<Stmt>),
+    Let(String, Option<Expr>),
     ForCond(Box<Stmt>, Expr, Expr, Vec<Stmt>),
     Fn(String, Vec<String>, Vec<Stmt>),
 }

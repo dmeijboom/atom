@@ -1,0 +1,5 @@
+let i;
+
+i = 100;
+
+println(i);

@@ -442,9 +442,12 @@ impl<'a> Compiler<'a> {
         match stmt.kind {
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
-                self.expr(expr)?;
                 let idx = self.push_var(stmt.span, name)?;
-                self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
+
+                if let Some(expr) = expr {
+                    self.expr(expr)?;
+                    self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
+                }
             }
             StmtKind::Expr(expr) => {
                 let assignment = expr.is_assign();
