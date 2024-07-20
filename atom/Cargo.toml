@@ -1,0 +1,18 @@
+[package]
+name = "atom"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+tracing = ["dep:tracing", "dep:tracing-subscriber"]
+
+[dependencies]
+atom-macros = { path = "../atom-macros" }
+
+wyhash2 = "0.2.1"
+clap = { version = "4.5.9", features = ["derive"] }
+thiserror = "1.0.61"
+tracing = { version = "0.1.40", optional = true }
+tracing-subscriber = { version = "0.3.18", features = [
+    "env-filter",
+], optional = true }

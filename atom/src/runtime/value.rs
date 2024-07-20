@@ -218,6 +218,18 @@ impl From<bool> for Value {
     }
 }
 
+impl From<usize> for Value {
+    fn from(value: usize) -> Self {
+        (value as i64).into()
+    }
+}
+
+impl From<()> for Value {
+    fn from(_: ()) -> Self {
+        Value::NIL
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::gc::Gc;
