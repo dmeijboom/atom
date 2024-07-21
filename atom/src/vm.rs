@@ -288,7 +288,44 @@ impl<'a> Vm<'a> {
 
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
         let object = self.stack.pop();
-        let member = self.const_name(idx)?;
+
+        match object.ty() {
+            Type::Instance => self.load_attr(object, idx),
+            _ => self.load_field(object, idx),
+        }
+    }
+
+    fn store_member(&mut self, member: usize) -> Result<(), Error> {
+        // @TODO: we shouldn't allocate here
+        let member = self.const_name(member)?.to_string();
+        let value = self.stack.pop();
+        let object = self.stack.pop();
+
+        self.check_type(object.ty(), Type::Instance)?;
+
+        let instance = self.gc.get_mut(object.instance());
+        instance.attrs.insert(member, value);
+
+        Ok(())
+    }
+
+    fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
+        let member = self.const_name(member)?;
+        let instance = self.gc.get(object.instance());
+
+        match instance.attrs.get(member) {
+            Some(value) => self.push(*value),
+            None => Err(ErrorKind::UnknownAttr {
+                class: Rc::clone(&instance.class),
+                attribute: member.to_string(),
+            }
+            .at(self.span)
+            .into()),
+        }
+    }
+
+    fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
+        let member = self.const_name(member)?;
         let ty = self.std.types.get(&object.ty());
 
         if let Some(ty) = ty {
@@ -655,7 +692,7 @@ impl<'a> Vm<'a> {
                 Op::BitwiseXor => self.bitwise_xor()?,
                 Op::LoadConst => self.load_const(opcode.code())?,
                 Op::LoadMember => self.load_member(opcode.code())?,
-                Op::StoreMember => unimplemented!(),
+                Op::StoreMember => self.store_member(opcode.code())?,
                 Op::LoadFunc => self.load_func(opcode.code())?,
                 Op::LoadClass => self.load_class(opcode.code())?,
                 Op::LoadNativeFunc => self.load_native_func(opcode.code())?,

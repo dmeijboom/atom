@@ -1,5 +1,7 @@
-class User {}
+class User {
+}
 
 let user = User();
+user.name = "John";
 
-println(user);
+println(user.name);

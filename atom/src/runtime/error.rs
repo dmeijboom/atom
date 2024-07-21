@@ -5,7 +5,7 @@ use std::{
 
 use crate::lexer::Span;
 
-use super::{function::Func, value::Type};
+use super::{class::Class, function::Func, value::Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
@@ -19,6 +19,8 @@ pub enum ErrorKind {
     ArgCountMismatch { arg_count: usize, func: Rc<Func> },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
+    #[error("no such attribute '{attribute}' in {}", class.name)]
+    UnknownAttr { class: Rc<Class>, attribute: String },
     #[error("unsupported operation: {left} {op} {right}")]
     UnsupportedOp {
         left: Type,
