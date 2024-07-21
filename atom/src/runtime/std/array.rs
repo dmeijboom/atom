@@ -24,7 +24,7 @@ impl<'a> Iter<'a> {
 }
 
 impl<'a> Iterator for Iter<'a> {
-    type Item = Value;
+    type Item = &'a Value;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.array.get(self.idx) {
@@ -80,12 +80,26 @@ impl Array {
         self.len
     }
 
-    pub fn get(&self, idx: usize) -> Option<Value> {
+    pub fn get(&self, idx: usize) -> Option<&Value> {
         if self.len <= idx {
             return None;
         }
 
-        unsafe { Some(self.data.assume_init_ref().add(idx).read()) }
+        unsafe {
+            let ptr = self.data.assume_init_ref().add(idx);
+            Some(&*ptr)
+        }
+    }
+
+    pub fn get_mut(&self, idx: usize) -> Option<&mut Value> {
+        if self.len <= idx {
+            return None;
+        }
+
+        unsafe {
+            let ptr = self.data.assume_init_ref().add(idx);
+            Some(&mut *ptr)
+        }
     }
 
     pub fn iter(&self) -> Iter<'_> {
@@ -93,7 +107,7 @@ impl Array {
     }
 
     pub fn concat(&self, other: &Array) -> Array {
-        Self::from(self.iter().chain(other.iter()).collect::<Vec<_>>())
+        Self::from(self.iter().chain(other.iter()).copied().collect::<Vec<_>>())
     }
 }
 
@@ -136,7 +150,7 @@ fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
             let mut new_data = vec![Value::NIL; cap].into_boxed_slice();
 
             for (i, item) in array.iter().enumerate() {
-                new_data[i] = item;
+                new_data[i] = *item;
             }
 
             new_data[array.len] = item;

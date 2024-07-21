@@ -34,7 +34,9 @@ pub enum Op {
     TailCall,
     UnaryNot,
     LoadElement,
+    StoreElement,
     LoadMember,
+    StoreMember,
     LoadArg,
 }
 
@@ -101,7 +103,9 @@ impl Opcode {
             o if o == Op::TailCall as u64 => Op::TailCall,
             o if o == Op::UnaryNot as u64 => Op::UnaryNot,
             o if o == Op::LoadElement as u64 => Op::LoadElement,
+            o if o == Op::StoreElement as u64 => Op::StoreElement,
             o if o == Op::LoadMember as u64 => Op::LoadMember,
+            o if o == Op::StoreMember as u64 => Op::StoreMember,
             o if o == Op::LoadArg as u64 => Op::LoadArg,
             _ => unreachable!(),
         }

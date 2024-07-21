@@ -254,23 +254,30 @@ impl<'a> Compiler<'a> {
         lhs: Expr,
         mut rhs: Expr,
     ) -> Result<Opcode, Error> {
-        let name = match lhs.kind {
-            ExprKind::Ident(name) => name,
-            _ => unimplemented!(),
-        };
-        let idx = self.load_var(rhs.span, &name, false)?;
-
         if let Some(op) = op {
-            rhs = ExprKind::Binary(
-                Box::new(ExprKind::Ident(name).at(span)),
-                op.into(),
-                Box::new(rhs),
-            )
-            .at(span);
+            rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
         }
 
-        self.expr(rhs)?;
-        Ok(Opcode::with_code(Op::Store, idx).at(span))
+        Ok(match lhs.kind {
+            ExprKind::Ident(name) => {
+                let idx = self.load_var(rhs.span, &name, false)?;
+                self.expr(rhs)?;
+                Opcode::with_code(Op::Store, idx).at(span)
+            }
+            ExprKind::Member(object, member) => {
+                self.expr(*object)?;
+                self.expr(rhs)?;
+                let idx = self.push_const(Const::Str(member));
+                Opcode::with_code(Op::StoreMember, idx).at(span)
+            }
+            ExprKind::CompMember(object, index) => {
+                self.expr(*object)?;
+                self.expr(*index)?;
+                self.expr(rhs)?;
+                Opcode::new(Op::StoreElement).at(span)
+            }
+            _ => unimplemented!(),
+        })
     }
 
     fn expr(&mut self, expr: Expr) -> Result<(), Error> {

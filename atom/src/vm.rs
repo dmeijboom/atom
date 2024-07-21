@@ -475,7 +475,7 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn load_elem(&mut self) -> Result<(), Error> {
+    fn prepare_elem(&mut self) -> Result<(&Array, usize), Error> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
@@ -486,9 +486,28 @@ impl<'a> Vm<'a> {
         let n = match elem.int() {
             n if n < 0 => array.len() as i64 + n,
             n => n,
-        } as usize;
+        };
 
-        match array.get(n) {
+        Ok((array, n as usize))
+    }
+
+    fn store_elem(&mut self) -> Result<(), Error> {
+        let value = self.stack.pop();
+        let (array, n) = self.prepare_elem()?;
+
+        match array.get_mut(n) {
+            Some(elem) => {
+                *elem = value;
+                Ok(())
+            }
+            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
+        }
+    }
+
+    fn load_elem(&mut self) -> Result<(), Error> {
+        let (array, n) = self.prepare_elem()?;
+
+        match array.get(n).copied() {
             Some(elem) => self.push(elem),
             None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
         }
@@ -624,6 +643,7 @@ impl<'a> Vm<'a> {
                 Op::BitwiseXor => self.bitwise_xor()?,
                 Op::LoadConst => self.load_const(opcode.code())?,
                 Op::LoadMember => self.load_member(opcode.code())?,
+                Op::StoreMember => unimplemented!(),
                 Op::LoadFunc => self.load_func(opcode.code())?,
                 Op::LoadNativeFunc => self.load_native_func(opcode.code())?,
                 Op::Store => self.store(opcode.code())?,
@@ -640,6 +660,7 @@ impl<'a> Vm<'a> {
                 Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,
                 Op::MakeArray => self.make_array(opcode.code())?,
                 Op::LoadElement => self.load_elem()?,
+                Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
             }
         }

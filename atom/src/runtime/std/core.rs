@@ -44,7 +44,7 @@ pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
                     s.push_str(", ");
                 }
 
-                s.push_str(&repr(gc, &item)?);
+                s.push_str(&repr(gc, item)?);
             }
 
             s.push(']');

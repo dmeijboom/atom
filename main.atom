@@ -1,9 +1,5 @@
-let names = ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Heidi"];
+let names = [1];
 
-for let i = 0; i < 10000; i += 1 {
-    names = ["Alice" ^ "Bob" ^ "Charlie" ^ "David" ^ "Eve" ^ "Frank" ^ "Grace" ^ "Heidi"];
-    names.push("Ray Ban");
-    names.push("Dillen");
-}
+names[0] += 4;
 
 println(names);

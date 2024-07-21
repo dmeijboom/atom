@@ -31,6 +31,13 @@ pub enum Error {
     InvalidExpr { kind: TokenKind, span: Span },
 }
 
+fn supports_assign(expr: &Expr) -> bool {
+    matches!(
+        expr.kind,
+        ExprKind::Ident(_) | ExprKind::Member(..) | ExprKind::CompMember(..)
+    )
+}
+
 pub struct Parser {
     tokens: VecDeque<Token>,
 }
@@ -246,7 +253,9 @@ impl Parser {
                     TokenKind::Or if min_prec <= PREC_LOR => {
                         self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
                     }
-                    TokenKind::Assign if min_prec == PREC_ASS => self.assign(lhs, None)?,
+                    TokenKind::Assign if supports_assign(&lhs) && min_prec == PREC_ASS => {
+                        self.assign(lhs, None)?
+                    }
                     TokenKind::AddAssign if min_prec == PREC_ASS => {
                         self.assign(lhs, Some(AssignOp::Add))?
                     }
