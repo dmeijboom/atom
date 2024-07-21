@@ -102,7 +102,7 @@ pub struct Compiler<'a> {
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
     classes: Vec<Rc<Class>>,
-    locals: VecDeque<HashMap<String, Local>>,
+    locals: VecDeque<HashMap<String, Local, WyHash>>,
 }
 
 impl<'a> Compiler<'a> {

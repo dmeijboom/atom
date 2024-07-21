@@ -431,6 +431,7 @@ impl<'a> Vm<'a> {
         self.push(handle)
     }
 
+    #[inline(always)]
     fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
         let callee = self.stack.pop();
 
@@ -530,7 +531,7 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn prepare_elem(&mut self) -> Result<(&Array, usize), Error> {
+    fn prepare_elem(&mut self) -> Result<(&Array<Value>, usize), Error> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 

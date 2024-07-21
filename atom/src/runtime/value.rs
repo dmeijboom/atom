@@ -163,7 +163,7 @@ impl Value {
         self.into_handle()
     }
 
-    pub fn array(self) -> Handle<Array> {
+    pub fn array(self) -> Handle<Array<Value>> {
         self.into_handle()
     }
 }
@@ -266,8 +266,8 @@ impl From<Handle<Vec<u8>>> for Value {
     }
 }
 
-impl From<Handle<Array>> for Value {
-    fn from(array: Handle<Array>) -> Self {
+impl From<Handle<Array<Value>>> for Value {
+    fn from(array: Handle<Array<Value>>) -> Self {
         Self::new(Tag::Array, array.addr() as u64)
     }
 }

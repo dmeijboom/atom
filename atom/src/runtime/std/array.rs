@@ -12,19 +12,19 @@ use crate::{
 
 use super::TypeDescr;
 
-pub struct Iter<'a> {
+pub struct Iter<'a, T> {
     idx: usize,
-    array: &'a Array,
+    array: &'a Array<T>,
 }
 
-impl<'a> Iter<'a> {
-    pub fn new(array: &'a Array) -> Self {
+impl<'a, T> Iter<'a, T> {
+    pub fn new(array: &'a Array<T>) -> Self {
         Self { idx: 0, array }
     }
 }
 
-impl<'a> Iterator for Iter<'a> {
-    type Item = &'a Value;
+impl<'a, T> Iterator for Iter<'a, T> {
+    type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
         match self.array.get(self.idx) {
@@ -37,14 +37,14 @@ impl<'a> Iterator for Iter<'a> {
     }
 }
 
-pub struct Array {
-    data: MaybeUninit<*mut Value>,
+pub struct Array<T> {
+    data: MaybeUninit<*mut T>,
     len: usize,
     cap: usize,
-    _marker: PhantomData<[Value]>,
+    _marker: PhantomData<[T]>,
 }
 
-impl Drop for Array {
+impl<T> Drop for Array<T> {
     fn drop(&mut self) {
         if self.len == 0 {
             return;
@@ -56,7 +56,7 @@ impl Drop for Array {
     }
 }
 
-impl Default for Array {
+impl<T> Default for Array<T> {
     fn default() -> Self {
         Self {
             data: MaybeUninit::uninit(),
@@ -67,7 +67,7 @@ impl Default for Array {
     }
 }
 
-impl Trace for Array {
+impl<T: Trace> Trace for Array<T> {
     fn trace(&self, gc: &mut Gc) {
         for item in self.iter() {
             item.trace(gc);
@@ -75,12 +75,12 @@ impl Trace for Array {
     }
 }
 
-impl Array {
+impl<T> Array<T> {
     pub fn len(&self) -> usize {
         self.len
     }
 
-    pub fn get(&self, idx: usize) -> Option<&Value> {
+    pub fn get(&self, idx: usize) -> Option<&T> {
         if self.len <= idx {
             return None;
         }
@@ -91,7 +91,7 @@ impl Array {
         }
     }
 
-    pub fn get_mut(&self, idx: usize) -> Option<&mut Value> {
+    pub fn get_mut(&self, idx: usize) -> Option<&mut T> {
         if self.len <= idx {
             return None;
         }
@@ -102,17 +102,19 @@ impl Array {
         }
     }
 
-    pub fn iter(&self) -> Iter<'_> {
+    pub fn iter(&self) -> Iter<'_, T> {
         Iter::new(self)
     }
+}
 
-    pub fn concat(&self, other: &Array) -> Array {
+impl<T: Copy> Array<T> {
+    pub fn concat(&self, other: &Array<T>) -> Array<T> {
         Self::from(self.iter().chain(other.iter()).copied().collect::<Vec<_>>())
     }
 }
 
-impl From<Vec<Value>> for Array {
-    fn from(data: Vec<Value>) -> Self {
+impl<T> From<Vec<T>> for Array<T> {
+    fn from(data: Vec<T>) -> Self {
         if data.is_empty() {
             return Array::default();
         }
@@ -124,7 +126,7 @@ impl From<Vec<Value>> for Array {
         Array {
             len,
             cap: len,
-            data: MaybeUninit::new(raw as *mut Value),
+            data: MaybeUninit::new(raw as *mut T),
             _marker: PhantomData,
         }
     }

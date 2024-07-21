@@ -76,7 +76,7 @@ fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
 fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
     let mut prefix = format!("{}{i}:", " ".repeat(indent * 2));
 
-    while prefix.len() < 5 {
+    while prefix.len() < 4 + (indent * 2) {
         prefix.push(' ');
     }
 
