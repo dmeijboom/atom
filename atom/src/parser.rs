@@ -49,6 +49,10 @@ impl Parser {
         }
     }
 
+    fn test_keyword(&self, keyword: &str) -> bool {
+        matches!(self.peek(), Some(TokenKind::Keyword(ref k)) if k == keyword)
+    }
+
     fn peek(&self) -> Option<&TokenKind> {
         self.tokens.front().map(|t| &t.kind)
     }
@@ -365,24 +369,20 @@ impl Parser {
         let mut cur = &mut if_stmt;
 
         loop {
-            if let Some(TokenKind::Keyword(keyword)) = self.peek() {
-                match keyword.as_str() {
-                    "elif" => {
-                        self.advance();
-                        let expr = self.expr(1)?;
-                        let body = self.block()?;
+            if self.test_keyword("elif") {
+                self.advance();
+                let expr = self.expr(1)?;
+                let body = self.block()?;
 
-                        cur.2 = Some(Box::new(IfStmt(Some(expr), body, None)));
-                        cur = cur.2.as_mut().unwrap();
+                cur.2 = Some(Box::new(IfStmt(Some(expr), body, None)));
+                cur = cur.2.as_mut().unwrap();
 
-                        continue;
-                    }
-                    "else" => {
-                        self.advance();
-                        cur.2 = Some(Box::new(IfStmt(None, self.block()?, None)));
-                    }
-                    _ => {}
-                }
+                continue;
+            }
+
+            if self.test_keyword("else") {
+                self.advance();
+                cur.2 = Some(Box::new(IfStmt(None, self.block()?, None)));
             }
 
             break;
@@ -400,11 +400,26 @@ impl Parser {
         Ok(StmtKind::ForCond(Box::new(pre), expr, post, body).at(span))
     }
 
+    fn class_stmt(&mut self) -> Result<Stmt, Error> {
+        let span = self.span();
+        self.advance();
+        let name = self.ident()?;
+        self.expect(TokenKind::BracketLeft)?;
+        let mut methods = vec![];
+
+        while self.test_keyword("fn") {
+            methods.push(self.fn_stmt()?);
+        }
+
+        self.expect(TokenKind::BracketRight)?;
+        Ok(StmtKind::Class(name, methods).at(span))
+    }
+
     fn for_stmt(&mut self) -> Result<Stmt, Error> {
         let span = self.span();
         self.advance();
 
-        if matches!(self.peek(), Some(TokenKind::Keyword(ref keyword)) if keyword == "let") {
+        if self.test_keyword("let") {
             let pre = self.let_stmt()?;
             return self.for_cond_stmt(span, pre);
         }
@@ -430,6 +445,7 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "class" => self.class_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
                 TokenKind::BracketRight if !global => break,
                 _ => self.expr_stmt()?,

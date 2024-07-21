@@ -13,7 +13,7 @@ use crate::{
 fn std_repr(gc: &mut Gc, arg: Value) -> Result<Value, Error> {
     let s = repr(gc, &arg)?;
     let handle = gc.alloc(s.into_bytes());
-    Ok(Value::new_str(handle))
+    Ok(handle)
 }
 
 #[atom_fn(println)]
@@ -58,6 +58,8 @@ pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
         Type::Float => format!("{}", value.float()),
         Type::Bool => format!("{}", value.bool()),
         Type::Fn => format!("{}(..)", value.func().name),
+        Type::Class => value.class().name.clone(),
+        Type::Instance => format!("{}{{..}}", gc.get(value.instance()).class.name),
         Type::Nil => "".to_string(),
     })
 }

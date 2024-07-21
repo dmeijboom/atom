@@ -3,9 +3,13 @@ use std::{
     rc::Rc,
 };
 
-use crate::gc::{Gc, Handle, Trace};
+use crate::gc::{AnyHandle, Gc, Handle, Trace};
 
-use super::{function::Func, std::array::Array};
+use super::{
+    class::{Class, Instance},
+    function::Func,
+    std::array::Array,
+};
 
 #[repr(u64)]
 enum Tag {
@@ -17,6 +21,8 @@ enum Tag {
     True,
     False,
     Nil,
+    Class,
+    Instance,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
@@ -28,6 +34,8 @@ pub enum Type {
     Fn,
     Str,
     Nil,
+    Class,
+    Instance,
 }
 
 impl Display for Type {
@@ -40,14 +48,16 @@ impl Display for Type {
             Type::Array => write!(f, "Array"),
             Type::Fn => write!(f, "Fn"),
             Type::Nil => write!(f, "Nil"),
+            Type::Class => write!(f, "Class"),
+            Type::Instance => write!(f, "Instance"),
         }
     }
 }
 
 const SIGN_BIT: u64 = 1 << 63;
-const QUIET_NAN: u64 = 0x7ff8_0000_0000_0000;
+const QUIET_NAN: u64 = 0x7ff0_0000_0000_0000;
 const INT_MASK: u64 = 0xffff_ffff_ffff;
-const TAG_MASK: u64 = 0b111 << 48;
+const TAG_MASK: u64 = 0b1111 << 48;
 
 #[derive(Clone, Copy)]
 pub struct Value {
@@ -73,6 +83,8 @@ impl Value {
             t if t == Tag::Fn as u64 => Type::Fn,
             t if t == Tag::Str as u64 => Type::Str,
             t if t == Tag::Nil as u64 => Type::Nil,
+            t if t == Tag::Class as u64 => Type::Class,
+            t if t == Tag::Instance as u64 => Type::Instance,
             _ => unreachable!(),
         }
     }
@@ -87,19 +99,6 @@ impl Value {
         Self {
             bits: (tag as u64) << 48 | QUIET_NAN | value,
         }
-    }
-
-    pub fn new_str(handle: Handle<Vec<u8>>) -> Self {
-        Self::new(Tag::Str, handle.addr() as u64)
-    }
-
-    pub fn new_array(handle: Handle<Array>) -> Self {
-        Self::new(Tag::Array, handle.addr() as u64)
-    }
-
-    pub fn new_func(func: Rc<Func>) -> Self {
-        let value = Rc::into_raw(func);
-        Self::new(Tag::Fn, value as u64)
     }
 
     pub fn int(self) -> i64 {
@@ -125,32 +124,54 @@ impl Value {
         (self.bits & TAG_MASK) >> 48 == Tag::True as u64
     }
 
-    pub fn func(self) -> Rc<Func> {
-        unsafe {
-            let value = self.bits & INT_MASK;
-            let func = value as *const Func;
-
-            Rc::from_raw(func)
+    pub fn handle(&self) -> Option<Box<dyn AnyHandle>> {
+        match self.ty() {
+            Type::Array => Some(Box::new(self.array())),
+            Type::Str => Some(Box::new(self.buffer())),
+            Type::Instance => Some(Box::new(self.instance())),
+            Type::Int | Type::Float | Type::Bool | Type::Fn | Type::Class | Type::Nil => None,
         }
     }
 
-    pub fn buffer(self) -> Handle<Vec<u8>> {
+    fn into_rc<T>(self) -> Rc<T> {
+        unsafe {
+            let value = self.bits & INT_MASK;
+            let ptr = value as *const T;
+
+            Rc::from_raw(ptr)
+        }
+    }
+
+    pub fn class(self) -> Rc<Class> {
+        self.into_rc()
+    }
+
+    pub fn func(self) -> Rc<Func> {
+        self.into_rc()
+    }
+
+    fn into_handle<T: Trace>(self) -> Handle<T> {
         let addr = self.bits & INT_MASK;
         Handle::from_addr(addr as usize).unwrap()
     }
 
+    pub fn instance(self) -> Handle<Instance> {
+        self.into_handle()
+    }
+
+    pub fn buffer(self) -> Handle<Vec<u8>> {
+        self.into_handle()
+    }
+
     pub fn array(self) -> Handle<Array> {
-        let addr = self.bits & INT_MASK;
-        Handle::from_addr(addr as usize).unwrap()
+        self.into_handle()
     }
 }
 
 impl Trace for Value {
     fn trace(&self, gc: &mut Gc) {
-        match self.ty() {
-            Type::Array => gc.mark(self.array()),
-            Type::Str => gc.mark(self.buffer()),
-            _ => {}
+        if let Some(handle) = self.handle() {
+            handle.trace(gc);
         }
     }
 }
@@ -171,6 +192,8 @@ impl Display for Value {
             Type::Fn => write!(f, "Fn"),
             Type::Str => write!(f, "Str"),
             Type::Nil => write!(f, "Nil"),
+            Type::Class => write!(f, "Class"),
+            Type::Instance => write!(f, "Instance"),
         }
     }
 }
@@ -224,6 +247,38 @@ impl From<usize> for Value {
     }
 }
 
+impl From<Handle<Instance>> for Value {
+    fn from(instance: Handle<Instance>) -> Self {
+        Self::new(Tag::Instance, instance.addr() as u64)
+    }
+}
+
+impl From<Rc<Class>> for Value {
+    fn from(class: Rc<Class>) -> Self {
+        let value = Rc::into_raw(class);
+        Self::new(Tag::Class, value as u64)
+    }
+}
+
+impl From<Handle<Vec<u8>>> for Value {
+    fn from(buffer: Handle<Vec<u8>>) -> Self {
+        Self::new(Tag::Str, buffer.addr() as u64)
+    }
+}
+
+impl From<Handle<Array>> for Value {
+    fn from(array: Handle<Array>) -> Self {
+        Self::new(Tag::Array, array.addr() as u64)
+    }
+}
+
+impl From<Rc<Func>> for Value {
+    fn from(func: Rc<Func>) -> Self {
+        let value = Rc::into_raw(func);
+        Self::new(Tag::Fn, value as u64)
+    }
+}
+
 impl From<()> for Value {
     fn from(_: ()) -> Self {
         Value::NIL
@@ -235,6 +290,19 @@ mod tests {
     use crate::gc::Gc;
 
     use super::*;
+
+    #[test]
+    fn test_tags() {
+        assert_eq!(Value::new_primitive(Tag::Int).ty(), Type::Int);
+        assert_eq!(Value::new_primitive(Tag::Array).ty(), Type::Array);
+        assert_eq!(Value::new_primitive(Tag::Fn).ty(), Type::Fn);
+        assert_eq!(Value::new_primitive(Tag::Str).ty(), Type::Str);
+        assert_eq!(Value::new_primitive(Tag::True).ty(), Type::Bool);
+        assert_eq!(Value::new_primitive(Tag::False).ty(), Type::Bool);
+        assert_eq!(Value::new_primitive(Tag::Nil).ty(), Type::Nil);
+        assert_eq!(Value::new_primitive(Tag::Class).ty(), Type::Class);
+        assert_eq!(Value::new_primitive(Tag::Instance).ty(), Type::Instance);
+    }
 
     #[test]
     fn test_int() {
@@ -270,7 +338,7 @@ mod tests {
         let mut gc = Gc::default();
 
         let handle = gc.alloc(b"hello".to_vec());
-        let value = Value::new_str(handle);
+        let value = Value::from(handle);
 
         assert_eq!(value.ty(), Type::Str);
 

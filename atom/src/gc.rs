@@ -23,10 +23,29 @@ impl<T: Trace> Trace for Vec<T> {
     }
 }
 
-trait AnyHandle {
-    fn marked(&self) -> bool;
+pub trait AnyHandle {
     fn dealloc(&self);
+    fn marked(&self) -> bool;
+    fn trace(&self, gc: &mut Gc);
     fn set_marked(&mut self, marked: bool);
+}
+
+impl AnyHandle for Box<dyn AnyHandle> {
+    fn trace(&self, gc: &mut Gc) {
+        self.as_ref().trace(gc);
+    }
+
+    fn marked(&self) -> bool {
+        self.as_ref().marked()
+    }
+
+    fn dealloc(&self) {
+        self.as_ref().dealloc();
+    }
+
+    fn set_marked(&mut self, marked: bool) {
+        self.as_mut().set_marked(marked);
+    }
 }
 
 struct Ptr<T: ?Sized> {
@@ -63,6 +82,12 @@ impl<T: Trace> AnyHandle for Handle<T> {
     fn set_marked(&mut self, marked: bool) {
         unsafe {
             self.ptr.as_mut().marked = marked;
+        }
+    }
+
+    fn trace(&self, gc: &mut Gc) {
+        unsafe {
+            self.ptr.as_ref().data.trace(gc);
         }
     }
 
@@ -103,13 +128,10 @@ impl Gc {
         }
     }
 
-    pub fn mark<T: Trace>(&mut self, mut handle: Handle<T>) {
-        unsafe {
-            let ptr = handle.ptr.as_mut();
-
-            ptr.marked = true;
-            ptr.data.trace(self);
-        }
+    pub fn mark<H: ?Sized + AnyHandle>(&mut self, mut handle: impl AsMut<H>) {
+        let handle = handle.as_mut();
+        handle.set_marked(true);
+        handle.trace(self);
     }
 
     pub fn get<T: Trace>(&self, handle: Handle<T>) -> &T {

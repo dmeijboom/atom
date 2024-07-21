@@ -1,5 +1,5 @@
-let names = [1];
+class User {}
 
-names[0] += 4;
+let user = User();
 
-println(names);
+println(user);

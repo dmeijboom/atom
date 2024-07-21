@@ -7,8 +7,8 @@ The goal is to create a language which is fun to build with a clean and minimali
 
 ## Features
 
-- Basic types: Int, Float, Str, Array
 - Tail call optimization
-- Hand-written lexer/recursive descent parser with precedence climbing
 - Simple mark and sweep garbage collector
+- Basic types: Int, Float, Array, Str, Bool, Class
+- Hand-written lexer/recursive descent parser with precedence climbing
 - NaN tagging (heavily based on [nanoval](https://github.com/phkeese/nanoval))

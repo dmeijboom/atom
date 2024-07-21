@@ -10,6 +10,7 @@ use crate::{
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
+        class::Class,
         function::{Exec, Func},
         std::StdLib,
     },
@@ -20,7 +21,9 @@ pub enum ErrorKind {
     #[error("unknown name: {0}")]
     UnknownName(String),
     #[error("fn '{0}' already exists")]
-    FnAlreadyExists(String),
+    DuplicateFn(String),
+    #[error("class '{0}' already exists")]
+    DuplicateClass(String),
 }
 
 impl ErrorKind {
@@ -60,6 +63,7 @@ pub struct Module {
     pub codes: Rc<[Opcode]>,
     pub consts: Vec<Const>,
     pub funcs: Vec<Rc<Func>>,
+    pub classes: Vec<Rc<Class>>,
 }
 
 impl Default for Module {
@@ -68,6 +72,7 @@ impl Default for Module {
             codes: Rc::new([]),
             consts: vec![],
             funcs: vec![],
+            classes: vec![],
         }
     }
 }
@@ -79,6 +84,7 @@ pub struct Compiler<'a> {
     codes: Vec<Opcode>,
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
+    classes: Vec<Rc<Class>>,
     scope_funcs: HashMap<usize, Weak<Func>>,
     locals: VecDeque<HashMap<String, Local>>,
 }
@@ -92,6 +98,7 @@ impl<'a> Compiler<'a> {
             codes: vec![],
             funcs: vec![],
             consts: vec![],
+            classes: vec![],
             locals: VecDeque::default(),
             scope_funcs: HashMap::default(),
         }
@@ -230,17 +237,20 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    // Load a name based in the following order: var > local > vm func > std func
+    // Load a name based in the following order: var > local > vm class > vm func > std func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, Error> {
         match self.load_var(span, &name, false) {
             Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
             Err(e) => match self.load_local(&name) {
                 Some(idx) => Ok(Opcode::with_code(Op::LoadArg, idx).at(span)),
-                None => match self.funcs.iter().position(|f| f.name == name) {
-                    Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
-                    None => match self.std.funcs.iter().position(|f| f.name == name) {
-                        Some(idx) => Ok(Opcode::with_code(Op::LoadNativeFunc, idx).at(span)),
-                        None => Err(e),
+                None => match self.classes.iter().position(|c| c.name == name) {
+                    Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
+                    None => match self.funcs.iter().position(|f| f.name == name) {
+                        Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
+                        None => match self.std.funcs.iter().position(|f| f.name == name) {
+                            Some(idx) => Ok(Opcode::with_code(Op::LoadNativeFunc, idx).at(span)),
+                            None => Err(e),
+                        },
                     },
                 },
             },
@@ -349,7 +359,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn func(
+    fn fn_stmt(
         &mut self,
         span: Span,
         name: String,
@@ -357,7 +367,7 @@ impl<'a> Compiler<'a> {
         stmts: Vec<Stmt>,
     ) -> Result<(), Error> {
         if self.funcs.iter().any(|f| f.name == name) {
-            return Err(ErrorKind::FnAlreadyExists(name).at(span));
+            return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
         let idx = self.funcs.len();
@@ -386,6 +396,19 @@ impl<'a> Compiler<'a> {
         self.compile_body(body, false)?;
         self.push_code(Opcode::with_code(Op::Jump, pos));
         self.replace_code(idx, self.pos());
+
+        Ok(())
+    }
+
+    fn class_stmt(&mut self, span: Span, name: String, methods: Vec<Stmt>) -> Result<(), Error> {
+        if self.classes.iter().any(|c| c.name == name) {
+            return Err(ErrorKind::DuplicateClass(name).at(span));
+        }
+
+        assert!(methods.is_empty(), "methods not implemented");
+
+        let _idx = self.classes.len();
+        self.classes.push(Rc::new(Class::new(name.clone())));
 
         Ok(())
     }
@@ -468,11 +491,12 @@ impl<'a> Compiler<'a> {
                 self.expr(expr)?;
                 self.push_code(Opcode::new(Op::Return).at(stmt.span));
             }
-            StmtKind::Fn(name, args, stmts) => self.func(stmt.span, name, args, stmts)?,
+            StmtKind::Fn(name, args, stmts) => self.fn_stmt(stmt.span, name, args, stmts)?,
             StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
             StmtKind::ForCond(pre, expr, post, body) => {
                 self.for_cond_stmt(stmt.span, *pre, expr, post, body)?
             }
+            StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
         }
 
         Ok(())
@@ -518,6 +542,7 @@ impl<'a> Compiler<'a> {
             codes: self.codes.into(),
             consts: self.consts,
             funcs: self.funcs,
+            classes: self.classes,
         })
     }
 }
