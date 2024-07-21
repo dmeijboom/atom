@@ -17,7 +17,7 @@ use crate::{
         self,
         error::{Call, ErrorKind},
         function::{Exec, Func},
-        std::StdLib,
+        std::{array::Array, StdLib},
         value::{Type, Value},
     },
 };
@@ -443,8 +443,7 @@ impl<'a> Vm<'a> {
             Type::Array => {
                 let lhs = self.gc.get(lhs.array());
                 let rhs = self.gc.get(rhs.array());
-                let out = [lhs.as_slice(), rhs.as_slice()].concat();
-                Value::new_array(self.gc.alloc(out))
+                Value::new_array(self.gc.alloc(lhs.concat(rhs)))
             }
             Type::Str => {
                 let lhs = self.gc.get(lhs.buffer());
@@ -467,7 +466,9 @@ impl<'a> Vm<'a> {
 
         values.reverse();
 
-        let handle = self.gc.alloc(values);
+        let array = Array::from(values);
+        let handle = self.gc.alloc(array);
+
         self.push(Value::new_array(handle))?;
         self.try_collect_gc();
 
@@ -481,13 +482,13 @@ impl<'a> Vm<'a> {
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let vec = self.gc.get(array.array());
+        let array = self.gc.get(array.array());
         let n = match elem.int() {
-            n if n < 0 => vec.len() as i64 + n,
+            n if n < 0 => array.len() as i64 + n,
             n => n,
         } as usize;
 
-        match vec.get(n).copied() {
+        match array.get(n) {
             Some(elem) => self.push(elem),
             None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
         }

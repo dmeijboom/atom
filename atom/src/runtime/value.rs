@@ -5,7 +5,7 @@ use std::{
 
 use crate::gc::{Gc, Handle, Trace};
 
-use super::function::Func;
+use super::{function::Func, std::array::Array};
 
 #[repr(u64)]
 enum Tag {
@@ -93,7 +93,7 @@ impl Value {
         Self::new(Tag::Str, handle.addr() as u64)
     }
 
-    pub fn new_array(handle: Handle<Vec<Value>>) -> Self {
+    pub fn new_array(handle: Handle<Array>) -> Self {
         Self::new(Tag::Array, handle.addr() as u64)
     }
 
@@ -139,7 +139,7 @@ impl Value {
         Handle::from_addr(addr as usize).unwrap()
     }
 
-    pub fn array(self) -> Handle<Vec<Value>> {
+    pub fn array(self) -> Handle<Array> {
         let addr = self.bits & INT_MASK;
         Handle::from_addr(addr as usize).unwrap()
     }

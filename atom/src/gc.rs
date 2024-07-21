@@ -29,13 +29,13 @@ trait AnyHandle {
     fn set_marked(&mut self, marked: bool);
 }
 
-struct Ptr<T> {
+struct Ptr<T: ?Sized> {
     marked: bool,
     data: T,
 }
 
 #[derive(Copy)]
-pub struct Handle<T: Trace> {
+pub struct Handle<T: ?Sized + Trace> {
     ptr: NonNull<Ptr<T>>,
 }
 

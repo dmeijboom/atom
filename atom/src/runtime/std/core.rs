@@ -36,15 +36,15 @@ pub fn funcs() -> [fn() -> Func; 2] {
 pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
     Ok(match value.ty() {
         Type::Array => {
-            let vec = gc.get(value.array());
+            let array = gc.get(value.array());
             let mut s = String::from("[");
 
-            for (i, item) in vec.iter().enumerate() {
+            for (i, item) in array.iter().enumerate() {
                 if i > 0 {
                     s.push_str(", ");
                 }
 
-                s.push_str(&repr(gc, item)?);
+                s.push_str(&repr(gc, &item)?);
             }
 
             s.push(']');

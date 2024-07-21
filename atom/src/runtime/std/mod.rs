@@ -4,8 +4,8 @@ use wyhash2::WyHash;
 
 use crate::gc::Gc;
 
-mod array;
-mod core;
+pub mod array;
+pub mod core;
 
 use super::{
     error::Error,
