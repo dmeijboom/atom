@@ -80,6 +80,10 @@ impl<T> Array<T> {
         self.len
     }
 
+    pub fn as_slice(&self) -> &[T] {
+        unsafe { std::slice::from_raw_parts(self.data.assume_init_ref().cast_const(), self.len) }
+    }
+
     pub fn get(&self, idx: usize) -> Option<&T> {
         if self.len <= idx {
             return None;
@@ -170,8 +174,8 @@ fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
 
 #[atom_method(Array.len)]
 fn array_len(gc: &mut Gc, this: Value) -> Result<Value, Error> {
-    let vec = gc.get(this.array());
-    Ok(vec.len)
+    let array = gc.get(this.array());
+    Ok(array.len)
 }
 
 pub fn descr() -> TypeDescr {

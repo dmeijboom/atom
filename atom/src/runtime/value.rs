@@ -8,7 +8,7 @@ use crate::gc::{AnyHandle, Gc, Handle, Trace};
 use super::{
     class::{Class, Instance},
     function::Func,
-    std::array::Array,
+    std::{array::Array, str::Str},
 };
 
 #[repr(u64)]
@@ -127,7 +127,7 @@ impl Value {
     pub fn handle(&self) -> Option<Box<dyn AnyHandle>> {
         match self.ty() {
             Type::Array => Some(Box::new(self.array())),
-            Type::Str => Some(Box::new(self.buffer())),
+            Type::Str => Some(Box::new(self.str())),
             Type::Instance => Some(Box::new(self.instance())),
             Type::Int | Type::Float | Type::Bool | Type::Fn | Type::Class | Type::Nil => None,
         }
@@ -159,7 +159,7 @@ impl Value {
         self.into_handle()
     }
 
-    pub fn buffer(self) -> Handle<Vec<u8>> {
+    pub fn str(self) -> Handle<Str> {
         self.into_handle()
     }
 
@@ -260,9 +260,9 @@ impl From<Rc<Class>> for Value {
     }
 }
 
-impl From<Handle<Vec<u8>>> for Value {
-    fn from(buffer: Handle<Vec<u8>>) -> Self {
-        Self::new(Tag::Str, buffer.addr() as u64)
+impl From<Handle<Str>> for Value {
+    fn from(str: Handle<Str>) -> Self {
+        Self::new(Tag::Str, str.addr() as u64)
     }
 }
 
@@ -337,12 +337,12 @@ mod tests {
     fn test_string() {
         let mut gc = Gc::default();
 
-        let handle = gc.alloc(b"hello".to_vec());
+        let handle = gc.alloc(Str::from("hello".to_string()));
         let value = Value::from(handle);
 
         assert_eq!(value.ty(), Type::Str);
 
-        let buff = gc.get(value.buffer());
-        assert_eq!(buff, b"hello");
+        let str = gc.get(value.str());
+        assert_eq!(str.as_str(), "hello");
     }
 }

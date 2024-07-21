@@ -9,19 +9,19 @@ use crate::{
     },
 };
 
+use super::str::Str;
+
 #[atom_fn(repr)]
 fn std_repr(gc: &mut Gc, arg: Value) -> Result<Value, Error> {
-    let s = repr(gc, &arg)?;
-    let handle = gc.alloc(s.into_bytes());
-    Ok(handle)
+    Ok(gc.alloc(Str::from(repr(gc, &arg)?)))
 }
 
 #[atom_fn(println)]
 fn std_println(gc: &mut Gc, arg: Value) -> Result<(), Error> {
     match arg.ty() {
         Type::Str => {
-            let buff = gc.get(arg.buffer());
-            println!("{}", String::from_utf8_lossy(buff));
+            let str = gc.get(arg.str());
+            println!("{}", str.as_str());
         }
         _ => println!("{}", repr(gc, &arg)?),
     }
@@ -51,8 +51,8 @@ pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
             s
         }
         Type::Str => {
-            let buff = gc.get(value.buffer());
-            format!("\"{}\"", String::from_utf8_lossy(buff))
+            let str = gc.get(value.str());
+            format!("\"{}\"", str.as_str())
         }
         Type::Int => format!("{}", value.int()),
         Type::Float => format!("{}", value.float()),

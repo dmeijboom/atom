@@ -18,7 +18,7 @@ use crate::{
         class::{Class, Instance},
         error::{Call, ErrorKind},
         function::{Exec, Func},
-        std::{array::Array, StdLib},
+        std::{array::Array, str::Str, StdLib},
         value::{Type, Value},
     },
 };
@@ -138,6 +138,18 @@ fn top_frame(module: &Module) -> Frame {
     }
 }
 
+fn map_const(gc: &mut Gc, const_: Const) -> Value {
+    match const_ {
+        Const::Int(n) => Value::from(n),
+        Const::Float(n) => Value::from(n),
+        Const::Bool(b) => Value::from(b),
+        Const::Str(s) => {
+            let str = gc.alloc(Str::from(s));
+            Value::from(str)
+        }
+    }
+}
+
 pub struct Vm<'a> {
     gc: Gc,
     span: Span,
@@ -157,16 +169,8 @@ impl<'a> Vm<'a> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];
 
-        for (i, const_) in module.consts.drain(..).enumerate() {
-            consts[i] = match const_ {
-                Const::Int(i) => Value::from(i),
-                Const::Float(f) => Value::from(f),
-                Const::Bool(b) => Value::from(b),
-                Const::Str(s) => {
-                    let handle = gc.alloc(s.into_bytes());
-                    Value::from(handle)
-                }
-            };
+        for (i, const_) in mem::take(&mut module.consts).into_iter().enumerate() {
+            consts[i] = map_const(&mut gc, const_);
         }
 
         let mut call_stack = ReuseVec::default();
@@ -279,8 +283,8 @@ impl<'a> Vm<'a> {
 
         match value.ty() {
             Type::Str => {
-                let buff = self.gc.get(value.buffer());
-                unsafe { Ok(std::str::from_utf8_unchecked(buff)) }
+                let str = self.gc.get(value.str());
+                Ok(str.as_str())
             }
             _ => unreachable!(),
         }
@@ -502,10 +506,9 @@ impl<'a> Vm<'a> {
                 Value::from(self.gc.alloc(lhs.concat(rhs)))
             }
             Type::Str => {
-                let lhs = self.gc.get(lhs.buffer());
-                let rhs = self.gc.get(rhs.buffer());
-                let out = [lhs.as_slice(), rhs.as_slice()].concat();
-                Value::from(self.gc.alloc(out))
+                let lhs = self.gc.get(lhs.str());
+                let rhs = self.gc.get(rhs.str());
+                Value::from(self.gc.alloc(lhs.concat(rhs)))
             }
             _ => unreachable!(),
         };

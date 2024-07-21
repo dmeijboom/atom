@@ -1,8 +1,3 @@
-class Test {
-    fn two(self, x) {
-        10 + x
-    }
-}
+let name = "test";
 
-let test = Test();
-println(test.two(4));
+println(name.upper());

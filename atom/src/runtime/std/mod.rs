@@ -6,6 +6,7 @@ use crate::gc::Gc;
 
 pub mod array;
 pub mod core;
+pub mod str;
 
 use super::{
     error::Error,
@@ -104,6 +105,7 @@ pub struct StdLib {
 pub fn stdlib() -> StdLib {
     let mut types = TypeRegistry::default();
     types.insert(Type::Array, array::descr());
+    types.insert(Type::Str, str::descr());
 
     let funcs = core::funcs()
         .into_iter()
