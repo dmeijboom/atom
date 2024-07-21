@@ -1,7 +1,8 @@
-class User {
+class Test {
+    fn two(self, x) {
+        10 + x
+    }
 }
 
-let user = User();
-user.name = "John";
-
-println(user.name);
+let test = Test();
+println(test.two(4));

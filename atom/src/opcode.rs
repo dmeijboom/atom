@@ -31,7 +31,6 @@ pub enum Op {
     PushJumpIfTrue,
     MakeArray,
     Call,
-    DirectCall,
     TailCall,
     UnaryNot,
     LoadElement,
@@ -53,10 +52,6 @@ pub struct Opcode {
 impl Opcode {
     pub fn new(op: Op) -> Self {
         Self::with_code(op, 0)
-    }
-
-    pub fn with_code2(op: Op, hi: u32, low: u32) -> Self {
-        Self::with_code(op, (hi as usize) << 32 | low as usize)
     }
 
     pub fn with_code(op: Op, code: usize) -> Self {
@@ -92,7 +87,6 @@ impl Opcode {
             o if o == Op::Load as u64 => Op::Load,
             o if o == Op::LoadFunc as u64 => Op::LoadFunc,
             o if o == Op::LoadClass as u64 => Op::LoadClass,
-            o if o == Op::DirectCall as u64 => Op::DirectCall,
             o if o == Op::LoadNativeFunc as u64 => Op::LoadNativeFunc,
             o if o == Op::Discard as u64 => Op::Discard,
             o if o == Op::Return as u64 => Op::Return,
@@ -115,11 +109,6 @@ impl Opcode {
 
     pub fn code(&self) -> usize {
         (self.bits & INT_MASK) as usize
-    }
-
-    pub fn code2(&self) -> (u32, u32) {
-        let code = self.code();
-        ((code >> 32) as u32, code as u32)
     }
 }
 
@@ -146,16 +135,5 @@ mod tests {
         let opcode = Opcode::with_code(Op::LoadArg, 2394);
         assert_eq!(opcode.op(), Op::LoadArg);
         assert_eq!(opcode.code(), 2394);
-    }
-
-    #[test]
-    fn test_with_code2() {
-        let opcode = Opcode::with_code2(Op::Eq, 0, 0);
-        assert_eq!(opcode.op(), Op::Eq);
-        assert_eq!(opcode.code2(), (0, 0));
-
-        let opcode = Opcode::with_code2(Op::LoadArg, 2394, 403);
-        assert_eq!(opcode.op(), Op::LoadArg);
-        assert_eq!(opcode.code2(), (2394, 403));
     }
 }

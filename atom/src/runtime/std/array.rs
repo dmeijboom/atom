@@ -130,7 +130,7 @@ impl From<Vec<Value>> for Array {
     }
 }
 
-#[atom_method(push)]
+#[atom_method(Array.push)]
 fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
     let array = gc.get_mut(this.array());
 
@@ -166,7 +166,7 @@ fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
     Ok(())
 }
 
-#[atom_method(len)]
+#[atom_method(Array.len)]
 fn array_len(gc: &mut Gc, this: Value) -> Result<Value, Error> {
     let vec = gc.get(this.array());
     Ok(vec.len)

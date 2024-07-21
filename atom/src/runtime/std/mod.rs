@@ -9,7 +9,7 @@ pub mod core;
 
 use super::{
     error::Error,
-    function::Func,
+    function::{Func, Receiver},
     value::{Type, Value},
 };
 
@@ -84,7 +84,7 @@ impl TypeDescrBuilder {
         let method = method();
         self.descr.methods.insert(
             method.name.clone(),
-            Rc::new(method.with_receiver(self.descr.ty)),
+            Rc::new(method.with_receiver(Receiver::Type(self.descr.ty))),
         );
         self
     }

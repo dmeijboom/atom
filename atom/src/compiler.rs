@@ -5,13 +5,15 @@ use std::{
     rc::{Rc, Weak},
 };
 
+use wyhash2::WyHash;
+
 use crate::{
     ast::{self, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind},
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
         class::Class,
-        function::{Exec, Func},
+        function::{Exec, Func, Receiver},
         std::StdLib,
     },
 };
@@ -22,6 +24,8 @@ pub enum ErrorKind {
     UnknownName(String),
     #[error("fn '{0}' already exists")]
     DuplicateFn(String),
+    #[error("method '{0}' of '{}' already exists", _1.name)]
+    DuplicateMethod(String, Rc<Class>),
     #[error("class '{0}' already exists")]
     DuplicateClass(String),
 }
@@ -77,56 +81,46 @@ impl Default for Module {
     }
 }
 
+fn new_rc<T>(item: T) -> (Rc<T>, Weak<T>) {
+    let strong = Rc::new(item);
+    let weak = Rc::downgrade(&strong);
+
+    (strong, weak)
+}
+
+pub enum Scope {
+    Global,
+    Local,
+    Func(usize),
+}
+
 pub struct Compiler<'a> {
     std: &'a StdLib,
-    scope: usize,
+    scope: Vec<Scope>,
     vars: Vec<Var>,
     codes: Vec<Opcode>,
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
     classes: Vec<Rc<Class>>,
-    scope_funcs: HashMap<usize, Weak<Func>>,
     locals: VecDeque<HashMap<String, Local>>,
 }
 
 impl<'a> Compiler<'a> {
     pub fn new(std: &'a StdLib) -> Self {
         Compiler {
-            scope: 0,
             std,
+            scope: vec![Scope::Global],
             vars: vec![],
             codes: vec![],
             funcs: vec![],
             consts: vec![],
             classes: vec![],
             locals: VecDeque::default(),
-            scope_funcs: HashMap::default(),
         }
     }
 
-    fn push_scope(&mut self, locals: Vec<String>, func: Option<Weak<Func>>) -> Vec<Opcode> {
-        let locals = locals
-            .into_iter()
-            .enumerate()
-            .map(|(i, n)| (n, Local { index: i }))
-            .collect();
-
-        self.scope += 1;
-        self.locals.push_front(locals);
-
-        if let Some(func) = func {
-            self.scope_funcs.insert(self.scope, func);
-        }
-
-        mem::take(&mut self.codes)
-    }
-
-    fn pop_scope(&mut self, codes: Vec<Opcode>) -> Vec<Opcode> {
-        self.scope_funcs.remove(&self.scope);
-        self.scope -= 1;
-        self.locals.pop_front();
-
-        mem::replace(&mut self.codes, codes)
+    fn scope_id(&self) -> usize {
+        self.scope.len() - 1
     }
 
     fn pos(&self) -> usize {
@@ -163,7 +157,7 @@ impl<'a> Compiler<'a> {
         self.vars.push(Var {
             index: idx,
             name,
-            scope: self.scope,
+            scope: self.scope_id(),
         });
 
         self.vars.sort_by(|a, b| b.scope.cmp(&a.scope));
@@ -175,21 +169,6 @@ impl<'a> Compiler<'a> {
         let arg_count = args.len();
         self.expr_list(args)?;
         self.expr(callee)?;
-
-        let last = self.codes.last_mut();
-
-        if let Some(last) = last {
-            let max = u32::MAX as usize;
-            let code = last.code();
-
-            if last.op() == Op::LoadFunc && code <= max && arg_count <= max {
-                self.codes.pop();
-                return Ok(
-                    Opcode::with_code2(Op::DirectCall, code as u32, arg_count as u32).at(span),
-                );
-            }
-        }
-
         Ok(Opcode::with_code(Op::Call, arg_count).at(span))
     }
 
@@ -207,9 +186,9 @@ impl<'a> Compiler<'a> {
             .filter(|v| {
                 v.name == name
                     && if strict_scope {
-                        v.scope == self.scope
+                        v.scope == self.scope_id()
                     } else {
-                        v.scope <= self.scope
+                        v.scope <= self.scope_id()
                     }
             })
             .map(|v| v.index)
@@ -359,6 +338,58 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn compile_fn_body(
+        &mut self,
+        scope: Scope,
+        args: Vec<String>,
+        stmts: Vec<Stmt>,
+    ) -> Result<Vec<Opcode>, Error> {
+        let locals = args
+            .into_iter()
+            .enumerate()
+            .map(|(i, n)| (n, Local { index: i }))
+            .collect();
+
+        self.scope.push(scope);
+        self.locals.push_front(locals);
+
+        let previous = mem::take(&mut self.codes);
+
+        self.compile_body(stmts)?;
+
+        let scope = self.scope.pop();
+        self.locals.pop_front();
+        let codes = mem::replace(&mut self.codes, previous);
+
+        Ok(self.optim(scope.unwrap(), codes))
+    }
+
+    fn method(
+        &mut self,
+        span: Span,
+        class: Weak<Class>,
+        methods: &mut HashMap<String, Rc<Func>, WyHash>,
+        name: String,
+        args: Vec<String>,
+        stmts: Vec<Stmt>,
+    ) -> Result<(), Error> {
+        if methods.contains_key(&name) {
+            return Err(ErrorKind::DuplicateMethod(name, class.upgrade().unwrap()).at(span));
+        }
+
+        let arg_count = args.iter().filter(|a| a.as_str() != "self").count();
+        let func = Rc::new(Func::new(name.clone(), arg_count).with_receiver(Receiver::Class));
+
+        methods.insert(name.clone(), func);
+
+        let codes = self.compile_fn_body(Scope::Local, args, stmts)?;
+        let func = methods.get_mut(&name).and_then(|m| Rc::get_mut(m)).unwrap();
+
+        func.exec = Exec::Vm(codes.into());
+
+        Ok(())
+    }
+
     fn fn_stmt(
         &mut self,
         span: Span,
@@ -371,19 +402,13 @@ impl<'a> Compiler<'a> {
         }
 
         let idx = self.funcs.len();
-        let arg_count = args.len();
-
-        let func = Rc::new(Func::new(name.clone(), arg_count));
-        let weak = Rc::downgrade(&func);
+        let func = Rc::new(Func::new(name.clone(), args.len()));
 
         self.funcs.push(func);
-        let previous = self.push_scope(args, Some(weak));
-        self.compile_body(stmts, true)?;
 
-        let codes = self.pop_scope(previous);
+        let codes = self.compile_fn_body(Scope::Func(idx), args, stmts)?;
         let func = Rc::get_mut(&mut self.funcs[idx]).unwrap();
 
-        func.arg_count = arg_count;
         func.exec = Exec::Vm(codes.into());
 
         Ok(())
@@ -393,7 +418,7 @@ impl<'a> Compiler<'a> {
         let pos = self.pos();
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
-        self.compile_body(body, false)?;
+        self.compile_body(body)?;
         self.push_code(Opcode::with_code(Op::Jump, pos));
         self.replace_code(idx, self.pos());
 
@@ -405,10 +430,26 @@ impl<'a> Compiler<'a> {
             return Err(ErrorKind::DuplicateClass(name).at(span));
         }
 
-        assert!(methods.is_empty(), "methods not implemented");
+        let idx = self.classes.len();
+        let (class, weak) = new_rc(Class::new(name.clone()));
+        self.classes.push(class);
 
-        let _idx = self.classes.len();
-        self.classes.push(Rc::new(Class::new(name.clone())));
+        let mut funcs = HashMap::with_hasher(WyHash::default());
+
+        for method in methods {
+            let span = method.span;
+            let (name, args, stmts) = match method.kind {
+                StmtKind::Fn(name, args, stmts) => (name, args, stmts),
+                _ => unreachable!(),
+            };
+
+            self.method(span, Weak::clone(&weak), &mut funcs, name, args, stmts)?;
+        }
+
+        drop(weak);
+
+        let class = Rc::get_mut(&mut self.classes[idx]).unwrap();
+        class.methods = funcs;
 
         Ok(())
     }
@@ -425,7 +466,7 @@ impl<'a> Compiler<'a> {
         let pos = self.pos();
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
-        self.compile_body(body, false)?;
+        self.compile_body(body)?;
         self.expr(post)?;
 
         self.push_code(Opcode::with_code(Op::Jump, pos));
@@ -443,9 +484,9 @@ impl<'a> Compiler<'a> {
             None
         };
 
-        self.scope += 1;
-        self.compile_body(stmts, false)?;
-        self.scope -= 1;
+        self.scope.push(Scope::Local);
+        self.compile_body(stmts)?;
+        self.scope.pop();
 
         match alt {
             Some(alt) => {
@@ -502,41 +543,58 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn optimize_tail_call(&mut self) {
-        let n = self.codes.len() - 2;
+    fn compile_body(&mut self, stmts: Vec<Stmt>) -> Result<(), Error> {
+        for stmt in stmts {
+            self.stmt(stmt)?;
+        }
 
-        if let Some(opcode) = self.codes.last_mut() {
-            match opcode.op() {
+        Ok(())
+    }
+
+    fn optim_tail_call(&mut self, func: usize, codes: &mut [Opcode]) {
+        let mut iter = codes.iter_mut().rev();
+
+        while let Some(op) = iter.next() {
+            match op.op() {
+                Op::Return => continue,
                 Op::Call => {
-                    *opcode = Opcode::with_code(Op::TailCall, opcode.code()).at(opcode.span);
-                }
-                Op::Return => {
-                    if let Some(opcode) = self.codes.get_mut(n) {
-                        if let Op::Call = opcode.op() {
-                            *opcode =
-                                Opcode::with_code(Op::TailCall, opcode.code()).at(opcode.span);
-                        }
+                    let arg_count = op.code();
+                    let idx = match iter.next() {
+                        Some(op) if op.op() == Op::LoadFunc => op.code(),
+                        _ => break,
+                    };
+
+                    if idx != func {
+                        break;
                     }
+
+                    *op = Opcode::with_code(Op::TailCall, arg_count);
+                    break;
                 }
                 _ => {}
             }
         }
     }
 
-    fn compile_body(&mut self, stmts: Vec<Stmt>, func: bool) -> Result<(), Error> {
-        for stmt in stmts {
-            self.stmt(stmt)?;
+    fn optim(&mut self, scope: Scope, mut codes: Vec<Opcode>) -> Vec<Opcode> {
+        if let Scope::Func(func) = scope {
+            if codes
+                .iter()
+                .filter(|c| c.op() == Op::LoadFunc && c.code() == func)
+                .count()
+                != 1
+            {
+                return codes;
+            }
+
+            self.optim_tail_call(func, &mut codes);
         }
 
-        if func {
-            self.optimize_tail_call();
-        }
-
-        Ok(())
+        codes
     }
 
     pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, Error> {
-        self.compile_body(stmts, false)?;
+        self.compile_body(stmts)?;
 
         Ok(Module {
             codes: self.codes.into(),
@@ -559,7 +617,7 @@ mod tests {
         let mut compiler = Compiler::new(&lib);
 
         compiler.push_var(Span::default(), "n".to_string()).unwrap();
-        compiler.push_scope(vec![], None);
+        compiler.scope.push(Scope::Local);
 
         let expected = compiler.push_var(Span::default(), "n".to_string()).unwrap();
         let actual = compiler.load_var(Span::default(), "n", false).unwrap();

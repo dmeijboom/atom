@@ -315,12 +315,20 @@ impl<'a> Vm<'a> {
 
         match instance.attrs.get(member) {
             Some(value) => self.push(*value),
-            None => Err(ErrorKind::UnknownAttr {
-                class: Rc::clone(&instance.class),
-                attribute: member.to_string(),
-            }
-            .at(self.span)
-            .into()),
+            None => match instance.class.methods.get(member) {
+                Some(method) => {
+                    let method = Rc::clone(method);
+                    self.push(object)?;
+                    self.push(method)?;
+                    Ok(())
+                }
+                None => Err(ErrorKind::UnknownAttr {
+                    class: Rc::clone(&instance.class),
+                    attribute: member.to_string(),
+                }
+                .at(self.span)
+                .into()),
+            },
         }
     }
 
@@ -433,12 +441,6 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn direct_call(&mut self, codes: (u32, u32)) -> Result<(), Error> {
-        let (idx, arg_count) = codes;
-        let func = self.get_func(idx as usize)?;
-        self.fn_call(func, arg_count as usize, false)
-    }
-
     fn fn_call(&mut self, func: Rc<Func>, arg_count: usize, tail_call: bool) -> Result<(), Error> {
         if arg_count != func.arg_count {
             return Err(ErrorKind::ArgCountMismatch { func, arg_count }
@@ -446,7 +448,11 @@ impl<'a> Vm<'a> {
                 .into());
         }
 
-        let offset = if func.receiver.is_some() { 1 } else { 0 };
+        let (offset, receiver) = func
+            .receiver
+            .as_ref()
+            .map(|_| (1, Some(self.stack.pop())))
+            .unwrap_or_default();
 
         match &func.exec {
             Exec::Vm(_) => {
@@ -458,20 +464,20 @@ impl<'a> Vm<'a> {
 
                 let frame = self.call_stack.last_mut();
 
-                if offset > 0 {
-                    frame.locals[0] = self.stack.pop();
+                if let Some(receiver) = receiver {
+                    frame.locals[arg_count] = receiver;
                 }
 
                 for i in 0..arg_count {
-                    frame.locals[i + offset] = self.stack.pop();
+                    frame.locals[i] = self.stack.pop();
                 }
             }
             Exec::Handler(handler) => {
                 let mut args = vec![];
                 resize(&mut args, arg_count + offset);
 
-                if offset > 0 {
-                    args[0] = self.stack.pop();
+                if let Some(receiver) = receiver {
+                    args[0] = receiver;
                 }
 
                 for i in 0..arg_count {
@@ -702,7 +708,6 @@ impl<'a> Vm<'a> {
                 Op::Discard => self.discard(),
                 Op::Return => self.ret()?,
                 Op::Call => self.call(opcode.code(), false)?,
-                Op::DirectCall => self.direct_call(opcode.code2())?,
                 Op::TailCall => self.call(opcode.code(), true)?,
                 Op::Jump => self.goto(opcode.code()),
                 Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,

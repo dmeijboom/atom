@@ -6,7 +6,7 @@ use std::{
 use clap::Parser;
 use opcode::{Op, Opcode};
 use runtime::{
-    function::Exec,
+    function::{Exec, Func},
     std::{stdlib, StdLib},
 };
 #[cfg(feature = "tracing")]
@@ -73,8 +73,8 @@ fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
     Ok(compiler.compile(stmts)?)
 }
 
-fn print_opcode(i: usize, opcode: &Opcode) {
-    let mut prefix = format!("{i}:");
+fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
+    let mut prefix = format!("{}{i}:", " ".repeat(indent * 2));
 
     while prefix.len() < 5 {
         prefix.push(' ');
@@ -96,38 +96,49 @@ fn print_opcode(i: usize, opcode: &Opcode) {
         | Op::LoadElement
         | Op::LoadMember
         | Op::LoadArg => println!("{prefix} {:?} {}", opcode.op(), opcode.code()),
-        Op::DirectCall => {
-            let (hi, low) = opcode.code2();
-            println!("{prefix} {:?} {} {}", opcode.op(), hi, low,)
-        }
         _ => println!("{prefix} {:?}", opcode.op(),),
     }
 }
 
-fn print_module(module: &Module) {
-    for (i, func) in module.funcs.iter().enumerate() {
-        if i > 0 {
-            println!();
-        }
+fn print_func(func: &Func, indent: usize) {
+    let prefix = " ".repeat(indent * 2);
 
-        println!("{}:", func.name);
+    println!("{prefix}fn {}:", func.name);
 
-        match &func.exec {
-            Exec::Vm(codes) => {
-                for (i, opcode) in codes.iter().enumerate() {
-                    print_opcode(i, opcode);
-                }
+    match &func.exec {
+        Exec::Vm(codes) => {
+            for (i, opcode) in codes.iter().enumerate() {
+                print_opcode(i, opcode, indent + 1);
             }
-            Exec::Handler(_) => println!("<native>"),
         }
+        Exec::Handler(_) => println!("<native>"),
     }
+}
 
-    if !module.funcs.is_empty() {
+fn print_module(module: &Module) {
+    for class in module.classes.iter() {
+        println!("class {}:", class.name);
+
+        for (i, func) in class.methods.values().enumerate() {
+            if i > 0 {
+                println!();
+            }
+
+            print_func(func, 1);
+        }
+
         println!();
     }
 
+    for func in module.funcs.iter() {
+        print_func(func, 0);
+        println!();
+    }
+
+    println!("main:");
+
     for (i, opcode) in module.codes.iter().enumerate() {
-        print_opcode(i, opcode);
+        print_opcode(i, opcode, 1);
     }
 }
 

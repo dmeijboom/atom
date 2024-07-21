@@ -1,0 +1,12 @@
+class Fib {
+    fn run(self, n) {
+        if n < 2 {
+            return n;
+        }
+
+        self.run(n - 1) + self.run(n - 2)
+    }
+}
+
+let f = Fib();
+println(f.run(30))

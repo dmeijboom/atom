@@ -9,8 +9,8 @@ use super::{
 };
 
 pub enum Exec {
-    Vm(Rc<[Opcode]>),
     Handler(Box<FnHandler>),
+    Vm(Rc<[Opcode]>),
 }
 
 impl Default for Exec {
@@ -19,12 +19,17 @@ impl Default for Exec {
     }
 }
 
+pub enum Receiver {
+    Type(Type),
+    Class,
+}
+
 #[derive(Default)]
 pub struct Func {
     pub name: String,
     pub exec: Exec,
     pub arg_count: usize,
-    pub receiver: Option<Type>,
+    pub receiver: Option<Receiver>,
 }
 
 impl Func {
@@ -49,7 +54,7 @@ impl Func {
         }
     }
 
-    pub fn with_receiver(mut self, receiver: Type) -> Self {
+    pub fn with_receiver(mut self, receiver: Receiver) -> Self {
         self.receiver = Some(receiver);
         self
     }
