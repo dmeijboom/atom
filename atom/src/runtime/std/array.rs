@@ -4,8 +4,9 @@ use atom_macros::atom_method;
 
 use crate::{
     gc::{Gc, Trace},
+    lexer::Span,
     runtime::{
-        error::Error,
+        error::{Error, ErrorKind},
         value::{Type, Value},
     },
 };
@@ -136,6 +137,21 @@ impl<T> From<Vec<T>> for Array<T> {
     }
 }
 
+#[atom_method(Array.pop)]
+fn array_pop(gc: &mut Gc, this: Value) -> Result<Value, Error> {
+    let array = gc.get_mut(this.array());
+
+    if array.len == 0 {
+        return Err(ErrorKind::IndexOutOfBounds(0).at(Span::default()));
+    }
+
+    let item = unsafe { array.data.assume_init_ref().add(array.len - 1).read() };
+
+    array.len -= 1;
+
+    Ok(item)
+}
+
 #[atom_method(Array.push)]
 fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
     let array = gc.get_mut(this.array());
@@ -182,6 +198,7 @@ pub fn descr() -> TypeDescr {
     TypeDescr::new(Type::Array)
         .builder()
         .method(array_push)
+        .method(array_pop)
         .method(array_len)
         .build()
 }
