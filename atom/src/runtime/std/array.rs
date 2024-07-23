@@ -1,4 +1,8 @@
-use std::{marker::PhantomData, mem::MaybeUninit};
+use std::{
+    alloc::{alloc, Layout},
+    marker::PhantomData,
+    mem::MaybeUninit,
+};
 
 use atom_macros::atom_method;
 
@@ -11,7 +15,7 @@ use crate::{
     },
 };
 
-use super::TypeDescr;
+use super::{Context, TypeDescr};
 
 pub struct Iter<'a, T> {
     idx: usize,
@@ -28,13 +32,10 @@ impl<'a, T> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        match self.array.get(self.idx) {
-            Some(item) => {
-                self.idx += 1;
-                Some(item)
-            }
-            None => None,
-        }
+        self.array.get(self.idx).map(|item| {
+            self.idx += 1;
+            item
+        })
     }
 }
 
@@ -81,7 +82,20 @@ impl<T> Array<T> {
         self.len
     }
 
+    pub unsafe fn from_raw_parts(data: *mut T, len: usize, cap: usize) -> Self {
+        Self {
+            data: MaybeUninit::new(data),
+            len,
+            cap,
+            _marker: PhantomData,
+        }
+    }
+
     pub fn as_slice(&self) -> &[T] {
+        if self.len == 0 {
+            return &[];
+        }
+
         unsafe { std::slice::from_raw_parts(self.data.assume_init_ref().cast_const(), self.len) }
     }
 
@@ -96,13 +110,13 @@ impl<T> Array<T> {
         }
     }
 
-    pub fn get_mut(&self, idx: usize) -> Option<&mut T> {
+    pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
         if self.len <= idx {
             return None;
         }
 
         unsafe {
-            let ptr = self.data.assume_init_ref().add(idx);
+            let ptr = self.data.assume_init_mut().add(idx);
             Some(&mut *ptr)
         }
     }
@@ -118,6 +132,18 @@ impl<T: Copy> Array<T> {
     }
 }
 
+unsafe fn alloc_array<T>(cap: usize) -> Result<*mut T, Error> {
+    let layout =
+        Layout::array::<T>(cap).map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
+    let ptr = alloc(layout);
+
+    if ptr.is_null() {
+        return Err(ErrorKind::OutOfMemory.at(Span::default()));
+    }
+
+    Ok(ptr as *mut T)
+}
+
 impl<T> From<Vec<T>> for Array<T> {
     fn from(data: Vec<T>) -> Self {
         if data.is_empty() {
@@ -126,62 +152,45 @@ impl<T> From<Vec<T>> for Array<T> {
 
         let slice = data.into_boxed_slice();
         let len = slice.len();
-        let raw = Box::into_raw(slice);
 
-        Array {
-            len,
-            cap: len,
-            data: MaybeUninit::new(raw as *mut T),
-            _marker: PhantomData,
+        unsafe {
+            let ptr = Box::into_raw(slice) as *mut T;
+            Array::from_raw_parts(ptr, len, len)
         }
     }
 }
 
 #[atom_method(Array.pop)]
-fn array_pop(gc: &mut Gc, this: Value) -> Result<Value, Error> {
-    let array = gc.get_mut(this.array());
-
-    if array.len == 0 {
-        return Err(ErrorKind::IndexOutOfBounds(0).at(Span::default()));
+fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, Error> {
+    if this.len == 0 {
+        return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
     }
 
-    let item = unsafe { array.data.assume_init_ref().add(array.len - 1).read() };
-
-    array.len -= 1;
+    let item = unsafe { this.data.assume_init_ref().add(this.len - 1).read() };
+    this.len -= 1;
 
     Ok(item)
 }
 
 #[atom_method(Array.push)]
-fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
-    let array = gc.get_mut(this.array());
-
+fn array_push(ctx: Context<'_>, this: &mut Array<Value>, item: Value) -> Result<(), Error> {
     unsafe {
-        if array.len == 0 {
-            let data = Box::new([item]);
-            let raw = Box::into_raw(data);
-
-            array.cap = 1;
-            array.len = 1;
-            array.data = MaybeUninit::new(raw as *mut Value);
-        } else if array.cap > array.len {
-            array.data.assume_init_ref().add(array.len).write(item);
-            array.len += 1;
+        if this.len == 0 {
+            let ptr = alloc_array::<Value>(1)?;
+            ptr.write(item);
+            *this = Array::from_raw_parts(ptr, 1, 1);
+        } else if this.cap > this.len {
+            this.data.assume_init_ref().add(this.len).write(item);
+            this.len += 1;
         } else {
-            let cap = array.cap * 2;
-            let mut new_data = vec![Value::NIL; cap].into_boxed_slice();
+            let ptr = alloc_array::<Value>(this.cap * 2)?;
 
-            for (i, item) in array.iter().enumerate() {
-                new_data[i] = *item;
+            for (i, item) in this.iter().copied().enumerate() {
+                ptr.add(i).write(item);
             }
 
-            new_data[array.len] = item;
-
-            let raw = Box::into_raw(new_data);
-
-            array.cap = cap;
-            array.len += 1;
-            array.data = MaybeUninit::new(raw as *mut Value);
+            ptr.add(this.len).write(item);
+            *this = Array::from_raw_parts(ptr, this.len + 1, this.cap * 2);
         }
     }
 
@@ -189,9 +198,13 @@ fn array_push(gc: &mut Gc, this: Value, item: Value) -> Result<(), Error> {
 }
 
 #[atom_method(Array.len)]
-fn array_len(gc: &mut Gc, this: Value) -> Result<Value, Error> {
-    let array = gc.get(this.array());
-    Ok(array.len)
+fn array_len(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, Error> {
+    Ok(this.len)
+}
+
+#[atom_method(Array.cap)]
+fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, Error> {
+    Ok(this.cap)
 }
 
 pub fn descr() -> TypeDescr {
@@ -200,5 +213,61 @@ pub fn descr() -> TypeDescr {
         .method(array_push)
         .method(array_pop)
         .method(array_len)
+        .method(array_cap)
         .build()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn array_push() {
+        let mut gc = Gc::default();
+        let array: Array<Value> = Array::default();
+
+        assert_eq!(array.len(), 0);
+
+        let handle = gc.alloc(array);
+        let expected = [
+            (1, 1),
+            (2, 2),
+            (3, 4),
+            (4, 4),
+            (5, 8),
+            (6, 8),
+            (7, 8),
+            (8, 8),
+            (9, 16),
+        ];
+
+        for (i, (len, cap)) in expected.into_iter().enumerate() {
+            __atom_export_array_push(
+                Context::new(&mut gc),
+                vec![handle.clone().into(), (10 * i).into()],
+            )
+            .expect("Array.push failed");
+
+            let array = gc.get(handle.clone());
+
+            assert_eq!(array.len() as i64, len);
+            assert_eq!(array.cap as i64, cap);
+        }
+
+        let array = gc.get(handle);
+
+        for (i, item) in array.iter().copied().enumerate() {
+            assert_eq!(Type::Int, item.ty());
+            assert_eq!(10 * i, item.int() as usize);
+        }
+    }
+
+    #[test]
+    fn array_as_slice() {
+        let empty = Array::<bool>::default();
+        assert_eq!(empty.as_slice(), &[]);
+
+        let array = Array::from(vec![1, 2, 3]);
+        assert_eq!(array.as_slice(), &[1, 2, 3]);
+    }
 }

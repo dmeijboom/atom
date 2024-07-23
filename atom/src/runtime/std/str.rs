@@ -8,7 +8,7 @@ use crate::{
     },
 };
 
-use super::{array::Array, TypeDescr};
+use super::{array::Array, Context, TypeDescr};
 
 pub struct Str(Array<u8>);
 
@@ -17,8 +17,8 @@ impl Str {
         self.as_ref()
     }
 
-    pub fn concat(&self, other: &Str) -> Str {
-        Self(Array::concat(&self.0, &other.0))
+    pub fn concat(&self, Str(other): &Str) -> Str {
+        Self(Array::concat(&self.0, other))
     }
 }
 
@@ -41,18 +41,16 @@ impl AsRef<str> for Str {
 }
 
 #[atom_method(Str.len)]
-fn str_len(this: Value) -> Result<usize, Error> {
-    let str = gc.get(this.str());
-    Ok(str.0.len())
+fn str_len(ctx: Context<'_>, this: &Str) -> Result<usize, Error> {
+    Ok(this.0.len())
 }
 
 macro_rules! map_fn {
     ($func:ident, $ty:ident.$method:ident, $rust_fn:ident) => {
         #[atom_method($ty.$method)]
-        fn $func(this: Value) -> Result<Handle<Str>, Error> {
-            let str = gc.get(this.str());
-            let output = Str::from(str.as_str().$rust_fn());
-            Ok(gc.alloc(output))
+        fn $func(ctx: Context<'_>, this: &Str) -> Result<Handle<Str>, Error> {
+            let output = Str::from(this.as_str().$rust_fn());
+            Ok(ctx.gc.alloc(output))
         }
     };
 }

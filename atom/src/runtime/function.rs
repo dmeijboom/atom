@@ -1,10 +1,10 @@
 use std::{fmt::Debug, rc::Rc};
 
-use crate::{gc::Gc, opcode::Opcode};
+use crate::opcode::Opcode;
 
 use super::{
     error::Error,
-    std::FnHandler,
+    std::{Context, FnHandler},
     value::{Type, Value},
 };
 
@@ -44,7 +44,7 @@ impl Func {
 
     pub fn with_handler<F>(name: String, arg_count: usize, handler: F) -> Self
     where
-        F: Fn(&mut Gc, Vec<Value>) -> Result<Value, Error> + 'static,
+        F: Fn(Context<'_>, Vec<Value>) -> Result<Value, Error> + 'static,
     {
         Self {
             name,

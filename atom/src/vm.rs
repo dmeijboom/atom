@@ -18,7 +18,7 @@ use crate::{
         class::{Class, Instance},
         error::{Call, ErrorKind},
         function::{Exec, Func},
-        std::{array::Array, str::Str, StdLib},
+        std::{array::Array, str::Str, Context, StdLib},
         value::{Type, Value},
     },
 };
@@ -342,7 +342,7 @@ impl<'a> Vm<'a> {
 
         if let Some(ty) = ty {
             if let Some(field) = ty.field(member) {
-                let value = field.call(&mut self.gc, object)?;
+                let value = field.call(Context::with_span(&mut self.gc, self.span), object)?;
                 self.push(value)?;
                 return Ok(());
             }
@@ -489,7 +489,7 @@ impl<'a> Vm<'a> {
                     args[i + offset] = self.stack.pop();
                 }
 
-                let value = (handler)(&mut self.gc, args)?;
+                let value = (handler)(Context::with_span(&mut self.gc, self.span), args)?;
                 self.push(value)?;
             }
         }
@@ -534,14 +534,14 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn prepare_elem(&mut self) -> Result<(&Array<Value>, usize), Error> {
+    fn prepare_elem(&mut self) -> Result<(&mut Array<Value>, usize), Error> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let array = self.gc.get(array.array());
+        let array = self.gc.get_mut(array.array());
         let n = match elem.int() {
             n if n < 0 => array.len() as i64 + n,
             n => n,

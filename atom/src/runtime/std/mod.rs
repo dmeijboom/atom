@@ -2,10 +2,9 @@ use std::{collections::HashMap, rc::Rc};
 
 use wyhash2::WyHash;
 
-use crate::gc::Gc;
-
 pub mod array;
 pub mod core;
+mod ffi;
 pub mod str;
 
 use super::{
@@ -14,9 +13,8 @@ use super::{
     value::{Type, Value},
 };
 
+pub use ffi::{Context, Convert, FieldHandler, FnHandler};
 pub type TypeRegistry = HashMap<Type, TypeDescr, WyHash>;
-
-type FieldHandler = dyn Fn(&mut Gc, Value) -> Result<Value, Error>;
 
 pub struct Field {
     pub readonly: bool,
@@ -27,7 +25,7 @@ impl Field {
     #[allow(dead_code)]
     pub fn new<F>(handler: F, readonly: bool) -> Self
     where
-        F: Fn(&mut Gc, Value) -> Result<Value, Error> + 'static,
+        F: Fn(Context<'_>, Value) -> Result<Value, Error> + 'static,
     {
         Field {
             readonly,
@@ -35,8 +33,8 @@ impl Field {
         }
     }
 
-    pub fn call(&self, gc: &mut Gc, this: Value) -> Result<Value, Error> {
-        (self.handler)(gc, this)
+    pub fn call(&self, ctx: Context, this: Value) -> Result<Value, Error> {
+        (self.handler)(ctx, this)
     }
 }
 
@@ -95,17 +93,15 @@ impl TypeDescrBuilder {
     }
 }
 
-pub type FnHandler = dyn Fn(&mut Gc, Vec<Value>) -> Result<Value, Error>;
-
 pub struct StdLib {
     pub types: TypeRegistry,
     pub funcs: Vec<Rc<Func>>,
 }
 
 pub fn stdlib() -> StdLib {
-    let mut types = TypeRegistry::default();
-    types.insert(Type::Array, array::descr());
-    types.insert(Type::Str, str::descr());
+    let types = [(Type::Array, array::descr()), (Type::Str, str::descr())]
+        .into_iter()
+        .collect::<TypeRegistry>();
 
     let funcs = core::funcs()
         .into_iter()

@@ -21,6 +21,10 @@ pub enum ErrorKind {
     UnknownField { ty: Type, field: String },
     #[error("no such attribute '{attribute}' in {}", class.name)]
     UnknownAttr { class: Rc<Class>, attribute: String },
+    #[error("out of memory")]
+    OutOfMemory,
+    #[error("invalid memory layout")]
+    InvalidMemoryLayout,
     #[error("unsupported operation: {left} {op} {right}")]
     UnsupportedOp {
         left: Type,

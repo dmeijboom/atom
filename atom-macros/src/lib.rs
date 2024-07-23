@@ -2,47 +2,50 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{punctuated::Punctuated, token::Dot, FnArg, Ident, ItemFn, Stmt};
 
-fn export(f: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
-    let args = f
-        .sig
-        .inputs
-        .iter()
-        .filter_map(|arg| match arg {
-            FnArg::Receiver(_) => None,
-            FnArg::Typed(pat) => match pat.pat.as_ref() {
-                syn::Pat::Ident(ident) if ident.ident != "gc" => {
-                    Some((ident.ident.clone(), pat.ty.clone()))
-                }
-                _ => None,
-            },
-        })
+fn parse_arg(arg: FnArg) -> (Ident, syn::Type) {
+    if let FnArg::Typed(pat) = arg {
+        if let syn::Pat::Ident(ident) = *pat.pat {
+            return (ident.ident, *pat.ty);
+        }
+    }
+
+    unimplemented!()
+}
+
+fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
+    let mut iter = item_fn.sig.inputs.into_iter();
+    let (ctx_name, ctx_ty) = parse_arg(iter.next().expect("expected context argument"));
+    let mut args = iter
+        .map(parse_arg)
         .enumerate()
         .map(|(i, (name, ty))| {
             syn::parse_quote! {
-                let #name: #ty = args[#i].into();
+                let #name: #ty = args[#i].convert(#ctx_name.gc);
             }
         })
         .collect::<Vec<Stmt>>();
 
-    let body = f.block.stmts;
-    let arg_count = if ty.is_some() {
-        args.len() - 1
-    } else {
-        args.len()
-    };
-    let fn_name = &f.sig.ident;
+    args.reverse();
+
+    let fn_name = &item_fn.sig.ident;
+    let body = item_fn.block.stmts;
+    let arg_count = args.len() - ty.as_ref().map(|_| 1).unwrap_or(0);
     let export_name = Ident::new(
-        &format!("__atom_export_{}", f.sig.ident),
-        f.sig.ident.span(),
+        &format!("__atom_export_{}", item_fn.sig.ident),
+        item_fn.sig.ident.span(),
     );
-    let ty = ty.map(|ty| quote!{
+    let receiver = ty.map(|ty| quote!{
         .with_receiver(crate::runtime::function::Receiver::Type(crate::runtime::value::Type::#ty))
     });
 
     quote! {
-        fn #export_name(gc: &mut Gc, args: Vec<Value>) -> Result<Value, Error> {
-            #(#args)*
-            let mut _inner = || { #(#body)* };
+        use crate::runtime::std::Convert as _;
+
+        fn #export_name(#ctx_name: #ctx_ty, args: Vec<Value>) -> Result<Value, Error> {
+            let mut _inner = move || {
+                #(#args)*
+                #(#body)*
+            };
             _inner().map(Into::into)
         }
 
@@ -51,7 +54,7 @@ fn export(f: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
                 stringify!(#atom_name).to_string(),
                 #arg_count,
                 #export_name,
-            )#ty
+            )#receiver
         }
     }
     .into()
