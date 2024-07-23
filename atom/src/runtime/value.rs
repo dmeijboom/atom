@@ -337,7 +337,7 @@ mod tests {
     fn test_string() {
         let mut gc = Gc::default();
 
-        let handle = gc.alloc(Str::from("hello".to_string()));
+        let handle = gc.alloc(Str::from("hello".to_string())).unwrap();
         let value = Value::from(handle);
 
         assert_eq!(value.ty(), Type::Str);

@@ -154,7 +154,7 @@ fn main() -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run { source } => {
             let module = compile(&std, source)?;
-            let mut vm = Vm::new(&std, module);
+            let mut vm = Vm::new(&std, module)?;
             vm.run()?;
         }
         Cmd::Compile { source, verbose } => {

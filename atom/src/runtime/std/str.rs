@@ -50,7 +50,7 @@ macro_rules! map_fn {
         #[atom_method($ty.$method)]
         fn $func(ctx: Context<'_>, this: &Str) -> Result<Handle<Str>, Error> {
             let output = Str::from(this.as_str().$rust_fn());
-            Ok(ctx.gc.alloc(output))
+            ctx.gc.alloc(output)
         }
     };
 }

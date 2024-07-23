@@ -1,13 +1,9 @@
-use std::{
-    alloc::{alloc, Layout},
-    marker::PhantomData,
-    mem::MaybeUninit,
-};
+use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit};
 
 use atom_macros::atom_method;
 
 use crate::{
-    gc::{Gc, Trace},
+    gc::{alloc, Gc, Trace},
     lexer::Span,
     runtime::{
         error::{Error, ErrorKind},
@@ -133,15 +129,9 @@ impl<T: Copy> Array<T> {
 }
 
 unsafe fn alloc_array<T>(cap: usize) -> Result<*mut T, Error> {
-    let layout =
-        Layout::array::<T>(cap).map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
-    let ptr = alloc(layout);
-
-    if ptr.is_null() {
-        return Err(ErrorKind::OutOfMemory.at(Span::default()));
-    }
-
-    Ok(ptr as *mut T)
+    Layout::array::<T>(cap)
+        .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))
+        .and_then(alloc)
 }
 
 impl<T> From<Vec<T>> for Array<T> {
@@ -228,7 +218,7 @@ mod tests {
 
         assert_eq!(array.len(), 0);
 
-        let handle = gc.alloc(array);
+        let handle = gc.alloc(array).unwrap();
         let expected = [
             (1, 1),
             (2, 2),

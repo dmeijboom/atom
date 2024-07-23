@@ -1,10 +1,17 @@
-use std::{mem, ptr::NonNull};
+use std::{
+    alloc::{dealloc, Layout},
+    ptr::NonNull,
+};
+
+use crate::{
+    lexer::Span,
+    runtime::error::{Error, ErrorKind},
+};
 
 macro_rules! impl_trace {
     ($($ty:ty),+) => {
         $(impl Trace for $ty {
-            fn trace(&self, _gc: &mut Gc) {
-            }
+            fn trace(&self, _gc: &mut Gc) {}
         })+
     };
 }
@@ -24,38 +31,36 @@ impl<T: Trace> Trace for Vec<T> {
 }
 
 pub trait AnyHandle {
-    fn dealloc(&self);
+    fn layout(&self) -> Layout;
+    fn as_ptr(&self) -> *mut u8;
     fn marked(&self) -> bool;
     fn trace(&self, gc: &mut Gc);
     fn set_marked(&mut self, marked: bool);
 }
 
-impl AnyHandle for Box<dyn AnyHandle> {
-    fn trace(&self, gc: &mut Gc) {
-        self.as_ref().trace(gc);
-    }
-
-    fn marked(&self) -> bool {
-        self.as_ref().marked()
-    }
-
-    fn dealloc(&self) {
-        self.as_ref().dealloc();
-    }
-
-    fn set_marked(&mut self, marked: bool) {
-        self.as_mut().set_marked(marked);
-    }
-}
-
-struct Ptr<T: ?Sized> {
+pub struct Ptr<T: ?Sized> {
     marked: bool,
     data: T,
+}
+
+impl<T> Ptr<T> {
+    pub fn new(data: T) -> Self {
+        Self {
+            marked: false,
+            data,
+        }
+    }
 }
 
 #[derive(Copy)]
 pub struct Handle<T: ?Sized + Trace> {
     ptr: NonNull<Ptr<T>>,
+}
+
+impl<T: Trace> Handle<T> {
+    pub fn new(ptr: NonNull<Ptr<T>>) -> Self {
+        Self { ptr }
+    }
 }
 
 impl<T: Trace> Clone for Handle<T> {
@@ -91,10 +96,24 @@ impl<T: Trace> AnyHandle for Handle<T> {
         }
     }
 
-    fn dealloc(&self) {
-        unsafe {
-            drop(Box::from_raw(self.ptr.as_ptr()));
+    fn as_ptr(&self) -> *mut u8 {
+        self.ptr.as_ptr().cast()
+    }
+
+    fn layout(&self) -> Layout {
+        Layout::new::<T>()
+    }
+}
+
+pub fn alloc<T>(layout: Layout) -> Result<*mut T, Error> {
+    unsafe {
+        let ptr = std::alloc::alloc(layout);
+
+        if ptr.is_null() {
+            return Err(ErrorKind::OutOfMemory.at(Span::default()));
         }
+
+        Ok(ptr.cast())
     }
 }
 
@@ -109,22 +128,18 @@ impl Gc {
         self.cycle_allocated >= 1_000_000
     }
 
-    pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Handle<T> {
-        self.cycle_allocated += mem::size_of::<Ptr<T>>();
-
-        let ptr = Box::into_raw(Box::new(Ptr {
-            marked: false,
-            data,
-        }));
+    pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, Error> {
+        let layout = Layout::new::<Ptr<T>>();
+        self.cycle_allocated += layout.size();
 
         unsafe {
-            let handle = Handle {
-                ptr: NonNull::new_unchecked(ptr),
-            };
+            let ptr = alloc::<Ptr<T>>(layout)?;
+            ptr.write(Ptr::new(data));
 
+            let handle = Handle::new(NonNull::new_unchecked(ptr));
             self.roots.push(Box::new(handle.clone()));
 
-            handle
+            Ok(handle)
         }
     }
 
@@ -146,7 +161,10 @@ impl Gc {
         self.cycle_allocated = 0;
         self.roots.retain(|root| {
             if !root.marked() {
-                root.dealloc();
+                unsafe {
+                    dealloc(root.as_ptr(), root.layout());
+                }
+
                 return false;
             }
 

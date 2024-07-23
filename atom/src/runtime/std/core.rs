@@ -13,7 +13,7 @@ use super::{str::Str, Context};
 
 #[atom_fn(repr)]
 fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Value, Error> {
-    Ok(ctx.gc.alloc(Str::from(repr(ctx.gc, &arg)?)))
+    ctx.gc.alloc(Str::from(repr(ctx.gc, &arg)?))
 }
 
 #[atom_fn(println)]

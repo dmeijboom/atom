@@ -138,16 +138,16 @@ fn top_frame(module: &Module) -> Frame {
     }
 }
 
-fn map_const(gc: &mut Gc, const_: Const) -> Value {
-    match const_ {
+fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
+    Ok(match const_ {
         Const::Int(n) => Value::from(n),
         Const::Float(n) => Value::from(n),
         Const::Bool(b) => Value::from(b),
         Const::Str(s) => {
-            let str = gc.alloc(Str::from(s));
+            let str = gc.alloc(Str::from(s))?;
             Value::from(str)
         }
-    }
+    })
 }
 
 pub struct Vm<'a> {
@@ -165,18 +165,18 @@ pub struct Vm<'a> {
 }
 
 impl<'a> Vm<'a> {
-    pub fn new(std: &'a StdLib, mut module: Module) -> Self {
+    pub fn new(std: &'a StdLib, mut module: Module) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];
 
         for (i, const_) in mem::take(&mut module.consts).into_iter().enumerate() {
-            consts[i] = map_const(&mut gc, const_);
+            consts[i] = map_const(&mut gc, const_)?;
         }
 
         let mut call_stack = ReuseVec::default();
         call_stack.push(top_frame(&module));
 
-        Self {
+        Ok(Self {
             std,
             vars: vec![],
             consts,
@@ -188,7 +188,7 @@ impl<'a> Vm<'a> {
             stack: Stack::default(),
             codes: Rc::clone(&module.codes),
             module,
-        }
+        })
     }
 
     fn try_collect_gc(&mut self) {
@@ -431,7 +431,8 @@ impl<'a> Vm<'a> {
         assert!(arg_count == 0, "class init with args not supported");
 
         let instance = Instance::new(class);
-        let handle = self.gc.alloc(instance);
+        let handle = self.gc.alloc(instance)?;
+
         self.push(handle)
     }
 
@@ -503,12 +504,12 @@ impl<'a> Vm<'a> {
             Type::Array => {
                 let lhs = self.gc.get(lhs.array());
                 let rhs = self.gc.get(rhs.array());
-                Value::from(self.gc.alloc(lhs.concat(rhs)))
+                Value::from(self.gc.alloc(lhs.concat(rhs))?)
             }
             Type::Str => {
                 let lhs = self.gc.get(lhs.str());
                 let rhs = self.gc.get(rhs.str());
-                Value::from(self.gc.alloc(lhs.concat(rhs)))
+                Value::from(self.gc.alloc(lhs.concat(rhs))?)
             }
             _ => unreachable!(),
         };
@@ -526,7 +527,7 @@ impl<'a> Vm<'a> {
         values.reverse();
 
         let array = Array::from(values);
-        let handle = self.gc.alloc(array);
+        let handle = self.gc.alloc(array)?;
 
         self.push(handle)?;
         self.try_collect_gc();
