@@ -9,4 +9,4 @@ class Fib {
 }
 
 let f = Fib();
-println(f.run(30))
+println(f.run(30));

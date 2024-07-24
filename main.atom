@@ -1,9 +1,0 @@
-let names = [];
-
-names.push("test 1");
-names.push("test 2");
-names.push("test 3");
-
-println(names);
-println(names.len());
-println(names.cap());
