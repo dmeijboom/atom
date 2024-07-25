@@ -5,7 +5,7 @@ use crate::opcode::Opcode;
 use super::{
     error::RuntimeError,
     std::{Context, FnHandler},
-    value::{Type, Value},
+    value::Value,
 };
 
 pub enum Exec {
@@ -20,7 +20,7 @@ impl Default for Exec {
 }
 
 pub enum Receiver {
-    Type(Type),
+    Type,
     Class,
 }
 

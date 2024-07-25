@@ -17,18 +17,16 @@ pub use ffi::{Context, Convert, FieldHandler, FnHandler};
 pub type TypeRegistry = HashMap<Type, TypeDescr, WyHash>;
 
 pub struct Field {
-    pub readonly: bool,
     handler: Box<FieldHandler>,
 }
 
 impl Field {
     #[allow(dead_code)]
-    pub fn new<F>(handler: F, readonly: bool) -> Self
+    pub fn new<F>(handler: F) -> Self
     where
         F: Fn(Context<'_>, Value) -> Result<Value, RuntimeError> + 'static,
     {
         Field {
-            readonly,
             handler: Box::new(handler),
         }
     }
@@ -38,21 +36,13 @@ impl Field {
     }
 }
 
+#[derive(Default)]
 pub struct TypeDescr {
-    ty: Type,
     methods: HashMap<String, Rc<Func>, WyHash>,
     fields: HashMap<&'static str, Field, WyHash>,
 }
 
 impl TypeDescr {
-    pub fn new(ty: Type) -> Self {
-        Self {
-            ty,
-            methods: HashMap::default(),
-            fields: HashMap::default(),
-        }
-    }
-
     fn builder(self) -> TypeDescrBuilder {
         TypeDescrBuilder { descr: self }
     }
@@ -83,7 +73,7 @@ impl TypeDescrBuilder {
         let method = method();
         self.descr.methods.insert(
             method.name.clone(),
-            Rc::new(method.with_receiver(Receiver::Type(self.descr.ty))),
+            Rc::new(method.with_receiver(Receiver::Type)),
         );
         self
     }

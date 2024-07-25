@@ -2,7 +2,7 @@ use atom_macros::atom_method;
 
 use crate::{
     gc::{Gc, Trace},
-    runtime::value::{Type, Value},
+    runtime::value::Value,
 };
 
 use super::{array::Array, Context, TypeDescr};
@@ -51,7 +51,7 @@ map_fn!(str_upper, Str.upper, to_uppercase);
 map_fn!(str_lower, Str.lower, to_lowercase);
 
 pub fn descr() -> TypeDescr {
-    TypeDescr::new(Type::Str)
+    TypeDescr::default()
         .builder()
         .method(str_len)
         .method(str_upper)

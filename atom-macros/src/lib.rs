@@ -34,8 +34,10 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
         &format!("__atom_export_{}", item_fn.sig.ident),
         item_fn.sig.ident.span(),
     );
-    let receiver = ty.map(|ty| quote!{
-        .with_receiver(crate::runtime::function::Receiver::Type(crate::runtime::value::Type::#ty))
+    let receiver = ty.map(|_| {
+        quote! {
+            .with_receiver(crate::runtime::function::Receiver::Type)
+        }
     });
 
     quote! {

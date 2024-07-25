@@ -4,10 +4,7 @@ use atom_macros::atom_method;
 
 use crate::{
     gc::{Gc, Handle, Trace},
-    runtime::{
-        error::ErrorKind,
-        value::{Type, Value},
-    },
+    runtime::{error::ErrorKind, value::Value},
 };
 
 use super::{Context, TypeDescr};
@@ -214,7 +211,7 @@ fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeErro
 }
 
 pub fn descr() -> TypeDescr {
-    TypeDescr::new(Type::Array)
+    TypeDescr::default()
         .builder()
         .method(array_push)
         .method(array_pop)
@@ -225,6 +222,8 @@ pub fn descr() -> TypeDescr {
 
 #[cfg(test)]
 mod tests {
+    use crate::runtime::value::Type;
+
     use super::*;
 
     #[test]
