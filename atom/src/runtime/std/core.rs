@@ -62,6 +62,6 @@ pub fn repr(gc: &Gc, value: &Value) -> Result<String, RuntimeError> {
         Type::Fn => format!("{}(..)", value.func().name),
         Type::Class => value.class().name.clone(),
         Type::Instance => format!("{}{{..}}", gc.get(value.instance()).class.name),
-        Type::Nil => "".to_string(),
+        Type::Nil => "<nil>".to_string(),
     })
 }

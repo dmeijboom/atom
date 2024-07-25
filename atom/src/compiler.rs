@@ -379,7 +379,7 @@ impl<'a> Compiler<'a> {
         }
 
         let idx = self.funcs.len();
-        let func = Rc::new(Func::new(name.clone(), args.len()));
+        let func = Rc::new(Func::new(name, args.len()));
 
         self.funcs.push(func);
 
@@ -413,7 +413,7 @@ impl<'a> Compiler<'a> {
         }
 
         let idx = self.classes.len();
-        let (class, weak) = new_rc(Class::new(name.clone()));
+        let (class, weak) = new_rc(Class::new(name));
         self.classes.push(class);
 
         let mut funcs = HashMap::with_hasher(WyHash::default());

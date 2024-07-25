@@ -209,10 +209,6 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
-    fn call_frame(&mut self) -> Result<&Frame, Error> {
-        Ok(self.call_stack.last())
-    }
-
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
         let frame = self.call_stack.last_mut();
         frame.locals.resize(arg_count, Value::NIL);
@@ -281,7 +277,6 @@ impl<'a> Vm<'a> {
     }
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        // @TODO: we shouldn't allocate here
         let member = self.const_name(member)?.to_string();
         let value = self.stack.pop();
         let object = self.stack.pop();
@@ -298,8 +293,8 @@ impl<'a> Vm<'a> {
         let member = self.const_name(member)?;
         let instance = self.gc.get(object.instance());
 
-        match instance.attrs.get(member) {
-            Some(value) => self.push(*value),
+        match instance.attrs.get(member).copied() {
+            Some(value) => self.push(value),
             None => match instance.class.methods.get(member) {
                 Some(method) => {
                     let method = Rc::clone(method);
@@ -377,7 +372,7 @@ impl<'a> Vm<'a> {
     }
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
-        let frame = self.call_frame()?;
+        let frame = self.call_stack.last();
 
         match frame.locals.get(frame.locals.len() - idx - 1).copied() {
             Some(value) => self.push(value),
@@ -724,35 +719,29 @@ impl<'a> Vm<'a> {
         }
     }
 
-    fn post_call(&mut self) -> Result<bool, Error> {
-        if let Some(frame) = self.call_stack.pop() {
-            self.returned = false;
-            self.pos = frame.return_pos;
-
-            if !self.call_stack.is_empty() {
-                self.codes = self.call_stack.last().call.func.codes();
-                return Ok(true);
-            }
-        }
-
-        Ok(false)
-    }
-
     pub fn run(&mut self) -> Result<Option<Value>, Error> {
-        let mut start = || loop {
-            self.eval_loop()?;
+        let mut start = || {
+            loop {
+                self.eval_loop()?;
 
-            if !self.returned {
-                self.push(Value::NIL)?;
+                if let Some(frame) = self.call_stack.pop() {
+                    if !self.returned {
+                        self.stack.push(Value::NIL);
+                    }
+
+                    self.returned = false;
+                    self.pos = frame.return_pos;
+
+                    if !self.call_stack.is_empty() {
+                        self.codes = self.call_stack.last().call.func.codes();
+                        continue;
+                    }
+                }
+
+                break;
             }
 
-            if !self.post_call()? {
-                return Ok(if !self.stack.is_empty() {
-                    Some(self.stack.pop())
-                } else {
-                    None
-                });
-            }
+            Ok(self.stack.try_pop())
         };
 
         start().map_err(|e| self.add_trace(e))

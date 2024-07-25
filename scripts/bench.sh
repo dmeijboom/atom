@@ -1,5 +1,6 @@
 #!/bin/bash
 
+echo ">> building atom"
 cargo build --release 2> /dev/null
 
 PROGRAM="$1"

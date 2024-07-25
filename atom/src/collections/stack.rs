@@ -15,6 +15,15 @@ impl<T: Copy + Default, const N: usize> Default for Stack<T, N> {
 }
 
 impl<T: Copy + Default, const N: usize> Stack<T, N> {
+    pub fn try_pop(&mut self) -> Option<T> {
+        if self.len == 0 {
+            None
+        } else {
+            self.len -= 1;
+            Some(self.data[self.len])
+        }
+    }
+
     pub fn pop(&mut self) -> T {
         self.len -= 1;
         self.data[self.len]
