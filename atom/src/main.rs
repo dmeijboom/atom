@@ -5,6 +5,8 @@ use std::{
 
 use clap::Parser;
 use error::Error;
+#[cfg(feature = "mimalloc")]
+use mimalloc::MiMalloc;
 use opcode::{Op, Opcode};
 use runtime::{
     function::{Exec, Func},
@@ -27,6 +29,10 @@ mod opcode;
 mod parser;
 mod runtime;
 mod vm;
+
+#[cfg(feature = "mimalloc")]
+#[global_allocator]
+static GLOBAL: MiMalloc = MiMalloc;
 
 #[derive(Parser)]
 struct Opts {

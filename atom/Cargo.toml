@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+mimalloc = ["dep:mimalloc"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
@@ -17,3 +18,4 @@ tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
 bit-set = "0.8.0"
+mimalloc = { version = "0.1.43", optional = true }
