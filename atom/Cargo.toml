@@ -16,3 +16,4 @@ tracing = { version = "0.1.40", optional = true }
 tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
+bit-set = "0.8.0"

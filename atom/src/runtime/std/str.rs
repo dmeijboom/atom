@@ -7,21 +7,15 @@ use crate::{
 
 use super::{array::Array, Context, TypeDescr};
 
-pub struct Str(Array<u8>);
+pub struct Str(pub Array<u8>);
 
 impl Str {
     pub fn as_str(&self) -> &str {
         self.as_ref()
     }
 
-    pub fn concat(&self, Str(other): &Str) -> Str {
-        Self(Array::concat(&self.0, other))
-    }
-}
-
-impl From<String> for Str {
-    fn from(s: String) -> Self {
-        Self(Array::from(s.into_bytes()))
+    pub fn from_string(gc: &mut Gc, s: String) -> Self {
+        Self(Array::from_vec(gc, s.into_bytes()))
     }
 }
 
@@ -46,8 +40,9 @@ macro_rules! map_fn {
     ($func:ident, $ty:ident.$method:ident, $rust_fn:ident) => {
         #[atom_method($ty.$method)]
         fn $func(ctx: Context<'_>, this: &Str) -> Result<Handle<Str>, RuntimeError> {
-            let output = Str::from(this.as_str().$rust_fn());
-            ctx.gc.alloc(output)
+            let rust_string = this.as_str().$rust_fn();
+            let str = Str::from_string(ctx.gc, rust_string);
+            ctx.gc.alloc(str)
         }
     };
 }

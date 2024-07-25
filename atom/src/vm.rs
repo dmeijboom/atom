@@ -125,8 +125,8 @@ fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
         Const::Float(n) => Value::from(n),
         Const::Bool(b) => Value::from(b),
         Const::Str(s) => {
-            let str = gc.alloc(Str::from(s))?;
-            Value::from(str)
+            let str = Str::from_string(gc, s);
+            Value::from(gc.alloc(str)?)
         }
     })
 }
@@ -485,12 +485,16 @@ impl<'a> Vm<'a> {
             Type::Array => {
                 let lhs = self.gc.get(lhs.array());
                 let rhs = self.gc.get(rhs.array());
-                Value::from(self.gc.alloc(lhs.concat(rhs))?)
+                let new_data = lhs.concat(rhs);
+                let array = Array::from_vec(&mut self.gc, new_data);
+                Value::from(self.gc.alloc(array)?)
             }
             Type::Str => {
-                let lhs = self.gc.get(lhs.str());
-                let rhs = self.gc.get(rhs.str());
-                Value::from(self.gc.alloc(lhs.concat(rhs))?)
+                let Str(lhs) = self.gc.get(lhs.str());
+                let Str(rhs) = self.gc.get(rhs.str());
+                let new_data = lhs.concat(rhs);
+                let array = Array::from_vec(&mut self.gc, new_data);
+                Value::from(self.gc.alloc(Str(array))?)
             }
             _ => unreachable!(),
         };
@@ -507,7 +511,7 @@ impl<'a> Vm<'a> {
 
         values.reverse();
 
-        let array = Array::from(values);
+        let array = Array::from_vec(&mut self.gc, values);
         let handle = self.gc.alloc(array)?;
 
         self.push(handle)?;

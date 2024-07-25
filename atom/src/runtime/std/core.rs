@@ -13,7 +13,9 @@ use super::{str::Str, Context};
 
 #[atom_fn(repr)]
 fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Value, RuntimeError> {
-    ctx.gc.alloc(Str::from(repr(ctx.gc, &arg)?))
+    let string = repr(ctx.gc, &arg)?;
+    let str = Str::from_string(ctx.gc, string);
+    ctx.gc.alloc(str)
 }
 
 #[atom_fn(println)]

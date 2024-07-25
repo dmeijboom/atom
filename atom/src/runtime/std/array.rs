@@ -1,30 +1,29 @@
-use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit};
+use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
 use atom_macros::atom_method;
 
 use crate::{
-    gc::{alloc, Gc, Trace},
-    lexer::Span,
+    gc::{Gc, Handle, Trace},
     runtime::{
-        error::{RuntimeError, ErrorKind},
+        error::ErrorKind,
         value::{Type, Value},
     },
 };
 
 use super::{Context, TypeDescr};
 
-pub struct Iter<'a, T> {
+pub struct Iter<'a, T: Trace> {
     idx: usize,
     array: &'a Array<T>,
 }
 
-impl<'a, T> Iter<'a, T> {
+impl<'a, T: Trace> Iter<'a, T> {
     pub fn new(array: &'a Array<T>) -> Self {
         Self { idx: 0, array }
     }
 }
 
-impl<'a, T> Iterator for Iter<'a, T> {
+impl<'a, T: Trace> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -35,14 +34,14 @@ impl<'a, T> Iterator for Iter<'a, T> {
     }
 }
 
-pub struct Array<T> {
-    data: MaybeUninit<*mut T>,
+pub struct Array<T: Trace> {
+    data: MaybeUninit<Handle<T>>,
     len: usize,
     cap: usize,
     _marker: PhantomData<[T]>,
 }
 
-impl<T> Drop for Array<T> {
+impl<T: Trace> Drop for Array<T> {
     fn drop(&mut self) {
         if self.len == 0 {
             return;
@@ -54,7 +53,7 @@ impl<T> Drop for Array<T> {
     }
 }
 
-impl<T> Default for Array<T> {
+impl<T: Trace> Default for Array<T> {
     fn default() -> Self {
         Self {
             data: MaybeUninit::uninit(),
@@ -73,14 +72,14 @@ impl<T: Trace> Trace for Array<T> {
     }
 }
 
-impl<T> Array<T> {
+impl<T: Trace> Array<T> {
     pub fn len(&self) -> usize {
         self.len
     }
 
-    pub unsafe fn from_raw_parts(data: *mut T, len: usize, cap: usize) -> Self {
+    pub unsafe fn from_raw_parts(handle: Handle<T>, len: usize, cap: usize) -> Self {
         Self {
-            data: MaybeUninit::new(data),
+            data: MaybeUninit::new(handle),
             len,
             cap,
             _marker: PhantomData,
@@ -92,7 +91,9 @@ impl<T> Array<T> {
             return &[];
         }
 
-        unsafe { std::slice::from_raw_parts(self.data.assume_init_ref().cast_const(), self.len) }
+        unsafe {
+            std::slice::from_raw_parts(self.data.assume_init_ref().as_ptr().cast_const(), self.len)
+        }
     }
 
     pub fn get(&self, idx: usize) -> Option<&T> {
@@ -101,7 +102,7 @@ impl<T> Array<T> {
         }
 
         unsafe {
-            let ptr = self.data.assume_init_ref().add(idx);
+            let ptr = self.data.assume_init_ref().as_ptr().add(idx);
             Some(&*ptr)
         }
     }
@@ -112,30 +113,15 @@ impl<T> Array<T> {
         }
 
         unsafe {
-            let ptr = self.data.assume_init_mut().add(idx);
+            let ptr = self.data.assume_init_mut().as_ptr().add(idx);
             Some(&mut *ptr)
         }
     }
 
-    pub fn iter(&self) -> Iter<'_, T> {
-        Iter::new(self)
-    }
-}
-
-impl<T: Copy> Array<T> {
-    pub fn concat(&self, other: &Array<T>) -> Array<T> {
-        Self::from(self.iter().chain(other.iter()).copied().collect::<Vec<_>>())
-    }
-}
-
-unsafe fn alloc_array<T>(cap: usize) -> Result<*mut T, RuntimeError> {
-    Layout::array::<T>(cap)
-        .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))
-        .and_then(alloc)
-}
-
-impl<T> From<Vec<T>> for Array<T> {
-    fn from(data: Vec<T>) -> Self {
+    pub fn from_vec(gc: &mut Gc, data: Vec<T>) -> Self
+    where
+        T: 'static,
+    {
         if data.is_empty() {
             return Array::default();
         }
@@ -145,8 +131,20 @@ impl<T> From<Vec<T>> for Array<T> {
 
         unsafe {
             let ptr = Box::into_raw(slice) as *mut T;
-            Array::from_raw_parts(ptr, len, len)
+            let handle = gc.track(NonNull::new_unchecked(ptr));
+            Array::from_raw_parts(handle, len, len)
         }
+    }
+
+    pub fn concat(&self, other: &Array<T>) -> Vec<T>
+    where
+        T: Copy,
+    {
+        self.iter().chain(other.iter()).copied().collect::<Vec<_>>()
+    }
+
+    pub fn iter(&self) -> Iter<'_, T> {
+        Iter::new(self)
     }
 }
 
@@ -156,31 +154,49 @@ fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, Runtime
         return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
     }
 
-    let item = unsafe { this.data.assume_init_ref().add(this.len - 1).read() };
+    let item = unsafe {
+        this.data
+            .assume_init_ref()
+            .as_ptr()
+            .add(this.len - 1)
+            .read()
+    };
     this.len -= 1;
 
     Ok(item)
 }
 
 #[atom_method(Array.push)]
-fn array_push(ctx: Context<'_>, this: &mut Array<Value>, item: Value) -> Result<(), RuntimeError> {
-    unsafe {
-        if this.len == 0 {
-            let ptr = alloc_array::<Value>(1)?;
-            ptr.write(item);
-            *this = Array::from_raw_parts(ptr, 1, 1);
-        } else if this.cap > this.len {
-            this.data.assume_init_ref().add(this.len).write(item);
-            this.len += 1;
-        } else {
-            let ptr = alloc_array::<Value>(this.cap * 2)?;
+fn array_push(ctx: Context<'_>, this: Value, item: Value) -> Result<(), RuntimeError> {
+    let handle = this.array();
+    let array = ctx.gc.get(handle.clone());
+    let (len, cap) = (array.len, array.cap);
 
-            for (i, item) in this.iter().copied().enumerate() {
+    unsafe {
+        if len == 0 {
+            let new_handle: Handle<Value> = ctx.gc.alloc_array(1)?;
+            new_handle.as_ptr().write(item);
+            let cur = ctx.gc.get_mut(handle);
+            *cur = Array::from_raw_parts(new_handle, 1, 1);
+        } else if cap > len {
+            let array = ctx.gc.get_mut(handle);
+            array.data.assume_init_ref().as_ptr().add(len).write(item);
+            array.len += 1;
+        } else {
+            let handle: Handle<Value> = ctx.gc.alloc_array(cap * 2)?;
+            let ptr = handle.as_ptr();
+            let array = ctx.gc.get(this.array());
+
+            for (i, item) in array.iter().copied().enumerate() {
                 ptr.add(i).write(item);
             }
 
-            ptr.add(this.len).write(item);
-            *this = Array::from_raw_parts(ptr, this.len + 1, this.cap * 2);
+            ptr.add(len).write(item);
+
+            let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
+            let array = ctx.gc.get_mut(this.array());
+
+            *array = new_array;
         }
     }
 
@@ -257,7 +273,8 @@ mod tests {
         let empty = Array::<bool>::default();
         assert_eq!(empty.as_slice(), &[]);
 
-        let array = Array::from(vec![1, 2, 3]);
+        let mut gc = Gc::default();
+        let array = Array::from_vec(&mut gc, vec![1, 2, 3]);
         assert_eq!(array.as_slice(), &[1, 2, 3]);
     }
 }

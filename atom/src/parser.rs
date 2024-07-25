@@ -109,7 +109,7 @@ impl Parser {
     }
 
     fn array(&mut self) -> Result<ExprKind, ParseError> {
-        let items = self.expr_list(TokenKind::Punct("["), 1)?;
+        let items = self.expr_list(TokenKind::Punct("]"), 1)?;
         Ok(ExprKind::Array(items))
     }
 

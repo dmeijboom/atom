@@ -1,11 +1,13 @@
 use std::{
-    alloc::{dealloc, Layout},
+    alloc::{alloc_zeroed, dealloc, Layout},
     ptr::NonNull,
 };
 
+use bit_set::BitSet;
+
 use crate::{
     lexer::Span,
-    runtime::error::{RuntimeError, ErrorKind},
+    runtime::error::{ErrorKind, RuntimeError},
 };
 
 macro_rules! impl_trace {
@@ -33,32 +35,16 @@ impl<T: Trace> Trace for Vec<T> {
 pub trait AnyHandle {
     fn layout(&self) -> Layout;
     fn as_ptr(&self) -> *mut u8;
-    fn marked(&self) -> bool;
     fn trace(&self, gc: &mut Gc);
-    fn set_marked(&mut self, marked: bool);
-}
-
-pub struct Ptr<T: ?Sized> {
-    marked: bool,
-    data: T,
-}
-
-impl<T> Ptr<T> {
-    pub fn new(data: T) -> Self {
-        Self {
-            marked: false,
-            data,
-        }
-    }
 }
 
 #[derive(Copy)]
 pub struct Handle<T: ?Sized + Trace> {
-    ptr: NonNull<Ptr<T>>,
+    ptr: NonNull<T>,
 }
 
-impl<T: Trace> Handle<T> {
-    pub fn new(ptr: NonNull<Ptr<T>>) -> Self {
+impl<T: ?Sized + Trace> Handle<T> {
+    pub fn new(ptr: NonNull<T>) -> Self {
         Self { ptr }
     }
 }
@@ -75,24 +61,18 @@ impl<T: Trace> Handle<T> {
     }
 
     pub fn from_addr(addr: usize) -> Option<Self> {
-        NonNull::new(addr as *mut Ptr<T>).map(|ptr| Handle { ptr })
+        NonNull::new(addr as *mut T).map(|ptr| Handle { ptr })
+    }
+
+    pub unsafe fn as_ptr(&self) -> *mut T {
+        self.ptr.as_ptr()
     }
 }
 
 impl<T: Trace> AnyHandle for Handle<T> {
-    fn marked(&self) -> bool {
-        unsafe { self.ptr.as_ref().marked }
-    }
-
-    fn set_marked(&mut self, marked: bool) {
-        unsafe {
-            self.ptr.as_mut().marked = marked;
-        }
-    }
-
     fn trace(&self, gc: &mut Gc) {
         unsafe {
-            self.ptr.as_ref().data.trace(gc);
+            self.ptr.as_ref().trace(gc);
         }
     }
 
@@ -119,6 +99,7 @@ pub fn alloc<T>(layout: Layout) -> Result<*mut T, RuntimeError> {
 
 #[derive(Default)]
 pub struct Gc {
+    marked: BitSet<usize>,
     cycle_allocated: usize,
     roots: Vec<Box<dyn AnyHandle>>,
 }
@@ -128,39 +109,55 @@ impl Gc {
         self.cycle_allocated >= 1_000_000
     }
 
+    pub unsafe fn track<T: Trace + 'static>(&mut self, ptr: NonNull<T>) -> Handle<T> {
+        let handle = Handle::new(ptr);
+        self.roots.push(Box::new(handle.clone()));
+        handle
+    }
+
     pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, RuntimeError> {
-        let layout = Layout::new::<Ptr<T>>();
+        let layout = Layout::new::<T>();
         self.cycle_allocated += layout.size();
 
         unsafe {
-            let ptr = alloc::<Ptr<T>>(layout)?;
-            ptr.write(Ptr::new(data));
+            let ptr = alloc::<T>(layout)?;
+            ptr.write(data);
+            Ok(self.track(NonNull::new_unchecked(ptr)))
+        }
+    }
 
-            let handle = Handle::new(NonNull::new_unchecked(ptr));
-            self.roots.push(Box::new(handle.clone()));
+    pub fn alloc_array<T: Trace + 'static>(
+        &mut self,
+        cap: usize,
+    ) -> Result<Handle<T>, RuntimeError> {
+        let layout = Layout::array::<T>(cap)
+            .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
+        self.cycle_allocated += layout.size();
 
-            Ok(handle)
+        unsafe {
+            let ptr = alloc_zeroed(layout) as *mut T;
+            Ok(self.track(NonNull::new_unchecked(ptr)))
         }
     }
 
     pub fn mark<H: ?Sized + AnyHandle>(&mut self, mut handle: impl AsMut<H>) {
         let handle = handle.as_mut();
-        handle.set_marked(true);
+        self.marked.insert(handle.as_ptr() as usize);
         handle.trace(self);
     }
 
     pub fn get<T: Trace>(&self, handle: Handle<T>) -> &T {
-        unsafe { &handle.ptr.as_ref().data }
+        unsafe { handle.ptr.as_ref() }
     }
 
     pub fn get_mut<T: Trace>(&mut self, mut handle: Handle<T>) -> &mut T {
-        unsafe { &mut handle.ptr.as_mut().data }
+        unsafe { handle.ptr.as_mut() }
     }
 
     pub fn sweep(&mut self) {
         self.cycle_allocated = 0;
         self.roots.retain(|root| {
-            if !root.marked() {
+            if !self.marked.contains(root.as_ptr() as usize) {
                 unsafe {
                     dealloc(root.as_ptr(), root.layout());
                 }
@@ -171,8 +168,6 @@ impl Gc {
             true
         });
 
-        self.roots
-            .iter_mut()
-            .for_each(|root| root.set_marked(false));
+        self.marked.clear();
     }
 }
