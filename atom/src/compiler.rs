@@ -33,13 +33,6 @@ pub enum ErrorKind {
 pub type CompileError = SpannedError<ErrorKind>;
 
 #[derive(Debug)]
-struct Var {
-    index: usize,
-    name: String,
-    scope: usize,
-}
-
-#[derive(Debug)]
 struct Local {
     index: usize,
 }
@@ -70,16 +63,30 @@ fn new_rc<T>(item: T) -> (Rc<T>, Weak<T>) {
     (strong, weak)
 }
 
-pub enum Scope {
+pub enum ScopeKind {
     Global,
     Local,
     Func(usize),
 }
 
+pub struct Scope {
+    kind: ScopeKind,
+    vars: HashMap<String, usize, WyHash>,
+}
+
+impl Scope {
+    pub fn new(kind: ScopeKind) -> Self {
+        Self {
+            kind,
+            vars: HashMap::default(),
+        }
+    }
+}
+
 pub struct Compiler<'a> {
     std: &'a StdLib,
+    vars_seq: usize,
     scope: Vec<Scope>,
-    vars: Vec<Var>,
     codes: Vec<Opcode>,
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
@@ -91,22 +98,26 @@ impl<'a> Compiler<'a> {
     pub fn new(std: &'a StdLib) -> Self {
         Compiler {
             std,
-            scope: vec![Scope::Global],
-            vars: vec![],
+            vars_seq: 0,
             codes: vec![],
             funcs: vec![],
             consts: vec![],
             classes: vec![],
+            scope: vec![Scope::new(ScopeKind::Global)],
             locals: VecDeque::default(),
         }
     }
 
-    fn scope_id(&self) -> usize {
-        self.scope.len() - 1
-    }
-
     fn pos(&self) -> usize {
         self.codes.len()
+    }
+
+    fn push_scope(&mut self, kind: ScopeKind) {
+        self.scope.push(Scope::new(kind));
+    }
+
+    fn pop_scope(&mut self) -> Option<Scope> {
+        self.scope.pop()
     }
 
     fn push_const(&mut self, const_: Const) -> usize {
@@ -129,22 +140,16 @@ impl<'a> Compiler<'a> {
         self.codes[idx] = Opcode::with_code(self.codes[idx].op(), code);
     }
 
-    fn push_var(&mut self, span: Span, name: String) -> Result<usize, CompileError> {
-        if let Ok(idx) = self.load_var(span, &name, true) {
-            return Ok(idx);
-        }
+    fn push_var(&mut self, name: String) -> Result<usize, CompileError> {
+        let id = self.vars_seq;
+        self.vars_seq += 1;
 
-        let idx = self.vars.len();
+        let len = self.scope.len();
+        let scope = &mut self.scope[len - 1];
 
-        self.vars.push(Var {
-            index: idx,
-            name,
-            scope: self.scope_id(),
-        });
+        scope.vars.insert(name, id);
 
-        self.vars.sort_by(|a, b| b.scope.cmp(&a.scope));
-
-        Ok(idx)
+        Ok(id)
     }
 
     fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, CompileError> {
@@ -162,24 +167,11 @@ impl<'a> Compiler<'a> {
         None
     }
 
-    fn load_var(
-        &mut self,
-        span: Span,
-        name: &str,
-        strict_scope: bool,
-    ) -> Result<usize, CompileError> {
-        self.vars
+    fn load_var(&mut self, span: Span, name: &str) -> Result<usize, CompileError> {
+        self.scope
             .iter()
-            .filter(|v| {
-                v.name == name
-                    && if strict_scope {
-                        v.scope == self.scope_id()
-                    } else {
-                        v.scope <= self.scope_id()
-                    }
-            })
-            .map(|v| v.index)
-            .next()
+            .rev()
+            .find_map(|scope| scope.vars.get(name).copied())
             .ok_or_else(|| ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
@@ -205,7 +197,7 @@ impl<'a> Compiler<'a> {
 
     // Load a name based in the following order: var > local > vm class > vm func > std func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
-        match self.load_var(span, &name, false) {
+        match self.load_var(span, &name) {
             Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
             Err(e) => match self.load_local(&name) {
                 Some(idx) => Ok(Opcode::with_code(Op::LoadArg, idx).at(span)),
@@ -236,7 +228,7 @@ impl<'a> Compiler<'a> {
 
         Ok(match lhs.kind {
             ExprKind::Ident(name) => {
-                let idx = self.load_var(rhs.span, &name, false)?;
+                let idx = self.load_var(rhs.span, &name)?;
                 self.expr(rhs)?;
                 Opcode::with_code(Op::Store, idx).at(span)
             }
@@ -327,7 +319,7 @@ impl<'a> Compiler<'a> {
 
     fn compile_fn_body(
         &mut self,
-        scope: Scope,
+        scope: ScopeKind,
         args: Vec<String>,
         stmts: Vec<Stmt>,
     ) -> Result<Vec<Opcode>, CompileError> {
@@ -337,14 +329,12 @@ impl<'a> Compiler<'a> {
             .map(|(i, n)| (n, Local { index: i }))
             .collect();
 
-        self.scope.push(scope);
+        self.push_scope(scope);
         self.locals.push_front(locals);
 
         let previous = mem::take(&mut self.codes);
-
         self.compile_body(stmts)?;
-
-        let scope = self.scope.pop();
+        let scope = self.pop_scope();
         self.locals.pop_front();
         let codes = mem::replace(&mut self.codes, previous);
 
@@ -369,7 +359,7 @@ impl<'a> Compiler<'a> {
 
         methods.insert(name.clone(), func);
 
-        let codes = self.compile_fn_body(Scope::Local, args, stmts)?;
+        let codes = self.compile_fn_body(ScopeKind::Local, args, stmts)?;
         let func = methods.get_mut(&name).and_then(|m| Rc::get_mut(m)).unwrap();
 
         func.exec = Exec::Vm(codes.into());
@@ -393,7 +383,7 @@ impl<'a> Compiler<'a> {
 
         self.funcs.push(func);
 
-        let codes = self.compile_fn_body(Scope::Func(idx), args, stmts)?;
+        let codes = self.compile_fn_body(ScopeKind::Func(idx), args, stmts)?;
         let func = Rc::get_mut(&mut self.funcs[idx]).unwrap();
 
         func.exec = Exec::Vm(codes.into());
@@ -405,7 +395,7 @@ impl<'a> Compiler<'a> {
         let pos = self.pos();
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
-        self.compile_body(body)?;
+        self.compile_scoped_body(body)?;
         self.push_code(Opcode::with_code(Op::Jump, pos));
         self.replace_code(idx, self.pos());
 
@@ -458,7 +448,7 @@ impl<'a> Compiler<'a> {
         let pos = self.pos();
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
-        self.compile_body(body)?;
+        self.compile_scoped_body(body)?;
         self.expr(post)?;
 
         self.push_code(Opcode::with_code(Op::Jump, pos));
@@ -476,9 +466,7 @@ impl<'a> Compiler<'a> {
             None
         };
 
-        self.scope.push(Scope::Local);
-        self.compile_body(stmts)?;
-        self.scope.pop();
+        self.compile_scoped_body(stmts)?;
 
         match alt {
             Some(alt) => {
@@ -505,7 +493,7 @@ impl<'a> Compiler<'a> {
         match stmt.kind {
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
-                let idx = self.push_var(stmt.span, name)?;
+                let idx = self.push_var(name)?;
 
                 if let Some(expr) = expr {
                     self.expr(expr)?;
@@ -543,6 +531,14 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
+    fn compile_scoped_body(&mut self, stmts: Vec<Stmt>) -> Result<(), CompileError> {
+        self.push_scope(ScopeKind::Local);
+        self.compile_body(stmts)?;
+        self.pop_scope();
+
+        Ok(())
+    }
+
     fn optim_tail_call(&mut self, func: usize, codes: &mut [Opcode]) {
         let mut iter = codes.iter_mut().rev();
 
@@ -569,7 +565,7 @@ impl<'a> Compiler<'a> {
     }
 
     fn optim(&mut self, scope: Scope, mut codes: Vec<Opcode>) -> Vec<Opcode> {
-        if let Scope::Func(func) = scope {
+        if let ScopeKind::Func(func) = scope.kind {
             if codes
                 .iter()
                 .filter(|c| c.op() == Op::LoadFunc && c.code() == func)
@@ -586,7 +582,7 @@ impl<'a> Compiler<'a> {
     }
 
     pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, CompileError> {
-        self.compile_body(stmts)?;
+        self.compile_scoped_body(stmts)?;
 
         Ok(Module {
             codes: self.codes.into(),
@@ -608,12 +604,33 @@ mod tests {
         let lib = stdlib();
         let mut compiler = Compiler::new(&lib);
 
-        compiler.push_var(Span::default(), "n".to_string()).unwrap();
-        compiler.scope.push(Scope::Local);
+        let top = compiler.push_var("n".to_string()).unwrap();
+        compiler.push_scope(ScopeKind::Local);
 
-        let expected = compiler.push_var(Span::default(), "n".to_string()).unwrap();
-        let actual = compiler.load_var(Span::default(), "n", false).unwrap();
+        let expected = compiler.push_var("n".to_string()).unwrap();
+        let actual = compiler.load_var(Span::default(), "n").unwrap();
 
         assert_eq!(expected, actual);
+        assert_ne!(top, actual);
+    }
+
+    #[test]
+    fn test_assign() {
+        let lib = stdlib();
+        let mut compiler = Compiler::new(&lib);
+
+        let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
+
+        let expr = ExprKind::Literal(Literal::Int(100)).at(Span::default());
+        let idx = compiler.push_var("n".to_string()).unwrap();
+        let code = compiler
+            .assign(Span::default(), None, ident("n"), expr.clone())
+            .unwrap();
+
+        assert_eq!(Op::Store, code.op());
+        assert_eq!(idx, code.code());
+
+        let result = compiler.assign(Span::default(), None, ident("y"), expr);
+        assert!(result.is_err());
     }
 }

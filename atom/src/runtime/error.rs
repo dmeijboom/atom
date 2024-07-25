@@ -45,6 +45,7 @@ impl ErrorKind {
 
 #[derive(Default, Clone)]
 pub struct Call {
+    #[allow(dead_code)]
     pub span: Span,
     pub func: Rc<Func>,
 }
@@ -72,6 +73,7 @@ impl Debug for Call {
 #[derive(Debug)]
 pub struct RuntimeError {
     pub kind: ErrorKind,
+    #[allow(dead_code)]
     pub span: Span,
     pub trace: Option<Vec<Call>>,
 }

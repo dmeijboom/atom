@@ -25,6 +25,7 @@ impl<T: Display> IntoSpanned for T {
 #[derive(Debug)]
 pub struct SpannedError<T: Display> {
     pub kind: T,
+    #[allow(dead_code)]
     pub span: Span,
 }
 
