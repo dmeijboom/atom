@@ -1,7 +1,7 @@
 use crate::{
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    runtime::{error::Error, value::Value},
+    runtime::{error::RuntimeError, value::Value},
 };
 
 use super::{array::Array, str::Str};
@@ -25,8 +25,8 @@ impl<'a> Context<'a> {
     }
 }
 
-pub type FnHandler = dyn Fn(Context<'_>, Vec<Value>) -> Result<Value, Error>;
-pub type FieldHandler = dyn Fn(Context<'_>, Value) -> Result<Value, Error>;
+pub type FnHandler = dyn Fn(Context<'_>, Vec<Value>) -> Result<Value, RuntimeError>;
+pub type FieldHandler = dyn Fn(Context<'_>, Value) -> Result<Value, RuntimeError>;
 
 pub trait Convert<'a, T> {
     fn convert(self, gc: &'a mut Gc) -> T

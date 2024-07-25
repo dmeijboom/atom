@@ -41,7 +41,7 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
     quote! {
         use crate::runtime::std::Convert as _;
 
-        fn #export_name(#ctx_name: #ctx_ty, args: Vec<Value>) -> Result<Value, Error> {
+        fn #export_name(#ctx_name: #ctx_ty, args: Vec<Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
             let mut _inner = move || {
                 #(#args)*
                 #(#body)*

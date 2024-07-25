@@ -5,7 +5,7 @@ use std::{
 
 use crate::{
     lexer::Span,
-    runtime::error::{Error, ErrorKind},
+    runtime::error::{RuntimeError, ErrorKind},
 };
 
 macro_rules! impl_trace {
@@ -105,7 +105,7 @@ impl<T: Trace> AnyHandle for Handle<T> {
     }
 }
 
-pub fn alloc<T>(layout: Layout) -> Result<*mut T, Error> {
+pub fn alloc<T>(layout: Layout) -> Result<*mut T, RuntimeError> {
     unsafe {
         let ptr = std::alloc::alloc(layout);
 
@@ -128,7 +128,7 @@ impl Gc {
         self.cycle_allocated >= 1_000_000
     }
 
-    pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, Error> {
+    pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, RuntimeError> {
         let layout = Layout::new::<Ptr<T>>();
         self.cycle_allocated += layout.size();
 

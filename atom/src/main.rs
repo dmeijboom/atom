@@ -4,6 +4,7 @@ use std::{
 };
 
 use clap::Parser;
+use error::Error;
 use opcode::{Op, Opcode};
 use runtime::{
     function::{Exec, Func},
@@ -19,26 +20,13 @@ use vm::Vm;
 mod ast;
 mod collections;
 mod compiler;
+mod error;
 mod gc;
 mod lexer;
 mod opcode;
 mod parser;
 mod runtime;
 mod vm;
-
-#[derive(Debug, thiserror::Error)]
-enum Error {
-    #[error("I/O error: {0}")]
-    IO(#[from] std::io::Error),
-    #[error("ParseError: {0}")]
-    Parse(#[from] parser::Error),
-    #[error("TokenError: {0}")]
-    Lex(#[from] lexer::Error),
-    #[error("CompileError: {0}")]
-    Compile(#[from] compiler::Error),
-    #[error("{0}")]
-    Runtime(#[from] vm::Error),
-}
 
 #[derive(Parser)]
 struct Opts {

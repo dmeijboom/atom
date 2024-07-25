@@ -1,5 +1,4 @@
 use std::{
-    fmt::{self, Display, Formatter},
     mem::{self, size_of},
     rc::Rc,
 };
@@ -10,13 +9,13 @@ use tracing::{instrument, Level};
 use crate::{
     collections::{ReuseVec, Stack},
     compiler::Module,
+    error::{IntoSpanned, SpannedError},
     gc::Gc,
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
-        self,
         class::{Class, Instance},
-        error::{Call, ErrorKind},
+        error::{Call, ErrorKind, RuntimeError},
         function::{Exec, Func},
         std::{array::Array, str::Str, Context, StdLib},
         value::{Type, Value},
@@ -86,30 +85,12 @@ pub enum FatalErrorKind {
     MaxStackExceeded,
 }
 
-impl FatalErrorKind {
-    pub fn at(self, span: Span) -> FatalError {
-        FatalError { kind: self, span }
-    }
-}
-
-#[derive(Debug)]
-pub struct FatalError {
-    pub kind: FatalErrorKind,
-    pub span: Span,
-}
-
-impl Display for FatalError {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        self.kind.fmt(f)
-    }
-}
-
-impl std::error::Error for FatalError {}
+pub type FatalError = SpannedError<FatalErrorKind>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("RuntimeError: {0}")]
-    Runtime(#[from] runtime::error::Error),
+    Runtime(#[from] RuntimeError),
     #[error("FatalError: {0}")]
     Fatal(#[from] FatalError),
 }

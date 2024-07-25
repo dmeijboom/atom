@@ -3,7 +3,7 @@ use std::{fmt::Debug, rc::Rc};
 use crate::opcode::Opcode;
 
 use super::{
-    error::Error,
+    error::RuntimeError,
     std::{Context, FnHandler},
     value::{Type, Value},
 };
@@ -44,7 +44,7 @@ impl Func {
 
     pub fn with_handler<F>(name: String, arg_count: usize, handler: F) -> Self
     where
-        F: Fn(Context<'_>, Vec<Value>) -> Result<Value, Error> + 'static,
+        F: Fn(Context<'_>, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
     {
         Self {
             name,

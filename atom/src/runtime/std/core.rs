@@ -3,7 +3,7 @@ use atom_macros::atom_fn;
 use crate::{
     gc::Gc,
     runtime::{
-        error::Error,
+        error::RuntimeError,
         function::Func,
         value::{Type, Value},
     },
@@ -12,12 +12,12 @@ use crate::{
 use super::{str::Str, Context};
 
 #[atom_fn(repr)]
-fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Value, Error> {
+fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Value, RuntimeError> {
     ctx.gc.alloc(Str::from(repr(ctx.gc, &arg)?))
 }
 
 #[atom_fn(println)]
-fn std_println(ctx: Context<'_>, arg: Value) -> Result<(), Error> {
+fn std_println(ctx: Context<'_>, arg: Value) -> Result<(), RuntimeError> {
     match arg.ty() {
         Type::Str => {
             let str = ctx.gc.get(arg.str());
@@ -33,7 +33,7 @@ pub fn funcs() -> [fn() -> Func; 2] {
     [std_println, std_repr]
 }
 
-pub fn repr(gc: &Gc, value: &Value) -> Result<String, Error> {
+pub fn repr(gc: &Gc, value: &Value) -> Result<String, RuntimeError> {
     Ok(match value.ty() {
         Type::Array => {
             let array = gc.get(value.array());

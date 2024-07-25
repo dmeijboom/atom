@@ -1,6 +1,5 @@
 use std::{
     collections::{HashMap, VecDeque},
-    fmt::Display,
     mem,
     rc::{Rc, Weak},
 };
@@ -9,6 +8,7 @@ use wyhash2::WyHash;
 
 use crate::{
     ast::{self, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind},
+    error::{IntoSpanned, SpannedError},
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
@@ -30,25 +30,7 @@ pub enum ErrorKind {
     DuplicateClass(String),
 }
 
-impl ErrorKind {
-    pub fn at(self, span: Span) -> Error {
-        Error { kind: self, span }
-    }
-}
-
-#[derive(Debug)]
-pub struct Error {
-    pub kind: ErrorKind,
-    pub span: Span,
-}
-
-impl Display for Error {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.kind.fmt(f)
-    }
-}
-
-impl std::error::Error for Error {}
+pub type CompileError = SpannedError<ErrorKind>;
 
 #[derive(Debug)]
 struct Var {
@@ -147,7 +129,7 @@ impl<'a> Compiler<'a> {
         self.codes[idx] = Opcode::with_code(self.codes[idx].op(), code);
     }
 
-    fn push_var(&mut self, span: Span, name: String) -> Result<usize, Error> {
+    fn push_var(&mut self, span: Span, name: String) -> Result<usize, CompileError> {
         if let Ok(idx) = self.load_var(span, &name, true) {
             return Ok(idx);
         }
@@ -165,7 +147,7 @@ impl<'a> Compiler<'a> {
         Ok(idx)
     }
 
-    fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, Error> {
+    fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, CompileError> {
         let arg_count = args.len();
         self.expr_list(args)?;
         self.expr(callee)?;
@@ -180,7 +162,12 @@ impl<'a> Compiler<'a> {
         None
     }
 
-    fn load_var(&mut self, span: Span, name: &str, strict_scope: bool) -> Result<usize, Error> {
+    fn load_var(
+        &mut self,
+        span: Span,
+        name: &str,
+        strict_scope: bool,
+    ) -> Result<usize, CompileError> {
         self.vars
             .iter()
             .filter(|v| {
@@ -196,7 +183,7 @@ impl<'a> Compiler<'a> {
             .ok_or_else(|| ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
-    fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), Error> {
+    fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), CompileError> {
         let idx = self.push_code(match cond {
             true => Opcode::new(Op::PushJumpIfTrue).at(span),
             false => Opcode::new(Op::PushJumpIfFalse).at(span),
@@ -208,7 +195,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn expr_list(&mut self, exprs: Vec<Expr>) -> Result<(), Error> {
+    fn expr_list(&mut self, exprs: Vec<Expr>) -> Result<(), CompileError> {
         for expr in exprs {
             self.expr(expr)?;
         }
@@ -217,7 +204,7 @@ impl<'a> Compiler<'a> {
     }
 
     // Load a name based in the following order: var > local > vm class > vm func > std func
-    fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, Error> {
+    fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
         match self.load_var(span, &name, false) {
             Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
             Err(e) => match self.load_local(&name) {
@@ -242,7 +229,7 @@ impl<'a> Compiler<'a> {
         op: Option<ast::AssignOp>,
         lhs: Expr,
         mut rhs: Expr,
-    ) -> Result<Opcode, Error> {
+    ) -> Result<Opcode, CompileError> {
         if let Some(op) = op {
             rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
         }
@@ -269,7 +256,7 @@ impl<'a> Compiler<'a> {
         })
     }
 
-    fn expr(&mut self, expr: Expr) -> Result<(), Error> {
+    fn expr(&mut self, expr: Expr) -> Result<(), CompileError> {
         let code = match expr.kind {
             ExprKind::Unary(op, unary_expr) => match op {
                 ast::UnaryOp::Not => {
@@ -343,7 +330,7 @@ impl<'a> Compiler<'a> {
         scope: Scope,
         args: Vec<String>,
         stmts: Vec<Stmt>,
-    ) -> Result<Vec<Opcode>, Error> {
+    ) -> Result<Vec<Opcode>, CompileError> {
         let locals = args
             .into_iter()
             .enumerate()
@@ -372,7 +359,7 @@ impl<'a> Compiler<'a> {
         name: String,
         args: Vec<String>,
         stmts: Vec<Stmt>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), CompileError> {
         if methods.contains_key(&name) {
             return Err(ErrorKind::DuplicateMethod(name, class.upgrade().unwrap()).at(span));
         }
@@ -396,7 +383,7 @@ impl<'a> Compiler<'a> {
         name: String,
         args: Vec<String>,
         stmts: Vec<Stmt>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), CompileError> {
         if self.funcs.iter().any(|f| f.name == name) {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
@@ -414,7 +401,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), Error> {
+    fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
         let pos = self.pos();
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
@@ -425,7 +412,12 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn class_stmt(&mut self, span: Span, name: String, methods: Vec<Stmt>) -> Result<(), Error> {
+    fn class_stmt(
+        &mut self,
+        span: Span,
+        name: String,
+        methods: Vec<Stmt>,
+    ) -> Result<(), CompileError> {
         if self.classes.iter().any(|c| c.name == name) {
             return Err(ErrorKind::DuplicateClass(name).at(span));
         }
@@ -461,7 +453,7 @@ impl<'a> Compiler<'a> {
         expr: Expr,
         post: Expr,
         body: Vec<Stmt>,
-    ) -> Result<(), Error> {
+    ) -> Result<(), CompileError> {
         self.stmt(pre)?;
         let pos = self.pos();
         self.expr(expr)?;
@@ -475,7 +467,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn if_stmt(&mut self, IfStmt(expr, stmts, alt): IfStmt) -> Result<(), Error> {
+    fn if_stmt(&mut self, IfStmt(expr, stmts, alt): IfStmt) -> Result<(), CompileError> {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
         let end_block = if let Some(expr) = expr {
             self.expr(expr)?;
@@ -509,7 +501,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn stmt(&mut self, stmt: Stmt) -> Result<(), Error> {
+    fn stmt(&mut self, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
@@ -543,7 +535,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    fn compile_body(&mut self, stmts: Vec<Stmt>) -> Result<(), Error> {
+    fn compile_body(&mut self, stmts: Vec<Stmt>) -> Result<(), CompileError> {
         for stmt in stmts {
             self.stmt(stmt)?;
         }
@@ -593,7 +585,7 @@ impl<'a> Compiler<'a> {
         codes
     }
 
-    pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, Error> {
+    pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, CompileError> {
         self.compile_body(stmts)?;
 
         Ok(Module {

@@ -2,34 +2,41 @@ use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
     ast::{AssignOp, BinaryOp, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
+    error::{IntoSpanned, SpannedError},
     lexer::{Span, Token, TokenKind},
 };
 
-const PREC_ASS: u8 = 0;
-const PREC_LOR: u8 = 1;
-const PREC_LAN: u8 = 2;
-const PREC_BOR: u8 = 3;
-const PREC_XOR: u8 = 4;
-const PREC_BAN: u8 = 5;
-const PREC_EQ: u8 = 6;
-const PREC_REL: u8 = 7;
-const PREC_ADD: u8 = 8;
-const PREC_MUL: u8 = 9;
-const PREC_PRE: u8 = 10;
-const PREC_CALL: u8 = 11;
+struct Prec {}
+
+impl Prec {
+    const ASS: u8 = 0;
+    const LOR: u8 = 1;
+    const LAN: u8 = 2;
+    const BOR: u8 = 3;
+    const XOR: u8 = 4;
+    const BAN: u8 = 5;
+    const EQ: u8 = 6;
+    const REL: u8 = 7;
+    const ADD: u8 = 8;
+    const MUL: u8 = 9;
+    const PRE: u8 = 10;
+    const CALL: u8 = 11;
+}
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ErrorKind {
     #[error("unexpected token {actual}, expected: {expected}")]
     UnexpectedToken {
         expected: Cow<'static, str>,
         actual: String,
     },
-    #[error("unexpected eof")]
+    #[error("invalid expr: {0}")]
+    InvalidExpr(TokenKind),
+    #[error("unexpected end-of-file")]
     UnexpectedEof,
-    #[error("invalid expr '{kind}' at: {span}")]
-    InvalidExpr { kind: TokenKind, span: Span },
 }
+
+pub type ParseError = SpannedError<ErrorKind>;
 
 fn supports_assign(expr: &Expr) -> bool {
     matches!(
@@ -76,17 +83,19 @@ impl Parser {
         self.tokens.pop_front()
     }
 
-    fn expect(&mut self, expected: TokenKind) -> Result<(), Error> {
+    fn expect(&mut self, expected: TokenKind) -> Result<(), ParseError> {
         match self.next() {
             Some(token) if token.kind == expected => Ok(()),
-            Some(token) => Err(Error::UnexpectedToken {
+            Some(token) => Err(ErrorKind::UnexpectedToken {
                 expected: Cow::Owned(format!("{expected}")),
                 actual: token.to_string(),
-            }),
-            None => Err(Error::UnexpectedToken {
+            }
+            .at(self.span())),
+            None => Err(ErrorKind::UnexpectedToken {
                 expected: Cow::Owned(format!("{expected}")),
                 actual: "EOF".to_string(),
-            }),
+            }
+            .at(self.span())),
         }
     }
 
@@ -99,16 +108,16 @@ impl Parser {
         false
     }
 
-    fn array(&mut self) -> Result<ExprKind, Error> {
+    fn array(&mut self) -> Result<ExprKind, ParseError> {
         let items = self.expr_list(TokenKind::Punct("["), 1)?;
         Ok(ExprKind::Array(items))
     }
 
-    fn semi(&mut self) -> Result<(), Error> {
+    fn semi(&mut self) -> Result<(), ParseError> {
         self.expect(TokenKind::Punct(";"))
     }
 
-    fn arg_list(&mut self, end: TokenKind) -> Result<Vec<String>, Error> {
+    fn arg_list(&mut self, end: TokenKind) -> Result<Vec<String>, ParseError> {
         let mut args = vec![];
 
         while !self.accept(&end) {
@@ -123,7 +132,7 @@ impl Parser {
         Ok(args)
     }
 
-    fn expr_list(&mut self, end: TokenKind, min_prec: u8) -> Result<Vec<Expr>, Error> {
+    fn expr_list(&mut self, end: TokenKind, min_prec: u8) -> Result<Vec<Expr>, ParseError> {
         let mut exprs = vec![];
 
         while !self.accept(&end) {
@@ -138,7 +147,7 @@ impl Parser {
         Ok(exprs)
     }
 
-    fn primary(&mut self) -> Result<Expr, Error> {
+    fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
                 TokenKind::IntLit(i) => Ok(ExprKind::Literal(Literal::Int(i)).at(token.span)),
@@ -154,19 +163,16 @@ impl Parser {
                 }
                 TokenKind::Punct("!") => {
                     let span = self.span();
-                    let expr = self.expr(PREC_PRE + 1)?;
+                    let expr = self.expr(Prec::PRE + 1)?;
                     Ok(ExprKind::Unary(UnaryOp::Not, Box::new(expr)).at(span))
                 }
-                kind => Err(Error::InvalidExpr {
-                    kind,
-                    span: token.span,
-                }),
+                kind => Err(ErrorKind::InvalidExpr(kind).at(self.span())),
             },
-            None => Err(Error::UnexpectedEof),
+            None => Err(ErrorKind::UnexpectedEof.at(self.span())),
         }
     }
 
-    fn binary(&mut self, lhs: Expr, op: BinaryOp, min_prec: u8) -> Result<Expr, Error> {
+    fn binary(&mut self, lhs: Expr, op: BinaryOp, min_prec: u8) -> Result<Expr, ParseError> {
         let span = lhs.span;
         self.advance();
         let rhs = self.expr(min_prec + 1)?;
@@ -174,7 +180,7 @@ impl Parser {
         Ok(ExprKind::Binary(Box::new(lhs), op, Box::new(rhs)).at(span))
     }
 
-    fn assign(&mut self, lhs: Expr, op: Option<AssignOp>) -> Result<Expr, Error> {
+    fn assign(&mut self, lhs: Expr, op: Option<AssignOp>) -> Result<Expr, ParseError> {
         let span = lhs.span;
         self.advance();
         let rhs = self.expr(1)?;
@@ -182,14 +188,14 @@ impl Parser {
         Ok(ExprKind::Assign(op, Box::new(lhs), Box::new(rhs)).at(span))
     }
 
-    fn expr(&mut self, min_prec: u8) -> Result<Expr, Error> {
+    fn expr(&mut self, min_prec: u8) -> Result<Expr, ParseError> {
         let mut lhs = self.primary()?;
 
         loop {
             lhs = match self.peek2() {
                 (Some(token), next) => match token {
                     TokenKind::Punct(".")
-                        if matches!(next, Some(TokenKind::Ident(_))) && min_prec <= PREC_CALL =>
+                        if matches!(next, Some(TokenKind::Ident(_))) && min_prec <= Prec::CALL =>
                     {
                         self.advance();
                         let span = lhs.span;
@@ -197,7 +203,7 @@ impl Parser {
 
                         ExprKind::Member(Box::new(lhs), name).at(span)
                     }
-                    TokenKind::Punct("[") if min_prec <= PREC_CALL => {
+                    TokenKind::Punct("[") if min_prec <= Prec::CALL => {
                         self.advance();
                         let rhs = self.expr(1)?;
                         self.expect(TokenKind::Punct("]"))?;
@@ -205,77 +211,77 @@ impl Parser {
 
                         ExprKind::CompMember(Box::new(lhs), Box::new(rhs)).at(span)
                     }
-                    TokenKind::Punct("(") if min_prec <= PREC_CALL => {
+                    TokenKind::Punct("(") if min_prec <= Prec::CALL => {
                         self.advance();
                         let args = self.expr_list(TokenKind::Punct(")"), 1)?;
                         let span = lhs.span;
 
                         ExprKind::Call(Box::new(lhs), args).at(span)
                     }
-                    TokenKind::Punct("%") if min_prec <= PREC_MUL => {
-                        self.binary(lhs, BinaryOp::Rem, PREC_MUL)?
+                    TokenKind::Punct("%") if min_prec <= Prec::MUL => {
+                        self.binary(lhs, BinaryOp::Rem, Prec::MUL)?
                     }
-                    TokenKind::Punct("*") if min_prec <= PREC_MUL => {
-                        self.binary(lhs, BinaryOp::Mul, PREC_MUL)?
+                    TokenKind::Punct("*") if min_prec <= Prec::MUL => {
+                        self.binary(lhs, BinaryOp::Mul, Prec::MUL)?
                     }
-                    TokenKind::Punct("/") if min_prec <= PREC_MUL => {
-                        self.binary(lhs, BinaryOp::Div, PREC_MUL)?
+                    TokenKind::Punct("/") if min_prec <= Prec::MUL => {
+                        self.binary(lhs, BinaryOp::Div, Prec::MUL)?
                     }
-                    TokenKind::Punct("+") if min_prec <= PREC_ADD => {
-                        self.binary(lhs, BinaryOp::Add, PREC_ADD)?
+                    TokenKind::Punct("+") if min_prec <= Prec::ADD => {
+                        self.binary(lhs, BinaryOp::Add, Prec::ADD)?
                     }
-                    TokenKind::Punct("-") if min_prec <= PREC_ADD => {
-                        self.binary(lhs, BinaryOp::Sub, PREC_ADD)?
+                    TokenKind::Punct("-") if min_prec <= Prec::ADD => {
+                        self.binary(lhs, BinaryOp::Sub, Prec::ADD)?
                     }
-                    TokenKind::Punct("<=") if min_prec <= PREC_REL => {
-                        self.binary(lhs, BinaryOp::Lte, PREC_REL)?
+                    TokenKind::Punct("<=") if min_prec <= Prec::REL => {
+                        self.binary(lhs, BinaryOp::Lte, Prec::REL)?
                     }
-                    TokenKind::Punct(">=") if min_prec <= PREC_REL => {
-                        self.binary(lhs, BinaryOp::Gte, PREC_REL)?
+                    TokenKind::Punct(">=") if min_prec <= Prec::REL => {
+                        self.binary(lhs, BinaryOp::Gte, Prec::REL)?
                     }
-                    TokenKind::Punct("<") if min_prec <= PREC_REL => {
-                        self.binary(lhs, BinaryOp::Lt, PREC_REL)?
+                    TokenKind::Punct("<") if min_prec <= Prec::REL => {
+                        self.binary(lhs, BinaryOp::Lt, Prec::REL)?
                     }
-                    TokenKind::Punct(">") if min_prec <= PREC_REL => {
-                        self.binary(lhs, BinaryOp::Gt, PREC_REL)?
+                    TokenKind::Punct(">") if min_prec <= Prec::REL => {
+                        self.binary(lhs, BinaryOp::Gt, Prec::REL)?
                     }
-                    TokenKind::Punct("==") if min_prec <= PREC_EQ => {
-                        self.binary(lhs, BinaryOp::Eq, PREC_EQ)?
+                    TokenKind::Punct("==") if min_prec <= Prec::EQ => {
+                        self.binary(lhs, BinaryOp::Eq, Prec::EQ)?
                     }
-                    TokenKind::Punct("!=") if min_prec <= PREC_EQ => {
-                        self.binary(lhs, BinaryOp::Ne, PREC_EQ)?
+                    TokenKind::Punct("!=") if min_prec <= Prec::EQ => {
+                        self.binary(lhs, BinaryOp::Ne, Prec::EQ)?
                     }
-                    TokenKind::Punct("&") if min_prec <= PREC_BAN => {
-                        self.binary(lhs, BinaryOp::BitwiseAnd, PREC_BAN)?
+                    TokenKind::Punct("&") if min_prec <= Prec::BAN => {
+                        self.binary(lhs, BinaryOp::BitwiseAnd, Prec::BAN)?
                     }
-                    TokenKind::Punct("^") if min_prec <= PREC_XOR => {
-                        self.binary(lhs, BinaryOp::BitwiseXor, PREC_XOR)?
+                    TokenKind::Punct("^") if min_prec <= Prec::XOR => {
+                        self.binary(lhs, BinaryOp::BitwiseXor, Prec::XOR)?
                     }
-                    TokenKind::Punct("|") if min_prec <= PREC_BOR => {
-                        self.binary(lhs, BinaryOp::BitwiseOr, PREC_BOR)?
+                    TokenKind::Punct("|") if min_prec <= Prec::BOR => {
+                        self.binary(lhs, BinaryOp::BitwiseOr, Prec::BOR)?
                     }
-                    TokenKind::Punct("&&") if min_prec <= PREC_LAN => {
-                        self.binary(lhs, BinaryOp::LogicalAnd, PREC_LAN)?
+                    TokenKind::Punct("&&") if min_prec <= Prec::LAN => {
+                        self.binary(lhs, BinaryOp::LogicalAnd, Prec::LAN)?
                     }
-                    TokenKind::Punct("||") if min_prec <= PREC_LOR => {
-                        self.binary(lhs, BinaryOp::LogicalOr, PREC_LOR)?
+                    TokenKind::Punct("||") if min_prec <= Prec::LOR => {
+                        self.binary(lhs, BinaryOp::LogicalOr, Prec::LOR)?
                     }
-                    TokenKind::Punct("=") if supports_assign(&lhs) && min_prec == PREC_ASS => {
+                    TokenKind::Punct("=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, None)?
                     }
-                    TokenKind::Punct("+=") if min_prec == PREC_ASS => {
+                    TokenKind::Punct("+=") if min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Add))?
                     }
-                    TokenKind::Punct("-=") if min_prec == PREC_ASS => {
+                    TokenKind::Punct("-=") if min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Sub))?
                     }
-                    TokenKind::Punct("*=") if min_prec == PREC_ASS => {
+                    TokenKind::Punct("*=") if min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Mul))?
                     }
-                    TokenKind::Punct("/=") if min_prec == PREC_ASS => {
+                    TokenKind::Punct("/=") if min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Div))?
                     }
-                    TokenKind::Punct("%=") if min_prec == PREC_ASS => {
+                    TokenKind::Punct("%=") if min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Rem))?
                     }
                     _ => break,
@@ -287,7 +293,7 @@ impl Parser {
         Ok(lhs)
     }
 
-    fn expr_stmt(&mut self) -> Result<Stmt, Error> {
+    fn expr_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         let expr = self.expr(0)?;
 
@@ -297,15 +303,16 @@ impl Parser {
 
         match self.peek() {
             Some(TokenKind::Punct("}")) => Ok(StmtKind::Return(expr).at(span)),
-            None => Err(Error::UnexpectedEof),
-            _ => Err(Error::UnexpectedToken {
+            None => Err(ErrorKind::UnexpectedEof.at(self.span())),
+            _ => Err(ErrorKind::UnexpectedToken {
                 expected: Cow::Borrowed(";"),
                 actual: self.tokens.pop_front().unwrap().to_string(),
-            }),
+            }
+            .at(self.span())),
         }
     }
 
-    fn return_stmt(&mut self) -> Result<Stmt, Error> {
+    fn return_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
         let expr = self.expr(1)?;
@@ -314,20 +321,21 @@ impl Parser {
         Ok(StmtKind::Return(expr).at(span))
     }
 
-    fn ident(&mut self) -> Result<String, Error> {
+    fn ident(&mut self) -> Result<String, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
                 TokenKind::Ident(id) => Ok(id),
-                _ => Err(Error::UnexpectedToken {
+                _ => Err(ErrorKind::UnexpectedToken {
                     expected: Cow::Borrowed("ident"),
                     actual: token.to_string(),
-                }),
+                }
+                .at(self.span())),
             },
-            None => Err(Error::UnexpectedEof),
+            None => Err(ErrorKind::UnexpectedEof.at(self.span())),
         }
     }
 
-    fn let_stmt(&mut self) -> Result<Stmt, Error> {
+    fn let_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
         let name = self.ident()?;
@@ -343,7 +351,7 @@ impl Parser {
         Ok(StmtKind::Let(name, Some(value)).at(span))
     }
 
-    fn block(&mut self) -> Result<Vec<Stmt>, Error> {
+    fn block(&mut self) -> Result<Vec<Stmt>, ParseError> {
         self.expect(TokenKind::Punct("{"))?;
         let body = self.body(false)?;
         self.expect(TokenKind::Punct("}"))?;
@@ -351,7 +359,7 @@ impl Parser {
         Ok(body)
     }
 
-    fn fn_stmt(&mut self) -> Result<Stmt, Error> {
+    fn fn_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
         let name = self.ident()?;
@@ -362,7 +370,7 @@ impl Parser {
         Ok(StmtKind::Fn(name, args, body).at(span))
     }
 
-    fn if_stmt(&mut self) -> Result<Stmt, Error> {
+    fn if_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
         let expr = self.expr(1)?;
@@ -394,7 +402,7 @@ impl Parser {
         Ok(StmtKind::If(*if_stmt).at(span))
     }
 
-    fn for_cond_stmt(&mut self, span: Span, pre: Stmt) -> Result<Stmt, Error> {
+    fn for_cond_stmt(&mut self, span: Span, pre: Stmt) -> Result<Stmt, ParseError> {
         let expr = self.expr(1)?;
         self.semi()?;
         let post = self.expr(0)?;
@@ -403,7 +411,7 @@ impl Parser {
         Ok(StmtKind::ForCond(Box::new(pre), expr, post, body).at(span))
     }
 
-    fn class_stmt(&mut self) -> Result<Stmt, Error> {
+    fn class_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
         let name = self.ident()?;
@@ -418,7 +426,7 @@ impl Parser {
         Ok(StmtKind::Class(name, methods).at(span))
     }
 
-    fn for_stmt(&mut self) -> Result<Stmt, Error> {
+    fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
 
@@ -438,7 +446,7 @@ impl Parser {
         Ok(StmtKind::For(expr, body).at(span))
     }
 
-    fn body(&mut self, global: bool) -> Result<Vec<Stmt>, Error> {
+    fn body(&mut self, global: bool) -> Result<Vec<Stmt>, ParseError> {
         let mut stmts = vec![];
 
         while let Some(token) = self.peek() {
@@ -459,7 +467,7 @@ impl Parser {
         Ok(stmts)
     }
 
-    pub fn parse(mut self) -> Result<Vec<Stmt>, Error> {
+    pub fn parse(mut self) -> Result<Vec<Stmt>, ParseError> {
         self.body(true)
     }
 }

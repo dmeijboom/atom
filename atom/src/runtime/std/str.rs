@@ -2,10 +2,7 @@ use atom_macros::atom_method;
 
 use crate::{
     gc::{Gc, Trace},
-    runtime::{
-        error::Error,
-        value::{Type, Value},
-    },
+    runtime::value::{Type, Value},
 };
 
 use super::{array::Array, Context, TypeDescr};
@@ -41,14 +38,14 @@ impl AsRef<str> for Str {
 }
 
 #[atom_method(Str.len)]
-fn str_len(ctx: Context<'_>, this: &Str) -> Result<usize, Error> {
+fn str_len(ctx: Context<'_>, this: &Str) -> Result<usize, RuntimeError> {
     Ok(this.0.len())
 }
 
 macro_rules! map_fn {
     ($func:ident, $ty:ident.$method:ident, $rust_fn:ident) => {
         #[atom_method($ty.$method)]
-        fn $func(ctx: Context<'_>, this: &Str) -> Result<Handle<Str>, Error> {
+        fn $func(ctx: Context<'_>, this: &Str) -> Result<Handle<Str>, RuntimeError> {
             let output = Str::from(this.as_str().$rust_fn());
             ctx.gc.alloc(output)
         }

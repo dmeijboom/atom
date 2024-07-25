@@ -6,7 +6,7 @@ use crate::{
     gc::{alloc, Gc, Trace},
     lexer::Span,
     runtime::{
-        error::{Error, ErrorKind},
+        error::{RuntimeError, ErrorKind},
         value::{Type, Value},
     },
 };
@@ -128,7 +128,7 @@ impl<T: Copy> Array<T> {
     }
 }
 
-unsafe fn alloc_array<T>(cap: usize) -> Result<*mut T, Error> {
+unsafe fn alloc_array<T>(cap: usize) -> Result<*mut T, RuntimeError> {
     Layout::array::<T>(cap)
         .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))
         .and_then(alloc)
@@ -151,7 +151,7 @@ impl<T> From<Vec<T>> for Array<T> {
 }
 
 #[atom_method(Array.pop)]
-fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, Error> {
+fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, RuntimeError> {
     if this.len == 0 {
         return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
     }
@@ -163,7 +163,7 @@ fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, Error> 
 }
 
 #[atom_method(Array.push)]
-fn array_push(ctx: Context<'_>, this: &mut Array<Value>, item: Value) -> Result<(), Error> {
+fn array_push(ctx: Context<'_>, this: &mut Array<Value>, item: Value) -> Result<(), RuntimeError> {
     unsafe {
         if this.len == 0 {
             let ptr = alloc_array::<Value>(1)?;
@@ -188,12 +188,12 @@ fn array_push(ctx: Context<'_>, this: &mut Array<Value>, item: Value) -> Result<
 }
 
 #[atom_method(Array.len)]
-fn array_len(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, Error> {
+fn array_len(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeError> {
     Ok(this.len)
 }
 
 #[atom_method(Array.cap)]
-fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, Error> {
+fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeError> {
     Ok(this.cap)
 }
 

@@ -34,8 +34,8 @@ pub enum ErrorKind {
 }
 
 impl ErrorKind {
-    pub fn at(self, span: Span) -> Error {
-        Error {
+    pub fn at(self, span: Span) -> RuntimeError {
+        RuntimeError {
             kind: self,
             span,
             trace: None,
@@ -70,16 +70,16 @@ impl Debug for Call {
 }
 
 #[derive(Debug)]
-pub struct Error {
+pub struct RuntimeError {
     pub kind: ErrorKind,
     pub span: Span,
     pub trace: Option<Vec<Call>>,
 }
 
-impl Display for Error {
+impl Display for RuntimeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         std::fmt::Display::fmt(&self.kind, f)
     }
 }
 
-impl std::error::Error for Error {}
+impl std::error::Error for RuntimeError {}

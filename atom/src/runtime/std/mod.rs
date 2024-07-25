@@ -8,7 +8,7 @@ mod ffi;
 pub mod str;
 
 use super::{
-    error::Error,
+    error::RuntimeError,
     function::{Func, Receiver},
     value::{Type, Value},
 };
@@ -25,7 +25,7 @@ impl Field {
     #[allow(dead_code)]
     pub fn new<F>(handler: F, readonly: bool) -> Self
     where
-        F: Fn(Context<'_>, Value) -> Result<Value, Error> + 'static,
+        F: Fn(Context<'_>, Value) -> Result<Value, RuntimeError> + 'static,
     {
         Field {
             readonly,
@@ -33,7 +33,7 @@ impl Field {
         }
     }
 
-    pub fn call(&self, ctx: Context, this: Value) -> Result<Value, Error> {
+    pub fn call(&self, ctx: Context, this: Value) -> Result<Value, RuntimeError> {
         (self.handler)(ctx, this)
     }
 }

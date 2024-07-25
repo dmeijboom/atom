@@ -3,6 +3,8 @@ use std::{
     num::{ParseFloatError, ParseIntError},
 };
 
+use crate::error::{IntoSpanned, SpannedError};
+
 #[derive(Debug, Default, Clone, Copy)]
 pub struct Span {
     pub offset: usize,
@@ -70,7 +72,7 @@ fn is_keyword(s: &str) -> bool {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum Error {
+pub enum ErrorKind {
     #[error("failed to parse float: {0}")]
     ParseFloat(#[from] ParseFloatError),
     #[error("failed to parse int: {0}")]
@@ -80,6 +82,8 @@ pub enum Error {
     #[error("invalid input at: {0}")]
     InvalidInput(char),
 }
+
+pub type TokenError = SpannedError<ErrorKind>;
 
 pub struct Lexer<'a> {
     n: usize,
@@ -147,7 +151,7 @@ impl<'a> Lexer<'a> {
         .at(span)
     }
 
-    fn number(&mut self) -> Result<Token, Error> {
+    fn number(&mut self) -> Result<Token, TokenError> {
         let mut dot = false;
         let span = self.span();
         let mut num = String::new();
@@ -171,15 +175,16 @@ impl<'a> Lexer<'a> {
             self.advance();
         }
 
-        Ok(if dot {
-            TokenKind::FloatLit(num.parse().unwrap())
+        if dot {
+            let f = num.parse().map_err(|e| ErrorKind::ParseFloat(e).at(span))?;
+            Ok(TokenKind::FloatLit(f).at(span))
         } else {
-            TokenKind::IntLit(num.parse().unwrap())
+            let i = num.parse().map_err(|e| ErrorKind::ParseInt(e).at(span))?;
+            Ok(TokenKind::IntLit(i).at(span))
         }
-        .at(span))
     }
 
-    fn string(&mut self, span: Span) -> Result<Token, Error> {
+    fn string(&mut self, span: Span) -> Result<Token, TokenError> {
         let mut s = String::new();
 
         while let Some(c) = self.next() {
@@ -190,7 +195,7 @@ impl<'a> Lexer<'a> {
                         s.push('\\');
                         s.push(c);
                     }
-                    None => return Err(Error::UnexpectedEof),
+                    None => return Err(ErrorKind::UnexpectedEof.at(self.span())),
                 },
                 c => s.push(c),
             }
@@ -199,7 +204,7 @@ impl<'a> Lexer<'a> {
         Ok(TokenKind::StringLit(s).at(span))
     }
 
-    pub fn lex(&mut self) -> Result<Vec<Token>, Error> {
+    pub fn lex(&mut self) -> Result<Vec<Token>, TokenError> {
         let mut tokens = vec![];
 
         while let Some(c) = self.next() {
@@ -283,7 +288,7 @@ impl<'a> Lexer<'a> {
                     self.move_back();
                     self.term()
                 }
-                (c, _) => return Err(Error::InvalidInput(c)),
+                (c, _) => return Err(ErrorKind::InvalidInput(c).at(span)),
             };
 
             tokens.push(token);
