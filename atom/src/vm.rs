@@ -141,8 +141,8 @@ pub struct Vm<'a> {
     vars: Vec<Value>,
     codes: Rc<[Opcode]>,
     call_stack: ReuseVec<Frame>,
-    stack: Stack<Value, MAX_STACK_SIZE>,
     consts: [Value; MAX_CONST_SIZE],
+    stack: Stack<Value, MAX_STACK_SIZE>,
 }
 
 impl<'a> Vm<'a> {
@@ -404,12 +404,17 @@ impl<'a> Vm<'a> {
     }
 
     fn init_class(&mut self, class: Rc<Class>, arg_count: usize) -> Result<(), Error> {
-        assert!(arg_count == 0, "class init with args not supported");
-
+        let init_fn = class.methods.get("init").map(Rc::clone);
         let instance = Instance::new(class);
         let handle = self.gc.alloc(instance)?;
 
-        self.push(handle)
+        if let Some(func) = init_fn {
+            self.push(handle)?;
+            self.push(func)?;
+            self.call(arg_count, false)
+        } else {
+            self.push(handle)
+        }
     }
 
     #[inline(always)]

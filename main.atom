@@ -1,5 +1,9 @@
-fn test() {}
+class User {
+    fn init(self, x) {
+        self.name = "test" ^ x;
+    }
+}
 
-let value = test();
+let user = User("xzy");
 
-println(value);
+println(user.name);

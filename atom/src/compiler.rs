@@ -28,6 +28,8 @@ pub enum ErrorKind {
     DuplicateMethod(String, Rc<Class>),
     #[error("class '{0}' already exists")]
     DuplicateClass(String),
+    #[error("expected self as the first argument in init(..)")]
+    MissingInitSelf,
 }
 
 pub type CompileError = SpannedError<ErrorKind>;
@@ -354,14 +356,25 @@ impl<'a> Compiler<'a> {
             return Err(ErrorKind::DuplicateMethod(name, class.upgrade().unwrap()).at(span));
         }
 
-        let arg_count = args.iter().filter(|a| a.as_str() != "self").count();
+        let is_init = name == "init";
+
+        if is_init && args.is_empty() {
+            return Err(ErrorKind::MissingInitSelf.at(span));
+        }
+
+        let arg_count = args.len() - 1;
         let func = Rc::new(Func::new(name.clone(), arg_count).with_receiver(Receiver::Class));
 
         methods.insert(name.clone(), func);
 
-        let codes = self.compile_fn_body(ScopeKind::Local, args, stmts)?;
-        let func = methods.get_mut(&name).and_then(|m| Rc::get_mut(m)).unwrap();
+        let mut codes = self.compile_fn_body(ScopeKind::Local, args, stmts)?;
 
+        if is_init {
+            codes.push(Opcode::with_code(Op::LoadArg, 0).at(span));
+            codes.push(Opcode::new(Op::Return).at(span));
+        }
+
+        let func = methods.get_mut(&name).and_then(|m| Rc::get_mut(m)).unwrap();
         func.exec = Exec::Vm(codes.into());
 
         Ok(())
