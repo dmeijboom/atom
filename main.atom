@@ -1,1 +1,5 @@
-println(["test", "tost"].len());
+let name = nil;
+
+name = "test";
+
+println(name);

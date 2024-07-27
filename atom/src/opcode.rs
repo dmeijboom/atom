@@ -114,6 +114,7 @@ impl Opcode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Const {
+    Nil,
     Int(i64),
     Float(f64),
     Bool(bool),

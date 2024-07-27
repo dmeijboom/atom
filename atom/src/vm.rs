@@ -128,6 +128,7 @@ fn top_frame(module: &Module) -> Frame {
 
 fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
     Ok(match const_ {
+        Const::Nil => Value::NIL,
         Const::Int(n) => Value::from(n),
         Const::Float(n) => Value::from(n),
         Const::Bool(b) => Value::from(b),

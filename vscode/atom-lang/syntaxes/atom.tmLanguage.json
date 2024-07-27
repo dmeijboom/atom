@@ -535,6 +535,10 @@
 		"constants": {
 			"patterns": [
 				{
+					"name": "constant.language.null.atom",
+					"match": "\\b(nil)\\b"
+				},
+				{
 					"name": "constant.language.boolean.atom",
 					"match": "\\b(true|false)\\b"
 				}

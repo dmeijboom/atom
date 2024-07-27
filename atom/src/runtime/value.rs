@@ -183,6 +183,12 @@ impl Trace for Value {
     }
 }
 
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        self.bits == other.bits
+    }
+}
+
 impl Default for Value {
     fn default() -> Self {
         Self::NIL
