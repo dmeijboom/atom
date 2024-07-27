@@ -1,9 +1,7 @@
-class User {
-    fn init(self, x) {
-        self.name = "test" ^ x;
-    }
-}
+let names = ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Heidi"];
+let copy = names[1:4];
 
-let user = User("xzy");
+copy.push("Ivan");
 
-println(user.name);
+println(names);
+println(copy);

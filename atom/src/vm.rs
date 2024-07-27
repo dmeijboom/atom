@@ -71,6 +71,13 @@ fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
     }
 }
 
+fn array_idx(elem: Value, len: usize) -> usize {
+    match elem.int() {
+        n if n < 0 => (len as i64 + n) as usize,
+        n => n as usize,
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum FatalErrorKind {
     #[error("invalid var at: {0}")]
@@ -143,6 +150,12 @@ pub struct Vm<'a> {
     call_stack: ReuseVec<Frame>,
     consts: [Value; MAX_CONST_SIZE],
     stack: Stack<Value, MAX_STACK_SIZE>,
+}
+
+impl<'a> Drop for Vm<'a> {
+    fn drop(&mut self) {
+        self.gc.sweep();
+    }
 }
 
 impl<'a> Vm<'a> {
@@ -520,6 +533,44 @@ impl<'a> Vm<'a> {
         Ok(())
     }
 
+    fn make_slice(&mut self, opts: usize) -> Result<(), Error> {
+        let (from, to) = match opts {
+            0 => (None, None),
+            1 => (Some(self.stack.pop()), None),
+            2 => (None, Some(self.stack.pop())),
+            3 => {
+                let to = self.stack.pop();
+                let from = self.stack.pop();
+                (Some(from), Some(to))
+            }
+            _ => unreachable!(),
+        };
+
+        if let Some(from) = from.as_ref() {
+            self.check_type(from.ty(), Type::Int)?;
+        }
+
+        if let Some(to) = to.as_ref() {
+            self.check_type(to.ty(), Type::Int)?;
+        }
+
+        let array = self.stack.pop();
+        self.check_type(array.ty(), Type::Array)?;
+
+        let array = self.gc.get(array.array());
+        let from = from.map(|v| array_idx(v, array.len())).unwrap_or(0);
+        let to = to.map(|v| array_idx(v, array.len())).unwrap_or(array.len());
+
+        if to > array.len() || to < from {
+            return Err(ErrorKind::IndexOutOfBounds(to).at(self.span).into());
+        }
+
+        let new_array = self.gc.alloc(array.slice(from, to))?;
+        self.push(new_array)?;
+
+        Ok(())
+    }
+
     fn prepare_elem(&mut self) -> Result<(&mut Array<Value>, usize), Error> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
@@ -528,12 +579,9 @@ impl<'a> Vm<'a> {
         self.check_type(array.ty(), Type::Array)?;
 
         let array = self.gc.get_mut(array.array());
-        let n = match elem.int() {
-            n if n < 0 => array.len() as i64 + n,
-            n => n,
-        };
+        let idx = array_idx(elem, array.len());
 
-        Ok((array, n as usize))
+        Ok((array, idx))
     }
 
     fn store_elem(&mut self) -> Result<(), Error> {
@@ -704,6 +752,7 @@ impl<'a> Vm<'a> {
                 Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
                 Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,
                 Op::MakeArray => self.make_array(opcode.code())?,
+                Op::MakeSlice => self.make_slice(opcode.code())?,
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
@@ -724,7 +773,7 @@ impl<'a> Vm<'a> {
         }
     }
 
-    pub fn run(&mut self) -> Result<Option<Value>, Error> {
+    pub fn run(&mut self) -> Result<(), Error> {
         let mut start = || {
             loop {
                 self.eval_loop()?;
@@ -746,7 +795,7 @@ impl<'a> Vm<'a> {
                 break;
             }
 
-            Ok(self.stack.try_pop())
+            Ok(())
         };
 
         start().map_err(|e| self.add_trace(e))

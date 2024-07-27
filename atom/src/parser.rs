@@ -10,17 +10,18 @@ struct Prec {}
 
 impl Prec {
     const ASS: u8 = 0;
-    const LOR: u8 = 1;
-    const LAN: u8 = 2;
-    const BOR: u8 = 3;
-    const XOR: u8 = 4;
-    const BAN: u8 = 5;
-    const EQ: u8 = 6;
-    const REL: u8 = 7;
-    const ADD: u8 = 8;
-    const MUL: u8 = 9;
-    const PRE: u8 = 10;
-    const CALL: u8 = 11;
+    const RAN: u8 = 1;
+    const LOR: u8 = 2;
+    const LAN: u8 = 3;
+    const BOR: u8 = 4;
+    const XOR: u8 = 5;
+    const BAN: u8 = 6;
+    const EQ: u8 = 7;
+    const REL: u8 = 8;
+    const ADD: u8 = 9;
+    const MUL: u8 = 10;
+    const PRE: u8 = 11;
+    const CALL: u8 = 12;
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -147,6 +148,15 @@ impl Parser {
         Ok(exprs)
     }
 
+    fn range(&mut self, span: Span, lhs: Option<Box<Expr>>) -> Result<Expr, ParseError> {
+        let rhs = match self.peek() {
+            Some(TokenKind::Punct("]")) => None,
+            _ => Some(Box::new(self.expr(Prec::RAN)?)),
+        };
+
+        Ok(ExprKind::Range(lhs, rhs).at(span))
+    }
+
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
@@ -205,16 +215,20 @@ impl Parser {
                     }
                     TokenKind::Punct("[") if min_prec <= Prec::CALL => {
                         self.advance();
-                        let rhs = self.expr(1)?;
-                        self.expect(TokenKind::Punct("]"))?;
                         let span = lhs.span;
+                        let rhs = if self.accept(&TokenKind::Punct(":")) {
+                            self.range(span, None)?
+                        } else {
+                            self.expr(1)?
+                        };
+                        self.expect(TokenKind::Punct("]"))?;
 
                         ExprKind::CompMember(Box::new(lhs), Box::new(rhs)).at(span)
                     }
                     TokenKind::Punct("(") if min_prec <= Prec::CALL => {
                         self.advance();
-                        let args = self.expr_list(TokenKind::Punct(")"), 1)?;
                         let span = lhs.span;
+                        let args = self.expr_list(TokenKind::Punct(")"), 1)?;
 
                         ExprKind::Call(Box::new(lhs), args).at(span)
                     }
@@ -266,22 +280,26 @@ impl Parser {
                     TokenKind::Punct("||") if min_prec <= Prec::LOR => {
                         self.binary(lhs, BinaryOp::LogicalOr, Prec::LOR)?
                     }
+                    TokenKind::Punct(":") if min_prec <= Prec::RAN => {
+                        self.advance();
+                        self.range(lhs.span, Some(Box::new(lhs)))?
+                    }
                     TokenKind::Punct("=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, None)?
                     }
-                    TokenKind::Punct("+=") if min_prec == Prec::ASS => {
+                    TokenKind::Punct("+=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Add))?
                     }
-                    TokenKind::Punct("-=") if min_prec == Prec::ASS => {
+                    TokenKind::Punct("-=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Sub))?
                     }
-                    TokenKind::Punct("*=") if min_prec == Prec::ASS => {
+                    TokenKind::Punct("*=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Mul))?
                     }
-                    TokenKind::Punct("/=") if min_prec == Prec::ASS => {
+                    TokenKind::Punct("/=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Div))?
                     }
-                    TokenKind::Punct("%=") if min_prec == Prec::ASS => {
+                    TokenKind::Punct("%=") if supports_assign(&lhs) && min_prec == Prec::ASS => {
                         self.assign(lhs, Some(AssignOp::Rem))?
                     }
                     _ => break,

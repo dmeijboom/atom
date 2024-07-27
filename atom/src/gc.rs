@@ -1,9 +1,11 @@
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
+    collections::HashMap,
     ptr::NonNull,
 };
 
 use bit_set::BitSet;
+use wyhash2::WyHash;
 
 use crate::{
     lexer::Span,
@@ -102,6 +104,7 @@ pub struct Gc {
     marked: BitSet<usize>,
     cycle_allocated: usize,
     roots: Vec<Box<dyn AnyHandle>>,
+    arrays: HashMap<usize, Layout, WyHash>,
 }
 
 impl Gc {
@@ -109,9 +112,18 @@ impl Gc {
         self.cycle_allocated >= 1_000_000
     }
 
-    pub unsafe fn track<T: Trace + 'static>(&mut self, ptr: NonNull<T>) -> Handle<T> {
+    pub unsafe fn track<T: Trace + 'static>(
+        &mut self,
+        ptr: NonNull<T>,
+        layout: Layout,
+    ) -> Handle<T> {
         let handle = Handle::new(ptr);
         self.roots.push(Box::new(handle.clone()));
+
+        if layout.size() != std::mem::size_of::<T>() {
+            self.arrays.insert(handle.addr(), layout);
+        }
+
         handle
     }
 
@@ -122,7 +134,7 @@ impl Gc {
         unsafe {
             let ptr = alloc::<T>(layout)?;
             ptr.write(data);
-            Ok(self.track(NonNull::new_unchecked(ptr)))
+            Ok(self.track(NonNull::new_unchecked(ptr), layout))
         }
     }
 
@@ -136,7 +148,7 @@ impl Gc {
 
         unsafe {
             let ptr = alloc_zeroed(layout) as *mut T;
-            Ok(self.track(NonNull::new_unchecked(ptr)))
+            Ok(self.track(NonNull::new_unchecked(ptr), layout))
         }
     }
 
@@ -157,9 +169,12 @@ impl Gc {
     pub fn sweep(&mut self) {
         self.cycle_allocated = 0;
         self.roots.retain(|root| {
-            if !self.marked.contains(root.as_ptr() as usize) {
+            let addr = root.as_ptr() as usize;
+
+            if !self.marked.contains(addr) {
                 unsafe {
-                    dealloc(root.as_ptr(), root.layout());
+                    let layout = self.arrays.remove(&addr).unwrap_or_else(|| root.layout());
+                    dealloc(root.as_ptr(), layout);
                 }
 
                 return false;

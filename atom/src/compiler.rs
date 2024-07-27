@@ -250,6 +250,26 @@ impl<'a> Compiler<'a> {
         })
     }
 
+    fn slice(
+        &mut self,
+        begin: Option<Box<Expr>>,
+        end: Option<Box<Expr>>,
+    ) -> Result<Opcode, CompileError> {
+        let mut code = 0;
+
+        if let Some(begin) = begin {
+            code += 1;
+            self.expr(*begin)?;
+        }
+
+        if let Some(end) = end {
+            code += 2;
+            self.expr(*end)?;
+        }
+
+        Ok(Opcode::with_code(Op::MakeSlice, code))
+    }
+
     fn expr(&mut self, expr: Expr) -> Result<(), CompileError> {
         let code = match expr.kind {
             ExprKind::Unary(op, unary_expr) => match op {
@@ -297,8 +317,16 @@ impl<'a> Compiler<'a> {
             }
             ExprKind::CompMember(object, elem) => {
                 self.expr(*object)?;
-                self.expr(*elem)?;
-                Opcode::new(Op::LoadElement).at(expr.span)
+                let span = elem.span;
+
+                match elem.kind {
+                    ExprKind::Range(begin, end) => self.slice(begin, end)?,
+                    elem => {
+                        self.expr(elem.at(span))?;
+                        Opcode::new(Op::LoadElement)
+                    }
+                }
+                .at(span)
             }
             ExprKind::Ident(name) => self.load_name(expr.span, name)?,
             ExprKind::Call(callee, args) => self.call(expr.span, *callee, args)?,
@@ -312,6 +340,7 @@ impl<'a> Compiler<'a> {
                 },
             )
             .at(expr.span),
+            ExprKind::Range(_, _) => unreachable!(),
         };
 
         self.push_code(code);

@@ -56,14 +56,15 @@ pub enum Literal {
 
 #[derive(Debug, Clone)]
 pub enum ExprKind {
-    Unary(UnaryOp, Box<Expr>),
-    Binary(Box<Expr>, BinaryOp, Box<Expr>),
-    Array(Vec<Expr>),
-    Member(Box<Expr>, String),
-    CompMember(Box<Expr>, Box<Expr>),
     Ident(String),
-    Call(Box<Expr>, Vec<Expr>),
+    Array(Vec<Expr>),
     Literal(Literal),
+    Unary(UnaryOp, Box<Expr>),
+    Member(Box<Expr>, String),
+    Call(Box<Expr>, Vec<Expr>),
+    CompMember(Box<Expr>, Box<Expr>),
+    Range(Option<Box<Expr>>, Option<Box<Expr>>),
+    Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Assign(Option<AssignOp>, Box<Expr>, Box<Expr>),
 }
 

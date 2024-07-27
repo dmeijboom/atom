@@ -1,4 +1,4 @@
-use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
+use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
 use atom_macros::atom_method;
 
@@ -38,18 +38,6 @@ pub struct Array<T: Trace> {
     _marker: PhantomData<[T]>,
 }
 
-impl<T: Trace> Drop for Array<T> {
-    fn drop(&mut self) {
-        if self.len == 0 {
-            return;
-        }
-
-        unsafe {
-            self.data.assume_init_drop();
-        }
-    }
-}
-
 impl<T: Trace> Default for Array<T> {
     fn default() -> Self {
         Self {
@@ -74,6 +62,24 @@ impl<T: Trace> Array<T> {
         self.len
     }
 
+    pub fn slice(&self, from: usize, to: usize) -> Array<T> {
+        if self.len == 0 {
+            return Array::default();
+        }
+
+        unsafe {
+            let ptr = self.data.assume_init_ref().as_ptr().add(from);
+            let handle = Handle::new(NonNull::new_unchecked(ptr));
+
+            Array {
+                data: MaybeUninit::new(handle),
+                cap: self.cap - from,
+                len: to - from,
+                _marker: PhantomData,
+            }
+        }
+    }
+
     pub unsafe fn from_raw_parts(handle: Handle<T>, len: usize, cap: usize) -> Self {
         Self {
             data: MaybeUninit::new(handle),
@@ -94,7 +100,7 @@ impl<T: Trace> Array<T> {
     }
 
     pub fn get(&self, idx: usize) -> Option<&T> {
-        if self.len <= idx {
+        if idx >= self.len {
             return None;
         }
 
@@ -105,7 +111,7 @@ impl<T: Trace> Array<T> {
     }
 
     pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
-        if self.len <= idx {
+        if idx >= self.len {
             return None;
         }
 
@@ -123,12 +129,13 @@ impl<T: Trace> Array<T> {
             return Array::default();
         }
 
+        let layout = Layout::array::<T>(data.len()).unwrap();
         let slice = data.into_boxed_slice();
         let len = slice.len();
 
         unsafe {
             let ptr = Box::into_raw(slice) as *mut T;
-            let handle = gc.track(NonNull::new_unchecked(ptr));
+            let handle = gc.track(NonNull::new_unchecked(ptr), layout);
             Array::from_raw_parts(handle, len, len)
         }
     }
@@ -275,5 +282,13 @@ mod tests {
         let mut gc = Gc::default();
         let array = Array::from_vec(&mut gc, vec![1, 2, 3]);
         assert_eq!(array.as_slice(), &[1, 2, 3]);
+    }
+
+    #[test]
+    fn array_iter() {
+        let mut gc = Gc::default();
+        let array = Array::from_vec(&mut gc, vec![1, 2, 3, 4, 5, 6]);
+        let items = array.iter().copied().map(|item| item).collect::<Vec<_>>();
+        assert_eq!(items, &[1, 2, 3, 4, 5, 6]);
     }
 }

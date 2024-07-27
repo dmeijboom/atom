@@ -85,6 +85,7 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
         | Op::PushJumpIfFalse
         | Op::PushJumpIfTrue
         | Op::MakeArray
+        | Op::MakeSlice
         | Op::Call
         | Op::TailCall
         | Op::LoadElement
