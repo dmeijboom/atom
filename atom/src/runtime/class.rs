@@ -4,7 +4,10 @@ use wyhash2::WyHash;
 
 use crate::gc::Trace;
 
-use super::{function::Func, value::Value};
+use super::{
+    function::{Exec, Func},
+    value::Value,
+};
 
 #[derive(Debug)]
 pub struct Class {
@@ -18,6 +21,34 @@ impl Class {
             name,
             methods: HashMap::with_hasher(WyHash::default()),
         }
+    }
+
+    pub fn native(&self) -> bool {
+        self.methods
+            .iter()
+            .all(|(_, func)| matches!(func.exec, Exec::Handler(_)))
+    }
+}
+
+pub struct ClassBuilder {
+    class: Class,
+}
+
+impl ClassBuilder {
+    pub fn new(name: String) -> Self {
+        Self {
+            class: Class::new(name),
+        }
+    }
+
+    pub fn method(mut self, func: impl FnOnce() -> Func) -> Self {
+        let func = func();
+        self.class.methods.insert(func.name.clone(), Rc::new(func));
+        self
+    }
+
+    pub fn build(self) -> Class {
+        self.class
     }
 }
 

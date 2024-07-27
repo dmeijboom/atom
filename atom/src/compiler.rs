@@ -14,7 +14,7 @@ use crate::{
     runtime::{
         class::Class,
         function::{Exec, Func, Receiver},
-        std::StdLib,
+        module::Module,
     },
 };
 
@@ -37,25 +37,6 @@ pub type CompileError = SpannedError<ErrorKind>;
 #[derive(Debug)]
 struct Local {
     index: usize,
-}
-
-#[derive(Debug)]
-pub struct Module {
-    pub codes: Rc<[Opcode]>,
-    pub consts: Vec<Const>,
-    pub funcs: Vec<Rc<Func>>,
-    pub classes: Vec<Rc<Class>>,
-}
-
-impl Default for Module {
-    fn default() -> Self {
-        Self {
-            codes: Rc::new([]),
-            consts: vec![],
-            funcs: vec![],
-            classes: vec![],
-        }
-    }
 }
 
 fn new_rc<T>(item: T) -> (Rc<T>, Weak<T>) {
@@ -85,8 +66,7 @@ impl Scope {
     }
 }
 
-pub struct Compiler<'a> {
-    std: &'a StdLib,
+pub struct Compiler {
     vars_seq: usize,
     scope: Vec<Scope>,
     codes: Vec<Opcode>,
@@ -96,10 +76,9 @@ pub struct Compiler<'a> {
     locals: VecDeque<HashMap<String, Local, WyHash>>,
 }
 
-impl<'a> Compiler<'a> {
-    pub fn new(std: &'a StdLib) -> Self {
-        Compiler {
-            std,
+impl Compiler {
+    pub fn new(std: &Module) -> Self {
+        let mut compiler = Compiler {
             vars_seq: 0,
             codes: vec![],
             funcs: vec![],
@@ -107,7 +86,17 @@ impl<'a> Compiler<'a> {
             classes: vec![],
             scope: vec![Scope::new(ScopeKind::Global)],
             locals: VecDeque::default(),
+        };
+
+        for class in std.classes.iter() {
+            compiler.classes.push(Rc::clone(class));
         }
+
+        for func in std.funcs.iter() {
+            compiler.funcs.push(Rc::clone(func));
+        }
+
+        compiler
     }
 
     fn pos(&self) -> usize {
@@ -197,7 +186,7 @@ impl<'a> Compiler<'a> {
         Ok(())
     }
 
-    // Load a name based in the following order: var > local > vm class > vm func > std func
+    // Load a name based in the following order: var > local > class > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
         match self.load_var(span, &name) {
             Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
@@ -207,10 +196,7 @@ impl<'a> Compiler<'a> {
                     Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
                     None => match self.funcs.iter().position(|f| f.name == name) {
                         Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
-                        None => match self.std.funcs.iter().position(|f| f.name == name) {
-                            Some(idx) => Ok(Opcode::with_code(Op::LoadNativeFunc, idx).at(span)),
-                            None => Err(e),
-                        },
+                        None => Err(e),
                     },
                 },
             },
@@ -637,13 +623,13 @@ impl<'a> Compiler<'a> {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::std::stdlib;
+    use crate::runtime::std::prelude;
 
     use super::*;
 
     #[test]
     fn test_scope() {
-        let lib = stdlib();
+        let lib = prelude();
         let mut compiler = Compiler::new(&lib);
 
         let top = compiler.push_var("n".to_string()).unwrap();
@@ -658,7 +644,7 @@ mod tests {
 
     #[test]
     fn test_assign() {
-        let lib = stdlib();
+        let lib = prelude();
         let mut compiler = Compiler::new(&lib);
 
         let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());

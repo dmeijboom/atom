@@ -65,6 +65,10 @@ impl Func {
             Exec::Handler(_) => Rc::new([]),
         }
     }
+
+    pub fn native(&self) -> bool {
+        matches!(self.exec, Exec::Handler(_))
+    }
 }
 
 impl Debug for Func {

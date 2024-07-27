@@ -8,7 +8,6 @@ use tracing::{instrument, Level};
 
 use crate::{
     collections::{ReuseVec, Stack},
-    compiler::Module,
     error::{IntoSpanned, SpannedError},
     gc::Gc,
     lexer::Span,
@@ -17,7 +16,8 @@ use crate::{
         class::{Class, Instance},
         error::{Call, ErrorKind, RuntimeError},
         function::{Exec, Func},
-        std::{array::Array, str::Str, Context, StdLib},
+        module::Module,
+        std::{array::Array, str::Str, Context},
         value::{Type, Value},
     },
 };
@@ -138,11 +138,10 @@ fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
     })
 }
 
-pub struct Vm<'a> {
+pub struct Vm {
     gc: Gc,
     span: Span,
     pos: usize,
-    std: &'a StdLib,
     module: Module,
     returned: bool,
     vars: Vec<Value>,
@@ -152,14 +151,14 @@ pub struct Vm<'a> {
     stack: Stack<Value, MAX_STACK_SIZE>,
 }
 
-impl<'a> Drop for Vm<'a> {
+impl Drop for Vm {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<'a> Vm<'a> {
-    pub fn new(std: &'a StdLib, mut module: Module) -> Result<Self, Error> {
+impl Vm {
+    pub fn new(mut module: Module) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];
 
@@ -171,7 +170,6 @@ impl<'a> Vm<'a> {
         call_stack.push(top_frame(&module));
 
         Ok(Self {
-            std,
             vars: vec![],
             consts,
             returned: false,
@@ -327,20 +325,19 @@ impl<'a> Vm<'a> {
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
         let member = self.const_name(member)?;
-        let ty = self.std.types.get(&object.ty());
+        let class = self
+            .module
+            .classes
+            .iter()
+            .find(|class| class.name == object.ty().name());
 
-        if let Some(ty) = ty {
-            if let Some(field) = ty.field(member) {
-                let value = field.call(Context::with_span(&mut self.gc, self.span), object)?;
-                self.push(value)?;
-                return Ok(());
-            }
-
-            if let Some(method) = ty.method(member) {
-                self.push(object)?;
-                self.push(Rc::clone(method))?;
-                return Ok(());
-            }
+        if let Some(method) = class
+            .and_then(|class| class.methods.get(member))
+            .map(Rc::clone)
+        {
+            self.push(object)?;
+            self.push(method)?;
+            return Ok(());
         }
 
         Err(ErrorKind::UnknownField {
@@ -349,10 +346,6 @@ impl<'a> Vm<'a> {
         }
         .at(self.span)
         .into())
-    }
-
-    fn load_native_func(&mut self, idx: usize) -> Result<(), Error> {
-        self.push(Rc::clone(&self.std.funcs[idx]))
     }
 
     fn get_func(&mut self, idx: usize) -> Result<Rc<Func>, Error> {
@@ -739,7 +732,6 @@ impl<'a> Vm<'a> {
                 Op::StoreMember => self.store_member(opcode.code())?,
                 Op::LoadFunc => self.load_func(opcode.code())?,
                 Op::LoadClass => self.load_class(opcode.code())?,
-                Op::LoadNativeFunc => self.load_native_func(opcode.code())?,
                 Op::Store => self.store(opcode.code())?,
                 Op::Load => self.load(opcode.code())?,
                 Op::LoadArg => self.load_arg(opcode.code())?,
@@ -766,7 +758,14 @@ impl<'a> Vm<'a> {
         match e {
             Error::Runtime(mut e) => {
                 let call_stack = mem::take(&mut self.call_stack);
-                e.trace = Some(call_stack.into_iter().map(|s| s.call).collect::<Vec<_>>());
+                e.trace = Some(
+                    call_stack
+                        .into_iter()
+                        .skip(1)
+                        .rev()
+                        .map(|s| s.call)
+                        .collect::<Vec<_>>(),
+                );
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),

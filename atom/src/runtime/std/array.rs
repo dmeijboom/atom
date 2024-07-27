@@ -4,10 +4,14 @@ use atom_macros::atom_method;
 
 use crate::{
     gc::{Gc, Handle, Trace},
-    runtime::{error::ErrorKind, value::Value},
+    runtime::{
+        class::{Class, ClassBuilder},
+        error::ErrorKind,
+        value::Value,
+    },
 };
 
-use super::{Context, TypeDescr};
+use super::Context;
 
 pub struct Iter<'a, T: Trace> {
     idx: usize,
@@ -217,9 +221,8 @@ fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeErro
     Ok(this.cap)
 }
 
-pub fn descr() -> TypeDescr {
-    TypeDescr::default()
-        .builder()
+pub fn class() -> Class {
+    ClassBuilder::new("Array".to_string())
         .method(array_push)
         .method(array_pop)
         .method(array_len)

@@ -10,12 +10,13 @@ use mimalloc::MiMalloc;
 use opcode::{Op, Opcode};
 use runtime::{
     function::{Exec, Func},
-    std::{stdlib, StdLib},
+    module::Module,
+    std::prelude,
 };
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
-use compiler::{Compiler, Module};
+use compiler::Compiler;
 use lexer::Lexer;
 use vm::Vm;
 
@@ -53,7 +54,7 @@ enum Cmd {
     },
 }
 
-fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
+fn compile(prelude: &Module, source: impl AsRef<Path>) -> Result<Module, Error> {
     let source = fs::read_to_string(source)?;
     let chars = source.chars().collect::<Vec<_>>();
 
@@ -63,7 +64,7 @@ fn compile(std: &StdLib, source: impl AsRef<Path>) -> Result<Module, Error> {
     let parser = parser::Parser::new(tokens);
     let stmts = parser.parse()?;
 
-    let compiler = Compiler::new(std);
+    let compiler = Compiler::new(prelude);
     Ok(compiler.compile(stmts)?)
 }
 
@@ -78,7 +79,6 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
         Op::Store
         | Op::Load
         | Op::LoadFunc
-        | Op::LoadNativeFunc
         | Op::LoadConst
         | Op::Jump
         | Op::JumpIfFalse
@@ -96,22 +96,22 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
 }
 
 fn print_func(func: &Func, indent: usize) {
-    let prefix = " ".repeat(indent * 2);
+    if let Exec::Vm(codes) = &func.exec {
+        let prefix = " ".repeat(indent * 2);
+        println!("{prefix}fn {}:", func.name);
 
-    println!("{prefix}fn {}:", func.name);
-
-    match &func.exec {
-        Exec::Vm(codes) => {
-            for (i, opcode) in codes.iter().enumerate() {
-                print_opcode(i, opcode, indent + 1);
-            }
+        for (i, opcode) in codes.iter().enumerate() {
+            print_opcode(i, opcode, indent + 1);
         }
-        Exec::Handler(_) => println!("<native>"),
     }
 }
 
 fn print_module(module: &Module) {
     for class in module.classes.iter() {
+        if class.native() {
+            continue;
+        }
+
         println!("class {}:", class.name);
 
         for (i, func) in class.methods.values().enumerate() {
@@ -125,7 +125,7 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for func in module.funcs.iter() {
+    for func in module.funcs.iter().filter(|f| !f.native()) {
         print_func(func, 0);
         println!();
     }
@@ -144,12 +144,12 @@ fn main() -> Result<(), Error> {
         .init();
 
     let opts = Opts::parse();
-    let std = stdlib();
+    let std = prelude();
 
     match opts.cmd {
         Cmd::Run { source } => {
             let module = compile(&std, source)?;
-            let mut vm = Vm::new(&std, module)?;
+            let mut vm = Vm::new(module)?;
             vm.run()?;
         }
         Cmd::Compile { source, verbose } => {

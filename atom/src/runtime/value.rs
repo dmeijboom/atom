@@ -25,6 +25,7 @@ enum Tag {
     Instance,
 }
 
+#[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
 pub enum Type {
     Int,
@@ -38,19 +39,25 @@ pub enum Type {
     Instance,
 }
 
+impl Type {
+    pub fn name(&self) -> &str {
+        match self {
+            Type::Int => "Int",
+            Type::Float => "Float",
+            Type::Bool => "Bool",
+            Type::Array => "Array",
+            Type::Fn => "Fn",
+            Type::Str => "Str",
+            Type::Nil => "Nil",
+            Type::Class => "Class",
+            Type::Instance => "Instance",
+        }
+    }
+}
+
 impl Display for Type {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Type::Int => write!(f, "Int"),
-            Type::Float => write!(f, "Float"),
-            Type::Bool => write!(f, "Bool"),
-            Type::Str => write!(f, "Str"),
-            Type::Array => write!(f, "Array"),
-            Type::Fn => write!(f, "Fn"),
-            Type::Nil => write!(f, "Nil"),
-            Type::Class => write!(f, "Class"),
-            Type::Instance => write!(f, "Instance"),
-        }
+        write!(f, "{}", self.name())
     }
 }
 

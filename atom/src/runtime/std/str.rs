@@ -2,10 +2,13 @@ use atom_macros::atom_method;
 
 use crate::{
     gc::{Gc, Trace},
-    runtime::value::Value,
+    runtime::{
+        class::{Class, ClassBuilder},
+        value::Value,
+    },
 };
 
-use super::{array::Array, Context, TypeDescr};
+use super::{array::Array, Context};
 
 pub struct Str(pub Array<u8>);
 
@@ -50,9 +53,8 @@ macro_rules! map_fn {
 map_fn!(str_upper, Str.upper, to_uppercase);
 map_fn!(str_lower, Str.lower, to_lowercase);
 
-pub fn descr() -> TypeDescr {
-    TypeDescr::default()
-        .builder()
+pub fn class() -> Class {
+    ClassBuilder::new("Str".to_string())
         .method(str_len)
         .method(str_upper)
         .method(str_lower)

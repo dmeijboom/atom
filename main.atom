@@ -1,7 +1,1 @@
-let names = ["Alice", "Bob", "Charlie", "David", "Eve", "Frank", "Grace", "Heidi"];
-let copy = names[1:4];
-
-copy.push("Ivan");
-
-println(names);
-println(copy);
+println(["test", "tost"].len());

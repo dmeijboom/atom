@@ -25,9 +25,127 @@
 		},
 		{
 			"include": "#numeric_literals"
+		},
+		{
+			"include": "#delimiters"
+		},
+		{
+			"include": "#storage_types"
+		},
+		{
+			"include": "#brackets"
 		}
 	],
 	"repository": {
+		"brackets": {
+			"patterns": [
+				{
+					"begin": "\\{",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.begin.bracket.curly.atom"
+						}
+					},
+					"end": "\\}",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.end.bracket.curly.atom"
+						}
+					},
+					"patterns": [
+						{
+							"include": "$self"
+						}
+					]
+				},
+				{
+					"begin": "\\(",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.begin.bracket.round.atom"
+						}
+					},
+					"end": "\\)",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.end.bracket.round.atom"
+						}
+					},
+					"patterns": [
+						{
+							"include": "$self"
+						}
+					]
+				},
+				{
+					"begin": "\\[",
+					"beginCaptures": {
+						"0": {
+							"name": "punctuation.definition.begin.bracket.square.atom"
+						}
+					},
+					"end": "\\]",
+					"endCaptures": {
+						"0": {
+							"name": "punctuation.definition.end.bracket.square.atom"
+						}
+					},
+					"patterns": [
+						{
+							"include": "$self"
+						}
+					]
+				}
+			]
+		},
+		"storage_types": {
+			"patterns": [
+				{
+					"match": "\\bBool\\b",
+					"name": "storage.type.boolean.atom"
+				},
+				{
+					"match": "\\b(Int|Float)\\b",
+					"name": "storage.type.numeric.atom"
+				},
+				{
+					"match": "\\bStr\\b",
+					"name": "storage.type.string.atom"
+				},
+				{
+					"match": "\\bArray\\b",
+					"name": "storage.type.array.atom"
+				},
+				{
+					"match": "\\bClass\\b",
+					"name": "storage.type.class.atom"
+				},
+				{
+					"match": "\\bInstance\\b",
+					"name": "storage.type.instance.atom"
+				},
+				{
+					"match": "\\bFn\\b",
+					"name": "storage.type.function.atom"
+				}
+			]
+		},
+		"delimiters": {
+			"patterns": [
+				{
+					"match": "\\,",
+					"name": "punctuation.other.comma.atom"
+				},
+				{
+					"match": "\\.(?!\\.\\.)",
+					"name": "punctuation.other.period.atom"
+				},
+				{
+					"match": ":(?!=)",
+					"name": "punctuation.other.colon.atom"
+				}
+			]
+		},
 		"numeric_literals": {
 			"match": "(?<!\\w)\\.?\\d(?:(?:[0-9a-zA-Z_\\.])|(?<=[eEpP])[+-])*",
 			"captures": {

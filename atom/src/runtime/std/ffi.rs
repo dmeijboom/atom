@@ -26,7 +26,6 @@ impl<'a> Context<'a> {
 }
 
 pub type FnHandler = dyn Fn(Context<'_>, Vec<Value>) -> Result<Value, RuntimeError>;
-pub type FieldHandler = dyn Fn(Context<'_>, Value) -> Result<Value, RuntimeError>;
 
 pub trait Convert<'a, T> {
     fn convert(self, gc: &'a mut Gc) -> T
