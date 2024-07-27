@@ -86,21 +86,21 @@ pub enum ErrorKind {
 pub type TokenError = SpannedError<ErrorKind>;
 
 pub struct Lexer<'a> {
-    n: usize,
+    offset: usize,
     source: &'a [char],
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a [char]) -> Self {
-        Self { n: 0, source }
+        Self { offset: 0, source }
     }
 
     fn cur(&self) -> Option<char> {
-        self.source.get(self.n).copied()
+        self.source.get(self.offset).copied()
     }
 
     fn peek(&self) -> Option<char> {
-        self.source.get(self.n + 1).copied()
+        self.source.get(self.offset + 1).copied()
     }
 
     fn accept(&mut self, expected: char) -> bool {
@@ -113,20 +113,18 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance(&mut self) {
-        self.n += 1;
-    }
-
-    fn move_back(&mut self) {
-        self.n -= 1;
+        self.offset += 1;
     }
 
     fn next(&mut self) -> Option<char> {
         self.advance();
-        self.source.get(self.n - 1).copied()
+        self.source.get(self.offset - 1).copied()
     }
 
     fn span(&self) -> Span {
-        Span { offset: self.n }
+        Span {
+            offset: self.offset,
+        }
     }
 
     fn term(&mut self) -> Token {
@@ -163,7 +161,7 @@ impl<'a> Lexer<'a> {
         while let Some(c) = self.cur() {
             match c {
                 '_' => {}
-                '.' if !dot && self.peek().map(|c| c.is_ascii_digit()).unwrap_or(false) => {
+                '.' if !dot && matches!(self.peek(), Some(c) if c.is_ascii_digit()) => {
                     dot = true;
                     num.push('.');
                     self.advance();
@@ -207,91 +205,70 @@ impl<'a> Lexer<'a> {
     pub fn lex(&mut self) -> Result<Vec<Token>, TokenError> {
         let mut tokens = vec![];
 
-        while let Some(c) = self.next() {
+        while let Some(cur) = self.cur() {
             let span = self.span();
-            let token = match (c, self.cur()) {
-                (c, _) if c.is_whitespace() => continue,
-                (c, Some(n))
-                    if c.is_ascii_digit() || (matches!(c, '.' | '-') && n.is_ascii_digit()) =>
-                {
-                    self.move_back();
-                    self.number()?
-                }
-                ('&', Some('&')) => {
-                    self.advance();
-                    TokenKind::Punct("&&").at(span)
-                }
-                ('|', Some('|')) => {
-                    self.advance();
-                    TokenKind::Punct("||").at(span)
-                }
-                ('!', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("!=").at(span)
-                }
-                ('=', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("==").at(span)
-                }
-                ('<', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("<=").at(span)
-                }
-                ('>', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct(">=").at(span)
-                }
-                ('+', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("+=").at(span)
-                }
-                ('-', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("-=").at(span)
-                }
-                ('*', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("*=").at(span)
-                }
-                ('/', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("/=").at(span)
-                }
-                ('%', Some('=')) => {
-                    self.advance();
-                    TokenKind::Punct("%=").at(span)
-                }
-                ('+', _) => TokenKind::Punct("+").at(span),
-                ('-', _) => TokenKind::Punct("-").at(span),
-                ('*', _) => TokenKind::Punct("*").at(span),
-                ('/', _) => TokenKind::Punct("/").at(span),
-                ('%', _) => TokenKind::Punct("%").at(span),
-                ('{', _) => TokenKind::Punct("{").at(span),
-                ('}', _) => TokenKind::Punct("}").at(span),
-                ('[', _) => TokenKind::Punct("[").at(span),
-                (']', _) => TokenKind::Punct("]").at(span),
-                ('(', _) => TokenKind::Punct("(").at(span),
-                (')', _) => TokenKind::Punct(")").at(span),
-                (':', _) => TokenKind::Punct(":").at(span),
-                (';', _) => TokenKind::Punct(";").at(span),
-                ('.', _) => TokenKind::Punct(".").at(span),
-                (',', _) => TokenKind::Punct(",").at(span),
-                ('&', _) => TokenKind::Punct("&").at(span),
-                ('|', _) => TokenKind::Punct("|").at(span),
-                ('^', _) => TokenKind::Punct("^").at(span),
-                ('!', _) => TokenKind::Punct("!").at(span),
-                ('=', _) => TokenKind::Punct("=").at(span),
-                ('<', _) => TokenKind::Punct("<").at(span),
-                ('>', _) => TokenKind::Punct(">").at(span),
-                ('"', _) => self.string(span)?,
-                ('_' | 'a'..='z' | 'A'..='Z', _) => {
-                    self.move_back();
-                    self.term()
-                }
-                (c, _) => return Err(ErrorKind::InvalidInput(c).at(span)),
-            };
+            let next = self.peek();
 
-            tokens.push(token);
+            if matches!(cur, '_' | 'a'..='z' | 'A'..='Z') {
+                tokens.push(self.term());
+            } else if cur.is_ascii_digit()
+                || (matches!(cur, '.' | '-') && matches!(next, Some(c) if c.is_ascii_digit()))
+            {
+                tokens.push(self.number()?);
+            } else {
+                let mut single = false;
+                self.advance();
+
+                let token = match (cur, next) {
+                    ('&', Some('&')) => TokenKind::Punct("&&").at(span),
+                    ('|', Some('|')) => TokenKind::Punct("||").at(span),
+                    ('!', Some('=')) => TokenKind::Punct("!=").at(span),
+                    ('=', Some('=')) => TokenKind::Punct("==").at(span),
+                    ('<', Some('=')) => TokenKind::Punct("<=").at(span),
+                    ('>', Some('=')) => TokenKind::Punct(">=").at(span),
+                    ('+', Some('=')) => TokenKind::Punct("+=").at(span),
+                    ('-', Some('=')) => TokenKind::Punct("-=").at(span),
+                    ('*', Some('=')) => TokenKind::Punct("*=").at(span),
+                    ('/', Some('=')) => TokenKind::Punct("/=").at(span),
+                    ('%', Some('=')) => TokenKind::Punct("%=").at(span),
+                    _ => {
+                        single = true;
+                        match cur {
+                            c if c.is_whitespace() => continue,
+                            '+' => TokenKind::Punct("+").at(span),
+                            '-' => TokenKind::Punct("-").at(span),
+                            '*' => TokenKind::Punct("*").at(span),
+                            '/' => TokenKind::Punct("/").at(span),
+                            '%' => TokenKind::Punct("%").at(span),
+                            '{' => TokenKind::Punct("{").at(span),
+                            '}' => TokenKind::Punct("}").at(span),
+                            '[' => TokenKind::Punct("[").at(span),
+                            ']' => TokenKind::Punct("]").at(span),
+                            '(' => TokenKind::Punct("(").at(span),
+                            ')' => TokenKind::Punct(")").at(span),
+                            ':' => TokenKind::Punct(":").at(span),
+                            ';' => TokenKind::Punct(";").at(span),
+                            '.' => TokenKind::Punct(".").at(span),
+                            ',' => TokenKind::Punct(",").at(span),
+                            '&' => TokenKind::Punct("&").at(span),
+                            '|' => TokenKind::Punct("|").at(span),
+                            '^' => TokenKind::Punct("^").at(span),
+                            '!' => TokenKind::Punct("!").at(span),
+                            '=' => TokenKind::Punct("=").at(span),
+                            '<' => TokenKind::Punct("<").at(span),
+                            '>' => TokenKind::Punct(">").at(span),
+                            '"' => self.string(span)?,
+                            c => return Err(ErrorKind::InvalidInput(c).at(span)),
+                        }
+                    }
+                };
+
+                if !single {
+                    self.advance();
+                }
+
+                tokens.push(token);
+            }
         }
 
         Ok(tokens)
