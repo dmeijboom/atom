@@ -1,6 +1,6 @@
 use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
-use atom_macros::atom_method;
+use atom_macros::method;
 
 use crate::{
     gc::{Gc, Handle, Trace},
@@ -156,7 +156,7 @@ impl<T: Trace> Array<T> {
     }
 }
 
-#[atom_method(Array.pop)]
+#[method(Array.pop)]
 fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, RuntimeError> {
     if this.len == 0 {
         return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
@@ -174,7 +174,7 @@ fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, Runtime
     Ok(item)
 }
 
-#[atom_method(Array.push)]
+#[method(Array.push)]
 fn array_push(ctx: Context<'_>, this: Value, item: Value) -> Result<(), RuntimeError> {
     let handle = this.array();
     let array = ctx.gc.get(handle.clone());
@@ -211,18 +211,18 @@ fn array_push(ctx: Context<'_>, this: Value, item: Value) -> Result<(), RuntimeE
     Ok(())
 }
 
-#[atom_method(Array.len)]
+#[method(Array.len)]
 fn array_len(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeError> {
     Ok(this.len)
 }
 
-#[atom_method(Array.cap)]
+#[method(Array.cap)]
 fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeError> {
     Ok(this.cap)
 }
 
 pub fn class() -> Class {
-    ClassBuilder::new("Array".to_string())
+    ClassBuilder::new("Array")
         .method(array_push)
         .method(array_pop)
         .method(array_len)

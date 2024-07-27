@@ -6,6 +6,7 @@ use super::{
     error::RuntimeError,
     std::{Context, FnHandler},
     value::Value,
+    Name,
 };
 
 pub enum Exec {
@@ -26,28 +27,28 @@ pub enum Receiver {
 
 #[derive(Default)]
 pub struct Func {
-    pub name: String,
+    pub name: Name,
     pub exec: Exec,
     pub arg_count: usize,
     pub receiver: Option<Receiver>,
 }
 
 impl Func {
-    pub fn new(name: String, arg_count: usize) -> Self {
+    pub fn new(name: impl Into<Name>, arg_count: usize) -> Self {
         Self {
-            name,
+            name: name.into(),
             arg_count,
             exec: Exec::default(),
             receiver: None,
         }
     }
 
-    pub fn with_handler<F>(name: String, arg_count: usize, handler: F) -> Self
+    pub fn with_handler<F>(name: impl Into<Name>, arg_count: usize, handler: F) -> Self
     where
         F: Fn(Context<'_>, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
     {
         Self {
-            name,
+            name: name.into(),
             arg_count,
             receiver: None,
             exec: Exec::Handler(Box::new(handler)),

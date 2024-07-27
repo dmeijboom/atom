@@ -13,8 +13,9 @@ use crate::{
     opcode::{Const, Op, Opcode},
     runtime::{
         class::Class,
-        function::{Exec, Func, Receiver},
+        func::{Exec, Func, Receiver},
         module::Module,
+        Name,
     },
 };
 
@@ -362,12 +363,12 @@ impl Compiler {
         &mut self,
         span: Span,
         class: Weak<Class>,
-        methods: &mut HashMap<String, Rc<Func>, WyHash>,
+        methods: &mut HashMap<Name, Rc<Func>, WyHash>,
         name: String,
         args: Vec<String>,
         stmts: Vec<Stmt>,
     ) -> Result<(), CompileError> {
-        if methods.contains_key(&name) {
+        if methods.contains_key(name.as_str()) {
             return Err(ErrorKind::DuplicateMethod(name, class.upgrade().unwrap()).at(span));
         }
 
@@ -380,7 +381,7 @@ impl Compiler {
         let arg_count = args.len() - 1;
         let func = Rc::new(Func::new(name.clone(), arg_count).with_receiver(Receiver::Class));
 
-        methods.insert(name.clone(), func);
+        methods.insert(Name::Owned(name.clone()), func);
 
         let mut codes = self.compile_fn_body(ScopeKind::Local, args, stmts)?;
 
@@ -389,7 +390,10 @@ impl Compiler {
             codes.push(Opcode::new(Op::Return).at(span));
         }
 
-        let func = methods.get_mut(&name).and_then(|m| Rc::get_mut(m)).unwrap();
+        let func = methods
+            .get_mut(name.as_str())
+            .and_then(|m| Rc::get_mut(m))
+            .unwrap();
         func.exec = Exec::Vm(codes.into());
 
         Ok(())

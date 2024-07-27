@@ -9,7 +9,7 @@ use error::Error;
 use mimalloc::MiMalloc;
 use opcode::{Op, Opcode};
 use runtime::{
-    function::{Exec, Func},
+    func::{Exec, Func},
     module::Module,
     std::prelude,
 };

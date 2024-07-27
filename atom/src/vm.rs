@@ -15,7 +15,7 @@ use crate::{
     runtime::{
         class::{Class, Instance},
         error::{Call, ErrorKind, RuntimeError},
-        function::{Exec, Func},
+        func::{Exec, Func},
         module::Module,
         std::{array::Array, str::Str, Context},
         value::{Type, Value},

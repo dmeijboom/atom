@@ -1,4 +1,4 @@
-use atom_macros::atom_method;
+use atom_macros::method;
 
 use crate::{
     gc::{Gc, Trace},
@@ -34,14 +34,14 @@ impl AsRef<str> for Str {
     }
 }
 
-#[atom_method(Str.len)]
+#[method(Str.len)]
 fn str_len(ctx: Context<'_>, this: &Str) -> Result<usize, RuntimeError> {
     Ok(this.0.len())
 }
 
 macro_rules! map_fn {
     ($func:ident, $ty:ident.$method:ident, $rust_fn:ident) => {
-        #[atom_method($ty.$method)]
+        #[method($ty.$method)]
         fn $func(ctx: Context<'_>, this: &Str) -> Result<Handle<Str>, RuntimeError> {
             let rust_string = this.as_str().$rust_fn();
             let str = Str::from_string(ctx.gc, rust_string);
@@ -54,7 +54,7 @@ map_fn!(str_upper, Str.upper, to_uppercase);
 map_fn!(str_lower, Str.lower, to_lowercase);
 
 pub fn class() -> Class {
-    ClassBuilder::new("Str".to_string())
+    ClassBuilder::new("Str")
         .method(str_len)
         .method(str_upper)
         .method(str_lower)

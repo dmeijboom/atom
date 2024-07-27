@@ -7,7 +7,7 @@ use crate::gc::{AnyHandle, Gc, Handle, Trace};
 
 use super::{
     class::{Class, Instance},
-    function::Func,
+    func::Func,
     std::{array::Array, str::Str},
 };
 

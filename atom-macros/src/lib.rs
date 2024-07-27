@@ -36,7 +36,7 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
     );
     let receiver = ty.map(|_| {
         quote! {
-            .with_receiver(crate::runtime::function::Receiver::Type)
+            .with_receiver(crate::runtime::func::Receiver::Type)
         }
     });
 
@@ -51,9 +51,9 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
             _inner().map(Into::into)
         }
 
-        fn #fn_name() -> crate::runtime::function::Func {
-            crate::runtime::function::Func::with_handler(
-                stringify!(#atom_name).to_string(),
+        fn #fn_name() -> crate::runtime::func::Func {
+            crate::runtime::func::Func::with_handler(
+                stringify!(#atom_name),
                 #arg_count,
                 #export_name,
             )#receiver
@@ -63,7 +63,7 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn func(attr: TokenStream, item: TokenStream) -> TokenStream {
     let f: ItemFn = syn::parse_macro_input!(item);
     let atom_name: Ident = syn::parse_macro_input!(attr);
 
@@ -71,7 +71,7 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 }
 
 #[proc_macro_attribute]
-pub fn atom_method(attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn method(attr: TokenStream, item: TokenStream) -> TokenStream {
     let f: ItemFn = syn::parse_macro_input!(item);
     let mut args: <Punctuated<Ident, Dot> as IntoIterator>::IntoIter =
         syn::parse_macro_input!(attr with Punctuated<Ident, Dot>::parse_terminated).into_iter();

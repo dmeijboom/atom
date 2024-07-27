@@ -5,20 +5,21 @@ use wyhash2::WyHash;
 use crate::gc::Trace;
 
 use super::{
-    function::{Exec, Func},
+    func::{Exec, Func},
     value::Value,
+    Name,
 };
 
 #[derive(Debug)]
 pub struct Class {
-    pub name: String,
-    pub methods: HashMap<String, Rc<Func>, WyHash>,
+    pub name: Name,
+    pub methods: HashMap<Name, Rc<Func>, WyHash>,
 }
 
 impl Class {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: impl Into<Name>) -> Self {
         Self {
-            name,
+            name: name.into(),
             methods: HashMap::with_hasher(WyHash::default()),
         }
     }
@@ -35,7 +36,7 @@ pub struct ClassBuilder {
 }
 
 impl ClassBuilder {
-    pub fn new(name: String) -> Self {
+    pub fn new(name: impl Into<Name>) -> Self {
         Self {
             class: Class::new(name),
         }

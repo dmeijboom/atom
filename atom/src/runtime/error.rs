@@ -5,7 +5,7 @@ use std::{
 
 use crate::lexer::Span;
 
-use super::{class::Class, function::Func, value::Type};
+use super::{class::Class, func::Func, value::Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {

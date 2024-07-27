@@ -2,7 +2,7 @@ use std::rc::Rc;
 
 use crate::opcode::{Const, Opcode};
 
-use super::{class::Class, function::Func};
+use super::{class::Class, func::Func};
 
 #[derive(Debug)]
 pub struct Module {
