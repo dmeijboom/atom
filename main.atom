@@ -1,3 +1,9 @@
-let name;
+fn test(x) {
+    x() + 10
+}
 
-name = nil;
+fn x() {
+    test(1, 2)
+}
+
+x();

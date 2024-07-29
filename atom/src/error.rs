@@ -50,3 +50,18 @@ pub enum Error {
     #[error("{0}")]
     Runtime(#[from] vm::Error),
 }
+
+impl Error {
+    pub fn span(&self) -> Span {
+        match self {
+            Error::IO(_) => Span::default(),
+            Error::Parse(e) => e.span,
+            Error::Lex(e) => e.span,
+            Error::Compile(e) => e.span,
+            Error::Runtime(e) => match e {
+                vm::Error::Runtime(e) => e.span,
+                vm::Error::Fatal(e) => e.span,
+            },
+        }
+    }
+}

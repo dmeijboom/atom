@@ -1,6 +1,7 @@
 use std::{
     fs,
     path::{Path, PathBuf},
+    process::exit,
 };
 
 use clap::Parser;
@@ -137,13 +138,7 @@ fn print_module(module: &Module) {
     }
 }
 
-fn main() -> Result<(), Error> {
-    #[cfg(feature = "tracing")]
-    tracing_subscriber::fmt()
-        .with_env_filter(EnvFilter::from_default_env())
-        .init();
-
-    let opts = Opts::parse();
+fn cmd(opts: Opts) -> Result<(), Error> {
     let std = prelude();
 
     match opts.cmd {
@@ -162,4 +157,27 @@ fn main() -> Result<(), Error> {
     }
 
     Ok(())
+}
+
+fn main() {
+    #[cfg(feature = "tracing")]
+    tracing_subscriber::fmt()
+        .with_env_filter(EnvFilter::from_default_env())
+        .init();
+
+    let opts = Opts::parse();
+
+    if let Err(e) = cmd(opts) {
+        eprintln!("{e} at {}", e.span());
+
+        if let Error::Runtime(vm::Error::Runtime(e)) = e {
+            if let Some(trace) = e.trace {
+                for call in trace {
+                    eprintln!("  in {} at {}", call, call.span);
+                }
+            }
+        }
+
+        exit(1);
+    }
 }
