@@ -7,7 +7,7 @@ use std::{
 use wyhash2::WyHash;
 
 use crate::{
-    ast::{self, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind},
+    ast::{self, Expr, ExprKind, FnArg, IfStmt, Literal, Stmt, StmtKind},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
     opcode::{Const, Op, Opcode},
@@ -31,14 +31,13 @@ pub enum ErrorKind {
     DuplicateClass(String),
     #[error("expected self as the first argument in init(..)")]
     MissingInitSelf,
+    #[error("name '{0}' is not initialized")]
+    NameUninitialized(String),
+    #[error("name '{0}' is not used")]
+    NameUnused(String),
 }
 
 pub type CompileError = SpannedError<ErrorKind>;
-
-#[derive(Debug)]
-struct Local {
-    index: usize,
-}
 
 fn new_rc<T>(item: T) -> (Rc<T>, Weak<T>) {
     let strong = Rc::new(item);
@@ -47,15 +46,40 @@ fn new_rc<T>(item: T) -> (Rc<T>, Weak<T>) {
     (strong, weak)
 }
 
+#[derive(Debug, PartialEq)]
+struct Var {
+    id: usize,
+    init: bool,
+    used: bool,
+    span: Span,
+}
+
+impl Var {
+    fn new(span: Span, id: usize) -> Self {
+        Self {
+            span,
+            id,
+            init: false,
+            used: false,
+        }
+    }
+
+    fn with_init(span: Span, id: usize, init: bool) -> Self {
+        let mut var = Self::new(span, id);
+        var.init = init;
+        var
+    }
+}
+
 pub enum ScopeKind {
     Global,
     Local,
     Func(usize),
 }
 
-pub struct Scope {
+struct Scope {
     kind: ScopeKind,
-    vars: HashMap<String, usize, WyHash>,
+    vars: HashMap<String, Var, WyHash>,
 }
 
 impl Scope {
@@ -67,14 +91,31 @@ impl Scope {
     }
 }
 
+fn check_used(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
+    if let Some((name, var)) = vars.iter().find(|(_, var)| !var.used) {
+        return Err(ErrorKind::NameUnused(name.to_string()).at(var.span));
+    }
+
+    Ok(())
+}
+
+fn check_usage(name: &str, var: &mut Var) -> Result<(), CompileError> {
+    if !var.init {
+        return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
+    }
+
+    var.used = true;
+    Ok(())
+}
+
 pub struct Compiler {
     vars_seq: usize,
-    scope: Vec<Scope>,
+    scope: VecDeque<Scope>,
     codes: Vec<Opcode>,
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
     classes: Vec<Rc<Class>>,
-    locals: VecDeque<HashMap<String, Local, WyHash>>,
+    locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
 impl Compiler {
@@ -85,7 +126,7 @@ impl Compiler {
             funcs: vec![],
             consts: vec![],
             classes: vec![],
-            scope: vec![Scope::new(ScopeKind::Global)],
+            scope: VecDeque::from(vec![Scope::new(ScopeKind::Global)]),
             locals: VecDeque::default(),
         };
 
@@ -105,11 +146,16 @@ impl Compiler {
     }
 
     fn push_scope(&mut self, kind: ScopeKind) {
-        self.scope.push(Scope::new(kind));
+        self.scope.push_front(Scope::new(kind));
     }
 
-    fn pop_scope(&mut self) -> Option<Scope> {
-        self.scope.pop()
+    fn pop_scope(&mut self) -> Result<Option<Scope>, CompileError> {
+        if let Some(scope) = self.scope.pop_front() {
+            check_used(&scope.vars)?;
+            return Ok(Some(scope));
+        }
+
+        Ok(None)
     }
 
     fn push_const(&mut self, const_: Const) -> usize {
@@ -132,14 +178,13 @@ impl Compiler {
         self.codes[idx] = Opcode::with_code(self.codes[idx].op(), code);
     }
 
-    fn push_var(&mut self, name: String) -> Result<usize, CompileError> {
+    fn push_var(&mut self, span: Span, name: String, init: bool) -> Result<usize, CompileError> {
         let id = self.vars_seq;
         self.vars_seq += 1;
 
         let len = self.scope.len();
         let scope = &mut self.scope[len - 1];
-
-        scope.vars.insert(name, id);
+        scope.vars.insert(name, Var::with_init(span, id, init));
 
         Ok(id)
     }
@@ -151,19 +196,18 @@ impl Compiler {
         Ok(Opcode::with_code(Op::Call, arg_count).at(span))
     }
 
-    fn load_local(&mut self, name: &str) -> Option<usize> {
-        if let Some(locals) = self.locals.front() {
-            return locals.get(name).map(|l| l.index);
+    fn load_local(&mut self, name: &str) -> Option<&mut Var> {
+        if let Some(locals) = self.locals.front_mut() {
+            return locals.get_mut(name);
         }
 
         None
     }
 
-    fn load_var(&mut self, span: Span, name: &str) -> Result<usize, CompileError> {
+    fn load_var(&mut self, span: Span, name: &str) -> Result<&mut Var, CompileError> {
         self.scope
-            .iter()
-            .rev()
-            .find_map(|scope| scope.vars.get(name).copied())
+            .iter_mut()
+            .find_map(|scope| scope.vars.get_mut(name))
             .ok_or_else(|| ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
@@ -190,9 +234,15 @@ impl Compiler {
     // Load a name based in the following order: var > local > class > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
         match self.load_var(span, &name) {
-            Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
+            Ok(var) => {
+                check_usage(&name, var)?;
+                Ok(Opcode::with_code(Op::Load, var.id).at(span))
+            }
             Err(e) => match self.load_local(&name) {
-                Some(idx) => Ok(Opcode::with_code(Op::LoadArg, idx).at(span)),
+                Some(var) => {
+                    check_usage(&name, var)?;
+                    Ok(Opcode::with_code(Op::LoadArg, var.id).at(span))
+                }
                 None => match self.classes.iter().position(|c| c.name == name) {
                     Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
                     None => match self.funcs.iter().position(|f| f.name == name) {
@@ -217,7 +267,9 @@ impl Compiler {
 
         Ok(match lhs.kind {
             ExprKind::Ident(name) => {
-                let idx = self.load_var(rhs.span, &name)?;
+                let var = self.load_var(rhs.span, &name)?;
+                var.init = true;
+                let idx = var.id;
                 self.expr(rhs)?;
                 Opcode::with_code(Op::Store, idx).at(span)
             }
@@ -339,13 +391,13 @@ impl Compiler {
     fn compile_fn_body(
         &mut self,
         scope: ScopeKind,
-        args: Vec<String>,
+        args: Vec<FnArg>,
         stmts: Vec<Stmt>,
     ) -> Result<Vec<Opcode>, CompileError> {
         let locals = args
             .into_iter()
             .enumerate()
-            .map(|(i, n)| (n, Local { index: i }))
+            .map(|(i, n)| (n.name, Var::with_init(n.span, i, true)))
             .collect();
 
         self.push_scope(scope);
@@ -353,8 +405,12 @@ impl Compiler {
 
         let previous = mem::take(&mut self.codes);
         self.compile_body(stmts)?;
-        let scope = self.pop_scope();
-        self.locals.pop_front();
+        let scope = self.pop_scope()?;
+
+        if let Some(locals) = self.locals.pop_front() {
+            check_used(&locals)?;
+        }
+
         let codes = mem::replace(&mut self.codes, previous);
 
         Ok(self.optim(scope.unwrap(), codes))
@@ -366,7 +422,7 @@ impl Compiler {
         class: Weak<Class>,
         methods: &mut HashMap<Name, Rc<Func>, WyHash>,
         name: String,
-        args: Vec<String>,
+        args: Vec<FnArg>,
         stmts: Vec<Stmt>,
     ) -> Result<(), CompileError> {
         if methods.contains_key(name.as_str()) {
@@ -404,7 +460,7 @@ impl Compiler {
         &mut self,
         span: Span,
         name: String,
-        args: Vec<String>,
+        args: Vec<FnArg>,
         stmts: Vec<Stmt>,
     ) -> Result<(), CompileError> {
         if self.funcs.iter().any(|f| f.name == name) {
@@ -526,11 +582,12 @@ impl Compiler {
         match stmt.kind {
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
-                let idx = self.push_var(name)?;
-
                 if let Some(expr) = expr {
+                    let idx = self.push_var(expr.span, name, true)?;
                     self.expr(expr)?;
                     self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
+                } else {
+                    self.push_var(stmt.span, name, false)?;
                 }
             }
             StmtKind::Expr(expr) => {
@@ -567,7 +624,7 @@ impl Compiler {
     fn compile_scoped_body(&mut self, stmts: Vec<Stmt>) -> Result<(), CompileError> {
         self.push_scope(ScopeKind::Local);
         self.compile_body(stmts)?;
-        self.pop_scope();
+        self.pop_scope()?;
 
         Ok(())
     }
@@ -616,6 +673,7 @@ impl Compiler {
 
     pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, CompileError> {
         self.compile_scoped_body(stmts)?;
+        self.pop_scope()?;
 
         Ok(Module {
             codes: self.codes.into(),
@@ -637,14 +695,18 @@ mod tests {
         let lib = prelude();
         let mut compiler = Compiler::new(&lib);
 
-        let top = compiler.push_var("n".to_string()).unwrap();
+        let top = compiler
+            .push_var(Span::default(), "n".to_string(), true)
+            .unwrap();
         compiler.push_scope(ScopeKind::Local);
 
-        let expected = compiler.push_var("n".to_string()).unwrap();
+        let expected = compiler
+            .push_var(Span::default(), "n".to_string(), true)
+            .unwrap();
         let actual = compiler.load_var(Span::default(), "n").unwrap();
 
-        assert_eq!(expected, actual);
-        assert_ne!(top, actual);
+        assert_eq!(expected, actual.id);
+        assert_ne!(top, actual.id);
     }
 
     #[test]
@@ -655,7 +717,9 @@ mod tests {
         let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
 
         let expr = ExprKind::Literal(Literal::Int(100)).at(Span::default());
-        let idx = compiler.push_var("n".to_string()).unwrap();
+        let idx = compiler
+            .push_var(Span::default(), "n".to_string(), true)
+            .unwrap();
         let code = compiler
             .assign(Span::default(), None, ident("n"), expr.clone())
             .unwrap();

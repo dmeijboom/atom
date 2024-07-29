@@ -5,7 +5,7 @@ use std::{
 
 use crate::error::{IntoSpanned, SpannedError};
 
-#[derive(Debug, Default, Clone, Copy)]
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Span {
     pub offset: usize,
 }

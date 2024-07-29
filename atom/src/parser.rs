@@ -1,7 +1,7 @@
 use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
-    ast::{AssignOp, BinaryOp, Expr, ExprKind, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
+    ast::{AssignOp, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
     error::{IntoSpanned, SpannedError},
     lexer::{Span, Token, TokenKind},
 };
@@ -118,11 +118,11 @@ impl Parser {
         self.expect(TokenKind::Punct(";"))
     }
 
-    fn arg_list(&mut self, end: TokenKind) -> Result<Vec<String>, ParseError> {
+    fn arg_list(&mut self, end: TokenKind) -> Result<Vec<FnArg>, ParseError> {
         let mut args = vec![];
 
         while !self.accept(&end) {
-            args.push(self.ident()?);
+            args.push(FnArg::new(self.span(), self.ident()?));
 
             if !self.accept(&TokenKind::Punct(",")) {
                 self.expect(end)?;

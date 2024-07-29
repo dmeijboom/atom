@@ -91,6 +91,18 @@ impl Expr {
 pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
 #[derive(Debug)]
+pub struct FnArg {
+    pub name: String,
+    pub span: Span,
+}
+
+impl FnArg {
+    pub fn new(span: Span, name: String) -> Self {
+        Self { name, span }
+    }
+}
+
+#[derive(Debug)]
 pub enum StmtKind {
     If(IfStmt),
     Expr(Expr),
@@ -99,7 +111,7 @@ pub enum StmtKind {
     Let(String, Option<Expr>),
     Class(String, Vec<Stmt>),
     ForCond(Box<Stmt>, Expr, Expr, Vec<Stmt>),
-    Fn(String, Vec<String>, Vec<Stmt>),
+    Fn(String, Vec<FnArg>, Vec<Stmt>),
 }
 
 impl StmtKind {
