@@ -21,7 +21,7 @@ use crate::{
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
-    #[error("unknown name: {0}")]
+    #[error("unknown name '{0}'")]
     UnknownName(String),
     #[error("fn '{0}' already exists")]
     DuplicateFn(String),
@@ -580,6 +580,7 @@ impl Compiler {
 
     fn stmt(&mut self, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
+            StmtKind::Import(_path) => unimplemented!(),
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
                 if let Some(expr) = expr {

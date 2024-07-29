@@ -69,7 +69,7 @@ fn is_term(c: &char) -> bool {
 fn is_keyword(s: &str) -> bool {
     matches!(
         s,
-        "if" | "else" | "elif" | "for" | "let" | "fn" | "return" | "new" | "class"
+        "if" | "else" | "elif" | "for" | "let" | "fn" | "return" | "new" | "class" | "import"
     )
 }
 

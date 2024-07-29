@@ -1,7 +1,9 @@
 use std::{borrow::Cow, collections::VecDeque};
 
 use crate::{
-    ast::{AssignOp, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, Stmt, StmtKind, UnaryOp},
+    ast::{
+        AssignOp, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, Path, Stmt, StmtKind, UnaryOp,
+    },
     error::{IntoSpanned, SpannedError},
     lexer::{Span, Token, TokenKind},
 };
@@ -331,6 +333,29 @@ impl Parser {
         }
     }
 
+    fn path(&mut self) -> Result<Path, ParseError> {
+        let mut path = Path::default();
+
+        loop {
+            path.push(self.ident()?);
+
+            if !self.accept(&TokenKind::Punct(",")) {
+                break;
+            }
+        }
+
+        Ok(path)
+    }
+
+    fn import_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.span();
+        self.advance();
+        let path = self.path()?;
+        self.semi()?;
+
+        Ok(StmtKind::Import(path).at(span))
+    }
+
     fn return_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
@@ -476,6 +501,7 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "class" => self.class_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "import" => self.import_stmt()?,
                 TokenKind::Punct("}") if !global => break,
                 _ => self.expr_stmt()?,
             };

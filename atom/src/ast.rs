@@ -90,6 +90,8 @@ impl Expr {
 #[derive(Debug)]
 pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
+pub type Path = Vec<String>;
+
 #[derive(Debug)]
 pub struct FnArg {
     pub name: String,
@@ -107,6 +109,7 @@ pub enum StmtKind {
     If(IfStmt),
     Expr(Expr),
     Return(Expr),
+    Import(Path),
     For(Expr, Vec<Stmt>),
     Let(String, Option<Expr>),
     Class(String, Vec<Stmt>),
