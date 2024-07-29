@@ -6,7 +6,7 @@ use crate::{
     gc::{Gc, Handle, Trace},
     runtime::{
         class::{Class, ClassBuilder},
-        error::ErrorKind,
+        error::{ErrorKind, RuntimeError},
         value::Value,
     },
 };

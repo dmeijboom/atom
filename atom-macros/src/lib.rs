@@ -30,6 +30,11 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
     let fn_name = &item_fn.sig.ident;
     let body = item_fn.block.stmts;
     let arg_count = args.len() - ty.as_ref().map(|_| 1).unwrap_or(0);
+    let return_type = match item_fn.sig.output {
+        syn::ReturnType::Type(_, ret) => ret,
+        syn::ReturnType::Default => unreachable!(),
+    };
+
     let export_name = Ident::new(
         &format!("__atom_export_{}", item_fn.sig.ident),
         item_fn.sig.ident.span(),
@@ -44,7 +49,7 @@ fn export(item_fn: ItemFn, atom_name: Ident, ty: Option<Ident>) -> TokenStream {
         use crate::runtime::std::Convert as _;
 
         fn #export_name(#ctx_name: #ctx_ty, args: Vec<Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
-            let mut _inner = move || {
+            let mut _inner = move || -> #return_type {
                 #(#args)*
                 #(#body)*
             };

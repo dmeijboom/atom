@@ -160,6 +160,7 @@ impl Parser {
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
+                TokenKind::NilLit => Ok(ExprKind::Literal(Literal::Nil).at(token.span)),
                 TokenKind::IntLit(i) => Ok(ExprKind::Literal(Literal::Int(i)).at(token.span)),
                 TokenKind::FloatLit(f) => Ok(ExprKind::Literal(Literal::Float(f)).at(token.span)),
                 TokenKind::BoolLit(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),

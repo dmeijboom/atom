@@ -33,6 +33,7 @@ pub enum TokenKind {
     Ident(String),
     Keyword(String),
     Punct(&'static str),
+    NilLit,
     BoolLit(bool),
     IntLit(i64),
     FloatLit(f64),
@@ -51,6 +52,7 @@ impl Display for TokenKind {
             Self::Ident(name) => write!(f, "{name}"),
             Self::Keyword(name) => write!(f, "{name}"),
             Self::Punct(punct) => write!(f, "{punct}"),
+            Self::NilLit => write!(f, "nil"),
             Self::BoolLit(true) => write!(f, "true"),
             Self::BoolLit(false) => write!(f, "false"),
             Self::IntLit(value) => write!(f, "{}", value),
@@ -141,6 +143,7 @@ impl<'a> Lexer<'a> {
         }
 
         match term.as_str() {
+            "nil" => TokenKind::NilLit,
             "true" => TokenKind::BoolLit(true),
             "false" => TokenKind::BoolLit(false),
             name if is_keyword(name) => TokenKind::Keyword(term),

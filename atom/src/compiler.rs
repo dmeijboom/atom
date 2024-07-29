@@ -187,23 +187,17 @@ impl Compiler {
         Ok(())
     }
 
-    // Load a name based in the following order: globals > var > local > class > func
+    // Load a name based in the following order: var > local > class > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
-        match name.as_str() {
-            "nil" => Ok(Opcode::with_code(
-                Op::LoadConst,
-                self.push_const(Const::Nil),
-            )),
-            _ => match self.load_var(span, &name) {
-                Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
-                Err(e) => match self.load_local(&name) {
-                    Some(idx) => Ok(Opcode::with_code(Op::LoadArg, idx).at(span)),
-                    None => match self.classes.iter().position(|c| c.name == name) {
-                        Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
-                        None => match self.funcs.iter().position(|f| f.name == name) {
-                            Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
-                            None => Err(e),
-                        },
+        match self.load_var(span, &name) {
+            Ok(idx) => Ok(Opcode::with_code(Op::Load, idx).at(span)),
+            Err(e) => match self.load_local(&name) {
+                Some(idx) => Ok(Opcode::with_code(Op::LoadArg, idx).at(span)),
+                None => match self.classes.iter().position(|c| c.name == name) {
+                    Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
+                    None => match self.funcs.iter().position(|f| f.name == name) {
+                        Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
+                        None => Err(e),
                     },
                 },
             },
@@ -326,6 +320,7 @@ impl Compiler {
             ExprKind::Literal(lit) => Opcode::with_code(
                 Op::LoadConst,
                 match lit {
+                    Literal::Nil => self.push_const(Const::Nil),
                     Literal::Bool(b) => self.push_const(Const::Bool(b)),
                     Literal::Int(i) => self.push_const(Const::Int(i)),
                     Literal::Float(f) => self.push_const(Const::Float(f)),

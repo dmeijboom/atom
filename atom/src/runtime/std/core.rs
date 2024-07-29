@@ -1,7 +1,7 @@
 use atom_macros::func;
 
 use crate::{
-    gc::Gc,
+    gc::{Gc, Handle},
     runtime::{
         error::RuntimeError,
         func::Func,
@@ -12,7 +12,7 @@ use crate::{
 use super::{str::Str, Context};
 
 #[func(repr)]
-fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Value, RuntimeError> {
+fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Handle<Str>, RuntimeError> {
     let string = repr(ctx.gc, &arg)?;
     let str = Str::from_string(ctx.gc, string);
     ctx.gc.alloc(str)

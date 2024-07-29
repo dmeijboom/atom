@@ -1,9 +1,10 @@
 use atom_macros::method;
 
 use crate::{
-    gc::{Gc, Trace},
+    gc::{Gc, Handle, Trace},
     runtime::{
         class::{Class, ClassBuilder},
+        error::RuntimeError,
         value::Value,
     },
 };

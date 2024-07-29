@@ -48,6 +48,7 @@ pub enum BinaryOp {
 
 #[derive(Debug, Clone)]
 pub enum Literal {
+    Nil,
     Bool(bool),
     Int(i64),
     Float(f64),
