@@ -1,3 +1,0 @@
-import sub;
-
-println(sub.name());

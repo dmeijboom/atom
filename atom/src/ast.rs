@@ -106,6 +106,8 @@ impl FnArg {
 
 #[derive(Debug)]
 pub enum StmtKind {
+    Break,
+    Continue,
     If(IfStmt),
     Expr(Expr),
     Return(Expr),

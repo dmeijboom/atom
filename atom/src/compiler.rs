@@ -71,6 +71,7 @@ impl Var {
     }
 }
 
+#[derive(PartialEq)]
 pub enum ScopeKind {
     Global,
     Local,
@@ -89,6 +90,11 @@ impl Scope {
             vars: HashMap::default(),
         }
     }
+}
+
+enum Marker {
+    Begin(usize),
+    End(usize),
 }
 
 fn check_used(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
@@ -115,6 +121,7 @@ pub struct Compiler {
     consts: Vec<Const>,
     funcs: Vec<Rc<Func>>,
     classes: Vec<Rc<Class>>,
+    markers: Vec<Marker>,
     locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
@@ -126,8 +133,9 @@ impl Compiler {
             funcs: vec![],
             consts: vec![],
             classes: vec![],
-            scope: VecDeque::from(vec![Scope::new(ScopeKind::Global)]),
+            markers: vec![],
             locals: VecDeque::default(),
+            scope: VecDeque::from(vec![Scope::new(ScopeKind::Global)]),
         };
 
         for class in std.classes.iter() {
@@ -456,6 +464,15 @@ impl Compiler {
         Ok(())
     }
 
+    fn handle_markers(&mut self, begin: usize, end: usize) {
+        while let Some(marker) = self.markers.pop() {
+            match marker {
+                Marker::Begin(idx) => self.replace_code(idx, begin),
+                Marker::End(idx) => self.replace_code(idx, end),
+            }
+        }
+    }
+
     fn fn_stmt(
         &mut self,
         span: Span,
@@ -476,17 +493,6 @@ impl Compiler {
         let func = Rc::get_mut(&mut self.funcs[idx]).unwrap();
 
         func.exec = Exec::Vm(codes.into());
-
-        Ok(())
-    }
-
-    fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
-        let pos = self.pos();
-        self.expr(expr)?;
-        let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
-        self.compile_scoped_body(body)?;
-        self.push_code(Opcode::with_code(Op::Jump, pos));
-        self.replace_code(idx, self.pos());
 
         Ok(())
     }
@@ -525,6 +531,18 @@ impl Compiler {
         Ok(())
     }
 
+    fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
+        let pos = self.pos();
+        self.expr(expr)?;
+        let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
+        self.compile_scoped_body(body)?;
+        self.push_code(Opcode::with_code(Op::Jump, pos));
+        self.replace_code(idx, self.pos());
+        self.handle_markers(pos, self.pos());
+
+        Ok(())
+    }
+
     fn for_cond_stmt(
         &mut self,
         span: Span,
@@ -538,10 +556,11 @@ impl Compiler {
         self.expr(expr)?;
         let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
+        let post_idx = self.pos();
         self.expr(post)?;
-
         self.push_code(Opcode::with_code(Op::Jump, pos));
         self.replace_code(idx, self.pos());
+        self.handle_markers(post_idx, self.pos());
 
         Ok(())
     }
@@ -603,12 +622,20 @@ impl Compiler {
                 self.expr(expr)?;
                 self.push_code(Opcode::new(Op::Return).at(stmt.span));
             }
+            StmtKind::Break => {
+                let idx = self.push_code(Opcode::new(Op::Jump).at(stmt.span));
+                self.markers.push(Marker::End(idx));
+            }
+            StmtKind::Continue => {
+                let idx = self.push_code(Opcode::new(Op::Jump).at(stmt.span));
+                self.markers.push(Marker::Begin(idx));
+            }
+            StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
             StmtKind::Fn(name, args, stmts) => self.fn_stmt(stmt.span, name, args, stmts)?,
             StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
             StmtKind::ForCond(pre, expr, post, body) => {
                 self.for_cond_stmt(stmt.span, *pre, expr, post, body)?
             }
-            StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
         }
 
         Ok(())

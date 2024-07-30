@@ -548,7 +548,7 @@
 			"patterns": [
 				{
 					"name": "keyword.control.atom",
-					"match": "\\b(if|else|elif|for|let|fn|class|new|return|import)\\b"
+					"match": "\\b(if|else|elif|for|let|fn|class|new|return|import|break|continue)\\b"
 				}
 			]
 		},

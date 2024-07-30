@@ -28,13 +28,19 @@ impl Prec {
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
+    #[error("invalid expr '{0}'")]
+    InvalidExpr(TokenKind),
     #[error("unexpected token {actual}, expected: {expected}")]
     UnexpectedToken {
         expected: Cow<'static, str>,
         actual: String,
     },
-    #[error("invalid expr: {0}")]
-    InvalidExpr(TokenKind),
+    #[error("unexpected keyword '{0}'")]
+    UnexpectedKeyword(String),
+    #[error("unexpected break outside of loop")]
+    UnexpectedBreak,
+    #[error("unexpected continue outside of loop")]
+    UnexpectedContinue,
     #[error("unexpected end-of-file")]
     UnexpectedEof,
 }
@@ -49,12 +55,14 @@ fn supports_assign(expr: &Expr) -> bool {
 }
 
 pub struct Parser {
+    loop_counter: usize,
     tokens: VecDeque<Token>,
 }
 
 impl Parser {
     pub fn new(tokens: Vec<Token>) -> Self {
         Self {
+            loop_counter: 0,
             tokens: VecDeque::from(tokens),
         }
     }
@@ -450,7 +458,9 @@ impl Parser {
         let expr = self.expr(1)?;
         self.semi()?;
         let post = self.expr(0)?;
+        self.loop_counter += 1;
         let body = self.block()?;
+        self.loop_counter -= 1;
 
         Ok(StmtKind::ForCond(Box::new(pre), expr, post, body).at(span))
     }
@@ -486,8 +496,33 @@ impl Parser {
             return self.for_cond_stmt(span, StmtKind::Expr(expr).at(span));
         }
 
+        self.loop_counter += 1;
         let body = self.block()?;
+        self.loop_counter -= 1;
+
         Ok(StmtKind::For(expr, body).at(span))
+    }
+
+    fn break_stmt(&mut self) -> Result<Stmt, ParseError> {
+        if self.loop_counter == 0 {
+            return Err(ErrorKind::UnexpectedBreak.at(self.span()));
+        }
+
+        let span = self.span();
+        self.advance();
+        self.semi()?;
+        Ok(StmtKind::Break.at(span))
+    }
+
+    fn continue_stmt(&mut self) -> Result<Stmt, ParseError> {
+        if self.loop_counter == 0 {
+            return Err(ErrorKind::UnexpectedContinue.at(self.span()));
+        }
+
+        let span = self.span();
+        self.advance();
+        self.semi()?;
+        Ok(StmtKind::Continue.at(span))
     }
 
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, ParseError> {
@@ -502,6 +537,11 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "class" => self.class_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "import" => self.import_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "break" => self.break_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "continue" => self.continue_stmt()?,
+                TokenKind::Keyword(keyword) => {
+                    Err(ErrorKind::UnexpectedKeyword(keyword.to_string()).at(self.span()))?
+                }
                 TokenKind::Punct("}") if !global => break,
                 _ => self.expr_stmt()?,
             };
