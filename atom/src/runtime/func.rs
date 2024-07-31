@@ -2,35 +2,14 @@ use std::{fmt::Debug, rc::Rc};
 
 use crate::opcode::Opcode;
 
-use super::{
-    error::RuntimeError,
-    std::{Context, FnHandler},
-    value::Value,
-    Name,
-};
-
-pub enum Exec {
-    Handler(Box<FnHandler>),
-    Vm(Rc<[Opcode]>),
-}
-
-impl Default for Exec {
-    fn default() -> Self {
-        Self::Vm(Rc::new([]))
-    }
-}
-
-pub enum Receiver {
-    Type,
-    Class,
-}
+use super::Name;
 
 #[derive(Default)]
 pub struct Func {
     pub name: Name,
-    pub exec: Exec,
+    pub receiver: bool,
     pub arg_count: usize,
-    pub receiver: Option<Receiver>,
+    pub codes: Rc<[Opcode]>,
 }
 
 impl Func {
@@ -38,37 +17,23 @@ impl Func {
         Self {
             name: name.into(),
             arg_count,
-            exec: Exec::default(),
-            receiver: None,
+            receiver: false,
+            codes: Rc::new([]),
         }
     }
 
-    pub fn with_handler<F>(name: impl Into<Name>, arg_count: usize, handler: F) -> Self
-    where
-        F: Fn(Context<'_>, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
-    {
+    pub fn with_codes(name: impl Into<Name>, arg_count: usize, codes: Vec<Opcode>) -> Self {
         Self {
             name: name.into(),
             arg_count,
-            receiver: None,
-            exec: Exec::Handler(Box::new(handler)),
+            receiver: false,
+            codes: codes.into(),
         }
     }
 
-    pub fn with_receiver(mut self, receiver: Receiver) -> Self {
-        self.receiver = Some(receiver);
+    pub fn with_receiver(mut self) -> Self {
+        self.receiver = true;
         self
-    }
-
-    pub fn codes(&self) -> Rc<[Opcode]> {
-        match &self.exec {
-            Exec::Vm(codes) => Rc::clone(codes),
-            Exec::Handler(_) => Rc::new([]),
-        }
-    }
-
-    pub fn native(&self) -> bool {
-        matches!(self.exec, Exec::Handler(_))
     }
 }
 

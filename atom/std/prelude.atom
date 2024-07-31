@@ -1,0 +1,15 @@
+extern fn repr(value);
+extern fn println(value);
+
+class Array {
+    extern fn push(self, item);
+    extern fn pop(self);
+    extern fn len(self);
+    extern fn cap(self);
+}
+
+class Str {
+    extern fn len(self);
+    extern fn upper(self);
+    extern fn lower(self);
+}

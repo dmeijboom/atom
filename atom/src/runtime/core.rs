@@ -1,25 +1,24 @@
-use atom_macros::func;
+use atom_macros::export;
 
 use crate::{
     gc::{Gc, Handle},
     runtime::{
         error::RuntimeError,
-        func::Func,
         value::{Type, Value},
     },
 };
 
 use super::{str::Str, Context};
 
-#[func(repr)]
-fn std_repr(ctx: Context<'_>, arg: Value) -> Result<Handle<Str>, RuntimeError> {
+#[export]
+fn repr(ctx: Context<'_>, arg: Value) -> Result<Handle<Str>, RuntimeError> {
     let string = repr(ctx.gc, &arg)?;
     let str = Str::from_string(ctx.gc, string);
     ctx.gc.alloc(str)
 }
 
-#[func(println)]
-fn std_println(ctx: Context<'_>, arg: Value) -> Result<(), RuntimeError> {
+#[export]
+fn println(ctx: Context<'_>, arg: Value) -> Result<(), RuntimeError> {
     match arg.ty() {
         Type::Str => {
             let str = ctx.gc.get(arg.str());
@@ -29,10 +28,6 @@ fn std_println(ctx: Context<'_>, arg: Value) -> Result<(), RuntimeError> {
     }
 
     Ok(())
-}
-
-pub fn funcs() -> [fn() -> Func; 2] {
-    [std_println, std_repr]
 }
 
 pub fn repr(gc: &Gc, value: &Value) -> Result<String, RuntimeError> {

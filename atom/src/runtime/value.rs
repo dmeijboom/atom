@@ -6,9 +6,10 @@ use std::{
 use crate::gc::{AnyHandle, Gc, Handle, Trace};
 
 use super::{
+    array::Array,
     class::{Class, Instance},
     func::Func,
-    std::{array::Array, str::Str},
+    str::Str,
 };
 
 #[repr(u64)]

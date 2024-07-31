@@ -80,6 +80,7 @@ fn is_keyword(s: &str) -> bool {
             | "import"
             | "break"
             | "continue"
+            | "extern"
     )
 }
 

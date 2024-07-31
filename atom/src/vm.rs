@@ -13,12 +13,14 @@ use crate::{
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
+        array::Array,
         class::{Class, Instance},
         error::{Call, ErrorKind, RuntimeError},
-        func::{Exec, Func},
+        func::Func,
         module::Module,
-        std::{array::Array, str::Str, Context},
+        str::Str,
         value::{Type, Value},
+        Context,
     },
 };
 
@@ -80,14 +82,16 @@ fn array_idx(elem: Value, len: usize) -> usize {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FatalErrorKind {
-    #[error("invalid var at: {0}")]
+    #[error("invalid var at '{0}'")]
     InvalidVar(usize),
-    #[error("invalid argument at: {0}")]
+    #[error("invalid argument at '{0}'")]
     InvalidArg(usize),
-    #[error("invalid fn at: {0}")]
+    #[error("invalid fn at '{0}'")]
     InvalidFn(usize),
-    #[error("invalid class at: {0}")]
+    #[error("invalid class at '{0}'")]
     InvalidClass(usize),
+    #[error("invalid extern function '{0}'")]
+    InvalidExternFn(String),
     #[error("maximum stack exceeded")]
     MaxStackExceeded,
 }
@@ -118,7 +122,7 @@ fn top_frame(module: &Module) -> Frame {
         call: Call::new(
             Span::default(),
             Rc::new(Func {
-                exec: Exec::Vm(Rc::clone(&module.codes)),
+                codes: Rc::clone(&module.codes),
                 ..Func::default()
             }),
         ),
@@ -139,10 +143,17 @@ fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
     })
 }
 
-pub struct Vm {
+pub type BoxedFn = Rc<Box<dyn Fn(Context, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
+
+pub trait Linker {
+    fn resolve(&self, name: &str) -> Option<BoxedFn>;
+}
+
+pub struct Vm<L: Linker> {
     gc: Gc,
     span: Span,
     pos: usize,
+    linker: L,
     module: Module,
     returned: bool,
     vars: Vec<Value>,
@@ -152,14 +163,14 @@ pub struct Vm {
     stack: Stack<Value, MAX_STACK_SIZE>,
 }
 
-impl Drop for Vm {
+impl<L: Linker> Drop for Vm<L> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl Vm {
-    pub fn new(mut module: Module) -> Result<Self, Error> {
+impl<L: Linker> Vm<L> {
+    pub fn new(mut module: Module, linker: L) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];
 
@@ -173,6 +184,7 @@ impl Vm {
         Ok(Self {
             vars: vec![],
             consts,
+            linker,
             returned: false,
             gc,
             pos: 0,
@@ -235,10 +247,7 @@ impl Vm {
         let return_pos = self.pos;
 
         self.pos = 0;
-        self.codes = match func.exec {
-            Exec::Vm(ref codes) => Rc::clone(codes),
-            _ => unreachable!(),
-        };
+        self.codes = Rc::clone(&func.codes);
 
         // Check if we can re-use the current frame
         if let Some(frame) = self.call_stack.push_and_reuse() {
@@ -424,6 +433,21 @@ impl Vm {
         }
     }
 
+    fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
+        let name = self.const_name(idx)?;
+        let handler = self
+            .linker
+            .resolve(name)
+            .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
+        let frame = self.call_stack.last_mut();
+        let args = mem::take(&mut frame.locals);
+        let ctx = Context::with_span(&mut self.gc, self.span);
+        let return_value = (handler)(ctx, args)?;
+
+        self.returned = true;
+        self.push(return_value)
+    }
+
     #[inline(always)]
     fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
         let callee = self.stack.pop();
@@ -442,45 +466,22 @@ impl Vm {
                 .into());
         }
 
-        let (offset, receiver) = func
-            .receiver
-            .as_ref()
-            .map(|_| (1, Some(self.stack.pop())))
-            .unwrap_or_default();
+        let offset = func.receiver as usize;
 
-        match &func.exec {
-            Exec::Vm(_) => {
-                if tail_call {
-                    self.push_tail_call(arg_count + offset)?;
-                } else {
-                    self.push_call(func, arg_count + offset)?;
-                }
+        if tail_call {
+            self.push_tail_call(arg_count + offset)?;
+        } else {
+            self.push_call(func, arg_count + offset)?;
+        }
 
-                let frame = self.call_stack.last_mut();
+        let frame = self.call_stack.last_mut();
 
-                if let Some(receiver) = receiver {
-                    frame.locals[arg_count] = receiver;
-                }
+        if offset == 1 {
+            frame.locals[arg_count] = self.stack.pop();
+        }
 
-                for i in 0..arg_count {
-                    frame.locals[i] = self.stack.pop();
-                }
-            }
-            Exec::Handler(handler) => {
-                let mut args = vec![];
-                resize(&mut args, arg_count + offset);
-
-                if let Some(receiver) = receiver {
-                    args[0] = receiver;
-                }
-
-                for i in 0..arg_count {
-                    args[i + offset] = self.stack.pop();
-                }
-
-                let value = (handler)(Context::with_span(&mut self.gc, self.span), args)?;
-                self.push(value)?;
-            }
+        for i in 0..arg_count {
+            frame.locals[i] = self.stack.pop();
         }
 
         Ok(())
@@ -739,6 +740,7 @@ impl Vm {
                 Op::Discard => self.discard(),
                 Op::Return => self.ret()?,
                 Op::Call => self.call(opcode.code(), false)?,
+                Op::CallExtern => self.call_extern(opcode.code())?,
                 Op::TailCall => self.call(opcode.code(), true)?,
                 Op::Jump => self.goto(opcode.code()),
                 Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
@@ -787,7 +789,7 @@ impl Vm {
                     self.pos = frame.return_pos;
 
                     if !self.call_stack.is_empty() {
-                        self.codes = self.call_stack.last().call.func.codes();
+                        self.codes = Rc::clone(&self.call_stack.last().call.func.codes);
                         continue;
                     }
                 }

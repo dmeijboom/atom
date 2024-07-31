@@ -1,17 +1,16 @@
 use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
-use atom_macros::method;
+use atom_macros::export;
 
 use crate::{
     gc::{Gc, Handle, Trace},
     runtime::{
-        class::{Class, ClassBuilder},
         error::{ErrorKind, RuntimeError},
         value::Value,
     },
 };
 
-use super::Context;
+use super::{Context, Lib};
 
 pub struct Iter<'a, T: Trace> {
     idx: usize,
@@ -156,44 +155,51 @@ impl<T: Trace> Array<T> {
     }
 }
 
-#[method(Array.pop)]
-fn array_pop(ctx: Context<'_>, this: &mut Array<Value>) -> Result<Value, RuntimeError> {
-    if this.len == 0 {
+#[export]
+fn array_pop(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
+    let array = ctx.gc.get_mut(this);
+
+    if array.len == 0 {
         return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
     }
 
     let item = unsafe {
-        this.data
+        array
+            .data
             .assume_init_ref()
             .as_ptr()
-            .add(this.len - 1)
+            .add(array.len - 1)
             .read()
     };
-    this.len -= 1;
+
+    array.len -= 1;
 
     Ok(item)
 }
 
-#[method(Array.push)]
-fn array_push(ctx: Context<'_>, this: Value, item: Value) -> Result<(), RuntimeError> {
-    let handle = this.array();
-    let array = ctx.gc.get(handle.clone());
+#[export]
+fn array_push(
+    ctx: Context<'_>,
+    this: Handle<Array<Value>>,
+    item: Value,
+) -> Result<(), RuntimeError> {
+    let array = ctx.gc.get(this.clone());
     let (len, cap) = (array.len, array.cap);
 
     unsafe {
         if len == 0 {
             let new_handle: Handle<Value> = ctx.gc.alloc_array(1)?;
             new_handle.as_ptr().write(item);
-            let cur = ctx.gc.get_mut(handle);
+            let cur = ctx.gc.get_mut(this);
             *cur = Array::from_raw_parts(new_handle, 1, 1);
         } else if cap > len {
-            let array = ctx.gc.get_mut(handle);
+            let array = ctx.gc.get_mut(this);
             array.data.assume_init_ref().as_ptr().add(len).write(item);
             array.len += 1;
         } else {
             let handle: Handle<Value> = ctx.gc.alloc_array(cap * 2)?;
             let ptr = handle.as_ptr();
-            let array = ctx.gc.get(this.array());
+            let array = ctx.gc.get(this.clone());
 
             for (i, item) in array.iter().copied().enumerate() {
                 ptr.add(i).write(item);
@@ -202,7 +208,7 @@ fn array_push(ctx: Context<'_>, this: Value, item: Value) -> Result<(), RuntimeE
             ptr.add(len).write(item);
 
             let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
-            let array = ctx.gc.get_mut(this.array());
+            let array = ctx.gc.get_mut(this);
 
             *array = new_array;
         }
@@ -211,23 +217,23 @@ fn array_push(ctx: Context<'_>, this: Value, item: Value) -> Result<(), RuntimeE
     Ok(())
 }
 
-#[method(Array.len)]
-fn array_len(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeError> {
-    Ok(this.len)
+#[export]
+fn array_len(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+    Ok(ctx.gc.get(this).len)
 }
 
-#[method(Array.cap)]
-fn array_cap(ctx: Context<'_>, this: &Array<Value>) -> Result<usize, RuntimeError> {
-    Ok(this.cap)
+#[export]
+fn array_cap(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+    Ok(ctx.gc.get(this).cap)
 }
 
-pub fn class() -> Class {
-    ClassBuilder::new("Array")
-        .method(array_push)
-        .method(array_pop)
-        .method(array_len)
-        .method(array_cap)
-        .build()
+pub fn register(lib: Lib) -> Lib {
+    lib.class("Array", |lib| {
+        lib.set("pop", atom_array_pop)
+            .set("push", atom_array_push)
+            .set("len", atom_array_len)
+            .set("cap", atom_array_cap)
+    })
 }
 
 #[cfg(test)]
@@ -257,9 +263,9 @@ mod tests {
         ];
 
         for (i, (len, cap)) in expected.into_iter().enumerate() {
-            __atom_export_array_push(
+            atom_array_push(
                 Context::new(&mut gc),
-                vec![handle.clone().into(), (10 * i).into()],
+                vec![(10 * i).into(), handle.clone().into()],
             )
             .expect("Array.push failed");
 

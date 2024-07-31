@@ -1,7 +1,7 @@
 use std::{
     collections::{HashMap, VecDeque},
     mem,
-    rc::{Rc, Weak},
+    rc::Rc,
 };
 
 use wyhash2::WyHash;
@@ -11,12 +11,7 @@ use crate::{
     error::{IntoSpanned, SpannedError},
     lexer::Span,
     opcode::{Const, Op, Opcode},
-    runtime::{
-        class::Class,
-        func::{Exec, Func, Receiver},
-        module::Module,
-        Name,
-    },
+    runtime::{class::Class, func::Func, module::Module, Name},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -25,12 +20,12 @@ pub enum ErrorKind {
     UnknownName(String),
     #[error("fn '{0}' already exists")]
     DuplicateFn(String),
-    #[error("method '{0}' of '{}' already exists", _1.name)]
-    DuplicateMethod(String, Rc<Class>),
+    #[error("method '{0}' already exists")]
+    DuplicateMethod(String),
     #[error("class '{0}' already exists")]
     DuplicateClass(String),
     #[error("expected self as the first argument in init(..)")]
-    MissingInitSelf,
+    InitWithoutSelf,
     #[error("name '{0}' is not initialized")]
     NameUninitialized(String),
     #[error("name '{0}' is not used")]
@@ -38,13 +33,6 @@ pub enum ErrorKind {
 }
 
 pub type CompileError = SpannedError<ErrorKind>;
-
-fn new_rc<T>(item: T) -> (Rc<T>, Weak<T>) {
-    let strong = Rc::new(item);
-    let weak = Rc::downgrade(&strong);
-
-    (strong, weak)
-}
 
 #[derive(Debug, PartialEq)]
 struct Var {
@@ -119,15 +107,15 @@ pub struct Compiler {
     scope: VecDeque<Scope>,
     codes: Vec<Opcode>,
     consts: Vec<Const>,
-    funcs: Vec<Rc<Func>>,
-    classes: Vec<Rc<Class>>,
+    funcs: Vec<Func>,
+    classes: Vec<Class>,
     markers: Vec<Marker>,
     locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
 impl Compiler {
-    pub fn new(std: &Module) -> Self {
-        let mut compiler = Compiler {
+    pub fn new() -> Self {
+        Self {
             vars_seq: 0,
             codes: vec![],
             funcs: vec![],
@@ -136,17 +124,7 @@ impl Compiler {
             markers: vec![],
             locals: VecDeque::default(),
             scope: VecDeque::from(vec![Scope::new(ScopeKind::Global)]),
-        };
-
-        for class in std.classes.iter() {
-            compiler.classes.push(Rc::clone(class));
         }
-
-        for func in std.funcs.iter() {
-            compiler.funcs.push(Rc::clone(func));
-        }
-
-        compiler
     }
 
     fn pos(&self) -> usize {
@@ -195,6 +173,15 @@ impl Compiler {
         scope.vars.insert(name, Var::with_init(span, id, init));
 
         Ok(id)
+    }
+
+    fn call_extern(&mut self, span: Span, name: String, arg_count: usize) -> Func {
+        let idx = self.push_const(Const::Str(name.clone()));
+        Func::with_codes(
+            name,
+            arg_count,
+            vec![Opcode::with_code(Op::CallExtern, idx).at(span)],
+        )
     }
 
     fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, CompileError> {
@@ -427,39 +414,35 @@ impl Compiler {
     fn method(
         &mut self,
         span: Span,
-        class: Weak<Class>,
-        methods: &mut HashMap<Name, Rc<Func>, WyHash>,
+        methods: &mut HashMap<String, Func, WyHash>,
         name: String,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
     ) -> Result<(), CompileError> {
         if methods.contains_key(name.as_str()) {
-            return Err(ErrorKind::DuplicateMethod(name, class.upgrade().unwrap()).at(span));
+            return Err(ErrorKind::DuplicateMethod(name).at(span));
         }
 
-        let is_init = name == "init";
+        let init = name == "init";
 
-        if is_init && args.is_empty() {
-            return Err(ErrorKind::MissingInitSelf.at(span));
+        if init && args.is_empty() {
+            return Err(ErrorKind::InitWithoutSelf.at(span));
         }
 
         let arg_count = args.len() - 1;
-        let func = Rc::new(Func::new(name.clone(), arg_count).with_receiver(Receiver::Class));
-
-        methods.insert(Name::Owned(name.clone()), func);
+        let func = Func::new(name.clone(), arg_count).with_receiver();
+        methods.insert(name.clone(), func);
 
         let mut codes = self.compile_fn_body(ScopeKind::Local, args, stmts)?;
 
-        if is_init {
+        if init {
             codes.push(Opcode::with_code(Op::LoadArg, 0).at(span));
             codes.push(Opcode::new(Op::Return).at(span));
         }
 
-        let func = methods
-            .get_mut(name.as_str())
-            .and_then(|m| Rc::get_mut(m))
-            .unwrap();
-        func.exec = Exec::Vm(codes.into());
+        if let Some(method) = methods.get_mut(&name) {
+            method.codes = codes.into();
+        }
 
         Ok(())
     }
@@ -471,6 +454,22 @@ impl Compiler {
                 Marker::End(idx) => self.replace_code(idx, end),
             }
         }
+    }
+
+    fn extern_fn_stmt(
+        &mut self,
+        span: Span,
+        name: String,
+        args: Vec<FnArg>,
+    ) -> Result<(), CompileError> {
+        if self.funcs.iter().any(|f| f.name == name) {
+            return Err(ErrorKind::DuplicateFn(name).at(span));
+        }
+
+        let func = self.call_extern(span, name, args.len());
+        self.funcs.push(func);
+
+        Ok(())
     }
 
     fn fn_stmt(
@@ -485,14 +484,12 @@ impl Compiler {
         }
 
         let idx = self.funcs.len();
-        let func = Rc::new(Func::new(name, args.len()));
+        let func = Func::new(name, args.len());
 
         self.funcs.push(func);
 
         let codes = self.compile_fn_body(ScopeKind::Func(idx), args, stmts)?;
-        let func = Rc::get_mut(&mut self.funcs[idx]).unwrap();
-
-        func.exec = Exec::Vm(codes.into());
+        self.funcs[idx].codes = codes.into();
 
         Ok(())
     }
@@ -500,33 +497,43 @@ impl Compiler {
     fn class_stmt(
         &mut self,
         span: Span,
-        name: String,
+        class_name: String,
         methods: Vec<Stmt>,
     ) -> Result<(), CompileError> {
-        if self.classes.iter().any(|c| c.name == name) {
-            return Err(ErrorKind::DuplicateClass(name).at(span));
+        if self.classes.iter().any(|c| c.name == class_name) {
+            return Err(ErrorKind::DuplicateClass(class_name).at(span));
         }
 
         let idx = self.classes.len();
-        let (class, weak) = new_rc(Class::new(name));
-        self.classes.push(class);
+        self.classes.push(Class::new(class_name.clone()));
 
         let mut funcs = HashMap::with_hasher(WyHash::default());
 
         for method in methods {
             let span = method.span;
-            let (name, args, stmts) = match method.kind {
-                StmtKind::Fn(name, args, stmts) => (name, args, stmts),
+
+            match method.kind {
+                StmtKind::Fn(name, args, stmts) => {
+                    self.method(span, &mut funcs, name, args, stmts)?
+                }
+                StmtKind::ExternFn(name, args) => {
+                    if funcs.contains_key(&name) {
+                        return Err(ErrorKind::DuplicateMethod(name).at(span));
+                    }
+
+                    let func = self
+                        .call_extern(span, format!("{class_name}.{name}"), args.len() - 1)
+                        .with_receiver();
+                    funcs.insert(name, func);
+                }
                 _ => unreachable!(),
             };
-
-            self.method(span, Weak::clone(&weak), &mut funcs, name, args, stmts)?;
         }
 
-        drop(weak);
-
-        let class = Rc::get_mut(&mut self.classes[idx]).unwrap();
-        class.methods = funcs;
+        self.classes[idx].methods = funcs
+            .into_iter()
+            .map(|(name, func)| (Name::Owned(name), Rc::new(func)))
+            .collect();
 
         Ok(())
     }
@@ -631,6 +638,7 @@ impl Compiler {
                 self.markers.push(Marker::Begin(idx));
             }
             StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
+            StmtKind::ExternFn(name, args) => self.extern_fn_stmt(stmt.span, name, args)?,
             StmtKind::Fn(name, args, stmts) => self.fn_stmt(stmt.span, name, args, stmts)?,
             StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
             StmtKind::ForCond(pre, expr, post, body) => {
@@ -706,23 +714,19 @@ impl Compiler {
         Ok(Module {
             codes: self.codes.into(),
             consts: self.consts,
-            funcs: self.funcs,
-            classes: self.classes,
+            funcs: self.funcs.into_iter().map(Rc::new).collect(),
+            classes: self.classes.into_iter().map(Rc::new).collect(),
         })
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::std::prelude;
-
     use super::*;
 
     #[test]
     fn test_scope() {
-        let lib = prelude();
-        let mut compiler = Compiler::new(&lib);
-
+        let mut compiler = Compiler::new();
         let top = compiler
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
@@ -739,9 +743,7 @@ mod tests {
 
     #[test]
     fn test_assign() {
-        let lib = prelude();
-        let mut compiler = Compiler::new(&lib);
-
+        let mut compiler = Compiler::new();
         let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
 
         let expr = ExprKind::Literal(Literal::Int(100)).at(Span::default());

@@ -1,0 +1,6 @@
+let data = [];
+
+data.push(100);
+
+println(data);
+println(data.len());

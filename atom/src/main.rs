@@ -4,16 +4,13 @@ use std::{
     process::exit,
 };
 
+use ast::Stmt;
 use clap::Parser;
 use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use opcode::{Op, Opcode};
-use runtime::{
-    func::{Exec, Func},
-    module::Module,
-    std::prelude,
-};
+use runtime::{func::Func, module::Module};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -36,6 +33,8 @@ mod vm;
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
+const PRELUDE_SOURCE: &str = include_str!("../std/prelude.atom");
+
 #[derive(Parser)]
 struct Opts {
     #[clap(subcommand)]
@@ -55,18 +54,22 @@ enum Cmd {
     },
 }
 
-fn compile(prelude: &Module, source: impl AsRef<Path>) -> Result<Module, Error> {
-    let source = fs::read_to_string(source)?;
+fn parse(source: &str) -> Result<Vec<Stmt>, Error> {
     let chars = source.chars().collect::<Vec<_>>();
-
     let mut lexer = Lexer::new(&chars);
     let tokens = lexer.lex()?;
-
     let parser = parser::Parser::new(tokens);
-    let stmts = parser.parse()?;
 
-    let compiler = Compiler::new(prelude);
-    Ok(compiler.compile(stmts)?)
+    Ok(parser.parse()?)
+}
+
+fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
+    let mut program = parse(PRELUDE_SOURCE)?;
+    let source = fs::read_to_string(source)?;
+    program.extend(parse(&source)?);
+    let compiler = Compiler::new();
+
+    Ok(compiler.compile(program)?)
 }
 
 fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
@@ -88,6 +91,7 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
         | Op::MakeArray
         | Op::MakeSlice
         | Op::Call
+        | Op::CallExtern
         | Op::TailCall
         | Op::LoadElement
         | Op::LoadMember
@@ -97,22 +101,16 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
 }
 
 fn print_func(func: &Func, indent: usize) {
-    if let Exec::Vm(codes) = &func.exec {
-        let prefix = " ".repeat(indent * 2);
-        println!("{prefix}fn {}:", func.name);
+    let prefix = " ".repeat(indent * 2);
+    println!("{prefix}fn {}:", func.name);
 
-        for (i, opcode) in codes.iter().enumerate() {
-            print_opcode(i, opcode, indent + 1);
-        }
+    for (i, opcode) in func.codes.iter().enumerate() {
+        print_opcode(i, opcode, indent + 1);
     }
 }
 
 fn print_module(module: &Module) {
     for class in module.classes.iter() {
-        if class.native() {
-            continue;
-        }
-
         println!("class {}:", class.name);
 
         for (i, func) in class.methods.values().enumerate() {
@@ -126,7 +124,7 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for func in module.funcs.iter().filter(|f| !f.native()) {
+    for func in module.funcs.iter() {
         print_func(func, 0);
         println!();
     }
@@ -139,16 +137,14 @@ fn print_module(module: &Module) {
 }
 
 fn cmd(opts: Opts) -> Result<(), Error> {
-    let std = prelude();
-
     match opts.cmd {
         Cmd::Run { source } => {
-            let module = compile(&std, source)?;
-            let mut vm = Vm::new(module)?;
+            let module = compile(source)?;
+            let mut vm = Vm::new(module, runtime::linker())?;
             vm.run()?;
         }
         Cmd::Compile { source, verbose } => {
-            let module = compile(&std, source)?;
+            let module = compile(source)?;
 
             if verbose {
                 print_module(&module);

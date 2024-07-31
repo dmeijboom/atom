@@ -71,6 +71,23 @@ impl Parser {
         matches!(self.peek(), Some(TokenKind::Keyword(ref k)) if k == keyword)
     }
 
+    fn expect_keyword(&mut self, keyword: &str) -> Result<(), ParseError> {
+        let token = self
+            .peek()
+            .ok_or_else(|| ErrorKind::UnexpectedEof.at(self.span()))?;
+
+        if !self.test_keyword(keyword) {
+            return Err(ErrorKind::UnexpectedToken {
+                expected: Cow::Borrowed("fn"),
+                actual: token.to_string(),
+            }
+            .at(self.span()));
+        }
+
+        self.advance();
+        Ok(())
+    }
+
     fn peek(&self) -> Option<&TokenKind> {
         self.tokens.front().map(|t| &t.kind)
     }
@@ -413,12 +430,23 @@ impl Parser {
 
     fn fn_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
+        let is_extern = self.test_keyword("extern");
         self.advance();
+
+        if is_extern {
+            self.expect_keyword("fn")?;
+        }
+
         let name = self.ident()?;
         self.expect(TokenKind::Punct("("))?;
         let args = self.arg_list(TokenKind::Punct(")"))?;
-        let body = self.block()?;
 
+        if is_extern {
+            self.semi()?;
+            return Ok(StmtKind::ExternFn(name, args).at(span));
+        }
+
+        let body = self.block()?;
         Ok(StmtKind::Fn(name, args, body).at(span))
     }
 
@@ -472,7 +500,7 @@ impl Parser {
         self.expect(TokenKind::Punct("{"))?;
         let mut methods = vec![];
 
-        while self.test_keyword("fn") {
+        while self.test_keyword("fn") || self.test_keyword("extern") {
             methods.push(self.fn_stmt()?);
         }
 
@@ -532,6 +560,7 @@ impl Parser {
             let stmt = match token {
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "extern" => self.fn_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "class" => self.class_stmt()?,
