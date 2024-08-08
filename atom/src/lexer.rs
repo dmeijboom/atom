@@ -178,7 +178,6 @@ impl<'a> Lexer<'a> {
                 '.' if !dot && matches!(self.peek(), Some(c) if c.is_ascii_digit()) => {
                     dot = true;
                     num.push('.');
-                    self.advance();
                 }
                 c if c.is_ascii_digit() => num.push(c),
                 _ => break,

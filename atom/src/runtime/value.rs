@@ -63,7 +63,7 @@ impl Display for Type {
 }
 
 const SIGN_BIT: u64 = 1 << 63;
-const QUIET_NAN: u64 = 0x7ff0_0000_0000_0000;
+const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const INT_MASK: u64 = 0xffff_ffff_ffff;
 const TAG_MASK: u64 = 0b1111 << 48;
 
@@ -78,8 +78,13 @@ impl Value {
     const NAN: Self = Self::new_primitive(Tag::Float);
     pub const NIL: Self = Self::new_primitive(Tag::Nil);
 
+    #[inline(always)]
+    const fn is_float(&self) -> bool {
+        self.bits == Self::NAN.bits || (self.bits & SIG_NAN) != SIG_NAN
+    }
+
     pub const fn ty(&self) -> Type {
-        if self.bits == Self::NAN.bits || (self.bits & QUIET_NAN) != QUIET_NAN {
+        if self.is_float() {
             return Type::Float;
         }
 
@@ -99,13 +104,13 @@ impl Value {
 
     const fn new_primitive(tag: Tag) -> Self {
         Self {
-            bits: (tag as u64) << 48 | QUIET_NAN,
+            bits: (tag as u64) << 48 | SIG_NAN,
         }
     }
 
     const fn new(tag: Tag, value: u64) -> Self {
         Self {
-            bits: (tag as u64) << 48 | QUIET_NAN | value,
+            bits: (tag as u64) << 48 | SIG_NAN | value,
         }
     }
 

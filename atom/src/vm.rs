@@ -114,7 +114,7 @@ struct Frame {
     return_pos: usize,
 }
 
-const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
+const MAX_STACK_SIZE: usize = 200000 / size_of::<Value>();
 const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
 
 fn top_frame(module: &Module) -> Frame {
@@ -145,11 +145,11 @@ fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
 
 pub type BoxedFn = Rc<Box<dyn Fn(Context, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
 
-pub trait Linker {
+pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
 }
 
-pub struct Vm<L: Linker> {
+pub struct Vm<L: DynamicLinker> {
     gc: Gc,
     span: Span,
     pos: usize,
@@ -163,13 +163,13 @@ pub struct Vm<L: Linker> {
     stack: Stack<Value, MAX_STACK_SIZE>,
 }
 
-impl<L: Linker> Drop for Vm<L> {
+impl<L: DynamicLinker> Drop for Vm<L> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<L: Linker> Vm<L> {
+impl<L: DynamicLinker> Vm<L> {
     pub fn new(mut module: Module, linker: L) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; MAX_CONST_SIZE];

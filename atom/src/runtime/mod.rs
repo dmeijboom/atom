@@ -9,7 +9,7 @@ use wyhash2::WyHash;
 use crate::{
     gc::{Gc, Handle},
     lexer::Span,
-    vm::{BoxedFn, Linker},
+    vm::{BoxedFn, DynamicLinker},
 };
 
 pub mod array;
@@ -96,7 +96,7 @@ impl Lib {
     }
 }
 
-impl Linker for Lib {
+impl DynamicLinker for Lib {
     fn resolve(&self, name: &str) -> Option<BoxedFn> {
         self.funcs.get(name).cloned()
     }
