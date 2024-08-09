@@ -397,7 +397,7 @@ impl<L: DynamicLinker> Vm<L> {
         self.push(class)
     }
 
-    fn load_func(&mut self, idx: usize) -> Result<(), Error> {
+    fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
         let func = self.get_func(idx)?;
         self.push(func)
     }
@@ -469,6 +469,11 @@ impl<L: DynamicLinker> Vm<L> {
 
         self.returned = true;
         self.push(return_value)
+    }
+
+    fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
+        let func = self.get_func(fn_idx as usize)?;
+        self.fn_call(func, arg_count as usize, false)
     }
 
     #[inline(always)]
@@ -758,13 +763,14 @@ impl<L: DynamicLinker> Vm<L> {
                 Op::LoadConst => self.load_const(opcode.code())?,
                 Op::LoadMember => self.load_member(opcode.code())?,
                 Op::StoreMember => self.store_member(opcode.code())?,
-                Op::LoadFunc => self.load_func(opcode.code())?,
+                Op::LoadFn => self.load_fn(opcode.code())?,
                 Op::LoadClass => self.load_class(opcode.code())?,
                 Op::Store => self.store(opcode.code())?,
                 Op::Load => self.load(opcode.code())?,
                 Op::LoadArg => self.load_arg(opcode.code())?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret()?,
+                Op::CallFn => self.call_fn(opcode.code2())?,
                 Op::Call => self.call(opcode.code(), false)?,
                 Op::CallExtern => self.call_extern(opcode.code())?,
                 Op::TailCall => self.call(opcode.code(), true)?,

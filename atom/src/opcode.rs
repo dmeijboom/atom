@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use crate::lexer::Span;
 
 #[repr(u64)]
@@ -20,7 +22,7 @@ pub enum Op {
     LoadConst,
     Store,
     Load,
-    LoadFunc,
+    LoadFn,
     LoadClass,
     Discard,
     Return,
@@ -30,6 +32,7 @@ pub enum Op {
     PushJumpIfTrue,
     MakeArray,
     MakeSlice,
+    CallFn,
     Call,
     CallExtern,
     TailCall,
@@ -62,6 +65,11 @@ impl Opcode {
         }
     }
 
+    pub fn with_code2(op: Op, code1: u32, code2: u32) -> Self {
+        let code = (code1 as u64) << 32 | code2 as u64;
+        Self::with_code(op, code as usize)
+    }
+
     pub fn at(mut self, span: Span) -> Self {
         self.span = span;
         self
@@ -86,7 +94,7 @@ impl Opcode {
             o if o == Op::LoadConst as u64 => Op::LoadConst,
             o if o == Op::Store as u64 => Op::Store,
             o if o == Op::Load as u64 => Op::Load,
-            o if o == Op::LoadFunc as u64 => Op::LoadFunc,
+            o if o == Op::LoadFn as u64 => Op::LoadFn,
             o if o == Op::LoadClass as u64 => Op::LoadClass,
             o if o == Op::Discard as u64 => Op::Discard,
             o if o == Op::Return as u64 => Op::Return,
@@ -97,6 +105,7 @@ impl Opcode {
             o if o == Op::MakeArray as u64 => Op::MakeArray,
             o if o == Op::MakeSlice as u64 => Op::MakeSlice,
             o if o == Op::Call as u64 => Op::Call,
+            o if o == Op::CallFn as u64 => Op::CallFn,
             o if o == Op::CallExtern as u64 => Op::CallExtern,
             o if o == Op::TailCall as u64 => Op::TailCall,
             o if o == Op::UnaryNot as u64 => Op::UnaryNot,
@@ -111,6 +120,39 @@ impl Opcode {
 
     pub fn code(&self) -> usize {
         (self.bits & INT_MASK) as usize
+    }
+
+    pub fn code2(&self) -> (u32, u32) {
+        let code = self.code();
+        ((code >> 32) as u32, code as u32)
+    }
+}
+
+impl Display for Opcode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self.op() {
+            Op::CallFn => {
+                let (hi, lo) = self.code2();
+                write!(f, "{:?} {} {}", self.op(), hi, lo)
+            }
+            Op::Store
+            | Op::Load
+            | Op::LoadFn
+            | Op::LoadConst
+            | Op::Jump
+            | Op::JumpIfFalse
+            | Op::PushJumpIfFalse
+            | Op::PushJumpIfTrue
+            | Op::MakeArray
+            | Op::MakeSlice
+            | Op::Call
+            | Op::CallExtern
+            | Op::TailCall
+            | Op::LoadElement
+            | Op::LoadMember
+            | Op::LoadArg => write!(f, "{:?} {}", self.op(), self.code()),
+            _ => write!(f, "{:?}", self.op(),),
+        }
     }
 }
 
@@ -138,5 +180,12 @@ mod tests {
         let opcode = Opcode::with_code(Op::LoadArg, 2394);
         assert_eq!(opcode.op(), Op::LoadArg);
         assert_eq!(opcode.code(), 2394);
+    }
+
+    #[test]
+    fn test_with_code2() {
+        let opcode = Opcode::with_code2(Op::CallFn, 0, 1);
+        assert_eq!(opcode.op(), Op::CallFn);
+        assert_eq!(opcode.code2(), (0, 1));
     }
 }

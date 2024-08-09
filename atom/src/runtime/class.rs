@@ -19,6 +19,10 @@ impl Class {
             methods: HashMap::with_hasher(WyHash::default()),
         }
     }
+
+    pub fn is_extern(&self) -> bool {
+        self.methods.values().all(|f| f.is_extern())
+    }
 }
 
 #[derive(Debug)]

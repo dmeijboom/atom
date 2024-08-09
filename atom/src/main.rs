@@ -9,7 +9,7 @@ use clap::Parser;
 use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
-use opcode::{Op, Opcode};
+use opcode::Opcode;
 use runtime::{func::Func, module::Module};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
@@ -79,25 +79,7 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
         prefix.push(' ');
     }
 
-    match opcode.op() {
-        Op::Store
-        | Op::Load
-        | Op::LoadFunc
-        | Op::LoadConst
-        | Op::Jump
-        | Op::JumpIfFalse
-        | Op::PushJumpIfFalse
-        | Op::PushJumpIfTrue
-        | Op::MakeArray
-        | Op::MakeSlice
-        | Op::Call
-        | Op::CallExtern
-        | Op::TailCall
-        | Op::LoadElement
-        | Op::LoadMember
-        | Op::LoadArg => println!("{prefix} {:?} {}", opcode.op(), opcode.code()),
-        _ => println!("{prefix} {:?}", opcode.op(),),
-    }
+    println!("{prefix}{opcode}");
 }
 
 fn print_func(func: &Func, indent: usize) {
@@ -110,7 +92,7 @@ fn print_func(func: &Func, indent: usize) {
 }
 
 fn print_module(module: &Module) {
-    for class in module.classes.iter() {
+    for class in module.classes.iter().filter(|c| !c.is_extern()) {
         println!("class {}:", class.name);
 
         for (i, func) in class.methods.values().enumerate() {
@@ -124,7 +106,7 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for func in module.funcs.iter() {
+    for func in module.funcs.iter().filter(|f| !f.is_extern()) {
         print_func(func, 0);
         println!();
     }

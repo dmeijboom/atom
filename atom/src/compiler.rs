@@ -190,6 +190,17 @@ impl Compiler {
         let arg_count = args.len();
         self.expr_list(args)?;
         self.expr(callee)?;
+
+        // Optimize Load + Call to a super instruction
+        if let Some(opcode) = self.codes.last_mut() {
+            if opcode.op() == Op::LoadFn {
+                let opcode = Opcode::with_code2(Op::CallFn, opcode.code() as u32, arg_count as u32)
+                    .at(opcode.span);
+                self.codes.pop();
+                return Ok(opcode);
+            }
+        }
+
         Ok(Opcode::with_code(Op::Call, arg_count).at(span))
     }
 
@@ -243,7 +254,7 @@ impl Compiler {
                 None => match self.classes.iter().position(|c| c.name == name) {
                     Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
                     None => match self.funcs.iter().position(|f| f.name == name) {
-                        Some(idx) => Ok(Opcode::with_code(Op::LoadFunc, idx).at(span)),
+                        Some(idx) => Ok(Opcode::with_code(Op::LoadFn, idx).at(span)),
                         None => Err(e),
                     },
                 },
@@ -676,7 +687,7 @@ impl Compiler {
                 Op::Call => {
                     let arg_count = op.code();
                     let idx = match iter.next() {
-                        Some(op) if op.op() == Op::LoadFunc => op.code(),
+                        Some(op) if op.op() == Op::LoadFn => op.code(),
                         _ => break,
                     };
 
@@ -696,7 +707,7 @@ impl Compiler {
         if let ScopeKind::Func(func) = scope.kind {
             if codes
                 .iter()
-                .filter(|c| c.op() == Op::LoadFunc && c.code() == func)
+                .filter(|c| c.op() == Op::LoadFn && c.code() == func)
                 .count()
                 != 1
             {

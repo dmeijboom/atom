@@ -1,6 +1,6 @@
 use std::{fmt::Debug, rc::Rc};
 
-use crate::opcode::Opcode;
+use crate::opcode::{Op, Opcode};
 
 use super::Name;
 
@@ -34,6 +34,10 @@ impl Func {
     pub fn with_receiver(mut self) -> Self {
         self.receiver = true;
         self
+    }
+
+    pub fn is_extern(&self) -> bool {
+        matches!(self.codes.first(), Some(c) if c.op() == Op::CallExtern)
     }
 }
 
