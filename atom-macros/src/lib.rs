@@ -23,7 +23,7 @@ pub fn export(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .enumerate()
         .map(|(i, (name, ty))| {
             syn::parse_quote! {
-                let #name: #ty = args[#i].convert();
+                let mut #name: #ty = args[#i].convert();
             }
         })
         .collect::<Vec<Stmt>>();

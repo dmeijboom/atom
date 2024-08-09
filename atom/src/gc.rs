@@ -1,6 +1,7 @@
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
     collections::HashMap,
+    ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
@@ -68,6 +69,22 @@ impl<T: Trace> Handle<T> {
 
     pub unsafe fn as_ptr(&self) -> *mut T {
         self.ptr.as_ptr()
+    }
+}
+
+impl<T: Trace> Deref for Handle<T> {
+    type Target = T;
+
+    #[inline(always)]
+    fn deref(&self) -> &T {
+        unsafe { self.ptr.as_ref() }
+    }
+}
+
+impl<T: Trace> DerefMut for Handle<T> {
+    #[inline(always)]
+    fn deref_mut(&mut self) -> &mut T {
+        unsafe { self.ptr.as_mut() }
     }
 }
 
@@ -156,14 +173,6 @@ impl Gc {
         let handle = handle.as_mut();
         self.marked.insert(handle.as_ptr() as usize);
         handle.trace(self);
-    }
-
-    pub fn get<T: Trace>(&self, handle: Handle<T>) -> &T {
-        unsafe { handle.ptr.as_ref() }
-    }
-
-    pub fn get_mut<T: Trace>(&mut self, mut handle: Handle<T>) -> &mut T {
-        unsafe { handle.ptr.as_mut() }
     }
 
     pub fn sweep(&mut self) {

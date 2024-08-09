@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use atom_macros::export;
 
 use crate::{
@@ -19,6 +21,12 @@ impl Str {
     }
 }
 
+impl Display for Str {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_ref())
+    }
+}
+
 impl Trace for Str {
     fn trace(&self, gc: &mut Gc) {
         self.0.trace(gc);
@@ -32,17 +40,15 @@ impl AsRef<str> for Str {
 }
 
 #[export]
-fn str_len(ctx: Context<'_>, this: Handle<Str>) -> Result<usize, RuntimeError> {
-    let Str(array) = ctx.gc.get(this);
-    Ok(array.len())
+fn str_len(_ctx: Context<'_>, this: Handle<Str>) -> Result<usize, RuntimeError> {
+    Ok(this.0.len())
 }
 
 macro_rules! map_fn {
     ($func:ident, $rust_fn:ident) => {
         #[export]
         fn $func(ctx: Context<'_>, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
-            let atom_str = ctx.gc.get(this);
-            let rust_string = atom_str.as_str().$rust_fn();
+            let rust_string = this.as_str().$rust_fn();
             let str = Str::from_string(ctx.gc, rust_string);
             ctx.gc.alloc(str)
         }

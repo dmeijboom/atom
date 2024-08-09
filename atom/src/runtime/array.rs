@@ -61,6 +61,10 @@ impl<T: Trace> Trace for Array<T> {
 }
 
 impl<T: Trace> Array<T> {
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+
     pub fn len(&self) -> usize {
         self.len
     }
@@ -156,23 +160,20 @@ impl<T: Trace> Array<T> {
 }
 
 #[export]
-fn array_pop(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
-    let array = ctx.gc.get_mut(this);
-
-    if array.len == 0 {
+fn array_pop(ctx: Context<'_>, mut this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
+    if this.is_empty() {
         return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
     }
 
     let item = unsafe {
-        array
-            .data
+        this.data
             .assume_init_ref()
             .as_ptr()
-            .add(array.len - 1)
+            .add(this.len - 1)
             .read()
     };
 
-    array.len -= 1;
+    this.len -= 1;
 
     Ok(item)
 }
@@ -180,37 +181,31 @@ fn array_pop(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<Value, Runt
 #[export]
 fn array_push(
     ctx: Context<'_>,
-    this: Handle<Array<Value>>,
+    mut this: Handle<Array<Value>>,
     item: Value,
 ) -> Result<(), RuntimeError> {
-    let array = ctx.gc.get(this.clone());
-    let (len, cap) = (array.len, array.cap);
+    let (len, cap) = (this.len, this.cap);
 
     unsafe {
         if len == 0 {
             let new_handle: Handle<Value> = ctx.gc.alloc_array(1)?;
             new_handle.as_ptr().write(item);
-            let cur = ctx.gc.get_mut(this);
-            *cur = Array::from_raw_parts(new_handle, 1, 1);
+            *this = Array::from_raw_parts(new_handle, 1, 1);
         } else if cap > len {
-            let array = ctx.gc.get_mut(this);
-            array.data.assume_init_ref().as_ptr().add(len).write(item);
-            array.len += 1;
+            this.data.assume_init_ref().as_ptr().add(len).write(item);
+            this.len += 1;
         } else {
             let handle: Handle<Value> = ctx.gc.alloc_array(cap * 2)?;
             let ptr = handle.as_ptr();
-            let array = ctx.gc.get(this.clone());
 
-            for (i, item) in array.iter().copied().enumerate() {
+            for (i, item) in this.iter().copied().enumerate() {
                 ptr.add(i).write(item);
             }
 
             ptr.add(len).write(item);
 
             let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
-            let array = ctx.gc.get_mut(this);
-
-            *array = new_array;
+            *this = new_array;
         }
     }
 
@@ -218,13 +213,13 @@ fn array_push(
 }
 
 #[export]
-fn array_len(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
-    Ok(ctx.gc.get(this).len)
+fn array_len(_ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+    Ok(this.len)
 }
 
 #[export]
-fn array_cap(ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
-    Ok(ctx.gc.get(this).cap)
+fn array_cap(_ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+    Ok(this.cap)
 }
 
 pub fn register(lib: Lib) -> Lib {
@@ -269,15 +264,11 @@ mod tests {
             )
             .expect("Array.push failed");
 
-            let array = gc.get(handle.clone());
-
-            assert_eq!(array.len() as i64, len);
-            assert_eq!(array.cap as i64, cap);
+            assert_eq!(handle.len() as i64, len);
+            assert_eq!(handle.cap as i64, cap);
         }
 
-        let array = gc.get(handle);
-
-        for (i, item) in array.iter().copied().enumerate() {
+        for (i, item) in handle.iter().copied().enumerate() {
             assert_eq!(Type::Int, item.ty());
             assert_eq!(10 * i, item.int() as usize);
         }

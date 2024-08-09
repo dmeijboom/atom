@@ -67,7 +67,7 @@ fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
     let mut program = parse(PRELUDE_SOURCE)?;
     let source = fs::read_to_string(source)?;
     program.extend(parse(&source)?);
-    let compiler = Compiler::new();
+    let compiler = Compiler::default();
 
     Ok(compiler.compile(program)?)
 }

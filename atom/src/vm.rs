@@ -9,7 +9,7 @@ use tracing::{instrument, Level};
 use crate::{
     collections::{ReuseVec, Stack},
     error::{IntoSpanned, SpannedError},
-    gc::Gc,
+    gc::{Gc, Handle},
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
@@ -276,14 +276,11 @@ impl<L: DynamicLinker> Vm<L> {
         }
     }
 
-    fn const_name(&self, idx: usize) -> Result<&str, Error> {
+    fn const_name(&self, idx: usize) -> Result<Handle<Str>, Error> {
         let value = self.consts[idx];
 
         match value.ty() {
-            Type::Str => {
-                let str = self.gc.get(value.str());
-                Ok(str.as_str())
-            }
+            Type::Str => Ok(value.str()),
             _ => unreachable!(),
         }
     }
@@ -298,13 +295,13 @@ impl<L: DynamicLinker> Vm<L> {
     }
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        let member = self.const_name(member)?.to_string();
+        let member = self.const_name(member)?.as_ref().to_string();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
         self.check_type(object.ty(), Type::Instance)?;
 
-        let instance = self.gc.get_mut(object.instance());
+        let mut instance = object.instance();
         instance.attrs.insert(member, value);
 
         Ok(())
@@ -312,7 +309,8 @@ impl<L: DynamicLinker> Vm<L> {
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
         let member = self.const_name(member)?;
-        let instance = self.gc.get(object.instance());
+        let member = member.as_str();
+        let instance = object.instance();
 
         match instance.attrs.get(member).copied() {
             Some(value) => self.push(value),
@@ -334,7 +332,8 @@ impl<L: DynamicLinker> Vm<L> {
     }
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member = self.const_name(member)?;
+        let member_handle = self.const_name(member)?;
+        let member = member_handle.as_str();
         let class = self
             .module
             .classes
@@ -435,6 +434,7 @@ impl<L: DynamicLinker> Vm<L> {
 
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
         let name = self.const_name(idx)?;
+        let name = name.as_str();
         let handler = self
             .linker
             .resolve(name)
@@ -491,16 +491,16 @@ impl<L: DynamicLinker> Vm<L> {
         let ty = lhs.ty();
         let value = match ty {
             Type::Array => {
-                let lhs = self.gc.get(lhs.array());
-                let rhs = self.gc.get(rhs.array());
-                let new_data = lhs.concat(rhs);
+                let lhs = lhs.array();
+                let rhs = rhs.array();
+                let new_data = lhs.concat(&rhs);
                 let array = Array::from_vec(&mut self.gc, new_data);
                 Value::from(self.gc.alloc(array)?)
             }
             Type::Str => {
-                let Str(lhs) = self.gc.get(lhs.str());
-                let Str(rhs) = self.gc.get(rhs.str());
-                let new_data = lhs.concat(rhs);
+                let lhs = lhs.str();
+                let rhs = rhs.str();
+                let new_data = lhs.0.concat(&rhs.0);
                 let array = Array::from_vec(&mut self.gc, new_data);
                 Value::from(self.gc.alloc(Str(array))?)
             }
@@ -552,7 +552,7 @@ impl<L: DynamicLinker> Vm<L> {
         let array = self.stack.pop();
         self.check_type(array.ty(), Type::Array)?;
 
-        let array = self.gc.get(array.array());
+        let array = array.array();
         let from = from.map(|v| array_idx(v, array.len())).unwrap_or(0);
         let to = to.map(|v| array_idx(v, array.len())).unwrap_or(array.len());
 
@@ -566,22 +566,22 @@ impl<L: DynamicLinker> Vm<L> {
         Ok(())
     }
 
-    fn prepare_elem(&mut self) -> Result<(&mut Array<Value>, usize), Error> {
+    fn prepare_elem(&mut self) -> Result<(Handle<Array<Value>>, usize), Error> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
 
-        let array = self.gc.get_mut(array.array());
-        let idx = array_idx(elem, array.len());
+        let handle = array.array();
+        let idx = array_idx(elem, handle.len());
 
-        Ok((array, idx))
+        Ok((handle, idx))
     }
 
     fn store_elem(&mut self) -> Result<(), Error> {
         let value = self.stack.pop();
-        let (array, n) = self.prepare_elem()?;
+        let (mut array, n) = self.prepare_elem()?;
 
         match array.get_mut(n) {
             Some(elem) => {

@@ -113,8 +113,8 @@ pub struct Compiler {
     locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
-impl Compiler {
-    pub fn new() -> Self {
+impl Default for Compiler {
+    fn default() -> Self {
         Self {
             vars_seq: 0,
             codes: vec![],
@@ -126,7 +126,9 @@ impl Compiler {
             scope: VecDeque::from(vec![Scope::new(ScopeKind::Global)]),
         }
     }
+}
 
+impl Compiler {
     fn pos(&self) -> usize {
         self.codes.len()
     }
@@ -726,7 +728,7 @@ mod tests {
 
     #[test]
     fn test_scope() {
-        let mut compiler = Compiler::new();
+        let mut compiler = Compiler::default();
         let top = compiler
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
@@ -743,7 +745,7 @@ mod tests {
 
     #[test]
     fn test_assign() {
-        let mut compiler = Compiler::new();
+        let mut compiler = Compiler::default();
         let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
 
         let expr = ExprKind::Literal(Literal::Int(100)).at(Span::default());

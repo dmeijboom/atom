@@ -49,7 +49,7 @@ pub fn compile(name: &str) -> Result<Module, Error> {
     let mut program = parse(&[PRELUDE_SOURCE, "\nextern fn assert(value);"].concat())?;
     let source = fs::read_to_string(format!("tests/source/{name}"))?;
     program.extend(parse(&source)?);
-    let compiler = Compiler::new();
+    let compiler = Compiler::default();
 
     Ok(compiler.compile(program)?)
 }

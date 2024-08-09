@@ -362,7 +362,7 @@ mod tests {
 
         assert_eq!(value.ty(), Type::Str);
 
-        let str = gc.get(value.str());
+        let str = value.str();
         assert_eq!(str.as_str(), "hello");
     }
 }
