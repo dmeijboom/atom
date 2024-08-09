@@ -684,6 +684,10 @@ impl Compiler {
         while let Some(op) = iter.next() {
             match op.op() {
                 Op::Return => continue,
+                Op::CallFn if op.code2().0 as usize == func => {
+                    *op = Opcode::with_code(Op::TailCallFn, op.code());
+                    break;
+                }
                 Op::Call => {
                     let arg_count = op.code();
                     let idx = match iter.next() {
@@ -707,7 +711,11 @@ impl Compiler {
         if let ScopeKind::Func(func) = scope.kind {
             if codes
                 .iter()
-                .filter(|c| c.op() == Op::LoadFn && c.code() == func)
+                .filter(|c| match c.op() {
+                    Op::LoadFn => c.code() == func,
+                    Op::CallFn => c.code2().0 == func as u32,
+                    _ => false,
+                })
                 .count()
                 != 1
             {

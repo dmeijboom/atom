@@ -36,6 +36,7 @@ pub enum Op {
     Call,
     CallExtern,
     TailCall,
+    TailCallFn,
     UnaryNot,
     LoadElement,
     StoreElement,
@@ -108,6 +109,7 @@ impl Opcode {
             o if o == Op::CallFn as u64 => Op::CallFn,
             o if o == Op::CallExtern as u64 => Op::CallExtern,
             o if o == Op::TailCall as u64 => Op::TailCall,
+            o if o == Op::TailCallFn as u64 => Op::TailCallFn,
             o if o == Op::UnaryNot as u64 => Op::UnaryNot,
             o if o == Op::LoadElement as u64 => Op::LoadElement,
             o if o == Op::StoreElement as u64 => Op::StoreElement,
@@ -131,7 +133,7 @@ impl Opcode {
 impl Display for Opcode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.op() {
-            Op::CallFn => {
+            Op::CallFn | Op::TailCallFn => {
                 let (hi, lo) = self.code2();
                 write!(f, "{:?} {} {}", self.op(), hi, lo)
             }

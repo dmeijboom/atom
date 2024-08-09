@@ -381,15 +381,21 @@ impl<L: DynamicLinker> Vm<L> {
     }
 
     fn get_func(&mut self, idx: usize) -> Result<Rc<Func>, Error> {
-        Ok(Rc::clone(self.module.funcs.get(idx).ok_or_else(|| {
-            FatalErrorKind::InvalidFn(idx).at(self.span)
-        })?))
+        Ok(self
+            .module
+            .funcs
+            .get(idx)
+            .map(Rc::clone)
+            .ok_or_else(|| FatalErrorKind::InvalidFn(idx).at(self.span))?)
     }
 
     fn get_class(&mut self, idx: usize) -> Result<Rc<Class>, Error> {
-        Ok(Rc::clone(self.module.classes.get(idx).ok_or_else(
-            || FatalErrorKind::InvalidClass(idx).at(self.span),
-        )?))
+        Ok(self
+            .module
+            .classes
+            .get(idx)
+            .map(Rc::clone)
+            .ok_or_else(|| FatalErrorKind::InvalidClass(idx).at(self.span))?)
     }
 
     fn load_class(&mut self, idx: usize) -> Result<(), Error> {
@@ -471,9 +477,9 @@ impl<L: DynamicLinker> Vm<L> {
         self.push(return_value)
     }
 
-    fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
+    fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
         let func = self.get_func(fn_idx as usize)?;
-        self.fn_call(func, arg_count as usize, false)
+        self.fn_call(func, arg_count as usize, tail_call)
     }
 
     #[inline(always)]
@@ -770,10 +776,11 @@ impl<L: DynamicLinker> Vm<L> {
                 Op::LoadArg => self.load_arg(opcode.code())?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret()?,
-                Op::CallFn => self.call_fn(opcode.code2())?,
+                Op::CallFn => self.call_fn(opcode.code2(), false)?,
                 Op::Call => self.call(opcode.code(), false)?,
                 Op::CallExtern => self.call_extern(opcode.code())?,
                 Op::TailCall => self.call(opcode.code(), true)?,
+                Op::TailCallFn => self.call_fn(opcode.code2(), true)?,
                 Op::Jump => self.goto(opcode.code()),
                 Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
                 Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
