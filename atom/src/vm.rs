@@ -1,7 +1,12 @@
 use std::{
+    collections::HashMap,
     mem::{self, size_of},
     rc::Rc,
+    time::Duration,
 };
+
+#[cfg(feature = "timings")]
+use std::time::Instant;
 
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
@@ -149,6 +154,18 @@ pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
 }
 
+#[derive(Default)]
+pub struct Timing {
+    pub count: u32,
+    pub elapsed: Duration,
+}
+
+impl Timing {
+    pub fn avg(&self) -> Duration {
+        self.elapsed / self.count
+    }
+}
+
 pub struct Vm<L: DynamicLinker> {
     gc: Gc,
     span: Span,
@@ -159,6 +176,7 @@ pub struct Vm<L: DynamicLinker> {
     vars: Vec<Value>,
     codes: Rc<[Opcode]>,
     call_stack: ReuseVec<Frame>,
+    timing: HashMap<Op, Timing>,
     consts: [Value; MAX_CONST_SIZE],
     stack: Stack<Value, MAX_STACK_SIZE>,
 }
@@ -190,10 +208,15 @@ impl<L: DynamicLinker> Vm<L> {
             pos: 0,
             span: Span::default(),
             call_stack,
+            timing: HashMap::default(),
             stack: Stack::default(),
             codes: Rc::clone(&module.codes),
             module,
         })
+    }
+
+    pub fn timing(&self) -> &HashMap<Op, Timing> {
+        &self.timing
     }
 
     fn try_collect_gc(&mut self) {
@@ -714,6 +737,9 @@ impl<L: DynamicLinker> Vm<L> {
             self.pos += 1;
             self.span = opcode.span;
 
+            #[cfg(feature = "timings")]
+            let (op, now) = (opcode.op(), Instant::now());
+
             match opcode.op() {
                 Op::Add => self.add()?,
                 Op::Sub => self.sub()?,
@@ -751,6 +777,13 @@ impl<L: DynamicLinker> Vm<L> {
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
+            }
+
+            #[cfg(feature = "timings")]
+            {
+                let entry = self.timing.entry(op).or_insert(Timing::default());
+                entry.elapsed += now.elapsed();
+                entry.count += 1;
             }
         }
 

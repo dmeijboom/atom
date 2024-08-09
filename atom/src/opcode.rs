@@ -1,7 +1,7 @@
 use crate::lexer::Span;
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Op {
     Eq,
     Ne,

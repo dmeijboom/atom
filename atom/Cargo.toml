@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
+timings = []
 mimalloc = ["dep:mimalloc"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
@@ -11,12 +12,17 @@ tracing = ["dep:tracing", "dep:tracing-subscriber"]
 atom-macros = { path = "../atom-macros" }
 
 wyhash2 = "0.2.1"
+bit-set = "0.8.0"
+test-case = "3.3.1"
 thiserror = "1.0.61"
 tracing = { version = "0.1.40", optional = true }
 tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
-bit-set = "0.8.0"
 mimalloc = { version = "0.1.43", optional = true }
-clap = { version = "4.5.11", default-features = false, features = ["derive", "help", "std", "usage"] }
-test-case = "3.3.1"
+clap = { version = "4.5.11", default-features = false, features = [
+    "derive",
+    "help",
+    "std",
+    "usage",
+] }

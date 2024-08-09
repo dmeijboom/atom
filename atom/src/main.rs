@@ -142,6 +142,16 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let module = compile(source)?;
             let mut vm = Vm::new(module, runtime::linker())?;
             vm.run()?;
+
+            #[cfg(feature = "timings")]
+            {
+                println!();
+                println!("[Timings]");
+
+                for (op, timing) in vm.timing() {
+                    println!("{:?} took ~ {:.2?} ({}x)", op, timing.avg(), timing.count);
+                }
+            }
         }
         Cmd::Compile { source, verbose } => {
             let module = compile(source)?;
