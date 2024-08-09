@@ -5,6 +5,7 @@ edition = "2021"
 
 [features]
 timings = []
+default = ["mimalloc"]
 mimalloc = ["dep:mimalloc"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
