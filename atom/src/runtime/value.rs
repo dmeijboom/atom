@@ -213,6 +213,7 @@ impl Trace for Value {
     fn trace(&self, gc: &mut Gc) {
         if let Some(handle) = self.handle() {
             handle.trace(gc);
+            gc.mark(handle);
         }
     }
 }

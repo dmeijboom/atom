@@ -43,9 +43,7 @@ impl Instance {
 impl Trace for Instance {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         for value in self.attrs.values() {
-            if let Some(handle) = value.handle() {
-                gc.mark(handle);
-            }
+            value.trace(gc);
         }
     }
 }

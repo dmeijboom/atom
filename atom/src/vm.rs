@@ -9,7 +9,7 @@ use tracing::{instrument, Level};
 use crate::{
     collections::{ReuseVec, Stack},
     error::{IntoSpanned, SpannedError},
-    gc::{Gc, Handle},
+    gc::{Gc, Handle, Trace},
     lexer::Span,
     opcode::{Const, Op, Opcode},
     runtime::{
@@ -227,11 +227,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             .chain(self.consts.iter())
             .chain(self.stack.iter())
             .chain(self.call_stack.iter().flat_map(|frame| frame.locals.iter()))
-            .for_each(|value| {
-                if let Some(handle) = value.handle() {
-                    self.gc.mark(handle);
-                }
-            });
+            .for_each(|value| value.trace(&mut self.gc));
 
         self.gc.sweep();
     }
@@ -702,7 +698,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         if matches!(lhs.ty(), Type::Array | Type::Str) {
             let value = self.concat(lhs, rhs)?;
+
             self.push(value)?;
+            self.gc_tick();
 
             return Ok(());
         }

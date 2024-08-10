@@ -52,11 +52,17 @@ impl<T: Trace> Default for Array<T> {
     }
 }
 
-impl<T: Trace> Trace for Array<T> {
+impl<T: Trace + 'static> Trace for Array<T> {
     fn trace(&self, gc: &mut Gc) {
+        if self.is_empty() {
+            return;
+        }
+
         for item in self.iter() {
             item.trace(gc);
         }
+
+        unsafe { gc.mark(self.data.assume_init_ref().boxed()) }
     }
 }
 
@@ -70,7 +76,7 @@ impl<T: Trace> Array<T> {
     }
 
     pub fn slice(&self, from: usize, to: usize) -> Array<T> {
-        if self.len == 0 {
+        if self.is_empty() {
             return Array::default();
         }
 

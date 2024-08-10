@@ -1,11 +1,10 @@
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
-use bit_set::BitSet;
 use wyhash2::WyHash;
 
 use crate::{
@@ -72,6 +71,12 @@ impl<T: Trace> Handle<T> {
     }
 }
 
+impl<T: Trace + 'static> Handle<T> {
+    pub fn boxed(&self) -> Box<dyn AnyHandle> {
+        Box::new(self.clone())
+    }
+}
+
 impl<T: Trace> Deref for Handle<T> {
     type Target = T;
 
@@ -124,7 +129,7 @@ struct Cycle {
 #[derive(Default)]
 pub struct Gc {
     cycle: Cycle,
-    marked: BitSet<usize>,
+    marked: HashSet<usize, WyHash>,
     roots: Vec<Box<dyn AnyHandle>>,
     arrays: HashMap<usize, Layout, WyHash>,
 }
@@ -141,7 +146,9 @@ impl Gc {
         layout: Layout,
     ) -> Handle<T> {
         let handle = Handle::new(ptr);
+
         self.roots.push(Box::new(handle.clone()));
+        self.cycle.allocated += layout.size();
 
         if layout.size() != std::mem::size_of::<T>() {
             self.arrays.insert(handle.addr(), layout);
@@ -152,7 +159,6 @@ impl Gc {
 
     pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, RuntimeError> {
         let layout = Layout::new::<T>();
-        self.cycle.allocated += layout.size();
 
         unsafe {
             let ptr = alloc::<T>(layout)?;
@@ -167,7 +173,6 @@ impl Gc {
     ) -> Result<Handle<T>, RuntimeError> {
         let layout = Layout::array::<T>(cap)
             .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
-        self.cycle.allocated += layout.size();
 
         unsafe {
             let ptr = alloc_zeroed(layout) as *mut T;
@@ -175,10 +180,9 @@ impl Gc {
         }
     }
 
-    pub fn mark<H: ?Sized + AnyHandle>(&mut self, mut handle: impl AsMut<H>) {
-        let handle = handle.as_mut();
+    pub fn mark(&mut self, handle: impl Into<Box<dyn AnyHandle>>) {
+        let handle = handle.into();
         self.marked.insert(handle.as_ptr() as usize);
-        handle.trace(self);
     }
 
     pub fn sweep(&mut self) {
@@ -186,7 +190,7 @@ impl Gc {
         self.roots.retain(|root| {
             let addr = root.as_ptr() as usize;
 
-            if self.marked.contains(addr) {
+            if self.marked.contains(&addr) {
                 return true;
             }
 
@@ -201,5 +205,20 @@ impl Gc {
         });
 
         self.marked.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_allocated() {
+        let mut gc = Gc::default();
+        let _handle: Handle<Vec<i64>> = gc.alloc_array(100).unwrap();
+
+        assert_eq!(gc.cycle.allocated, 2400);
+
+        gc.sweep();
     }
 }
