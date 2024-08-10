@@ -1,4 +1,5 @@
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
+use std::hash::Hash;
 
 use atom_macros::export;
 
@@ -18,6 +19,26 @@ impl Str {
 
     pub fn from_string(gc: &mut Gc, s: String) -> Self {
         Self(Array::from_vec(gc, s.into_bytes()))
+    }
+}
+
+impl Hash for Str {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.as_str().hash(state);
+    }
+}
+
+impl Eq for Str {}
+
+impl PartialEq for Str {
+    fn eq(&self, other: &Self) -> bool {
+        self.as_str() == other.as_str()
+    }
+}
+
+impl Debug for Str {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Str(\"{}\")", self.as_str())
     }
 }
 

@@ -1,6 +1,8 @@
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
     collections::{HashMap, HashSet},
+    fmt::Debug,
+    hash::Hash,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -45,9 +47,29 @@ pub struct Handle<T: ?Sized + Trace> {
     ptr: NonNull<T>,
 }
 
+impl<T: Trace + Hash> Hash for Handle<T> {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.deref().hash(state);
+    }
+}
+
 impl<T: ?Sized + Trace> Handle<T> {
     pub fn new(ptr: NonNull<T>) -> Self {
         Self { ptr }
+    }
+}
+
+impl<T: Trace + PartialEq> PartialEq for Handle<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.deref() == other.deref()
+    }
+}
+
+impl<T: Trace + Eq> Eq for Handle<T> {}
+
+impl<T: Trace + Debug> Debug for Handle<T> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.deref().fmt(f)
     }
 }
 

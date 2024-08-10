@@ -2,9 +2,9 @@ use std::{collections::HashMap, rc::Rc};
 
 use wyhash2::WyHash;
 
-use crate::gc::Trace;
+use crate::gc::{Handle, Trace};
 
-use super::{func::Func, value::Value, Name};
+use super::{func::Func, str::Str, value::Value, Name};
 
 #[derive(Debug)]
 pub struct Class {
@@ -28,7 +28,7 @@ impl Class {
 #[derive(Debug)]
 pub struct Instance {
     pub class: Rc<Class>,
-    pub attrs: HashMap<String, Value, WyHash>,
+    pub attrs: HashMap<Handle<Str>, Value, WyHash>,
 }
 
 impl Instance {

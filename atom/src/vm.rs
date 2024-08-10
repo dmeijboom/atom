@@ -303,7 +303,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        let member = self.const_name(member)?.as_ref().to_string();
+        let member = self.const_name(member)?;
         let value = self.stack.pop();
         let object = self.stack.pop();
 
@@ -317,25 +317,27 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
         let member = self.const_name(member)?;
-        let member = member.as_str();
         let instance = object.instance();
 
-        match instance.attrs.get(member).copied() {
+        match instance.attrs.get(&member).copied() {
             Some(value) => self.push(value),
-            None => match instance.class.methods.get(member) {
-                Some(method) => {
-                    let method = Rc::clone(method);
-                    self.push(object)?;
-                    self.push(method)?;
-                    Ok(())
+            None => {
+                let member = member.as_str();
+                match instance.class.methods.get(member) {
+                    Some(method) => {
+                        let method = Rc::clone(method);
+                        self.push(object)?;
+                        self.push(method)?;
+                        Ok(())
+                    }
+                    None => Err(ErrorKind::UnknownAttr {
+                        class: Rc::clone(&instance.class),
+                        attribute: member.to_string(),
+                    }
+                    .at(self.span)
+                    .into()),
                 }
-                None => Err(ErrorKind::UnknownAttr {
-                    class: Rc::clone(&instance.class),
-                    attribute: member.to_string(),
-                }
-                .at(self.span)
-                .into()),
-            },
+            }
         }
     }
 
