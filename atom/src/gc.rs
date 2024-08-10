@@ -130,6 +130,7 @@ pub struct Gc {
 }
 
 impl Gc {
+    #[inline(always)]
     pub fn ready(&self) -> bool {
         self.cycle.allocated >= 1_000_000
     }

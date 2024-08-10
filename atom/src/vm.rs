@@ -213,11 +213,15 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         &self.timing
     }
 
-    fn try_mark_sweep(&mut self) {
+    fn gc_tick(&mut self) {
         if !self.gc.ready() {
             return;
         }
 
+        self.mark_sweep();
+    }
+
+    fn mark_sweep(&mut self) {
         self.vars
             .iter()
             .chain(self.consts.iter())
@@ -440,10 +444,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         if let Some(func) = init_fn {
             self.push(handle)?;
             self.push(func)?;
-            self.call(arg_count, false)
+            self.call(arg_count, false)?;
         } else {
-            self.push(handle)
+            self.push(handle)?;
         }
+
+        self.gc_tick();
+
+        Ok(())
     }
 
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
@@ -459,7 +467,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let return_value = (handler)(ctx, args)?;
 
         self.returned = true;
-        self.push(return_value)
+        self.push(return_value)?;
+
+        self.gc_tick();
+
+        Ok(())
     }
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
@@ -503,6 +515,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             frame.locals[i] = self.stack.pop();
         }
 
+        self.gc_tick();
+
         Ok(())
     }
 
@@ -542,6 +556,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let handle = self.gc.alloc(array)?;
 
         self.push(handle)?;
+        self.gc_tick();
 
         Ok(())
     }
@@ -579,7 +594,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
 
         let new_array = self.gc.alloc(array.slice(from, to))?;
+
         self.push(new_array)?;
+        self.gc_tick();
 
         Ok(())
     }
@@ -774,8 +791,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
             }
-
-            self.try_mark_sweep();
 
             #[cfg(feature = "timings")]
             {

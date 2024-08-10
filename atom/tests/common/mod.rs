@@ -55,10 +55,6 @@ pub fn compile(name: &str) -> Result<Module, Error> {
     Ok(compiler.compile(program)?)
 }
 
-//pub fn must_compile(name: &str) -> Module {
-//    compile(name).expect("failed to compile module")
-//}
-
 pub type TestVm = Vm<TestLinker<Lib>, 1000, 1000>;
 
 pub fn run(name: &str) -> Result<(TestVm, Option<Value>), Error> {
@@ -70,8 +66,4 @@ pub fn run(name: &str) -> Result<(TestVm, Option<Value>), Error> {
 
     let return_value = return_value.borrow_mut().take();
     Ok((vm, return_value))
-}
-
-pub fn must_run(name: &str) -> (TestVm, Option<Value>) {
-    run(name).expect("failed to run module")
 }
