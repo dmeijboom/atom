@@ -121,8 +121,8 @@
 					"name": "storage.type.class.atom"
 				},
 				{
-					"match": "\\bInstance\\b",
-					"name": "storage.type.instance.atom"
+					"match": "\\bObject\\b",
+					"name": "storage.type.object.atom"
 				},
 				{
 					"match": "\\bFn\\b",

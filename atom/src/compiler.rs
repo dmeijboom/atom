@@ -191,17 +191,16 @@ impl Compiler {
         self.expr_list(args)?;
         self.expr(callee)?;
 
-        // Optimize Load + Call to a super instruction
-        if let Some(opcode) = self.codes.last_mut() {
-            if opcode.op() == Op::LoadFn {
+        // Optimize LoadFn/LoadMember + Call to a super instruction
+        match self.codes.last_mut() {
+            Some(opcode) if opcode.op() == Op::LoadFn => {
                 let opcode = Opcode::with_code2(Op::CallFn, opcode.code() as u32, arg_count as u32)
                     .at(opcode.span);
                 self.codes.pop();
-                return Ok(opcode);
+                Ok(opcode)
             }
+            _ => Ok(Opcode::with_code(Op::Call, arg_count).at(span)),
         }
-
-        Ok(Opcode::with_code(Op::Call, arg_count).at(span))
     }
 
     fn load_local(&mut self, name: &str) -> Option<&mut Var> {

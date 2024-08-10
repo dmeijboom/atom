@@ -14,7 +14,7 @@ use crate::{
     opcode::{Const, Op, Opcode},
     runtime::{
         array::Array,
-        class::{Class, Instance},
+        class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
         func::Func,
         module::Module,
@@ -108,7 +108,7 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-#[derive(Debug, Default)]
+#[derive(Debug)]
 struct Frame {
     call: Call,
     // Locals (in reversed order)
@@ -125,7 +125,8 @@ fn top_frame(module: &Module) -> Frame {
                 ..Func::default()
             }),
         ),
-        ..Frame::default()
+        locals: vec![],
+        return_pos: 0,
     }
 }
 
@@ -297,7 +298,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let object = self.stack.pop();
 
         match object.ty() {
-            Type::Instance => self.load_attr(object, idx),
+            Type::Object => self.load_attr(object, idx),
             _ => self.load_field(object, idx),
         }
     }
@@ -307,23 +308,23 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let value = self.stack.pop();
         let object = self.stack.pop();
 
-        self.check_type(object.ty(), Type::Instance)?;
+        self.check_type(object.ty(), Type::Object)?;
 
-        let mut instance = object.instance();
-        instance.attrs.insert(member, value);
+        let mut object = object.object();
+        object.set_attr(member, value);
 
         Ok(())
     }
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
         let member = self.const_name(member)?;
-        let instance = object.instance();
+        let object = object.object();
 
-        match instance.attrs.get(&member).copied() {
+        match object.get_attr(&member).copied() {
             Some(value) => self.push(value),
             None => {
                 let member = member.as_str();
-                match instance.class.methods.get(member) {
+                match object.class.methods.get(member) {
                     Some(method) => {
                         let method = Rc::clone(method);
                         self.push(object)?;
@@ -331,7 +332,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                         Ok(())
                     }
                     None => Err(ErrorKind::UnknownAttr {
-                        class: Rc::clone(&instance.class),
+                        class: Rc::clone(&object.class),
                         attribute: member.to_string(),
                     }
                     .at(self.span)
@@ -436,8 +437,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn init_class(&mut self, class: Rc<Class>, arg_count: usize) -> Result<(), Error> {
         let init_fn = class.methods.get("init").map(Rc::clone);
-        let instance = Instance::new(class);
-        let handle = self.gc.alloc(instance)?;
+        let object = Object::new(class);
+        let handle = self.gc.alloc(object)?;
 
         if let Some(func) = init_fn {
             self.push(handle)?;
@@ -477,7 +478,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.fn_call(func, arg_count as usize, tail_call)
     }
 
-    #[inline(always)]
     fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
         let callee = self.stack.pop();
 
@@ -776,8 +776,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::LoadArg => self.load_arg(opcode.code())?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret()?,
-                Op::CallFn => self.call_fn(opcode.code2(), false)?,
                 Op::Call => self.call(opcode.code(), false)?,
+                Op::CallFn => self.call_fn(opcode.code2(), false)?,
                 Op::CallExtern => self.call_extern(opcode.code())?,
                 Op::TailCall => self.call(opcode.code(), true)?,
                 Op::TailCallFn => self.call_fn(opcode.code2(), true)?,
@@ -807,14 +807,16 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         match e {
             Error::Runtime(mut e) => {
                 let call_stack = mem::take(&mut self.call_stack);
-                e.trace = Some(
-                    call_stack
-                        .into_iter()
-                        .skip(1)
-                        .rev()
-                        .map(|s| s.call)
-                        .collect::<Vec<_>>(),
-                );
+                let mut stack_trace = call_stack
+                    .into_iter()
+                    .rev()
+                    .map(|s| s.call)
+                    .collect::<Vec<_>>();
+
+                stack_trace.remove(0);
+                stack_trace.reverse();
+
+                e.trace = Some(stack_trace);
                 Error::Runtime(e)
             }
             Error::Fatal(e) => Error::Fatal(e),

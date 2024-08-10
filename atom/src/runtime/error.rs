@@ -43,7 +43,7 @@ impl ErrorKind {
     }
 }
 
-#[derive(Default, Clone)]
+#[derive(Clone)]
 pub struct Call {
     #[allow(dead_code)]
     pub span: Span,

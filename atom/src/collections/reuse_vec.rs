@@ -1,9 +1,22 @@
-use std::vec::IntoIter;
-
 #[derive(Default)]
+enum Entry<T> {
+    #[default]
+    Empty,
+    Occupied(T),
+}
+
 pub struct ReuseVec<T> {
-    data: Vec<T>,
+    data: Vec<Entry<T>>,
     len: usize,
+}
+
+impl<T> Default for ReuseVec<T> {
+    fn default() -> Self {
+        Self {
+            data: vec![],
+            len: 0,
+        }
+    }
 }
 
 impl<T> ReuseVec<T> {
@@ -22,9 +35,9 @@ impl<T> ReuseVec<T> {
 
     pub fn push(&mut self, item: T) {
         if self.data.len() > self.len {
-            self.data[self.len] = item;
+            self.data[self.len] = Entry::Occupied(item);
         } else {
-            self.data.push(item);
+            self.data.push(Entry::Occupied(item));
         }
 
         self.len += 1;
@@ -37,24 +50,41 @@ impl<T> ReuseVec<T> {
 
         let item = self.data.get_mut(self.len - 1);
         self.len -= 1;
-        item
+        item.map(|entry| match entry {
+            Entry::Empty => unreachable!(),
+            Entry::Occupied(item) => item,
+        })
     }
 
     pub fn last(&self) -> &T {
-        &self.data[self.len - 1]
+        match &self.data[self.len - 1] {
+            Entry::Empty => unreachable!(),
+            Entry::Occupied(item) => item,
+        }
     }
 
     pub fn last_mut(&mut self) -> &mut T {
-        &mut self.data[self.len - 1]
+        match &mut self.data[self.len - 1] {
+            Entry::Empty => unreachable!(),
+            Entry::Occupied(item) => item,
+        }
     }
 
-    pub fn iter(&mut self) -> std::slice::Iter<T> {
-        self.data[0..self.len].iter()
+    pub fn iter(&mut self) -> impl DoubleEndedIterator<Item = &T> {
+        self.data[0..self.len]
+            .iter()
+            .filter_map(|entry| match entry {
+                Entry::Empty => None,
+                Entry::Occupied(item) => Some(item),
+            })
     }
 
-    pub fn into_iter(mut self) -> IntoIter<T> {
+    pub fn into_iter(mut self) -> impl DoubleEndedIterator<Item = T> {
         self.data.truncate(self.len);
-        self.data.into_iter()
+        self.data.into_iter().filter_map(|entry| match entry {
+            Entry::Empty => None,
+            Entry::Occupied(item) => Some(item),
+        })
     }
 }
 

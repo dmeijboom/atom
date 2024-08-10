@@ -26,24 +26,34 @@ impl Class {
 }
 
 #[derive(Debug)]
-pub struct Instance {
+pub struct Object {
     pub class: Rc<Class>,
-    pub attrs: HashMap<Handle<Str>, Value, WyHash>,
+    attrs: HashMap<Handle<Str>, Value, WyHash>,
 }
 
-impl Instance {
+impl Object {
     pub fn new(class: Rc<Class>) -> Self {
         Self {
             class,
             attrs: HashMap::default(),
         }
     }
+
+    pub fn get_attr(&self, key: &Handle<Str>) -> Option<&Value> {
+        self.attrs.get(key)
+    }
+
+    pub fn set_attr(&mut self, key: Handle<Str>, value: Value) {
+        self.attrs.insert(key, value);
+    }
 }
 
-impl Trace for Instance {
+impl Trace for Object {
     fn trace(&self, gc: &mut crate::gc::Gc) {
-        for value in self.attrs.values() {
+        for (key, value) in self.attrs.iter() {
+            key.trace(gc);
             value.trace(gc);
+            gc.mark(key.boxed());
         }
     }
 }

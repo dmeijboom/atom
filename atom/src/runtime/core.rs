@@ -54,7 +54,7 @@ pub fn repr(value: &Value) -> Result<String, RuntimeError> {
         Type::Bool => format!("{}", value.bool()),
         Type::Fn => format!("{}(..)", value.func().name),
         Type::Class => value.class().name.to_string(),
-        Type::Instance => format!("{}{{..}}", value.instance().class.name),
+        Type::Object => format!("{}{{..}}", value.object().class.name),
         Type::Nil => "<nil>".to_string(),
     })
 }

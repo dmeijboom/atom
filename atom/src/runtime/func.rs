@@ -1,6 +1,9 @@
 use std::{fmt::Debug, rc::Rc};
 
-use crate::opcode::{Op, Opcode};
+use crate::{
+    gc::Trace,
+    opcode::{Op, Opcode},
+};
 
 use super::Name;
 
@@ -39,6 +42,10 @@ impl Func {
     pub fn is_extern(&self) -> bool {
         matches!(self.codes.first(), Some(c) if c.op() == Op::CallExtern)
     }
+}
+
+impl Trace for Func {
+    fn trace(&self, _gc: &mut crate::gc::Gc) {}
 }
 
 impl Debug for Func {

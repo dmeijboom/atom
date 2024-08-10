@@ -7,7 +7,7 @@ use crate::gc::{AnyHandle, Gc, Handle, Trace};
 
 use super::{
     array::Array,
-    class::{Class, Instance},
+    class::{Class, Object},
     error::RuntimeError,
     func::Func,
     str::Str,
@@ -26,7 +26,7 @@ pub enum Tag {
     False,
     Nil,
     Class,
-    Instance,
+    Object,
 }
 
 #[repr(u64)]
@@ -40,7 +40,7 @@ pub enum Type {
     Str,
     Nil,
     Class,
-    Instance,
+    Object,
 }
 
 impl Type {
@@ -54,7 +54,7 @@ impl Type {
             Type::Str => "Str",
             Type::Nil => "Nil",
             Type::Class => "Class",
-            Type::Instance => "Instance",
+            Type::Object => "Object",
         }
     }
 }
@@ -102,7 +102,7 @@ impl Value {
             t if t == Tag::Str as u64 => Tag::Str,
             t if t == Tag::Nil as u64 => Tag::Nil,
             t if t == Tag::Class as u64 => Tag::Class,
-            t if t == Tag::Instance as u64 => Tag::Instance,
+            t if t == Tag::Object as u64 => Tag::Object,
             _ => unreachable!(),
         }
     }
@@ -118,7 +118,7 @@ impl Value {
             Tag::True | Tag::False => Type::Bool,
             Tag::Nil => Type::Nil,
             Tag::Class => Type::Class,
-            Tag::Instance => Type::Instance,
+            Tag::Object => Type::Object,
         }
     }
 
@@ -163,7 +163,7 @@ impl Value {
             Tag::Array => Some(Box::new(self.array())),
             Tag::Str => Some(Box::new(self.str())),
             Tag::Int => Some(Box::new(self.into_handle::<i64>())),
-            Tag::Instance => Some(Box::new(self.instance())),
+            Tag::Object => Some(Box::new(self.object())),
             Tag::SmallInt
             | Tag::Float
             | Tag::True
@@ -196,7 +196,7 @@ impl Value {
         Handle::from_addr(addr as usize).unwrap()
     }
 
-    pub fn instance(self) -> Handle<Instance> {
+    pub fn object(self) -> Handle<Object> {
         self.into_handle()
     }
 
@@ -241,7 +241,7 @@ impl Display for Value {
             Type::Str => write!(f, "Str"),
             Type::Nil => write!(f, "Nil"),
             Type::Class => write!(f, "Class"),
-            Type::Instance => write!(f, "Instance"),
+            Type::Object => write!(f, "Object"),
         }
     }
 }
@@ -303,9 +303,9 @@ impl TryFrom<usize> for Value {
     }
 }
 
-impl From<Handle<Instance>> for Value {
-    fn from(instance: Handle<Instance>) -> Self {
-        Self::new(Tag::Instance, instance.addr() as u64)
+impl From<Handle<Object>> for Value {
+    fn from(object: Handle<Object>) -> Self {
+        Self::new(Tag::Object, object.addr() as u64)
     }
 }
 
@@ -347,9 +347,9 @@ impl From<Value> for Handle<Str> {
     }
 }
 
-impl From<Value> for Handle<Instance> {
+impl From<Value> for Handle<Object> {
     fn from(value: Value) -> Self {
-        value.instance()
+        value.object()
     }
 }
 
@@ -404,7 +404,7 @@ mod tests {
         assert_eq!(Value::new_primitive(Tag::False).ty(), Type::Bool);
         assert_eq!(Value::new_primitive(Tag::Nil).ty(), Type::Nil);
         assert_eq!(Value::new_primitive(Tag::Class).ty(), Type::Class);
-        assert_eq!(Value::new_primitive(Tag::Instance).ty(), Type::Instance);
+        assert_eq!(Value::new_primitive(Tag::Object).ty(), Type::Object);
     }
 
     #[test]
