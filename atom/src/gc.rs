@@ -117,16 +117,21 @@ pub fn alloc<T>(layout: Layout) -> Result<*mut T, RuntimeError> {
 }
 
 #[derive(Default)]
+struct Cycle {
+    allocated: usize,
+}
+
+#[derive(Default)]
 pub struct Gc {
+    cycle: Cycle,
     marked: BitSet<usize>,
-    cycle_allocated: usize,
     roots: Vec<Box<dyn AnyHandle>>,
     arrays: HashMap<usize, Layout, WyHash>,
 }
 
 impl Gc {
-    pub fn should_run(&self) -> bool {
-        self.cycle_allocated >= 1_000_000
+    pub fn ready(&self) -> bool {
+        self.cycle.allocated >= 1_000_000
     }
 
     pub unsafe fn track<T: Trace + 'static>(
@@ -146,7 +151,7 @@ impl Gc {
 
     pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, RuntimeError> {
         let layout = Layout::new::<T>();
-        self.cycle_allocated += layout.size();
+        self.cycle.allocated += layout.size();
 
         unsafe {
             let ptr = alloc::<T>(layout)?;
@@ -161,7 +166,7 @@ impl Gc {
     ) -> Result<Handle<T>, RuntimeError> {
         let layout = Layout::array::<T>(cap)
             .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
-        self.cycle_allocated += layout.size();
+        self.cycle.allocated += layout.size();
 
         unsafe {
             let ptr = alloc_zeroed(layout) as *mut T;
@@ -176,20 +181,22 @@ impl Gc {
     }
 
     pub fn sweep(&mut self) {
-        self.cycle_allocated = 0;
+        self.cycle.allocated = 0;
         self.roots.retain(|root| {
             let addr = root.as_ptr() as usize;
 
-            if !self.marked.contains(addr) {
-                unsafe {
-                    let layout = self.arrays.remove(&addr).unwrap_or_else(|| root.layout());
-                    dealloc(root.as_ptr(), layout);
-                }
-
-                return false;
+            if self.marked.contains(addr) {
+                return true;
             }
 
-            true
+            unsafe {
+                dealloc(
+                    root.as_ptr(),
+                    self.arrays.remove(&addr).unwrap_or_else(|| root.layout()),
+                );
+            }
+
+            false
         });
 
         self.marked.clear();

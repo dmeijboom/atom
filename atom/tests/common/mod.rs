@@ -1,12 +1,13 @@
 use std::{cell::RefCell, fs, rc::Rc};
 
 use atom::{
-    ast::Stmt, runtime, BoxedFn, Compiler, DynamicLinker, Error, Lexer, Module, Parser, Value, Vm,
+    ast::Stmt, runtime, BoxedFn, Compiler, DynamicLinker, Error, Lexer, Lib, Module, Parser, Value,
+    Vm,
 };
 
 const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
 
-struct TestLinker<L: DynamicLinker> {
+pub struct TestLinker<L: DynamicLinker> {
     linker: L,
     return_value: Rc<RefCell<Option<Value>>>,
 }
@@ -58,17 +59,19 @@ pub fn compile(name: &str) -> Result<Module, Error> {
 //    compile(name).expect("failed to compile module")
 //}
 
-pub fn run(name: &str) -> Result<Option<Value>, Error> {
+pub type TestVm = Vm<TestLinker<Lib>, 1000, 1000>;
+
+pub fn run(name: &str) -> Result<(TestVm, Option<Value>), Error> {
     let module = compile(name)?;
     let return_value = Rc::new(RefCell::new(None));
     let linker = TestLinker::new(runtime::linker(), Rc::clone(&return_value));
-    let mut vm = Vm::new(module, linker)?;
+    let mut vm = TestVm::new(module, linker)?;
     vm.run()?;
 
     let return_value = return_value.borrow_mut().take();
-    Ok(return_value)
+    Ok((vm, return_value))
 }
 
-pub fn must_run(name: &str) -> Option<Value> {
+pub fn must_run(name: &str) -> (TestVm, Option<Value>) {
     run(name).expect("failed to run module")
 }

@@ -8,17 +8,17 @@ use crate::{
     },
 };
 
-use super::{str::Str, Context};
+use super::{str::Str, Atom};
 
 #[export]
-fn repr(ctx: Context<'_>, arg: Value) -> Result<Handle<Str>, RuntimeError> {
+fn repr(mut atom: Atom<'_>, arg: Value) -> Result<Handle<Str>, RuntimeError> {
     let string = repr(&arg)?;
-    let str = Str::from_string(ctx.gc, string);
-    ctx.gc.alloc(str)
+    let str = Str::from_string(atom.gc, string);
+    atom.alloc(str)
 }
 
 #[export]
-fn println(_ctx: Context<'_>, arg: Value) -> Result<(), RuntimeError> {
+fn println(_atom: Atom<'_>, arg: Value) -> Result<(), RuntimeError> {
     match arg.ty() {
         Type::Str => {
             println!("{}", arg.str().as_str());

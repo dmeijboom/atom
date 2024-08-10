@@ -1,9 +1,4 @@
-use std::{
-    collections::HashMap,
-    mem::{self, size_of},
-    rc::Rc,
-    time::Duration,
-};
+use std::{collections::HashMap, mem, rc::Rc, time::Duration};
 
 #[cfg(feature = "timings")]
 use std::time::Instant;
@@ -24,8 +19,8 @@ use crate::{
         func::Func,
         module::Module,
         str::Str,
-        value::{Type, Value},
-        Context,
+        value::{TryIntoValue, Type, Value},
+        Atom,
     },
 };
 
@@ -45,8 +40,8 @@ macro_rules! unwrap {
 
 macro_rules! binary {
     ($self:ident: $($ty:ident)|+, $lhs:expr, $op:tt, $rhs:expr) => {{
-        $self.push(match $lhs.ty() {
-            $(Type::$ty => Value::from((unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)))),+
+        let value = match $lhs.ty() {
+            $(Type::$ty => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into_value(&mut $self.gc)?),+
             , _ => return Err(ErrorKind::UnsupportedOp {
                 left: $lhs.ty(),
                 right: $rhs.ty(),
@@ -54,7 +49,9 @@ macro_rules! binary {
             }
             .at($self.span)
             .into()),
-        })?;
+        };
+
+        $self.push(value)?;
 
         Ok(())
     }};
@@ -119,9 +116,6 @@ struct Frame {
     return_pos: usize,
 }
 
-const MAX_STACK_SIZE: usize = 200000 / size_of::<Value>();
-const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
-
 fn top_frame(module: &Module) -> Frame {
     Frame {
         call: Call::new(
@@ -138,7 +132,7 @@ fn top_frame(module: &Module) -> Frame {
 fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
     Ok(match const_ {
         Const::Nil => Value::NIL,
-        Const::Int(n) => Value::from(n),
+        Const::Int(n) => n.into_value(gc)?,
         Const::Float(n) => Value::from(n),
         Const::Bool(b) => Value::from(b),
         Const::Str(s) => {
@@ -148,7 +142,7 @@ fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
     })
 }
 
-pub type BoxedFn = Rc<Box<dyn Fn(Context, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
+pub type BoxedFn = Rc<Box<dyn Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
 
 pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
@@ -166,7 +160,7 @@ impl Timing {
     }
 }
 
-pub struct Vm<L: DynamicLinker> {
+pub struct Vm<L: DynamicLinker, const S: usize, const C: usize> {
     gc: Gc,
     span: Span,
     pos: usize,
@@ -174,23 +168,23 @@ pub struct Vm<L: DynamicLinker> {
     module: Module,
     returned: bool,
     vars: Vec<Value>,
+    consts: [Value; C],
     codes: Rc<[Opcode]>,
+    stack: Stack<Value, S>,
     call_stack: ReuseVec<Frame>,
     timing: HashMap<Op, Timing>,
-    consts: [Value; MAX_CONST_SIZE],
-    stack: Stack<Value, MAX_STACK_SIZE>,
 }
 
-impl<L: DynamicLinker> Drop for Vm<L> {
+impl<L: DynamicLinker, const S: usize, const C: usize> Drop for Vm<L, S, C> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<L: DynamicLinker> Vm<L> {
+impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     pub fn new(mut module: Module, linker: L) -> Result<Self, Error> {
         let mut gc = Gc::default();
-        let mut consts = [Value::NIL; MAX_CONST_SIZE];
+        let mut consts = [Value::NIL; C];
 
         for (i, const_) in mem::take(&mut module.consts).into_iter().enumerate() {
             consts[i] = map_const(&mut gc, const_)?;
@@ -219,30 +213,21 @@ impl<L: DynamicLinker> Vm<L> {
         &self.timing
     }
 
-    fn try_collect_gc(&mut self) {
-        if !self.gc.should_run() {
+    fn try_mark_sweep(&mut self) {
+        if !self.gc.ready() {
             return;
         }
 
-        let mut try_mark = |value: &Value| {
-            if let Some(handle) = value.handle() {
-                self.gc.mark(handle);
-            }
-        };
-
-        for const_ in self.consts.iter() {
-            try_mark(const_);
-        }
-
-        for item in self.stack.iter() {
-            try_mark(item);
-        }
-
-        for frame in self.call_stack.iter() {
-            for local in frame.locals.iter() {
-                try_mark(local);
-            }
-        }
+        self.vars
+            .iter()
+            .chain(self.consts.iter())
+            .chain(self.stack.iter())
+            .chain(self.call_stack.iter().flat_map(|frame| frame.locals.iter()))
+            .for_each(|value| {
+                if let Some(handle) = value.handle() {
+                    self.gc.mark(handle);
+                }
+            });
 
         self.gc.sweep();
     }
@@ -470,7 +455,7 @@ impl<L: DynamicLinker> Vm<L> {
             .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
         let frame = self.call_stack.last_mut();
         let args = mem::take(&mut frame.locals);
-        let ctx = Context::with_span(&mut self.gc, self.span);
+        let ctx = Atom::with_span(&mut self.gc, self.span);
         let return_value = (handler)(ctx, args)?;
 
         self.returned = true;
@@ -557,7 +542,6 @@ impl<L: DynamicLinker> Vm<L> {
         let handle = self.gc.alloc(array)?;
 
         self.push(handle)?;
-        self.try_collect_gc();
 
         Ok(())
     }
@@ -702,7 +686,6 @@ impl<L: DynamicLinker> Vm<L> {
         if matches!(lhs.ty(), Type::Array | Type::Str) {
             let value = self.concat(lhs, rhs)?;
             self.push(value)?;
-            self.try_collect_gc();
 
             return Ok(());
         }
@@ -791,6 +774,8 @@ impl<L: DynamicLinker> Vm<L> {
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
             }
+
+            self.try_mark_sweep();
 
             #[cfg(feature = "timings")]
             {

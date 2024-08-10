@@ -10,7 +10,7 @@ use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use opcode::Opcode;
-use runtime::{func::Func, module::Module};
+use runtime::{func::Func, module::Module, value::Value};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -34,6 +34,11 @@ mod vm;
 static GLOBAL: MiMalloc = MiMalloc;
 
 const PRELUDE_SOURCE: &str = include_str!("../std/prelude.atom");
+
+const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
+const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
+
+type AtomVm<L> = Vm<L, MAX_STACK_SIZE, MAX_CONST_SIZE>;
 
 #[derive(Parser)]
 struct Opts {
@@ -122,7 +127,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run { source } => {
             let module = compile(source)?;
-            let mut vm = Vm::new(module, runtime::linker())?;
+            let mut vm = AtomVm::new(module, runtime::linker())?;
             vm.run()?;
 
             #[cfg(feature = "timings")]

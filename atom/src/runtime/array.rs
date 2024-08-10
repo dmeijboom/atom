@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{Context, Lib};
+use super::{Atom, Lib};
 
 pub struct Iter<'a, T: Trace> {
     idx: usize,
@@ -160,9 +160,9 @@ impl<T: Trace> Array<T> {
 }
 
 #[export]
-fn array_pop(ctx: Context<'_>, mut this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
+fn array_pop(atom: Atom<'_>, mut this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
     if this.is_empty() {
-        return Err(ErrorKind::IndexOutOfBounds(0).at(ctx.span));
+        return Err(ErrorKind::IndexOutOfBounds(0).at(atom.span));
     }
 
     let item = unsafe {
@@ -180,7 +180,7 @@ fn array_pop(ctx: Context<'_>, mut this: Handle<Array<Value>>) -> Result<Value, 
 
 #[export]
 fn array_push(
-    ctx: Context<'_>,
+    atom: Atom<'_>,
     mut this: Handle<Array<Value>>,
     item: Value,
 ) -> Result<(), RuntimeError> {
@@ -188,14 +188,14 @@ fn array_push(
 
     unsafe {
         if len == 0 {
-            let new_handle: Handle<Value> = ctx.gc.alloc_array(1)?;
+            let new_handle: Handle<Value> = atom.alloc_array(1)?;
             new_handle.as_ptr().write(item);
             *this = Array::from_raw_parts(new_handle, 1, 1);
         } else if cap > len {
             this.data.assume_init_ref().as_ptr().add(len).write(item);
             this.len += 1;
         } else {
-            let handle: Handle<Value> = ctx.gc.alloc_array(cap * 2)?;
+            let handle: Handle<Value> = atom.alloc_array(cap * 2)?;
             let ptr = handle.as_ptr();
 
             for (i, item) in this.iter().copied().enumerate() {
@@ -213,12 +213,12 @@ fn array_push(
 }
 
 #[export]
-fn array_len(_ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+fn array_len(_atom: Atom<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
     Ok(this.len)
 }
 
 #[export]
-fn array_cap(_ctx: Context<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+fn array_cap(_atom: Atom<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
     Ok(this.cap)
 }
 
@@ -259,8 +259,8 @@ mod tests {
 
         for (i, (len, cap)) in expected.into_iter().enumerate() {
             atom_array_push(
-                Context::new(&mut gc),
-                vec![(10 * i).into(), handle.clone().into()],
+                Atom::new(&mut gc),
+                vec![(10 * i).try_into().unwrap(), handle.clone().into()],
             )
             .expect("Array.push failed");
 

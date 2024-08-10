@@ -8,12 +8,15 @@ use crate::gc::{AnyHandle, Gc, Handle, Trace};
 use super::{
     array::Array,
     class::{Class, Instance},
+    error::RuntimeError,
     func::Func,
     str::Str,
 };
 
 #[repr(u64)]
-enum Tag {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Tag {
+    SmallInt,
     Int,
     Float,
     Array,
@@ -83,22 +86,39 @@ impl Value {
         self.bits == Self::NAN.bits || (self.bits & SIG_NAN) != SIG_NAN
     }
 
-    pub const fn ty(&self) -> Type {
+    pub const fn tag(&self) -> Tag {
         if self.is_float() {
-            return Type::Float;
+            return Tag::Float;
         }
 
         match (self.bits & TAG_MASK) >> 48 {
-            t if t == Tag::Int as u64 => Type::Int,
-            t if t == Tag::Float as u64 => Type::Float,
-            t if t == Tag::True as u64 || t == Tag::False as u64 => Type::Bool,
-            t if t == Tag::Array as u64 => Type::Array,
-            t if t == Tag::Fn as u64 => Type::Fn,
-            t if t == Tag::Str as u64 => Type::Str,
-            t if t == Tag::Nil as u64 => Type::Nil,
-            t if t == Tag::Class as u64 => Type::Class,
-            t if t == Tag::Instance as u64 => Type::Instance,
+            t if t == Tag::SmallInt as u64 => Tag::SmallInt,
+            t if t == Tag::Int as u64 => Tag::Int,
+            t if t == Tag::Float as u64 => Tag::Float,
+            t if t == Tag::True as u64 => Tag::True,
+            t if t == Tag::False as u64 => Tag::False,
+            t if t == Tag::Array as u64 => Tag::Array,
+            t if t == Tag::Fn as u64 => Tag::Fn,
+            t if t == Tag::Str as u64 => Tag::Str,
+            t if t == Tag::Nil as u64 => Tag::Nil,
+            t if t == Tag::Class as u64 => Tag::Class,
+            t if t == Tag::Instance as u64 => Tag::Instance,
             _ => unreachable!(),
+        }
+    }
+
+    #[inline(always)]
+    pub const fn ty(&self) -> Type {
+        match self.tag() {
+            Tag::SmallInt | Tag::Int => Type::Int,
+            Tag::Float => Type::Float,
+            Tag::Array => Type::Array,
+            Tag::Fn => Type::Fn,
+            Tag::Str => Type::Str,
+            Tag::True | Tag::False => Type::Bool,
+            Tag::Nil => Type::Nil,
+            Tag::Class => Type::Class,
+            Tag::Instance => Type::Instance,
         }
     }
 
@@ -115,8 +135,8 @@ impl Value {
     }
 
     pub fn int(self) -> i64 {
-        match self.ty() {
-            Type::Int => {
+        match self.tag() {
+            Tag::SmallInt => {
                 let bits = self.bits & INT_MASK;
 
                 if self.bits & SIGN_BIT != 0 {
@@ -125,6 +145,7 @@ impl Value {
                     bits as i64
                 }
             }
+            Tag::Int => *self.into_handle(),
             _ => unreachable!(),
         }
     }
@@ -134,15 +155,22 @@ impl Value {
     }
 
     pub fn bool(self) -> bool {
-        (self.bits & TAG_MASK) >> 48 == Tag::True as u64
+        self.tag() == Tag::True
     }
 
     pub fn handle(&self) -> Option<Box<dyn AnyHandle>> {
-        match self.ty() {
-            Type::Array => Some(Box::new(self.array())),
-            Type::Str => Some(Box::new(self.str())),
-            Type::Instance => Some(Box::new(self.instance())),
-            Type::Int | Type::Float | Type::Bool | Type::Fn | Type::Class | Type::Nil => None,
+        match self.tag() {
+            Tag::Array => Some(Box::new(self.array())),
+            Tag::Str => Some(Box::new(self.str())),
+            Tag::Int => Some(Box::new(self.into_handle::<i64>())),
+            Tag::Instance => Some(Box::new(self.instance())),
+            Tag::SmallInt
+            | Tag::Float
+            | Tag::True
+            | Tag::False
+            | Tag::Fn
+            | Tag::Class
+            | Tag::Nil => None,
         }
     }
 
@@ -225,20 +253,26 @@ impl Debug for Value {
     }
 }
 
-impl From<i64> for Value {
-    fn from(value: i64) -> Self {
+#[derive(Debug, thiserror::Error)]
+#[error("integer overflow")]
+pub struct IntOverflowError;
+
+impl TryFrom<i64> for Value {
+    type Error = IntOverflowError;
+
+    fn try_from(value: i64) -> Result<Self, Self::Error> {
         if value.unsigned_abs() > INT_MASK {
-            panic!("integer overflow");
+            return Err(IntOverflowError);
         }
 
-        Self::new(
-            Tag::Int,
+        Ok(Self::new(
+            Tag::SmallInt,
             if value < 0 {
                 SIGN_BIT | value.unsigned_abs()
             } else {
                 value as u64
             },
-        )
+        ))
     }
 }
 
@@ -260,9 +294,11 @@ impl From<bool> for Value {
     }
 }
 
-impl From<usize> for Value {
-    fn from(value: usize) -> Self {
-        (value as i64).into()
+impl TryFrom<usize> for Value {
+    type Error = IntOverflowError;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        (value as i64).try_into()
     }
 }
 
@@ -304,6 +340,52 @@ impl From<()> for Value {
     }
 }
 
+impl From<Value> for Handle<Str> {
+    fn from(value: Value) -> Self {
+        value.str()
+    }
+}
+
+impl From<Value> for Handle<Instance> {
+    fn from(value: Value) -> Self {
+        value.instance()
+    }
+}
+
+impl From<Value> for Handle<Array<Value>> {
+    fn from(value: Value) -> Self {
+        value.array()
+    }
+}
+
+pub trait TryIntoValue {
+    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError>;
+}
+
+impl<T: Into<Value>> TryIntoValue for T {
+    fn into_value(self, _gc: &mut Gc) -> Result<Value, RuntimeError> {
+        Ok(self.into())
+    }
+}
+
+impl TryIntoValue for usize {
+    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+        (self as i64).into_value(gc)
+    }
+}
+
+impl TryIntoValue for i64 {
+    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+        match Value::try_from(self) {
+            Ok(value) => Ok(value),
+            Err(IntOverflowError) => {
+                let handle = gc.alloc(self)?;
+                Ok(Value::new(Tag::Int, handle.addr() as u64))
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::gc::Gc;
@@ -312,6 +394,7 @@ mod tests {
 
     #[test]
     fn test_tags() {
+        assert_eq!(Value::new_primitive(Tag::SmallInt).ty(), Type::Int);
         assert_eq!(Value::new_primitive(Tag::Int).ty(), Type::Int);
         assert_eq!(Value::new_primitive(Tag::Array).ty(), Type::Array);
         assert_eq!(Value::new_primitive(Tag::Fn).ty(), Type::Fn);
@@ -324,9 +407,19 @@ mod tests {
     }
 
     #[test]
-    fn test_int() {
+    fn test_small_int() {
         for i in -1000000..1000000 {
-            let value = Value::from(i);
+            let value = Value::try_from(i).unwrap();
+            assert_eq!(value.int(), i);
+        }
+    }
+
+    #[test]
+    fn test_big_int() {
+        let mut gc = Gc::default();
+
+        for i in i64::MAX - 1000..i64::MAX {
+            let value = i.into_value(&mut gc).unwrap();
             assert_eq!(value.int(), i);
         }
     }

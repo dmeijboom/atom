@@ -1,13 +1,11 @@
 use ::std::{borrow::Cow, collections::HashMap, rc::Rc};
 
-use array::Array;
 use error::RuntimeError;
-use str::Str;
 use value::Value;
 use wyhash2::WyHash;
 
 use crate::{
-    gc::{Gc, Handle},
+    gc::{Gc, Handle, Trace},
     lexer::Span,
     vm::{BoxedFn, DynamicLinker},
 };
@@ -23,12 +21,12 @@ pub mod value;
 
 pub type Name = Cow<'static, str>;
 
-pub struct Context<'a> {
-    pub gc: &'a mut Gc,
+pub struct Atom<'a> {
+    gc: &'a mut Gc,
     pub span: Span,
 }
 
-impl<'a> Context<'a> {
+impl<'a> Atom<'a> {
     #[cfg(test)]
     pub fn new(gc: &'a mut Gc) -> Self {
         Self {
@@ -37,30 +35,19 @@ impl<'a> Context<'a> {
         }
     }
 
+    pub fn alloc<T: Trace + 'static>(&mut self, value: T) -> Result<Handle<T>, RuntimeError> {
+        self.gc.alloc(value)
+    }
+
+    pub fn alloc_array<T: Trace + 'static>(
+        &mut self,
+        cap: usize,
+    ) -> Result<Handle<T>, RuntimeError> {
+        self.gc.alloc_array(cap)
+    }
+
     pub fn with_span(gc: &'a mut Gc, span: Span) -> Self {
         Self { gc, span }
-    }
-}
-
-pub trait Convert<T> {
-    fn convert(self) -> T;
-}
-
-impl<T: From<Value>> Convert<T> for T {
-    fn convert(self) -> T {
-        self
-    }
-}
-
-impl Convert<Handle<Str>> for Value {
-    fn convert(self) -> Handle<Str> {
-        self.str()
-    }
-}
-
-impl Convert<Handle<Array<Value>>> for Value {
-    fn convert(self) -> Handle<Array<Value>> {
-        self.array()
     }
 }
 
@@ -77,7 +64,7 @@ impl Lib {
 
     pub fn set<F>(mut self, name: &str, func: F) -> Self
     where
-        F: Fn(Context, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
+        F: Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
     {
         let name = match self.class_name {
             Some(class_name) => format!("{}.{}", class_name, name),

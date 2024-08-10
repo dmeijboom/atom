@@ -23,7 +23,7 @@ pub fn export(_attr: TokenStream, item: TokenStream) -> TokenStream {
         .enumerate()
         .map(|(i, (name, ty))| {
             syn::parse_quote! {
-                let mut #name: #ty = args[#i].convert();
+                let mut #name: #ty = args[#i].into();
             }
         })
         .collect::<Vec<Stmt>>();
@@ -37,14 +37,14 @@ pub fn export(_attr: TokenStream, item: TokenStream) -> TokenStream {
     let export_name = Ident::new(&format!("atom_{}", f.sig.ident), f.sig.ident.span());
 
     quote! {
-        use crate::runtime::Convert as _;
+        use crate::runtime::value::TryIntoValue as _;
 
-        pub fn #export_name(#ctx_name: #ctx_ty, args: Vec<Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
-            let mut _inner = move || -> #return_type {
+        pub fn #export_name(mut #ctx_name: #ctx_ty, args: Vec<Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
+            let mut _inner = || -> #return_type {
                 #(#args)*
                 #(#body)*
             };
-            _inner().map(Into::into)
+            _inner().and_then(|v| v.into_value(&mut #ctx_name.gc))
         }
     }
     .into()
