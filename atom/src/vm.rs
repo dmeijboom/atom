@@ -69,6 +69,7 @@ macro_rules! binary {
     }
 }
 
+#[inline]
 fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
     if vec.len() != len {
         vec.resize_with(len, || T::default());
@@ -84,14 +85,6 @@ fn array_idx(elem: Value, len: usize) -> usize {
 
 #[derive(Debug, thiserror::Error)]
 pub enum FatalErrorKind {
-    #[error("invalid var at '{0}'")]
-    InvalidVar(usize),
-    #[error("invalid argument at '{0}'")]
-    InvalidArg(usize),
-    #[error("invalid fn at '{0}'")]
-    InvalidFn(usize),
-    #[error("invalid class at '{0}'")]
-    InvalidClass(usize),
     #[error("invalid extern function '{0}'")]
     InvalidExternFn(String),
 }
@@ -238,20 +231,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.gc.sweep();
     }
 
-    fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
+    fn push_tail_call(&mut self, arg_count: usize) {
         self.frame.pos = 0;
         self.frame.locals.resize(arg_count, Value::NIL);
         self.returned = false;
-
-        Ok(())
     }
 
-    fn push_call(
-        &mut self,
-        func: Rc<Func>,
-        receiver: Option<Value>,
-        arg_count: usize,
-    ) -> Result<(), Error> {
+    fn push_call(&mut self, func: Rc<Func>, receiver: Option<Value>, arg_count: usize) {
         let mut locals = Vec::with_capacity(arg_count);
         resize(&mut locals, arg_count);
 
@@ -267,8 +253,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         );
 
         self.call_stack.push(frame);
-
-        Ok(())
     }
 
     fn goto(&mut self, n: usize) {
@@ -373,53 +357,27 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         .into())
     }
 
-    fn get_func(&mut self, idx: usize) -> Result<Rc<Func>, Error> {
-        Ok(self
-            .module
-            .funcs
-            .get(idx)
-            .map(Rc::clone)
-            .ok_or_else(|| FatalErrorKind::InvalidFn(idx).at(self.span))?)
+    #[inline(always)]
+    fn get_func(&mut self, idx: usize) -> Rc<Func> {
+        Rc::clone(&self.module.funcs[idx])
     }
 
-    fn get_class(&mut self, idx: usize) -> Result<Rc<Class>, Error> {
-        Ok(self
-            .module
-            .classes
-            .get(idx)
-            .map(Rc::clone)
-            .ok_or_else(|| FatalErrorKind::InvalidClass(idx).at(self.span))?)
+    fn get_class(&mut self, idx: usize) -> Rc<Class> {
+        Rc::clone(&self.module.classes[idx])
     }
 
-    fn load_class(&mut self, idx: usize) -> Result<(), Error> {
-        let class = self.get_class(idx)?;
+    fn load_class(&mut self, idx: usize) {
+        let class = self.get_class(idx);
         self.stack.push(class.into());
-        Ok(())
     }
 
-    fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
-        let func = self.get_func(idx)?;
+    fn load_fn(&mut self, idx: usize) {
+        let func = self.get_func(idx);
         self.stack.push(func.into());
-        Ok(())
     }
 
-    fn load_var(&self, idx: usize) -> Result<Value, Error> {
-        match self.vars.get(idx).copied() {
-            Some(value) => Ok(value),
-            None => Err(FatalErrorKind::InvalidVar(idx).at(self.span).into()),
-        }
-    }
-
-    fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
-        let local = self
-            .frame
-            .locals
-            .get(idx)
-            .copied()
-            .ok_or_else(|| FatalErrorKind::InvalidArg(idx).at(self.span))?;
-
-        self.stack.push(local);
-        Ok(())
+    fn load_arg(&mut self, idx: usize) {
+        self.stack.push(self.frame.locals[idx]);
     }
 
     fn load_self(&mut self) -> Result<(), Error> {
@@ -498,7 +456,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
-        let func = self.get_func(fn_idx as usize)?;
+        let func = self.get_func(fn_idx as usize);
         self.fn_call(func, arg_count as usize, tail_call)
     }
 
@@ -520,7 +478,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
 
         if tail_call {
-            self.push_tail_call(arg_count)?;
+            self.push_tail_call(arg_count);
         } else {
             let receiver = if func.method {
                 Some(self.stack.pop())
@@ -528,7 +486,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 None
             };
 
-            self.push_call(func, receiver, arg_count)?;
+            self.push_call(func, receiver, arg_count);
         }
 
         self.stack.copy_to(&mut self.frame.locals, arg_count);
@@ -733,35 +691,30 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         binary!(self: Int, lhs, ^, rhs)
     }
 
-    fn store(&mut self, idx: usize) -> Result<(), Error> {
+    fn store(&mut self, idx: usize) {
         if self.vars.len() <= idx {
             resize(&mut self.vars, idx + 1);
         }
 
         self.vars[idx] = self.stack.pop();
-        Ok(())
     }
 
-    fn load(&mut self, idx: usize) -> Result<(), Error> {
-        let value = self.load_var(idx)?;
+    fn load(&mut self, idx: usize) {
+        let value = self.vars[idx];
         self.stack.push(value);
-        Ok(())
     }
 
-    fn load_const(&mut self, idx: usize) -> Result<(), Error> {
+    fn load_const(&mut self, idx: usize) {
         self.stack.push(self.consts[idx]);
-        Ok(())
     }
 
     fn discard(&mut self) {
         self.stack.pop();
     }
 
-    fn ret(&mut self) -> Result<(), Error> {
+    fn ret(&mut self) {
         self.returned = true;
         self.frame.pos = self.frame.func.codes.len();
-
-        Ok(())
     }
 
     #[inline(always)]
@@ -791,17 +744,17 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::BitwiseAnd => self.bitwise_and()?,
                 Op::BitwiseOr => self.bitwise_or()?,
                 Op::BitwiseXor => self.bitwise_xor()?,
-                Op::LoadConst => self.load_const(opcode.code())?,
+                Op::LoadConst => self.load_const(opcode.code()),
                 Op::LoadMember => self.load_member(opcode.code())?,
                 Op::StoreMember => self.store_member(opcode.code())?,
-                Op::LoadFn => self.load_fn(opcode.code())?,
-                Op::LoadClass => self.load_class(opcode.code())?,
-                Op::Store => self.store(opcode.code())?,
-                Op::Load => self.load(opcode.code())?,
-                Op::LoadArg => self.load_arg(opcode.code())?,
+                Op::LoadFn => self.load_fn(opcode.code()),
+                Op::LoadClass => self.load_class(opcode.code()),
+                Op::Store => self.store(opcode.code()),
+                Op::Load => self.load(opcode.code()),
+                Op::LoadArg => self.load_arg(opcode.code()),
                 Op::LoadSelf => self.load_self()?,
                 Op::Discard => self.discard(),
-                Op::Return => self.ret()?,
+                Op::Return => self.ret(),
                 Op::Call => self.call(opcode.code(), false)?,
                 Op::CallFn => self.call_fn(opcode.code2(), false)?,
                 Op::CallExtern => self.call_extern(opcode.code())?,
