@@ -454,7 +454,7 @@ impl Compiler {
         }
 
         if let Some(method) = methods.get_mut(&name) {
-            method.codes = codes.into();
+            method.codes = codes;
         }
 
         Ok(())
@@ -502,7 +502,7 @@ impl Compiler {
         self.funcs.push(func);
 
         let codes = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
-        self.funcs[idx].codes = codes.into();
+        self.funcs[idx].codes = codes;
 
         Ok(())
     }
@@ -733,7 +733,7 @@ impl Compiler {
         self.pop_scope()?;
 
         Ok(Module {
-            codes: self.codes.into(),
+            codes: self.codes,
             consts: self.consts,
             funcs: self.funcs.into_iter().map(Rc::new).collect(),
             classes: self.classes.into_iter().map(Rc::new).collect(),

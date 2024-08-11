@@ -1,10 +1,9 @@
-let array = [10, 9_223_372_036_854_775_807];
-
-for let i = 0; i < 15; i += 1 {
-    array = array ^ array;
+fn test() {
+    100
 }
 
-for let i = 0; i < 10000; i += 1 {
-    let new_array = array ^ array;
-    new_array.len();
+fn main() {
+    println(test());
 }
+
+main();

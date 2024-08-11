@@ -4,23 +4,12 @@ use crate::opcode::{Const, Opcode};
 
 use super::{class::Class, func::Func};
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Module {
-    pub codes: Rc<[Opcode]>,
+    pub codes: Vec<Opcode>,
     pub consts: Vec<Const>,
     pub funcs: Vec<Rc<Func>>,
     pub classes: Vec<Rc<Class>>,
-}
-
-impl Default for Module {
-    fn default() -> Self {
-        Self {
-            codes: Rc::new([]),
-            consts: vec![],
-            funcs: vec![],
-            classes: vec![],
-        }
-    }
 }
 
 #[derive(Default)]

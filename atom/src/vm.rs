@@ -7,11 +7,11 @@ use std::time::Instant;
 use tracing::{instrument, Level};
 
 use crate::{
-    collections::{ReuseVec, Stack},
+    collections::Stack,
     error::{IntoSpanned, SpannedError},
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    opcode::{Const, Op, Opcode},
+    opcode::{Const, Op},
     runtime::{
         array::Array,
         class::{Class, Object},
@@ -108,24 +108,23 @@ pub enum Error {
 
 #[derive(Debug)]
 struct Frame {
-    call: Call,
+    pos: usize,
+    span: Span,
+    func: Rc<Func>,
     locals: Vec<Value>,
-    return_pos: usize,
     receiver: Option<Value>,
 }
 
-fn top_frame(module: &Module) -> Frame {
+fn top_frame(module: &mut Module) -> Frame {
     Frame {
-        call: Call::new(
-            Span::default(),
-            Rc::new(Func {
-                codes: Rc::clone(&module.codes),
-                ..Func::default()
-            }),
-        ),
+        pos: 0,
+        span: Span::default(),
+        func: Rc::new(Func {
+            codes: mem::take(&mut module.codes),
+            ..Func::default()
+        }),
         receiver: None,
         locals: vec![],
-        return_pos: 0,
     }
 }
 
@@ -163,15 +162,14 @@ impl Timing {
 pub struct Vm<L: DynamicLinker, const S: usize, const C: usize> {
     gc: Gc,
     span: Span,
-    pos: usize,
     linker: L,
     module: Module,
     returned: bool,
+    frame: Frame,
     vars: Vec<Value>,
     consts: [Value; C],
-    codes: Rc<[Opcode]>,
     stack: Stack<Value, S>,
-    call_stack: ReuseVec<Frame>,
+    call_stack: Vec<Frame>,
     timing: HashMap<Op, Timing>,
 }
 
@@ -190,21 +188,17 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             consts[i] = map_const(&mut gc, const_)?;
         }
 
-        let mut call_stack = ReuseVec::default();
-        call_stack.push(top_frame(&module));
-
         Ok(Self {
             vars: vec![],
             consts,
             linker,
             returned: false,
             gc,
-            pos: 0,
+            frame: top_frame(&mut module),
             span: Span::default(),
-            call_stack,
+            call_stack: vec![],
             timing: HashMap::default(),
             stack: Stack::default(),
-            codes: Rc::clone(&module.codes),
             module,
         })
     }
@@ -213,7 +207,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let mut entries = self
             .timing
             .iter()
-            .map(|(op, timing)| (op.clone(), timing.clone()))
+            .map(|(op, timing)| (*op, timing.clone()))
             .collect::<Vec<_>>();
 
         entries.sort_by_key(|(_, timing)| timing.elapsed);
@@ -234,23 +228,20 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             .iter()
             .chain(self.consts.iter())
             .chain(self.stack.iter())
-            .chain(self.call_stack.iter().flat_map(|frame| {
-                frame
-                    .locals
+            .chain(
+                self.call_stack
                     .iter()
-                    .chain(frame.receiver.as_ref().into_iter())
-            }))
+                    .flat_map(|frame| frame.locals.iter().chain(frame.receiver.as_ref())),
+            )
             .for_each(|value| value.trace(&mut self.gc));
 
         self.gc.sweep();
     }
 
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
-        let frame = self.call_stack.last_mut();
-        frame.locals.resize(arg_count, Value::NIL);
-
+        self.frame.pos = 0;
+        self.frame.locals.resize(arg_count, Value::NIL);
         self.returned = false;
-        self.pos = 0;
 
         Ok(())
     }
@@ -261,36 +252,29 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         receiver: Option<Value>,
         arg_count: usize,
     ) -> Result<(), Error> {
-        let return_pos = self.pos;
+        let mut locals = Vec::with_capacity(arg_count);
+        resize(&mut locals, arg_count);
 
-        self.pos = 0;
-        self.codes = Rc::clone(&func.codes);
-
-        // Check if we can re-use the current frame
-        if let Some(frame) = self.call_stack.push_and_reuse() {
-            frame.call = Call::new(self.span, func);
-            frame.return_pos = return_pos;
-            frame.receiver = receiver;
-            resize(&mut frame.locals, arg_count);
-        } else {
-            let mut locals = Vec::with_capacity(arg_count);
-            resize(&mut locals, arg_count);
-
-            self.call_stack.push(Frame {
-                call: Call::new(self.span, func),
+        let frame = mem::replace(
+            &mut self.frame,
+            Frame {
+                pos: 0,
+                span: self.span,
+                func,
                 receiver,
                 locals,
-                return_pos,
-            });
-        }
+            },
+        );
+
+        self.call_stack.push(frame);
 
         Ok(())
     }
 
     fn goto(&mut self, n: usize) {
-        self.pos = n;
+        self.frame.pos = n;
 
-        if let Some(code) = self.codes.get(self.pos) {
+        if let Some(code) = self.frame.func.codes.get(self.frame.pos) {
             self.span = code.span;
         }
     }
@@ -427,8 +411,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
-        let frame = self.call_stack.last();
-        let local = frame
+        let local = self
+            .frame
             .locals
             .get(idx)
             .copied()
@@ -439,8 +423,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_self(&mut self) -> Result<(), Error> {
-        let frame = self.call_stack.last();
-        let receiver = frame
+        let receiver = self
+            .frame
             .receiver
             .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))?;
 
@@ -496,11 +480,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             .linker
             .resolve(name)
             .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
-        let frame = self.call_stack.last_mut();
-        let args = mem::take(&mut frame.locals);
+        let args = mem::take(&mut self.frame.locals);
         let mut atom = Atom::new(&mut self.gc).with_span(self.span);
 
-        if let Some(receiver) = frame.receiver {
+        if let Some(receiver) = self.frame.receiver {
             atom = atom.with_receiver(receiver);
         }
 
@@ -548,8 +531,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             self.push_call(func, receiver, arg_count)?;
         }
 
-        let frame = self.call_stack.last_mut();
-        self.stack.copy_to(&mut frame.locals, arg_count);
+        self.stack.copy_to(&mut self.frame.locals, arg_count);
         self.gc_tick();
 
         Ok(())
@@ -777,7 +759,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn ret(&mut self) -> Result<(), Error> {
         self.returned = true;
-        self.pos = self.codes.len();
+        self.frame.pos = self.frame.func.codes.len();
 
         Ok(())
     }
@@ -785,10 +767,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval_loop(&mut self) -> Result<(), Error> {
-        while self.pos < self.codes.len() {
-            let opcode = &self.codes[self.pos];
+        while self.frame.pos < self.frame.func.codes.len() {
+            let opcode = &self.frame.func.codes[self.frame.pos];
 
-            self.pos += 1;
+            self.frame.pos += 1;
             self.span = opcode.span;
 
             #[cfg(feature = "timings")]
@@ -854,7 +836,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 let mut stack_trace = call_stack
                     .into_iter()
                     .rev()
-                    .map(|s| s.call)
+                    .map(|s| Call::new(s.span, s.func))
                     .collect::<Vec<_>>();
 
                 stack_trace.remove(0);
@@ -872,21 +854,17 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             loop {
                 self.eval_loop()?;
 
-                if let Some(frame) = self.call_stack.pop() {
-                    if !self.returned {
-                        self.stack.push(Value::NIL);
-                    }
+                match self.call_stack.pop() {
+                    Some(frame) => {
+                        if !self.returned {
+                            self.stack.push(Value::NIL);
+                        }
 
-                    self.returned = false;
-                    self.pos = frame.return_pos;
-
-                    if !self.call_stack.is_empty() {
-                        self.codes = Rc::clone(&self.call_stack.last().call.func.codes);
-                        continue;
+                        self.returned = false;
+                        self.frame = frame;
                     }
+                    None => break,
                 }
-
-                break;
             }
 
             Ok(())

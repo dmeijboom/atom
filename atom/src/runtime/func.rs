@@ -1,4 +1,4 @@
-use std::{fmt::Debug, rc::Rc};
+use std::fmt::Debug;
 
 use crate::{
     gc::Trace,
@@ -12,7 +12,7 @@ pub struct Func {
     pub name: Name,
     pub method: bool,
     pub arg_count: usize,
-    pub codes: Rc<[Opcode]>,
+    pub codes: Vec<Opcode>,
 }
 
 impl Func {
@@ -21,7 +21,7 @@ impl Func {
             name: name.into(),
             arg_count,
             method: false,
-            codes: Rc::new([]),
+            codes: vec![],
         }
     }
 
@@ -30,7 +30,7 @@ impl Func {
             name: name.into(),
             arg_count,
             method: false,
-            codes: codes.into(),
+            codes,
         }
     }
 
