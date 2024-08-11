@@ -51,7 +51,7 @@ macro_rules! binary {
             .into()),
         };
 
-        $self.push(value)?;
+        $self.stack.push(value);
 
         Ok(())
     }};
@@ -94,8 +94,6 @@ pub enum FatalErrorKind {
     InvalidClass(usize),
     #[error("invalid extern function '{0}'")]
     InvalidExternFn(String),
-    #[error("maximum stack exceeded")]
-    MaxStackExceeded,
 }
 
 pub type FatalError = SpannedError<FatalErrorKind>;
@@ -233,15 +231,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.gc.sweep();
     }
 
-    fn push(&mut self, value: impl Into<Value>) -> Result<(), Error> {
-        if self.stack.is_full() {
-            return Err(FatalErrorKind::MaxStackExceeded.at(self.span).into());
-        }
-
-        self.stack.push(value.into());
-        Ok(())
-    }
-
     fn push_tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
         let frame = self.call_stack.last_mut();
         frame.locals.resize(arg_count, Value::NIL);
@@ -311,7 +300,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.check_type(object.ty(), Type::Object)?;
 
         let mut object = object.object();
-        object.set_attr(member, value);
+        object.attrs.insert(member, value);
 
         Ok(())
     }
@@ -320,25 +309,36 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let member = self.const_name(member)?;
         let object = object.object();
 
-        match object.get_attr(&member).copied() {
-            Some(value) => self.push(value),
-            None => {
-                let member = member.as_str();
-                match object.class.methods.get(member) {
-                    Some(method) => {
-                        let method = Rc::clone(method);
-                        self.push(object)?;
-                        self.push(method)?;
-                        Ok(())
-                    }
-                    None => Err(ErrorKind::UnknownAttr {
-                        class: Rc::clone(&object.class),
-                        attribute: member.to_string(),
-                    }
-                    .at(self.span)
-                    .into()),
-                }
+        if object.attrs.is_empty() {
+            return self.load_method(object, member);
+        }
+
+        match object.attrs.get(&member).copied() {
+            Some(value) => {
+                self.stack.push(value);
+                Ok(())
             }
+            None => self.load_method(object, member),
+        }
+    }
+
+    fn load_method(&mut self, object: Handle<Object>, member: Handle<Str>) -> Result<(), Error> {
+        let member = member.as_str();
+
+        match object.class.methods.get(member) {
+            Some(method) => {
+                let method = Rc::clone(method);
+                self.stack.push(object.into());
+                self.stack.push(method.into());
+
+                Ok(())
+            }
+            None => Err(ErrorKind::UnknownAttr {
+                class: Rc::clone(&object.class),
+                attribute: member.to_string(),
+            }
+            .at(self.span)
+            .into()),
         }
     }
 
@@ -355,8 +355,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             .and_then(|class| class.methods.get(member))
             .map(Rc::clone)
         {
-            self.push(object)?;
-            self.push(method)?;
+            self.stack.push(object);
+            self.stack.push(method.into());
             return Ok(());
         }
 
@@ -388,12 +388,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn load_class(&mut self, idx: usize) -> Result<(), Error> {
         let class = self.get_class(idx)?;
-        self.push(class)
+        self.stack.push(class.into());
+        Ok(())
     }
 
     fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
         let func = self.get_func(idx)?;
-        self.push(func)
+        self.stack.push(func.into());
+        Ok(())
     }
 
     fn load_var(&self, idx: usize) -> Result<Value, Error> {
@@ -407,7 +409,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let frame = self.call_stack.last();
 
         match frame.locals.get(frame.locals.len() - idx - 1).copied() {
-            Some(value) => self.push(value),
+            Some(value) => {
+                self.stack.push(value);
+                Ok(())
+            }
             None => Err(FatalErrorKind::InvalidArg(idx).at(self.span).into()),
         }
     }
@@ -426,7 +431,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         if value.bool() == cond {
             if push {
-                self.push(cond)?;
+                self.stack.push(cond.into());
             }
 
             self.goto(idx);
@@ -441,11 +446,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let handle = self.gc.alloc(object)?;
 
         if let Some(func) = init_fn {
-            self.push(handle)?;
-            self.push(func)?;
+            self.stack.push(handle.into());
+            self.stack.push(func.into());
             self.call(arg_count, false)?;
         } else {
-            self.push(handle)?;
+            self.stack.push(handle.into());
         }
 
         self.gc_tick();
@@ -466,7 +471,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let return_value = (handler)(ctx, args)?;
 
         self.returned = true;
-        self.push(return_value)?;
+        self.stack.push(return_value);
 
         self.gc_tick();
 
@@ -553,7 +558,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let array = Array::from_vec(&mut self.gc, values);
         let handle = self.gc.alloc(array)?;
 
-        self.push(handle)?;
+        self.stack.push(handle.into());
         self.gc_tick();
 
         Ok(())
@@ -593,7 +598,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         let new_array = self.gc.alloc(array.slice(from, to))?;
 
-        self.push(new_array)?;
+        self.stack.push(new_array.into());
         self.gc_tick();
 
         Ok(())
@@ -629,7 +634,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let (array, n) = self.prepare_elem()?;
 
         match array.get(n).copied() {
-            Some(elem) => self.push(elem),
+            Some(elem) => {
+                self.stack.push(elem);
+                Ok(())
+            }
             None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
         }
     }
@@ -637,7 +645,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn not(&mut self) -> Result<(), Error> {
         let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
-        self.push(!value.bool())
+        self.stack.push((!value.bool()).into());
+        Ok(())
     }
 
     fn eq(&mut self) -> Result<(), Error> {
@@ -701,7 +710,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         if matches!(lhs.ty(), Type::Array | Type::Str) {
             let value = self.concat(lhs, rhs)?;
 
-            self.push(value)?;
+            self.stack.push(value);
             self.gc_tick();
 
             return Ok(());
@@ -721,11 +730,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn load(&mut self, idx: usize) -> Result<(), Error> {
         let value = self.load_var(idx)?;
-        self.push(value)
+        self.stack.push(value);
+        Ok(())
     }
 
     fn load_const(&mut self, idx: usize) -> Result<(), Error> {
-        self.push(self.consts[idx])
+        self.stack.push(self.consts[idx]);
+        Ok(())
     }
 
     fn discard(&mut self) {

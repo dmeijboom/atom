@@ -80,6 +80,7 @@ impl<T: Trace> Clone for Handle<T> {
 }
 
 impl<T: Trace> Handle<T> {
+    #[inline(always)]
     pub fn addr(&self) -> usize {
         self.ptr.as_ptr() as usize
     }
@@ -88,6 +89,7 @@ impl<T: Trace> Handle<T> {
         NonNull::new(addr as *mut T).map(|ptr| Handle { ptr })
     }
 
+    #[inline(always)]
     pub unsafe fn as_ptr(&self) -> *mut T {
         self.ptr.as_ptr()
     }

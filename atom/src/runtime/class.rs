@@ -28,7 +28,7 @@ impl Class {
 #[derive(Debug)]
 pub struct Object {
     pub class: Rc<Class>,
-    attrs: HashMap<Handle<Str>, Value, WyHash>,
+    pub attrs: HashMap<Handle<Str>, Value, WyHash>,
 }
 
 impl Object {
@@ -37,14 +37,6 @@ impl Object {
             class,
             attrs: HashMap::default(),
         }
-    }
-
-    pub fn get_attr(&self, key: &Handle<Str>) -> Option<&Value> {
-        self.attrs.get(key)
-    }
-
-    pub fn set_attr(&mut self, key: Handle<Str>, value: Value) {
-        self.attrs.insert(key, value);
     }
 }
 
