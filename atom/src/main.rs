@@ -137,11 +137,11 @@ fn cmd(opts: Opts) -> Result<(), Error> {
 
                 for (op, timing) in vm.timing() {
                     println!(
-                        "{:?} took ~ {:.2?} {:.2?}/op ({}x)",
+                        "{:?} took {:.2?} ({:.2?}/op, {}x)",
                         op,
                         timing.elapsed,
                         timing.avg(),
-                        timing.count
+                        timing.count,
                     );
                 }
             }

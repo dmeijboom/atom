@@ -148,7 +148,7 @@ pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
 }
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Timing {
     pub count: u32,
     pub elapsed: Duration,
@@ -209,8 +209,16 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         })
     }
 
-    pub fn timing(&self) -> &HashMap<Op, Timing> {
-        &self.timing
+    pub fn timing(&self) -> Vec<(Op, Timing)> {
+        let mut entries = self
+            .timing
+            .iter()
+            .map(|(op, timing)| (op.clone(), timing.clone()))
+            .collect::<Vec<_>>();
+
+        entries.sort_by_key(|(_, timing)| timing.elapsed);
+        entries.reverse();
+        entries
     }
 
     fn gc_tick(&mut self) {
@@ -420,14 +428,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
         let frame = self.call_stack.last();
+        let local = frame
+            .locals
+            .get(idx)
+            .copied()
+            .ok_or_else(|| FatalErrorKind::InvalidArg(idx).at(self.span))?;
 
-        match frame.locals.get(idx).copied() {
-            Some(value) => {
-                self.stack.push(value);
-                Ok(())
-            }
-            None => Err(FatalErrorKind::InvalidArg(idx).at(self.span).into()),
-        }
+        self.stack.push(local);
+        Ok(())
     }
 
     fn load_self(&mut self) -> Result<(), Error> {
@@ -541,7 +549,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
 
         let frame = self.call_stack.last_mut();
-
         self.stack.copy_to(&mut frame.locals, arg_count);
         self.gc_tick();
 
