@@ -226,7 +226,12 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             .iter()
             .chain(self.consts.iter())
             .chain(self.stack.iter())
-            .chain(self.call_stack.iter().flat_map(|frame| frame.locals.iter()))
+            .chain(self.call_stack.iter().flat_map(|frame| {
+                frame
+                    .locals
+                    .iter()
+                    .chain(frame.receiver.as_ref().into_iter())
+            }))
             .for_each(|value| value.trace(&mut self.gc));
 
         self.gc.sweep();
