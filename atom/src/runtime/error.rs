@@ -13,6 +13,8 @@ pub enum ErrorKind {
     TypeMismatch { left: Type, right: Type },
     #[error("index out of bounds: {0}")]
     IndexOutOfBounds(usize),
+    #[error("unable to use 'self' outside of a method")]
+    NoReceiver,
     #[error("cannot call non-function: {0}")]
     NotCallable(Type),
     #[error("invalid argument count on '{}(..)': expected {}, got: {arg_count}", func.name, func.arg_count)]

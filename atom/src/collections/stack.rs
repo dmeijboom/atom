@@ -24,16 +24,24 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         }
     }
 
+    pub fn copy_to(&mut self, other: &mut [T], n: usize) {
+        other.copy_from_slice(&self.data[self.len - n..self.len]);
+        self.len -= n;
+    }
+
+    #[inline]
     pub fn pop(&mut self) -> T {
         self.len -= 1;
         self.data[self.len]
     }
 
+    #[inline]
     pub fn push(&mut self, item: T) {
         self.data[self.len] = item;
         self.len += 1;
     }
 
+    #[inline]
     pub fn is_full(&self) -> bool {
         self.len == N
     }
@@ -42,7 +50,27 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         self.data[..self.len].iter()
     }
 
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_copy_to() {
+        let mut stack = super::Stack::<i32, 10>::default();
+        stack.push(1);
+        stack.push(2);
+        stack.push(3);
+        stack.push(4);
+        stack.push(5);
+        stack.len -= 2;
+
+        let mut other = [0; 2];
+        stack.copy_to(&mut other, 2);
+
+        assert_eq!(other, [2, 3]);
     }
 }

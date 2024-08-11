@@ -72,6 +72,7 @@ fn is_keyword(s: &str) -> bool {
         "if" | "else"
             | "elif"
             | "for"
+            | "self"
             | "let"
             | "fn"
             | "return"

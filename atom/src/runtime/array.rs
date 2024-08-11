@@ -166,52 +166,52 @@ impl<T: Trace> Array<T> {
 }
 
 #[export]
-fn array_pop(atom: Atom<'_>, mut this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
-    if this.is_empty() {
+fn array_pop(atom: Atom<'_>) -> Result<Value, RuntimeError> {
+    let mut array = atom.receiver()?.array();
+
+    if array.is_empty() {
         return Err(ErrorKind::IndexOutOfBounds(0).at(atom.span));
     }
 
     let item = unsafe {
-        this.data
+        array
+            .data
             .assume_init_ref()
             .as_ptr()
-            .add(this.len - 1)
+            .add(array.len - 1)
             .read()
     };
 
-    this.len -= 1;
+    array.len -= 1;
 
     Ok(item)
 }
 
 #[export]
-fn array_push(
-    atom: Atom<'_>,
-    mut this: Handle<Array<Value>>,
-    item: Value,
-) -> Result<(), RuntimeError> {
-    let (len, cap) = (this.len, this.cap);
+fn array_push(atom: Atom<'_>, item: Value) -> Result<(), RuntimeError> {
+    let mut array = atom.receiver()?.array();
+    let (len, cap) = (array.len, array.cap);
 
     unsafe {
         if len == 0 {
             let new_handle: Handle<Value> = atom.alloc_array(1)?;
             new_handle.as_ptr().write(item);
-            *this = Array::from_raw_parts(new_handle, 1, 1);
+            *array = Array::from_raw_parts(new_handle, 1, 1);
         } else if cap > len {
-            this.data.assume_init_ref().as_ptr().add(len).write(item);
-            this.len += 1;
+            array.data.assume_init_ref().as_ptr().add(len).write(item);
+            array.len += 1;
         } else {
             let handle: Handle<Value> = atom.alloc_array(cap * 2)?;
             let ptr = handle.as_ptr();
 
-            for (i, item) in this.iter().copied().enumerate() {
+            for (i, item) in array.iter().copied().enumerate() {
                 ptr.add(i).write(item);
             }
 
             ptr.add(len).write(item);
 
             let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
-            *this = new_array;
+            *array = new_array;
         }
     }
 
@@ -219,13 +219,13 @@ fn array_push(
 }
 
 #[export]
-fn array_len(_atom: Atom<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
-    Ok(this.len)
+fn array_len(atom: Atom<'_>) -> Result<usize, RuntimeError> {
+    Ok(atom.receiver()?.array().len)
 }
 
 #[export]
-fn array_cap(_atom: Atom<'_>, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
-    Ok(this.cap)
+fn array_cap(atom: Atom<'_>) -> Result<usize, RuntimeError> {
+    Ok(atom.receiver()?.array().cap)
 }
 
 pub fn register(lib: Lib) -> Lib {
@@ -265,8 +265,8 @@ mod tests {
 
         for (i, (len, cap)) in expected.into_iter().enumerate() {
             atom_array_push(
-                Atom::new(&mut gc),
-                vec![(10 * i).try_into().unwrap(), handle.clone().into()],
+                Atom::new(&mut gc).with_receiver(handle.clone().into()),
+                vec![(10 * i).try_into().unwrap()],
             )
             .expect("Array.push failed");
 

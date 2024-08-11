@@ -1,6 +1,6 @@
 use ::std::{borrow::Cow, collections::HashMap, rc::Rc};
 
-use error::RuntimeError;
+use error::{ErrorKind, RuntimeError};
 use value::Value;
 use wyhash2::WyHash;
 
@@ -23,16 +23,36 @@ pub type Name = Cow<'static, str>;
 
 pub struct Atom<'a> {
     gc: &'a mut Gc,
-    pub span: Span,
+    span: Span,
+    receiver: Option<Value>,
 }
 
 impl<'a> Atom<'a> {
-    #[cfg(test)]
     pub fn new(gc: &'a mut Gc) -> Self {
         Self {
             gc,
             span: Span::default(),
+            receiver: None,
         }
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn receiver(&self) -> Result<Value, RuntimeError> {
+        self.receiver
+            .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))
+    }
+
+    pub fn with_span(mut self, span: Span) -> Self {
+        self.span = span;
+        self
+    }
+
+    pub fn with_receiver(mut self, receiver: Value) -> Self {
+        self.receiver = Some(receiver);
+        self
     }
 
     pub fn alloc<T: Trace + 'static>(&mut self, value: T) -> Result<Handle<T>, RuntimeError> {
@@ -44,10 +64,6 @@ impl<'a> Atom<'a> {
         cap: usize,
     ) -> Result<Handle<T>, RuntimeError> {
         self.gc.alloc_array(cap)
-    }
-
-    pub fn with_span(gc: &'a mut Gc, span: Span) -> Self {
-        Self { gc, span }
     }
 }
 

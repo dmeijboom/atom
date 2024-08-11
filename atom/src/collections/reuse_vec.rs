@@ -6,8 +6,8 @@ enum Entry<T> {
 }
 
 pub struct ReuseVec<T> {
-    data: Vec<Entry<T>>,
     len: usize,
+    data: Vec<Entry<T>>,
 }
 
 impl<T> Default for ReuseVec<T> {
@@ -20,6 +20,7 @@ impl<T> Default for ReuseVec<T> {
 }
 
 impl<T> ReuseVec<T> {
+    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -50,6 +51,7 @@ impl<T> ReuseVec<T> {
 
         let item = self.data.get_mut(self.len - 1);
         self.len -= 1;
+
         item.map(|entry| match entry {
             Entry::Empty => unreachable!(),
             Entry::Occupied(item) => item,

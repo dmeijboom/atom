@@ -193,6 +193,9 @@ impl Parser {
                 TokenKind::BoolLit(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
                 TokenKind::StringLit(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
                 TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
+                TokenKind::Keyword(n) if n == "self" => {
+                    Ok(ExprKind::Ident("self".to_string()).at(token.span))
+                }
                 TokenKind::Punct("[") => Ok(self.array()?.at(token.span)),
                 TokenKind::Punct("(") => {
                     let lhs = self.expr(1)?;
@@ -428,7 +431,7 @@ impl Parser {
         Ok(body)
     }
 
-    fn fn_stmt(&mut self) -> Result<Stmt, ParseError> {
+    fn fn_stmt(&mut self, method: bool) -> Result<Stmt, ParseError> {
         let span = self.span();
         let is_extern = self.test_keyword("extern");
         self.advance();
@@ -439,6 +442,12 @@ impl Parser {
 
         let name = self.ident()?;
         self.expect(TokenKind::Punct("("))?;
+
+        if method {
+            self.expect_keyword("self")?;
+            self.accept(&TokenKind::Punct(","));
+        }
+
         let args = self.arg_list(TokenKind::Punct(")"))?;
 
         if is_extern {
@@ -501,7 +510,7 @@ impl Parser {
         let mut methods = vec![];
 
         while self.test_keyword("fn") || self.test_keyword("extern") {
-            methods.push(self.fn_stmt()?);
+            methods.push(self.fn_stmt(true)?);
         }
 
         self.expect(TokenKind::Punct("}"))?;
@@ -559,8 +568,8 @@ impl Parser {
         while let Some(token) = self.peek() {
             let stmt = match token {
                 TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "extern" => self.fn_stmt()?,
+                TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt(false)?,
+                TokenKind::Keyword(keyword) if keyword == "extern" => self.fn_stmt(false)?,
                 TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "class" => self.class_stmt()?,
@@ -568,7 +577,7 @@ impl Parser {
                 TokenKind::Keyword(keyword) if keyword == "import" => self.import_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "break" => self.break_stmt()?,
                 TokenKind::Keyword(keyword) if keyword == "continue" => self.continue_stmt()?,
-                TokenKind::Keyword(keyword) => {
+                TokenKind::Keyword(keyword) if keyword != "self" => {
                     Err(ErrorKind::UnexpectedKeyword(keyword.to_string()).at(self.span()))?
                 }
                 TokenKind::Punct("}") if !global => break,

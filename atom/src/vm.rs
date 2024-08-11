@@ -109,9 +109,9 @@ pub enum Error {
 #[derive(Debug)]
 struct Frame {
     call: Call,
-    // Locals (in reversed order)
     locals: Vec<Value>,
     return_pos: usize,
+    receiver: Option<Value>,
 }
 
 fn top_frame(module: &Module) -> Frame {
@@ -123,6 +123,7 @@ fn top_frame(module: &Module) -> Frame {
                 ..Func::default()
             }),
         ),
+        receiver: None,
         locals: vec![],
         return_pos: 0,
     }
@@ -241,7 +242,12 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn push_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
+    fn push_call(
+        &mut self,
+        func: Rc<Func>,
+        receiver: Option<Value>,
+        arg_count: usize,
+    ) -> Result<(), Error> {
         let return_pos = self.pos;
 
         self.pos = 0;
@@ -251,6 +257,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         if let Some(frame) = self.call_stack.push_and_reuse() {
             frame.call = Call::new(self.span, func);
             frame.return_pos = return_pos;
+            frame.receiver = receiver;
             resize(&mut frame.locals, arg_count);
         } else {
             let mut locals = Vec::with_capacity(arg_count);
@@ -258,6 +265,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
             self.call_stack.push(Frame {
                 call: Call::new(self.span, func),
+                receiver,
                 locals,
                 return_pos,
             });
@@ -408,13 +416,23 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn load_arg(&mut self, idx: usize) -> Result<(), Error> {
         let frame = self.call_stack.last();
 
-        match frame.locals.get(frame.locals.len() - idx - 1).copied() {
+        match frame.locals.get(idx).copied() {
             Some(value) => {
                 self.stack.push(value);
                 Ok(())
             }
             None => Err(FatalErrorKind::InvalidArg(idx).at(self.span).into()),
         }
+    }
+
+    fn load_self(&mut self) -> Result<(), Error> {
+        let frame = self.call_stack.last();
+        let receiver = frame
+            .receiver
+            .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))?;
+
+        self.stack.push(receiver);
+        Ok(())
     }
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
@@ -467,8 +485,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
         let frame = self.call_stack.last_mut();
         let args = mem::take(&mut frame.locals);
-        let ctx = Atom::with_span(&mut self.gc, self.span);
-        let return_value = (handler)(ctx, args)?;
+        let mut atom = Atom::new(&mut self.gc).with_span(self.span);
+
+        if let Some(receiver) = frame.receiver {
+            atom = atom.with_receiver(receiver);
+        }
+
+        let return_value = (handler)(atom, args)?;
 
         self.returned = true;
         self.stack.push(return_value);
@@ -500,24 +523,21 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 .into());
         }
 
-        let offset = func.receiver as usize;
-
         if tail_call {
-            self.push_tail_call(arg_count + offset)?;
+            self.push_tail_call(arg_count)?;
         } else {
-            self.push_call(func, arg_count + offset)?;
+            let receiver = if func.method {
+                Some(self.stack.pop())
+            } else {
+                None
+            };
+
+            self.push_call(func, receiver, arg_count)?;
         }
 
         let frame = self.call_stack.last_mut();
 
-        if offset == 1 {
-            frame.locals[arg_count] = self.stack.pop();
-        }
-
-        for i in 0..arg_count {
-            frame.locals[i] = self.stack.pop();
-        }
-
+        self.stack.copy_to(&mut frame.locals, arg_count);
         self.gc_tick();
 
         Ok(())
@@ -785,6 +805,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::Store => self.store(opcode.code())?,
                 Op::Load => self.load(opcode.code())?,
                 Op::LoadArg => self.load_arg(opcode.code())?,
+                Op::LoadSelf => self.load_self()?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret()?,
                 Op::Call => self.call(opcode.code(), false)?,

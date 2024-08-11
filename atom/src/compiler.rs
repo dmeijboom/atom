@@ -24,8 +24,6 @@ pub enum ErrorKind {
     DuplicateMethod(String),
     #[error("class '{0}' already exists")]
     DuplicateClass(String),
-    #[error("expected self as the first argument in init(..)")]
-    InitWithoutSelf,
     #[error("name '{0}' is not initialized")]
     NameUninitialized(String),
     #[error("name '{0}' is not used")]
@@ -59,23 +57,33 @@ impl Var {
     }
 }
 
-#[derive(PartialEq)]
-pub enum ScopeKind {
-    Global,
-    Local,
-    Func(usize),
-}
-
+#[derive(Default)]
 struct Scope {
-    kind: ScopeKind,
+    method: bool,
+    fn_id: Option<usize>,
     vars: HashMap<String, Var, WyHash>,
 }
 
 impl Scope {
-    pub fn new(kind: ScopeKind) -> Self {
+    pub fn new() -> Self {
         Self {
-            kind,
-            vars: HashMap::default(),
+            fn_id: None,
+            ..Self::default()
+        }
+    }
+
+    pub fn with_fn(fn_id: usize) -> Self {
+        Self {
+            fn_id: Some(fn_id),
+            ..Self::default()
+        }
+    }
+
+    pub fn with_method() -> Self {
+        Self {
+            fn_id: None,
+            method: true,
+            ..Self::default()
         }
     }
 }
@@ -123,7 +131,7 @@ impl Default for Compiler {
             classes: vec![],
             markers: vec![],
             locals: VecDeque::default(),
-            scope: VecDeque::from(vec![Scope::new(ScopeKind::Global)]),
+            scope: VecDeque::from(vec![Scope::new()]),
         }
     }
 }
@@ -131,10 +139,6 @@ impl Default for Compiler {
 impl Compiler {
     fn pos(&self) -> usize {
         self.codes.len()
-    }
-
-    fn push_scope(&mut self, kind: ScopeKind) {
-        self.scope.push_front(Scope::new(kind));
     }
 
     fn pop_scope(&mut self) -> Result<Option<Scope>, CompileError> {
@@ -238,8 +242,12 @@ impl Compiler {
         Ok(())
     }
 
-    // Load a name based in the following order: var > local > class > func
+    // Load a name based in the following order: self > var > local > class > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
+        if name == "self" && self.scope.front().map(|s| s.method).unwrap_or(false) {
+            return Ok(Opcode::new(Op::LoadSelf));
+        }
+
         match self.load_var(span, &name) {
             Ok(var) => {
                 check_usage(&name, var)?;
@@ -397,7 +405,7 @@ impl Compiler {
 
     fn compile_fn_body(
         &mut self,
-        scope: ScopeKind,
+        scope: Scope,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
     ) -> Result<Vec<Opcode>, CompileError> {
@@ -407,7 +415,7 @@ impl Compiler {
             .map(|(i, n)| (n.name, Var::with_init(n.span, i, true)))
             .collect();
 
-        self.push_scope(scope);
+        self.scope.push_front(scope);
         self.locals.push_front(locals);
 
         let previous = mem::take(&mut self.codes);
@@ -435,20 +443,13 @@ impl Compiler {
             return Err(ErrorKind::DuplicateMethod(name).at(span));
         }
 
-        let init = name == "init";
-
-        if init && args.is_empty() {
-            return Err(ErrorKind::InitWithoutSelf.at(span));
-        }
-
-        let arg_count = args.len() - 1;
-        let func = Func::new(name.clone(), arg_count).with_receiver();
+        let func = Func::new(name.clone(), args.len()).with_method();
         methods.insert(name.clone(), func);
 
-        let mut codes = self.compile_fn_body(ScopeKind::Local, args, stmts)?;
+        let mut codes = self.compile_fn_body(Scope::with_method(), args, stmts)?;
 
-        if init {
-            codes.push(Opcode::with_code(Op::LoadArg, 0).at(span));
+        if name == "init" {
+            codes.push(Opcode::new(Op::LoadSelf).at(span));
             codes.push(Opcode::new(Op::Return).at(span));
         }
 
@@ -500,7 +501,7 @@ impl Compiler {
 
         self.funcs.push(func);
 
-        let codes = self.compile_fn_body(ScopeKind::Func(idx), args, stmts)?;
+        let codes = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
         self.funcs[idx].codes = codes.into();
 
         Ok(())
@@ -534,8 +535,8 @@ impl Compiler {
                     }
 
                     let func = self
-                        .call_extern(span, format!("{class_name}.{name}"), args.len() - 1)
-                        .with_receiver();
+                        .call_extern(span, format!("{class_name}.{name}"), args.len())
+                        .with_method();
                     funcs.insert(name, func);
                 }
                 _ => unreachable!(),
@@ -670,7 +671,7 @@ impl Compiler {
     }
 
     fn compile_scoped_body(&mut self, stmts: Vec<Stmt>) -> Result<(), CompileError> {
-        self.push_scope(ScopeKind::Local);
+        self.scope.push_front(Scope::new());
         self.compile_body(stmts)?;
         self.pop_scope()?;
 
@@ -707,7 +708,7 @@ impl Compiler {
     }
 
     fn optim(&mut self, scope: Scope, mut codes: Vec<Opcode>) -> Vec<Opcode> {
-        if let ScopeKind::Func(func) = scope.kind {
+        if let Some(func) = scope.fn_id {
             if codes
                 .iter()
                 .filter(|c| match c.op() {
@@ -750,7 +751,7 @@ mod tests {
         let top = compiler
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
-        compiler.push_scope(ScopeKind::Local);
+        compiler.scope.push_front(Scope::new());
 
         let expected = compiler
             .push_var(Span::default(), "n".to_string(), true)

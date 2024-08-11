@@ -10,7 +10,7 @@ use super::Name;
 #[derive(Default)]
 pub struct Func {
     pub name: Name,
-    pub receiver: bool,
+    pub method: bool,
     pub arg_count: usize,
     pub codes: Rc<[Opcode]>,
 }
@@ -20,7 +20,7 @@ impl Func {
         Self {
             name: name.into(),
             arg_count,
-            receiver: false,
+            method: false,
             codes: Rc::new([]),
         }
     }
@@ -29,13 +29,13 @@ impl Func {
         Self {
             name: name.into(),
             arg_count,
-            receiver: false,
+            method: false,
             codes: codes.into(),
         }
     }
 
-    pub fn with_receiver(mut self) -> Self {
-        self.receiver = true;
+    pub fn with_method(mut self) -> Self {
+        self.method = true;
         self
     }
 
