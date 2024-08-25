@@ -12,7 +12,7 @@ pub struct Func {
     pub name: Name,
     pub method: bool,
     pub arg_count: usize,
-    pub codes: Vec<Opcode>,
+    pub body: Vec<Opcode>,
 }
 
 impl Func {
@@ -21,7 +21,7 @@ impl Func {
             name: name.into(),
             arg_count,
             method: false,
-            codes: vec![],
+            body: vec![],
         }
     }
 
@@ -30,7 +30,7 @@ impl Func {
             name: name.into(),
             arg_count,
             method: false,
-            codes,
+            body: codes,
         }
     }
 
@@ -40,7 +40,7 @@ impl Func {
     }
 
     pub fn is_extern(&self) -> bool {
-        matches!(self.codes.first(), Some(c) if c.op() == Op::CallExtern)
+        matches!(self.body.first(), Some(c) if c.op() == Op::CallExtern)
     }
 }
 

@@ -454,7 +454,7 @@ impl Compiler {
         }
 
         if let Some(method) = methods.get_mut(&name) {
-            method.codes = codes;
+            method.body = codes;
         }
 
         Ok(())
@@ -502,7 +502,7 @@ impl Compiler {
         self.funcs.push(func);
 
         let codes = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
-        self.funcs[idx].codes = codes;
+        self.funcs[idx].body = codes;
 
         Ok(())
     }

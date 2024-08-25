@@ -122,6 +122,7 @@ impl Opcode {
         }
     }
 
+    #[inline]
     pub fn code(&self) -> usize {
         (self.bits & INT_MASK) as usize
     }

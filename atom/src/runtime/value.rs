@@ -140,10 +140,10 @@ impl Value {
                 let bits = self.bits & INT_MASK;
 
                 if self.bits & SIGN_BIT != 0 {
-                    -(bits as i64)
-                } else {
-                    bits as i64
+                    return -(bits as i64);
                 }
+
+                bits as i64
             }
             Tag::Int => *self.into_handle(),
             _ => unreachable!(),

@@ -91,7 +91,7 @@ fn print_func(func: &Func, indent: usize) {
     let prefix = " ".repeat(indent * 2);
     println!("{prefix}fn {}:", func.name);
 
-    for (i, opcode) in func.codes.iter().enumerate() {
+    for (i, opcode) in func.body.iter().enumerate() {
         print_opcode(i, opcode, indent + 1);
     }
 }

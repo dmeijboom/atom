@@ -106,17 +106,36 @@ struct Frame {
     receiver: Option<Value>,
 }
 
+impl Frame {
+    pub fn new(span: Span, func: Rc<Func>) -> Self {
+        Self {
+            span,
+            func,
+            locals: vec![],
+            receiver: None,
+            pos: 0,
+        }
+    }
+
+    pub fn with_receiver(mut self, receiver: Value) -> Self {
+        self.receiver = Some(receiver);
+        self
+    }
+
+    pub fn with_locals(mut self, locals: Vec<Value>) -> Self {
+        self.locals = locals;
+        self
+    }
+}
+
 fn top_frame(module: &mut Module) -> Frame {
-    Frame {
-        pos: 0,
-        span: Span::default(),
-        func: Rc::new(Func {
-            codes: mem::take(&mut module.codes),
+    Frame::new(
+        Span::default(),
+        Rc::new(Func {
+            body: mem::take(&mut module.codes),
             ..Func::default()
         }),
-        receiver: None,
-        locals: vec![],
-    }
+    )
 }
 
 fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
@@ -235,23 +254,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.returned = false;
     }
 
-    fn push_call(&mut self, func: Rc<Func>, receiver: Option<Value>, arg_count: usize) {
-        self.call_stack.push(mem::replace(
-            &mut self.frame,
-            Frame {
-                pos: 0,
-                span: self.span,
-                func,
-                receiver,
-                locals: vec![Value::NIL; arg_count],
-            },
-        ));
-    }
-
     fn goto(&mut self, n: usize) {
         self.frame.pos = n;
 
-        if let Some(code) = self.frame.func.codes.get(self.frame.pos) {
+        if let Some(code) = self.frame.func.body.get(self.frame.pos) {
             self.span = code.span;
         }
     }
@@ -350,23 +356,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         .into())
     }
 
-    #[inline]
-    fn get_func(&mut self, idx: usize) -> Rc<Func> {
-        Rc::clone(&self.module.funcs[idx])
-    }
-
-    #[inline]
-    fn get_class(&mut self, idx: usize) -> Rc<Class> {
-        Rc::clone(&self.module.classes[idx])
-    }
-
     fn load_class(&mut self, idx: usize) {
-        let class = self.get_class(idx);
+        let class = Rc::clone(&self.module.classes[idx]);
         self.stack.push(class.into());
     }
 
     fn load_fn(&mut self, idx: usize) {
-        let func = self.get_func(idx);
+        let func = Rc::clone(&self.module.funcs[idx]);
         self.stack.push(func.into());
     }
 
@@ -452,8 +448,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     #[inline(always)]
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
-        let func = self.get_func(fn_idx as usize);
-        self.fn_call(func, arg_count as usize, tail_call)
+        self.fn_call(
+            Rc::clone(&self.module.funcs[fn_idx as usize]),
+            arg_count as usize,
+            tail_call,
+        )
     }
 
     fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
@@ -476,13 +475,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         if tail_call {
             self.push_tail_call(arg_count);
         } else {
-            let receiver = if func.method {
-                Some(self.stack.pop())
-            } else {
-                None
-            };
+            let mut frame = Frame::new(self.span, func).with_locals(vec![Value::NIL; arg_count]);
 
-            self.push_call(func, receiver, arg_count);
+            if frame.func.method {
+                frame = frame.with_receiver(self.stack.pop());
+            }
+
+            self.call_stack.push(mem::replace(&mut self.frame, frame));
         }
 
         self.stack.copy_to(&mut self.frame.locals, arg_count);
@@ -704,14 +703,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn ret(&mut self) {
         self.returned = true;
-        self.frame.pos = self.frame.func.codes.len();
+        self.frame.pos = self.frame.func.body.len();
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval_loop(&mut self) -> Result<(), Error> {
-        while self.frame.pos < self.frame.func.codes.len() {
-            let opcode = &self.frame.func.codes[self.frame.pos];
+        while self.frame.pos < self.frame.func.body.len() {
+            let opcode = &self.frame.func.body[self.frame.pos];
 
             self.frame.pos += 1;
             self.span = opcode.span;

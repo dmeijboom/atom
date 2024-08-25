@@ -1,9 +1,0 @@
-fn test() {
-    100
-}
-
-fn main() {
-    println(test());
-}
-
-main();
