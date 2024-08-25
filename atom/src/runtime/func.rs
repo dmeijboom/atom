@@ -1,5 +1,7 @@
 use std::fmt::Debug;
 
+use bytes::Bytes;
+
 use crate::{
     gc::Trace,
     opcode::{Op, Opcode},
@@ -12,7 +14,7 @@ pub struct Func {
     pub name: Name,
     pub method: bool,
     pub arg_count: usize,
-    pub body: Vec<Opcode>,
+    pub body: Bytes,
 }
 
 impl Func {
@@ -21,16 +23,16 @@ impl Func {
             name: name.into(),
             arg_count,
             method: false,
-            body: vec![],
+            body: Bytes::default(),
         }
     }
 
-    pub fn with_codes(name: impl Into<Name>, arg_count: usize, codes: Vec<Opcode>) -> Self {
+    pub fn with_body(name: impl Into<Name>, arg_count: usize, body: Bytes) -> Self {
         Self {
             name: name.into(),
             arg_count,
             method: false,
-            body: codes,
+            body,
         }
     }
 
@@ -40,7 +42,7 @@ impl Func {
     }
 
     pub fn is_extern(&self) -> bool {
-        matches!(self.body.first(), Some(c) if c.op() == Op::CallExtern)
+        matches!(self.body.chunks_exact(16).map(Opcode::deserialize).next(), Some(c) if c.op() == Op::CallExtern)
     }
 }
 

@@ -1,9 +1,10 @@
 use std::{
     collections::{HashMap, VecDeque},
-    mem,
+    io, mem,
     rc::Rc,
 };
 
+use bytes::{Buf, BufMut, BytesMut};
 use wyhash2::WyHash;
 
 use crate::{
@@ -28,6 +29,8 @@ pub enum ErrorKind {
     NameUninitialized(String),
     #[error("name '{0}' is not used")]
     NameUnused(String),
+    #[error("failed to write opcode(s): {0}")]
+    FailedWriteOpcode(#[from] io::Error),
 }
 
 pub type CompileError = SpannedError<ErrorKind>;
@@ -114,7 +117,7 @@ pub struct Compiler {
     optimize: bool,
     vars_seq: usize,
     scope: VecDeque<Scope>,
-    codes: Vec<Opcode>,
+    body: BytesMut,
     consts: Vec<Const>,
     funcs: Vec<Func>,
     classes: Vec<Class>,
@@ -126,7 +129,7 @@ impl Default for Compiler {
     fn default() -> Self {
         Self {
             vars_seq: 0,
-            codes: vec![],
+            body: BytesMut::new(),
             funcs: vec![],
             consts: vec![],
             classes: vec![],
@@ -145,7 +148,7 @@ impl Compiler {
     }
 
     fn pos(&self) -> usize {
-        self.codes.len()
+        self.body.len()
     }
 
     fn pop_scope(&mut self) -> Result<Option<Scope>, CompileError> {
@@ -167,14 +170,26 @@ impl Compiler {
         idx
     }
 
-    fn push_code(&mut self, code: Opcode) -> usize {
-        let idx = self.codes.len();
-        self.codes.push(code);
-        idx
+    fn push_opcode(&mut self, code: Opcode) -> usize {
+        let offset = self.body.len();
+        code.serialize(&mut self.body);
+        offset
     }
 
-    fn replace_code(&mut self, idx: usize, code: usize) {
-        self.codes[idx] = Opcode::with_code(self.codes[idx].op(), code);
+    fn replace_code(&mut self, offset: usize, code: usize) {
+        let mut buff = &self.body[offset..offset + 8];
+        let bits = buff.get_u64();
+
+        let mut buff = &mut self.body[offset..];
+        buff.put_u64(bits | code as u64);
+    }
+
+    fn remote_last(&mut self) {
+        self.body.truncate(self.body.len() - 16);
+    }
+
+    fn iter(&self) -> impl Iterator<Item = Opcode> + '_ {
+        self.body.chunks_exact(16).map(Opcode::deserialize)
     }
 
     fn push_var(&mut self, span: Span, name: String, init: bool) -> Result<usize, CompileError> {
@@ -188,13 +203,19 @@ impl Compiler {
         Ok(id)
     }
 
-    fn call_extern(&mut self, span: Span, name: String, arg_count: usize) -> Func {
+    fn call_extern(
+        &mut self,
+        span: Span,
+        name: String,
+        arg_count: usize,
+    ) -> Result<Func, CompileError> {
         let idx = self.push_const(Const::Str(name.clone()));
-        Func::with_codes(
-            name,
-            arg_count,
-            vec![Opcode::with_code(Op::CallExtern, idx).at(span)],
-        )
+        let code = Opcode::with_code(Op::CallExtern, idx).at(span);
+
+        let mut body = BytesMut::new();
+        code.serialize(&mut body);
+
+        Ok(Func::with_body(name, arg_count, body.freeze()))
     }
 
     fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, CompileError> {
@@ -202,11 +223,11 @@ impl Compiler {
         self.expr_list(args)?;
         self.expr(callee)?;
 
-        match self.codes.last_mut() {
+        match self.iter().last() {
             Some(opcode) if self.optimize && opcode.op() == Op::LoadFn => {
                 let opcode = Opcode::with_code2(Op::CallFn, opcode.code() as u32, arg_count as u32)
-                    .at(opcode.span);
-                self.codes.pop();
+                    .at(opcode.span());
+                self.remote_last();
                 Ok(opcode)
             }
             _ => Ok(Opcode::with_code(Op::Call, arg_count).at(span)),
@@ -229,13 +250,13 @@ impl Compiler {
     }
 
     fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), CompileError> {
-        let idx = self.push_code(match cond {
+        let offset = self.push_opcode(match cond {
             true => Opcode::new(Op::PushJumpIfTrue).at(span),
             false => Opcode::new(Op::PushJumpIfFalse).at(span),
         });
 
         self.expr(rhs)?;
-        self.replace_code(idx, self.pos());
+        self.replace_code(offset, self.pos());
 
         Ok(())
     }
@@ -404,8 +425,7 @@ impl Compiler {
             ExprKind::Range(_, _) => unreachable!(),
         };
 
-        self.push_code(code);
-
+        self.push_opcode(code);
         Ok(())
     }
 
@@ -414,7 +434,7 @@ impl Compiler {
         scope: Scope,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
-    ) -> Result<Vec<Opcode>, CompileError> {
+    ) -> Result<BytesMut, CompileError> {
         let locals = args
             .into_iter()
             .enumerate()
@@ -424,7 +444,7 @@ impl Compiler {
         self.scope.push_front(scope);
         self.locals.push_front(locals);
 
-        let previous = mem::take(&mut self.codes);
+        let previous = mem::take(&mut self.body);
         self.compile_body(stmts)?;
         let scope = self.pop_scope()?;
 
@@ -432,9 +452,8 @@ impl Compiler {
             check_used(&locals)?;
         }
 
-        let codes = mem::replace(&mut self.codes, previous);
-
-        Ok(self.optim(scope.unwrap(), codes))
+        let body = mem::replace(&mut self.body, previous);
+        self.optim(scope.unwrap(), body)
     }
 
     fn method(
@@ -452,15 +471,19 @@ impl Compiler {
         let func = Func::new(name.clone(), args.len()).with_method();
         methods.insert(name.clone(), func);
 
-        let mut codes = self.compile_fn_body(Scope::with_method(), args, stmts)?;
+        let mut body = self.compile_fn_body(Scope::with_method(), args, stmts)?;
 
         if name == "init" {
-            codes.push(Opcode::new(Op::LoadSelf).at(span));
-            codes.push(Opcode::new(Op::Return).at(span));
+            [
+                Opcode::new(Op::LoadSelf).at(span),
+                Opcode::new(Op::Return).at(span),
+            ]
+            .into_iter()
+            .for_each(|code| code.serialize(&mut body))
         }
 
         if let Some(method) = methods.get_mut(&name) {
-            method.body = codes;
+            method.body = body.freeze();
         }
 
         Ok(())
@@ -485,7 +508,7 @@ impl Compiler {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
-        let func = self.call_extern(span, name, args.len());
+        let func = self.call_extern(span, name, args.len())?;
         self.funcs.push(func);
 
         Ok(())
@@ -507,8 +530,8 @@ impl Compiler {
 
         self.funcs.push(func);
 
-        let codes = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
-        self.funcs[idx].body = codes;
+        let body = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
+        self.funcs[idx].body = body.freeze();
 
         Ok(())
     }
@@ -541,7 +564,7 @@ impl Compiler {
                     }
 
                     let func = self
-                        .call_extern(span, format!("{class_name}.{name}"), args.len())
+                        .call_extern(span, format!("{class_name}.{name}"), args.len())?
                         .with_method();
                     funcs.insert(name, func);
                 }
@@ -560,10 +583,10 @@ impl Compiler {
     fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
         let pos = self.pos();
         self.expr(expr)?;
-        let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
+        let offset = self.push_opcode(Opcode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
-        self.push_code(Opcode::with_code(Op::Jump, pos));
-        self.replace_code(idx, self.pos());
+        self.push_opcode(Opcode::with_code(Op::Jump, pos));
+        self.replace_code(offset, self.pos());
         self.handle_markers(pos, self.pos());
 
         Ok(())
@@ -580,12 +603,12 @@ impl Compiler {
         self.stmt(pre)?;
         let pos = self.pos();
         self.expr(expr)?;
-        let idx = self.push_code(Opcode::new(Op::JumpIfFalse).at(span));
+        let offset = self.push_opcode(Opcode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
         let post_idx = self.pos();
         self.expr(post)?;
-        self.push_code(Opcode::with_code(Op::Jump, pos));
-        self.replace_code(idx, self.pos());
+        self.push_opcode(Opcode::with_code(Op::Jump, pos));
+        self.replace_code(offset, self.pos());
         self.handle_markers(post_idx, self.pos());
 
         Ok(())
@@ -593,9 +616,9 @@ impl Compiler {
 
     fn if_stmt(&mut self, IfStmt(expr, stmts, alt): IfStmt) -> Result<(), CompileError> {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
-        let end_block = if let Some(expr) = expr {
+        let end_block_offset = if let Some(expr) = expr {
             self.expr(expr)?;
-            Some(self.push_code(Opcode::new(Op::JumpIfFalse)))
+            Some(self.push_opcode(Opcode::new(Op::JumpIfFalse)))
         } else {
             None
         };
@@ -604,17 +627,17 @@ impl Compiler {
 
         match alt {
             Some(alt) => {
-                let end_stmt = self.push_code(Opcode::new(Op::Jump).at(span));
+                let end_stmt_offset = self.push_opcode(Opcode::new(Op::Jump).at(span));
 
-                if let Some(idx) = end_block {
-                    self.replace_code(idx, self.pos());
+                if let Some(offset) = end_block_offset {
+                    self.replace_code(offset, self.pos());
                 }
 
                 self.if_stmt(*alt)?;
-                self.replace_code(end_stmt, self.pos());
+                self.replace_code(end_stmt_offset, self.pos());
             }
             None => {
-                if let Some(idx) = end_block {
+                if let Some(idx) = end_block_offset {
                     self.replace_code(idx, self.pos());
                 }
             }
@@ -631,7 +654,7 @@ impl Compiler {
                 if let Some(expr) = expr {
                     let idx = self.push_var(expr.span, name, true)?;
                     self.expr(expr)?;
-                    self.push_code(Opcode::with_code(Op::Store, idx).at(stmt.span));
+                    self.push_opcode(Opcode::with_code(Op::Store, idx).at(stmt.span));
                 } else {
                     self.push_var(stmt.span, name, false)?;
                 }
@@ -641,28 +664,31 @@ impl Compiler {
                 self.expr(expr)?;
 
                 if !assignment {
-                    self.push_code(Opcode::new(Op::Discard).at(stmt.span));
+                    self.push_opcode(Opcode::new(Op::Discard).at(stmt.span));
                 }
             }
             StmtKind::Return(expr) => {
                 self.expr(expr)?;
 
-                match self.codes.last_mut() {
+                match self.iter().last() {
                     Some(opcode) if self.optimize && opcode.op() == Op::LoadArg => {
-                        *opcode = Opcode::with_code(Op::ReturnArg, opcode.code()).at(stmt.span)
+                        self.remote_last();
+                        self.push_opcode(
+                            Opcode::with_code(Op::ReturnArg, opcode.code()).at(stmt.span),
+                        );
                     }
                     _ => {
-                        self.push_code(Opcode::new(Op::Return).at(stmt.span));
+                        self.push_opcode(Opcode::new(Op::Return).at(stmt.span));
                     }
                 }
             }
             StmtKind::Break => {
-                let idx = self.push_code(Opcode::new(Op::Jump).at(stmt.span));
-                self.markers.push(Marker::End(idx));
+                let offset = self.push_opcode(Opcode::new(Op::Jump).at(stmt.span));
+                self.markers.push(Marker::End(offset));
             }
             StmtKind::Continue => {
-                let idx = self.push_code(Opcode::new(Op::Jump).at(stmt.span));
-                self.markers.push(Marker::Begin(idx));
+                let offset = self.push_opcode(Opcode::new(Op::Jump).at(stmt.span));
+                self.markers.push(Marker::Begin(offset));
             }
             StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
             StmtKind::ExternFn(name, args) => self.extern_fn_stmt(stmt.span, name, args)?,
@@ -692,20 +718,25 @@ impl Compiler {
         Ok(())
     }
 
-    fn optim_tail_call(&mut self, func: usize, codes: &mut [Opcode]) {
-        let mut iter = codes.iter_mut().rev();
+    fn optim_tail_call(&mut self, func: usize, body: &mut [u8]) -> Result<(), CompileError> {
+        let mut iter = body
+            .chunks_exact(16)
+            .map(Opcode::deserialize)
+            .enumerate()
+            .rev();
 
-        while let Some(op) = iter.next() {
-            match op.op() {
+        while let Some((i, code)) = iter.next() {
+            match code.op() {
                 Op::Return => continue,
-                Op::CallFn if op.code2().0 as usize == func => {
-                    *op = Opcode::with_code(Op::TailCallFn, op.code());
+                Op::CallFn if code.code2().0 as usize == func => {
+                    let mut buff = &mut body[i * 16..];
+                    Opcode::with_code(Op::TailCallFn, code.code()).serialize(&mut buff);
                     break;
                 }
                 Op::Call => {
-                    let arg_count = op.code();
-                    let idx = match iter.next() {
-                        Some(op) if op.op() == Op::LoadFn => op.code(),
+                    let arg_count = code.code();
+                    let (i, idx) = match iter.next() {
+                        Some((i, code)) if code.op() == Op::LoadFn => (i, code.code()),
                         _ => break,
                     };
 
@@ -713,22 +744,26 @@ impl Compiler {
                         break;
                     }
 
-                    *op = Opcode::with_code(Op::TailCall, arg_count);
+                    let mut buff = &mut body[i * 16..];
+                    Opcode::with_code(Op::TailCall, arg_count).serialize(&mut buff);
                     break;
                 }
                 _ => {}
             }
         }
+
+        Ok(())
     }
 
-    fn optim(&mut self, scope: Scope, mut codes: Vec<Opcode>) -> Vec<Opcode> {
+    fn optim(&mut self, scope: Scope, mut body: BytesMut) -> Result<BytesMut, CompileError> {
         if !self.optimize {
-            return codes;
+            return Ok(body);
         }
 
         if let Some(func) = scope.fn_id {
-            if codes
-                .iter()
+            if body
+                .chunks_exact(16)
+                .map(Opcode::deserialize)
                 .filter(|c| match c.op() {
                     Op::LoadFn => c.code() == func,
                     Op::CallFn => c.code2().0 == func as u32,
@@ -737,13 +772,13 @@ impl Compiler {
                 .count()
                 != 1
             {
-                return codes;
+                return Ok(body);
             }
 
-            self.optim_tail_call(func, &mut codes);
+            self.optim_tail_call(func, &mut body)?;
         }
 
-        codes
+        Ok(body)
     }
 
     pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, CompileError> {
@@ -751,7 +786,7 @@ impl Compiler {
         self.pop_scope()?;
 
         Ok(Module {
-            codes: self.codes,
+            body: self.body.freeze(),
             consts: self.consts,
             funcs: self.funcs.into_iter().map(Rc::new).collect(),
             classes: self.classes.into_iter().map(Rc::new).collect(),
@@ -762,6 +797,38 @@ impl Compiler {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_push_code() {
+        let mut compiler = Compiler::default();
+        let code = Opcode::new(Op::Load).at(Span::default());
+        let offset = compiler.push_opcode(code.clone());
+
+        assert_eq!(0, offset);
+        assert_eq!(code, compiler.iter().last().unwrap());
+        assert_eq!(16, compiler.body.len());
+
+        let code2 = Opcode::new(Op::Lt).at(Span::default());
+        let offset = compiler.push_opcode(code2.clone());
+
+        assert_eq!(16, offset);
+        assert_eq!(code2, compiler.iter().last().unwrap());
+        assert_eq!(32, compiler.body.len());
+    }
+
+    #[test]
+    fn test_replace_code() {
+        let mut compiler = Compiler::default();
+        let code = Opcode::new(Op::Load).at(Span::default());
+        let offset = compiler.push_opcode(code.clone());
+
+        compiler.push_opcode(Opcode::new(Op::Lt).at(Span::default()));
+        compiler.replace_code(offset, 100);
+
+        let code = compiler.iter().next().unwrap();
+        assert_eq!(Op::Load, code.op());
+        assert_eq!(100, code.code());
+    }
 
     #[test]
     fn test_scope() {

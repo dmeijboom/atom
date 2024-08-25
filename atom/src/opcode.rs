@@ -1,5 +1,7 @@
 use std::fmt::Display;
 
+use bytes::{Buf, BufMut};
+
 use crate::lexer::Span;
 
 #[repr(u64)]
@@ -50,15 +52,19 @@ pub enum Op {
 const TAG_MASK: u64 = 0b111111 << 48;
 const INT_MASK: u64 = 0xffff_ffff_ffff;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Opcode {
     bits: u64,
-    pub span: Span,
+    span: Span,
 }
 
 impl Opcode {
     pub fn new(op: Op) -> Self {
         Self::with_code(op, 0)
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
     }
 
     pub fn with_code(op: Op, code: usize) -> Self {
@@ -132,6 +138,18 @@ impl Opcode {
     pub fn code2(&self) -> (u32, u32) {
         let code = self.code();
         ((code >> 32) as u32, code as u32)
+    }
+
+    pub fn serialize(&self, buff: &mut impl BufMut) {
+        buff.put_u64(self.bits);
+        self.span.serialize(buff)
+    }
+
+    pub fn deserialize(mut buff: impl Buf) -> Self {
+        let bits = buff.get_u64();
+        let span = Span::deserialize(buff);
+
+        Self { bits, span }
     }
 }
 

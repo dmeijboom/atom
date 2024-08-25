@@ -11,7 +11,7 @@ use crate::{
     error::{IntoSpanned, SpannedError},
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    opcode::{Const, Op},
+    opcode::{Const, Op, Opcode},
     runtime::{
         array::Array,
         class::{Class, Object},
@@ -97,8 +97,8 @@ pub enum Error {
 
 #[derive(Debug)]
 struct Frame {
-    pos: usize,
     span: Span,
+    offset: usize,
     func: Rc<Func>,
     locals: Vec<Value>,
     receiver: Option<Value>,
@@ -109,9 +109,9 @@ impl Frame {
         Self {
             span,
             func,
+            offset: 0,
             locals: vec![],
             receiver: None,
-            pos: 0,
         }
     }
 
@@ -124,13 +124,23 @@ impl Frame {
         self.locals = locals;
         self
     }
+
+    pub fn next(&mut self) -> Option<Opcode> {
+        if self.offset < self.func.body.len() {
+            let buff = &self.func.body[self.offset..self.offset + 16];
+            self.offset += 16;
+            Some(Opcode::deserialize(buff))
+        } else {
+            None
+        }
+    }
 }
 
 fn top_frame(module: &mut Module) -> Frame {
     Frame::new(
         Span::default(),
         Rc::new(Func {
-            body: mem::take(&mut module.codes),
+            body: mem::take(&mut module.body),
             ..Func::default()
         }),
     )
@@ -247,17 +257,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn push_tail_call(&mut self, arg_count: usize) {
-        self.frame.pos = 0;
+        self.frame.offset = 0;
         self.frame.locals.resize(arg_count, Value::NIL);
         self.returned = false;
     }
 
     fn goto(&mut self, n: usize) {
-        self.frame.pos = n;
-
-        if let Some(code) = self.frame.func.body.get(self.frame.pos) {
-            self.span = code.span;
-        }
+        self.frame.offset = n;
+        self.span = Span::deserialize(&self.frame.func.body[n + 8..n + 16]);
     }
 
     fn const_name(&self, idx: usize) -> Result<Handle<Str>, Error> {
@@ -689,9 +696,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.vars[idx] = self.stack.pop();
     }
 
+    #[inline]
     fn load(&mut self, idx: usize) {
-        let value = self.vars[idx];
-        self.stack.push(value);
+        self.stack.push(self.vars[idx]);
     }
 
     #[inline]
@@ -706,22 +713,19 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn ret(&mut self) {
         self.returned = true;
-        self.frame.pos = self.frame.func.body.len();
+        self.frame.offset = self.frame.func.body.len();
     }
 
     #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval_loop(&mut self) -> Result<(), Error> {
-        while self.frame.pos < self.frame.func.body.len() {
-            let opcode = &self.frame.func.body[self.frame.pos];
-
-            self.frame.pos += 1;
-            self.span = opcode.span;
+        while let Some(code) = self.frame.next() {
+            self.span = code.span();
 
             #[cfg(feature = "timings")]
-            let (op, now) = (opcode.op(), Instant::now());
+            let (op, now) = (code.op(), Instant::now());
 
-            match opcode.op() {
+            match code.op() {
                 Op::Add => self.add()?,
                 Op::Sub => self.sub()?,
                 Op::Mul => self.mul()?,
@@ -736,29 +740,29 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::BitwiseAnd => self.bitwise_and()?,
                 Op::BitwiseOr => self.bitwise_or()?,
                 Op::BitwiseXor => self.bitwise_xor()?,
-                Op::LoadConst => self.load_const(opcode.code()),
-                Op::LoadMember => self.load_member(opcode.code())?,
-                Op::StoreMember => self.store_member(opcode.code())?,
-                Op::LoadFn => self.load_fn(opcode.code()),
-                Op::LoadClass => self.load_class(opcode.code()),
-                Op::Store => self.store(opcode.code()),
-                Op::Load => self.load(opcode.code()),
-                Op::LoadArg => self.load_arg(opcode.code()),
+                Op::LoadConst => self.load_const(code.code()),
+                Op::LoadMember => self.load_member(code.code())?,
+                Op::StoreMember => self.store_member(code.code())?,
+                Op::LoadFn => self.load_fn(code.code()),
+                Op::LoadClass => self.load_class(code.code()),
+                Op::Store => self.store(code.code()),
+                Op::Load => self.load(code.code()),
+                Op::LoadArg => self.load_arg(code.code()),
                 Op::LoadSelf => self.load_self()?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret(),
-                Op::ReturnArg => self.return_arg(opcode.code()),
-                Op::Call => self.call(opcode.code(), false)?,
-                Op::CallFn => self.call_fn(opcode.code2(), false)?,
-                Op::CallExtern => self.call_extern(opcode.code())?,
-                Op::TailCall => self.call(opcode.code(), true)?,
-                Op::TailCallFn => self.call_fn(opcode.code2(), true)?,
-                Op::Jump => self.goto(opcode.code()),
-                Op::JumpIfFalse => self.jump_cond(opcode.code(), false, false)?,
-                Op::PushJumpIfTrue => self.jump_cond(opcode.code(), true, true)?,
-                Op::PushJumpIfFalse => self.jump_cond(opcode.code(), true, false)?,
-                Op::MakeArray => self.make_array(opcode.code())?,
-                Op::MakeSlice => self.make_slice(opcode.code())?,
+                Op::ReturnArg => self.return_arg(code.code()),
+                Op::Call => self.call(code.code(), false)?,
+                Op::CallFn => self.call_fn(code.code2(), false)?,
+                Op::CallExtern => self.call_extern(code.code())?,
+                Op::TailCall => self.call(code.code(), true)?,
+                Op::TailCallFn => self.call_fn(code.code2(), true)?,
+                Op::Jump => self.goto(code.code()),
+                Op::JumpIfFalse => self.jump_cond(code.code(), false, false)?,
+                Op::PushJumpIfTrue => self.jump_cond(code.code(), true, true)?,
+                Op::PushJumpIfFalse => self.jump_cond(code.code(), true, false)?,
+                Op::MakeArray => self.make_array(code.code())?,
+                Op::MakeSlice => self.make_slice(code.code())?,
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,

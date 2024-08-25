@@ -1,12 +1,14 @@
 use std::rc::Rc;
 
-use crate::opcode::{Const, Opcode};
+use bytes::Bytes;
+
+use crate::opcode::Const;
 
 use super::{class::Class, func::Func};
 
 #[derive(Debug, Default)]
 pub struct Module {
-    pub codes: Vec<Opcode>,
+    pub body: Bytes,
     pub consts: Vec<Const>,
     pub funcs: Vec<Rc<Func>>,
     pub classes: Vec<Rc<Class>>,

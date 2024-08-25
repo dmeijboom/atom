@@ -3,11 +3,25 @@ use std::{
     num::{ParseFloatError, ParseIntError},
 };
 
+use bytes::{Buf, BufMut};
+
 use crate::error::{IntoSpanned, SpannedError};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Span {
     pub offset: usize,
+}
+
+impl Span {
+    pub fn serialize(&self, buff: &mut impl BufMut) {
+        buff.put_u64(self.offset as u64);
+    }
+
+    pub fn deserialize(mut buff: impl Buf) -> Self {
+        Self {
+            offset: buff.get_u64() as usize,
+        }
+    }
 }
 
 impl Display for Span {
