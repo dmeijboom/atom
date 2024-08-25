@@ -40,11 +40,11 @@ macro_rules! unwrap {
 
 macro_rules! binary {
     ($self:ident: $($ty:ident)|+, $lhs:expr, $op:tt, $rhs:expr) => {{
-        $self.stack.push(match $lhs.ty() {
-            $(Type::$ty => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into_value(&mut $self.gc)?),+
-            , _ => return Err(ErrorKind::UnsupportedOp {
-                left: $lhs.ty(),
-                right: $rhs.ty(),
+        $self.stack.push(match ($lhs.ty(), $rhs.ty()) {
+            $((Type::$ty, Type::$ty) => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into_value(&mut $self.gc)?),+
+            , (left, right) => return Err(ErrorKind::UnsupportedOp {
+                left,
+                right,
                 op: stringify!($op),
             }
             .at($self.span)
@@ -57,8 +57,6 @@ macro_rules! binary {
     ($self:ident: $($ty:ident)|+, lhs $op:tt rhs) => {{
         let rhs = $self.stack.pop();
         let lhs = $self.stack.pop();
-
-        $self.check_type(lhs.ty(), rhs.ty())?;
         binary!($self: $($ty)|+, lhs, $op, rhs)
     }};
 
