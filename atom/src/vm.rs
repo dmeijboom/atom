@@ -262,9 +262,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.returned = false;
     }
 
-    fn goto(&mut self, n: usize) {
-        self.frame.offset = n;
-        self.span = Span::deserialize(&self.frame.func.body[n + 8..n + 16]);
+    fn goto(&mut self, pos: usize) {
+        let offset = pos * 16;
+        self.frame.offset = offset;
+        self.span = Span::deserialize(&self.frame.func.body[offset + 8..offset + 16]);
     }
 
     fn const_name(&self, idx: usize) -> Result<Handle<Str>, Error> {

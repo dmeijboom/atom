@@ -147,7 +147,7 @@ impl Compiler {
         self
     }
 
-    fn pos(&self) -> usize {
+    fn offset(&self) -> usize {
         self.body.len()
     }
 
@@ -176,12 +176,12 @@ impl Compiler {
         offset
     }
 
-    fn replace_code(&mut self, offset: usize, code: usize) {
+    fn set_pos(&mut self, offset: usize, new_offset: usize) {
         let mut buff = &self.body[offset..offset + 8];
         let bits = buff.get_u64();
 
         let mut buff = &mut self.body[offset..];
-        buff.put_u64(bits | code as u64);
+        buff.put_u64(bits | (new_offset / 16) as u64);
     }
 
     fn remote_last(&mut self) {
@@ -256,7 +256,7 @@ impl Compiler {
         });
 
         self.expr(rhs)?;
-        self.replace_code(offset, self.pos());
+        self.set_pos(offset, self.offset());
 
         Ok(())
     }
@@ -492,8 +492,8 @@ impl Compiler {
     fn handle_markers(&mut self, begin: usize, end: usize) {
         while let Some(marker) = self.markers.pop() {
             match marker {
-                Marker::Begin(idx) => self.replace_code(idx, begin),
-                Marker::End(idx) => self.replace_code(idx, end),
+                Marker::Begin(idx) => self.set_pos(idx, begin),
+                Marker::End(idx) => self.set_pos(idx, end),
             }
         }
     }
@@ -581,13 +581,13 @@ impl Compiler {
     }
 
     fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
-        let pos = self.pos();
+        let begin = self.offset();
         self.expr(expr)?;
         let offset = self.push_opcode(Opcode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
-        self.push_opcode(Opcode::with_code(Op::Jump, pos));
-        self.replace_code(offset, self.pos());
-        self.handle_markers(pos, self.pos());
+        self.push_opcode(Opcode::with_code(Op::Jump, begin / 16));
+        self.set_pos(offset, self.offset());
+        self.handle_markers(begin, self.offset());
 
         Ok(())
     }
@@ -601,15 +601,15 @@ impl Compiler {
         body: Vec<Stmt>,
     ) -> Result<(), CompileError> {
         self.stmt(pre)?;
-        let pos = self.pos();
+        let begin = self.offset();
         self.expr(expr)?;
         let offset = self.push_opcode(Opcode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
-        let post_idx = self.pos();
+        let post_idx = self.offset();
         self.expr(post)?;
-        self.push_opcode(Opcode::with_code(Op::Jump, pos));
-        self.replace_code(offset, self.pos());
-        self.handle_markers(post_idx, self.pos());
+        self.push_opcode(Opcode::with_code(Op::Jump, begin / 16));
+        self.set_pos(offset, self.offset());
+        self.handle_markers(post_idx, self.offset());
 
         Ok(())
     }
@@ -630,15 +630,15 @@ impl Compiler {
                 let end_stmt_offset = self.push_opcode(Opcode::new(Op::Jump).at(span));
 
                 if let Some(offset) = end_block_offset {
-                    self.replace_code(offset, self.pos());
+                    self.set_pos(offset, self.offset());
                 }
 
                 self.if_stmt(*alt)?;
-                self.replace_code(end_stmt_offset, self.pos());
+                self.set_pos(end_stmt_offset, self.offset());
             }
             None => {
                 if let Some(idx) = end_block_offset {
-                    self.replace_code(idx, self.pos());
+                    self.set_pos(idx, self.offset());
                 }
             }
         }
@@ -823,7 +823,7 @@ mod tests {
         let offset = compiler.push_opcode(code.clone());
 
         compiler.push_opcode(Opcode::new(Op::Lt).at(Span::default()));
-        compiler.replace_code(offset, 100);
+        compiler.set_pos(offset, 1600);
 
         let code = compiler.iter().next().unwrap();
         assert_eq!(Op::Load, code.op());
