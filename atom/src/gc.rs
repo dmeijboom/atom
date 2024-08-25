@@ -152,6 +152,7 @@ struct Cycle {
 
 #[derive(Default)]
 pub struct Gc {
+    ready: bool,
     cycle: Cycle,
     marked: HashSet<usize, WyHash>,
     roots: Vec<Box<dyn AnyHandle>>,
@@ -161,7 +162,7 @@ pub struct Gc {
 impl Gc {
     #[inline(always)]
     pub fn ready(&self) -> bool {
-        self.cycle.allocated >= 1_000_000
+        self.ready
     }
 
     pub unsafe fn track<T: Trace + 'static>(
@@ -173,6 +174,10 @@ impl Gc {
 
         self.roots.push(Box::new(handle.clone()));
         self.cycle.allocated += layout.size();
+
+        if !self.ready && self.cycle.allocated >= 1_000_000 {
+            self.ready = true;
+        }
 
         if layout.size() != std::mem::size_of::<T>() {
             self.arrays.insert(handle.addr(), layout);

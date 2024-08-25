@@ -40,7 +40,7 @@ macro_rules! unwrap {
 
 macro_rules! binary {
     ($self:ident: $($ty:ident)|+, $lhs:expr, $op:tt, $rhs:expr) => {{
-        let value = match $lhs.ty() {
+        $self.stack.push(match $lhs.ty() {
             $(Type::$ty => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into_value(&mut $self.gc)?),+
             , _ => return Err(ErrorKind::UnsupportedOp {
                 left: $lhs.ty(),
@@ -49,9 +49,7 @@ macro_rules! binary {
             }
             .at($self.span)
             .into()),
-        };
-
-        $self.stack.push(value);
+        });
 
         Ok(())
     }};
@@ -238,21 +236,16 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn push_call(&mut self, func: Rc<Func>, receiver: Option<Value>, arg_count: usize) {
-        let mut locals = Vec::with_capacity(arg_count);
-        resize(&mut locals, arg_count);
-
-        let frame = mem::replace(
+        self.call_stack.push(mem::replace(
             &mut self.frame,
             Frame {
                 pos: 0,
                 span: self.span,
                 func,
                 receiver,
-                locals,
+                locals: vec![Value::NIL; arg_count],
             },
-        );
-
-        self.call_stack.push(frame);
+        ));
     }
 
     fn goto(&mut self, n: usize) {
@@ -357,11 +350,12 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         .into())
     }
 
-    #[inline(always)]
+    #[inline]
     fn get_func(&mut self, idx: usize) -> Rc<Func> {
         Rc::clone(&self.module.funcs[idx])
     }
 
+    #[inline]
     fn get_class(&mut self, idx: usize) -> Rc<Class> {
         Rc::clone(&self.module.classes[idx])
     }
@@ -376,6 +370,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.stack.push(func.into());
     }
 
+    #[inline]
     fn load_arg(&mut self, idx: usize) {
         self.stack.push(self.frame.locals[idx]);
     }
@@ -390,6 +385,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
+    #[inline]
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
             return Err(ErrorKind::TypeMismatch { left, right }.at(self.span).into());
@@ -449,12 +445,12 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         self.returned = true;
         self.stack.push(return_value);
-
         self.gc_tick();
 
         Ok(())
     }
 
+    #[inline(always)]
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
         let func = self.get_func(fn_idx as usize);
         self.fn_call(func, arg_count as usize, tail_call)
@@ -496,20 +492,17 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
-        let ty = lhs.ty();
-        let value = match ty {
+        let value = match lhs.ty() {
             Type::Array => {
                 let lhs = lhs.array();
                 let rhs = rhs.array();
-                let new_data = lhs.concat(&rhs);
-                let array = Array::from_vec(&mut self.gc, new_data);
+                let array = Array::from_vec(&mut self.gc, lhs.concat(&rhs));
                 Value::from(self.gc.alloc(array)?)
             }
             Type::Str => {
                 let lhs = lhs.str();
                 let rhs = rhs.str();
-                let new_data = lhs.0.concat(&rhs.0);
-                let array = Array::from_vec(&mut self.gc, new_data);
+                let array = Array::from_vec(&mut self.gc, lhs.0.concat(&rhs.0));
                 Value::from(self.gc.alloc(Str(array))?)
             }
             _ => unreachable!(),
@@ -520,12 +513,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn make_array(&mut self, size: usize) -> Result<(), Error> {
         let mut values = vec![];
-
-        for _ in 0..size {
-            values.push(self.stack.pop());
-        }
-
-        values.reverse();
+        self.stack.copy_to(&mut values, size);
 
         let array = Array::from_vec(&mut self.gc, values);
         let handle = self.gc.alloc(array)?;
@@ -704,10 +692,12 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.stack.push(value);
     }
 
+    #[inline]
     fn load_const(&mut self, idx: usize) {
         self.stack.push(self.consts[idx]);
     }
 
+    #[inline]
     fn discard(&mut self) {
         self.stack.pop();
     }
