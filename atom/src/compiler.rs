@@ -111,6 +111,7 @@ fn check_usage(name: &str, var: &mut Var) -> Result<(), CompileError> {
 }
 
 pub struct Compiler {
+    optimize: bool,
     vars_seq: usize,
     scope: VecDeque<Scope>,
     codes: Vec<Opcode>,
@@ -130,6 +131,7 @@ impl Default for Compiler {
             consts: vec![],
             classes: vec![],
             markers: vec![],
+            optimize: true,
             locals: VecDeque::default(),
             scope: VecDeque::from(vec![Scope::new()]),
         }
@@ -137,6 +139,11 @@ impl Default for Compiler {
 }
 
 impl Compiler {
+    pub fn with_optimize(mut self, optimize: bool) -> Self {
+        self.optimize = optimize;
+        self
+    }
+
     fn pos(&self) -> usize {
         self.codes.len()
     }
@@ -195,9 +202,8 @@ impl Compiler {
         self.expr_list(args)?;
         self.expr(callee)?;
 
-        // Optimize LoadFn/LoadMember + Call to a super instruction
         match self.codes.last_mut() {
-            Some(opcode) if opcode.op() == Op::LoadFn => {
+            Some(opcode) if self.optimize && opcode.op() == Op::LoadFn => {
                 let opcode = Opcode::with_code2(Op::CallFn, opcode.code() as u32, arg_count as u32)
                     .at(opcode.span);
                 self.codes.pop();
@@ -640,7 +646,15 @@ impl Compiler {
             }
             StmtKind::Return(expr) => {
                 self.expr(expr)?;
-                self.push_code(Opcode::new(Op::Return).at(stmt.span));
+
+                match self.codes.last_mut() {
+                    Some(opcode) if self.optimize && opcode.op() == Op::LoadArg => {
+                        *opcode = Opcode::with_code(Op::ReturnArg, opcode.code()).at(stmt.span)
+                    }
+                    _ => {
+                        self.push_code(Opcode::new(Op::Return).at(stmt.span));
+                    }
+                }
             }
             StmtKind::Break => {
                 let idx = self.push_code(Opcode::new(Op::Jump).at(stmt.span));
@@ -708,6 +722,10 @@ impl Compiler {
     }
 
     fn optim(&mut self, scope: Scope, mut codes: Vec<Opcode>) -> Vec<Opcode> {
+        if !self.optimize {
+            return codes;
+        }
+
         if let Some(func) = scope.fn_id {
             if codes
                 .iter()

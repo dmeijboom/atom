@@ -50,10 +50,13 @@ struct Opts {
 enum Cmd {
     Run {
         source: PathBuf,
+        #[clap(long)]
+        no_optimize: bool,
     },
     Compile {
         source: PathBuf,
-
+        #[clap(long)]
+        no_optimize: bool,
         #[clap(short, long)]
         verbose: bool,
     },
@@ -68,11 +71,11 @@ fn parse(source: &str) -> Result<Vec<Stmt>, Error> {
     Ok(parser.parse()?)
 }
 
-fn compile(source: impl AsRef<Path>) -> Result<Module, Error> {
+fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Module, Error> {
     let mut program = parse(PRELUDE_SOURCE)?;
     let source = fs::read_to_string(source)?;
     program.extend(parse(&source)?);
-    let compiler = Compiler::default();
+    let compiler = Compiler::default().with_optimize(optimize);
 
     Ok(compiler.compile(program)?)
 }
@@ -125,8 +128,11 @@ fn print_module(module: &Module) {
 
 fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
-        Cmd::Run { source } => {
-            let module = compile(source)?;
+        Cmd::Run {
+            source,
+            no_optimize,
+        } => {
+            let module = compile(source, !no_optimize)?;
             let mut vm = AtomVm::new(module, runtime::linker())?;
             vm.run()?;
 
@@ -146,8 +152,12 @@ fn cmd(opts: Opts) -> Result<(), Error> {
                 }
             }
         }
-        Cmd::Compile { source, verbose } => {
-            let module = compile(source)?;
+        Cmd::Compile {
+            source,
+            verbose,
+            no_optimize,
+        } => {
+            let module = compile(source, !no_optimize)?;
 
             if verbose {
                 print_module(&module);

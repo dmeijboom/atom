@@ -366,6 +366,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.stack.push(func.into());
     }
 
+    fn return_arg(&mut self, idx: usize) {
+        self.load_arg(idx);
+        self.ret();
+    }
+
     #[inline]
     fn load_arg(&mut self, idx: usize) {
         self.stack.push(self.frame.locals[idx]);
@@ -744,6 +749,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::LoadSelf => self.load_self()?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret(),
+                Op::ReturnArg => self.return_arg(opcode.code()),
                 Op::Call => self.call(opcode.code(), false)?,
                 Op::CallFn => self.call_fn(opcode.code2(), false)?,
                 Op::CallExtern => self.call_extern(opcode.code())?,

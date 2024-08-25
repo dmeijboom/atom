@@ -27,6 +27,7 @@ pub enum Op {
     LoadClass,
     Discard,
     Return,
+    ReturnArg,
     Jump,
     JumpIfFalse,
     PushJumpIfFalse,
@@ -101,6 +102,7 @@ impl Opcode {
             o if o == Op::LoadClass as u64 => Op::LoadClass,
             o if o == Op::Discard as u64 => Op::Discard,
             o if o == Op::Return as u64 => Op::Return,
+            o if o == Op::ReturnArg as u64 => Op::ReturnArg,
             o if o == Op::Jump as u64 => Op::Jump,
             o if o == Op::JumpIfFalse as u64 => Op::JumpIfFalse,
             o if o == Op::PushJumpIfFalse as u64 => Op::PushJumpIfFalse,
@@ -155,7 +157,8 @@ impl Display for Opcode {
             | Op::TailCall
             | Op::LoadElement
             | Op::LoadMember
-            | Op::LoadArg => write!(f, "{:?} {}", self.op(), self.code()),
+            | Op::LoadArg
+            | Op::ReturnArg => write!(f, "{:?} {}", self.op(), self.code()),
             _ => write!(f, "{:?}", self.op(),),
         }
     }
