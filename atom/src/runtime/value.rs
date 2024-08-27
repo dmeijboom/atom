@@ -136,6 +136,17 @@ impl Value {
         }
     }
 
+    pub const fn new_smallint(value: i64) -> Self {
+        Self::new(
+            Tag::SmallInt,
+            if value < 0 {
+                SIGN_BIT | value.unsigned_abs()
+            } else {
+                value as u64
+            },
+        )
+    }
+
     pub fn int(self) -> i64 {
         match self.tag() {
             Tag::SmallInt => {
@@ -268,14 +279,7 @@ impl TryFrom<i64> for Value {
             return Err(IntOverflowError);
         }
 
-        Ok(Self::new(
-            Tag::SmallInt,
-            if value < 0 {
-                SIGN_BIT | value.unsigned_abs()
-            } else {
-                value as u64
-            },
-        ))
+        Ok(Self::new_smallint(value))
     }
 }
 

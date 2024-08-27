@@ -246,15 +246,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.span = Span::deserialize(&self.frame.func.body[offset + 8..offset + 16]);
     }
 
-    fn const_name(&self, idx: usize) -> Result<Handle<Str>, Error> {
-        let value = self.consts[idx];
-
-        match value.ty() {
-            Type::Str => Ok(value.str()),
-            _ => unreachable!(),
-        }
-    }
-
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
         let object = self.stack.pop();
 
@@ -265,7 +256,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        let member = self.const_name(member)?;
+        let member = self.consts[member].str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
@@ -278,7 +269,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member = self.const_name(member)?;
+        let member = self.consts[member].str();
         let object = object.object();
 
         if object.attrs.is_empty() {
@@ -315,7 +306,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member_handle = self.const_name(member)?;
+        let member_handle = self.consts[member].str();
         let member = member_handle.as_str();
         let class = self
             .module
@@ -411,11 +402,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
-        let name = self.const_name(idx)?;
-        let name = name.as_str();
+        let name = self.consts[idx].str();
         let handler = self
             .linker
-            .resolve(name)
+            .resolve(name.as_ref())
             .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
         let args = mem::take(&mut self.frame.locals);
         let mut atom = Atom::new(&mut self.gc).with_span(self.span);
@@ -599,7 +589,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             let handle = self.gc.alloc(i)?;
             self.stack.push(handle.into());
         } else {
-            self.stack.push(Value::try_from(i).unwrap());
+            self.stack.push(Value::new_smallint(i));
         }
 
         Ok(())
