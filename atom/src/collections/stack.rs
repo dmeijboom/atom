@@ -29,19 +29,20 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         self.len -= n;
     }
 
-    #[inline]
+    pub fn tail_n(&self, n: usize) -> &T {
+        &self.data[self.len - n - 1]
+    }
+
     pub fn pop(&mut self) -> T {
         self.len -= 1;
         self.data[self.len]
     }
 
-    #[inline]
     pub fn push(&mut self, item: T) {
         self.data[self.len] = item;
         self.len += 1;
     }
 
-    #[inline]
     pub fn is_full(&self) -> bool {
         self.len == N
     }
@@ -50,7 +51,6 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         self.data[..self.len].iter()
     }
 
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

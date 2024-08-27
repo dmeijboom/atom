@@ -80,7 +80,6 @@ impl<T: Trace> Clone for Handle<T> {
 }
 
 impl<T: Trace> Handle<T> {
-    #[inline(always)]
     pub fn addr(&self) -> usize {
         self.ptr.as_ptr() as usize
     }
@@ -89,7 +88,6 @@ impl<T: Trace> Handle<T> {
         NonNull::new(addr as *mut T).map(|ptr| Handle { ptr })
     }
 
-    #[inline(always)]
     pub unsafe fn as_ptr(&self) -> *mut T {
         self.ptr.as_ptr()
     }
@@ -104,14 +102,12 @@ impl<T: Trace + 'static> Handle<T> {
 impl<T: Trace> Deref for Handle<T> {
     type Target = T;
 
-    #[inline(always)]
     fn deref(&self) -> &T {
         unsafe { self.ptr.as_ref() }
     }
 }
 
 impl<T: Trace> DerefMut for Handle<T> {
-    #[inline(always)]
     fn deref_mut(&mut self) -> &mut T {
         unsafe { self.ptr.as_mut() }
     }
@@ -160,7 +156,6 @@ pub struct Gc {
 }
 
 impl Gc {
-    #[inline(always)]
     pub fn ready(&self) -> bool {
         self.ready
     }

@@ -1,1 +1,1 @@
-println("test");
+println(100 + 40);

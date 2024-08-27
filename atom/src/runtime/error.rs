@@ -28,11 +28,13 @@ pub enum ErrorKind {
     #[error("invalid memory layout")]
     InvalidMemoryLayout,
     #[error("unsupported operation: {left} {op} {right}")]
-    UnsupportedOp {
+    UnsupportedBinaryOp {
         left: Type,
         right: Type,
         op: &'static str,
     },
+    #[error("unsupported operation `{op}` on: {ty}")]
+    UnsupportedOp { ty: Type, op: &'static str },
 }
 
 impl ErrorKind {

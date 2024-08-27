@@ -1,4 +1,10 @@
-use std::{collections::HashMap, mem, rc::Rc, time::Duration};
+use std::{
+    collections::HashMap,
+    mem,
+    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Sub},
+    rc::Rc,
+    time::Duration,
+};
 
 #[cfg(feature = "timings")]
 use std::time::Instant;
@@ -19,53 +25,11 @@ use crate::{
         func::Func,
         module::Module,
         str::Str,
-        value::{TryIntoValue, Type, Value},
+        value::{self, TryIntoValue, Type, Value},
         Atom,
     },
 };
 
-macro_rules! unwrap {
-    (Int, $expr:expr) => {
-        $expr.int()
-    };
-
-    (Float, $expr:expr) => {
-        $expr.float()
-    };
-
-    (Bool, $expr:expr) => {
-        $expr.bool()
-    };
-}
-
-macro_rules! binary {
-    ($self:ident: $($ty:ident)|+, $lhs:expr, $op:tt, $rhs:expr) => {{
-        $self.stack.push(match ($lhs.ty(), $rhs.ty()) {
-            $((Type::$ty, Type::$ty) => (unwrap!($ty, $lhs) $op unwrap!($ty, $rhs)).into_value(&mut $self.gc)?),+
-            , (left, right) => return Err(ErrorKind::UnsupportedOp {
-                left,
-                right,
-                op: stringify!($op),
-            }
-            .at($self.span)
-            .into()),
-        });
-
-        Ok(())
-    }};
-
-    ($self:ident: $($ty:ident)|+, lhs $op:tt rhs) => {{
-        let rhs = $self.stack.pop();
-        let lhs = $self.stack.pop();
-        binary!($self: $($ty)|+, lhs, $op, rhs)
-    }};
-
-    ($self:ident: lhs $op:tt rhs) => {
-        binary!($self: Int | Float | Bool, lhs $op rhs)
-    }
-}
-
-#[inline]
 fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
     if vec.len() != len {
         vec.resize_with(len, || T::default());
@@ -219,6 +183,20 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             stack: Stack::default(),
             module,
         })
+    }
+
+    fn unsupported_rhs(&self, lhs: Value, rhs: Value, op: &'static str) -> Error {
+        ErrorKind::UnsupportedBinaryOp {
+            left: lhs.ty(),
+            right: rhs.ty(),
+            op,
+        }
+        .at(self.span)
+        .into()
+    }
+
+    fn unsupported(&self, op: &'static str, ty: Type) -> Error {
+        ErrorKind::UnsupportedOp { ty, op }.at(self.span).into()
     }
 
     pub fn timing(&self) -> Vec<(Op, Timing)> {
@@ -377,7 +355,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.ret();
     }
 
-    #[inline]
     fn load_arg(&mut self, idx: usize) {
         self.stack.push(self.frame.locals[idx]);
     }
@@ -392,7 +369,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    #[inline]
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
             return Err(ErrorKind::TypeMismatch { left, right }.at(self.span).into());
@@ -457,7 +433,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    #[inline(always)]
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
         self.fn_call(
             Rc::clone(&self.module.funcs[fn_idx as usize]),
@@ -619,74 +594,172 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
+    fn push_int(&mut self, i: i64) -> Result<(), Error> {
+        if i.unsigned_abs() > value::INT_MASK {
+            let handle = self.gc.alloc(i)?;
+            self.stack.push(handle.into());
+        } else {
+            self.stack.push(Value::try_from(i).unwrap());
+        }
+
+        Ok(())
+    }
+
+    fn operands(&mut self) -> (Value, Value) {
+        let rhs = self.stack.pop();
+        let lhs = self.stack.pop();
+        (lhs, rhs)
+    }
+
+    fn binary_int(&mut self, f: impl FnOnce(i64, i64) -> i64) -> Result<(), Error> {
+        let (lhs, rhs) = self.operands();
+        self.push_int(f(lhs.int(), rhs.int()))
+    }
+
+    fn binary_float(&mut self, f: impl FnOnce(f64, f64) -> f64) -> Result<(), Error> {
+        let (lhs, rhs) = self.operands();
+        self.stack.push(Value::from(f(lhs.float(), rhs.float())));
+
+        Ok(())
+    }
+
+    fn compare_int(&mut self, f: impl FnOnce(&i64, &i64) -> bool) -> Result<(), Error> {
+        let (lhs, rhs) = self.operands();
+        self.stack.push(Value::from(f(&lhs.int(), &rhs.int())));
+
+        Ok(())
+    }
+
+    fn compare_float(&mut self, f: impl FnOnce(&f64, &f64) -> bool) -> Result<(), Error> {
+        let (lhs, rhs) = self.operands();
+        self.stack.push(Value::from(f(&lhs.float(), &rhs.float())));
+
+        Ok(())
+    }
+
+    fn eq_op(&mut self) -> Result<bool, Error> {
+        let (lhs, rhs) = self.operands();
+        let ty = lhs.ty();
+
+        if ty != rhs.ty() {
+            return Ok(false);
+        }
+
+        if lhs == rhs {
+            return Ok(true);
+        }
+
+        Ok(match ty {
+            Type::Int => lhs.int() == rhs.int(),
+            Type::Float => lhs.float() == rhs.float(),
+            Type::Str => lhs.str() == rhs.str(),
+            Type::Bool => lhs.bool() == rhs.bool(),
+            _ => return Err(self.unsupported_rhs(lhs, rhs, "==")),
+        })
+    }
+
     fn eq(&mut self) -> Result<(), Error> {
-        binary!(self: lhs == rhs)
+        let value = self.eq_op()?;
+        self.stack.push(Value::from(value));
+        Ok(())
     }
 
     fn ne(&mut self) -> Result<(), Error> {
-        binary!(self: lhs != rhs)
+        let value = self.eq_op()?;
+        self.stack.push(Value::from(!value));
+        Ok(())
+    }
+
+    fn binary_numeric<I, F>(&mut self, op: &'static str, int: I, float: F) -> Result<(), Error>
+    where
+        I: FnOnce(i64, i64) -> i64,
+        F: FnOnce(f64, f64) -> f64,
+    {
+        match self.stack.tail_n(0).ty() {
+            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(int),
+            Type::Float if self.stack.tail_n(1).is_float() => self.binary_float(float),
+            ty => Err(self.unsupported(op, ty)),
+        }
+    }
+
+    fn compare_numeric<I, F>(&mut self, op: &'static str, int: I, float: F) -> Result<(), Error>
+    where
+        I: FnOnce(&i64, &i64) -> bool,
+        F: FnOnce(&f64, &f64) -> bool,
+    {
+        match self.stack.tail_n(0).ty() {
+            Type::Int if self.stack.tail_n(1).is_int() => self.compare_int(int),
+            Type::Float if self.stack.tail_n(1).is_float() => self.compare_float(float),
+            ty => Err(self.unsupported(op, ty)),
+        }
     }
 
     fn lt(&mut self) -> Result<(), Error> {
-        binary!(self: lhs < rhs)
+        self.compare_numeric("<", i64::lt, f64::lt)
     }
 
     fn lte(&mut self) -> Result<(), Error> {
-        binary!(self: lhs <= rhs)
+        self.compare_numeric("<=", i64::le, f64::le)
     }
 
     fn gt(&mut self) -> Result<(), Error> {
-        binary!(self: lhs > rhs)
+        self.compare_numeric(">", i64::gt, f64::gt)
     }
 
     fn gte(&mut self) -> Result<(), Error> {
-        binary!(self: lhs >= rhs)
+        self.compare_numeric(">=", i64::ge, f64::ge)
     }
 
     fn add(&mut self) -> Result<(), Error> {
-        binary!(self: Int | Float, lhs + rhs)
+        self.binary_numeric("+", i64::add, f64::add)
     }
 
     fn sub(&mut self) -> Result<(), Error> {
-        binary!(self: Int | Float, lhs - rhs)
+        self.binary_numeric("-", i64::wrapping_sub, f64::sub)
     }
 
     fn mul(&mut self) -> Result<(), Error> {
-        binary!(self: Int | Float, lhs * rhs)
+        self.binary_numeric("*", i64::wrapping_mul, f64::mul)
     }
 
     fn div(&mut self) -> Result<(), Error> {
-        binary!(self: Int | Float, lhs / rhs)
+        self.binary_numeric("/", i64::wrapping_div, f64::div)
     }
 
     fn rem(&mut self) -> Result<(), Error> {
-        binary!(self: Int | Float, lhs % rhs)
+        self.binary_numeric("%", i64::wrapping_rem, f64::rem)
     }
 
     fn bitwise_and(&mut self) -> Result<(), Error> {
-        binary!(self: Int, lhs & rhs)
+        match self.stack.tail_n(0).ty() {
+            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(i64::bitand),
+            ty => Err(self.unsupported("&", ty)),
+        }
     }
 
     fn bitwise_or(&mut self) -> Result<(), Error> {
-        binary!(self: Int, lhs | rhs)
+        match self.stack.tail_n(0).ty() {
+            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(i64::bitor),
+            ty => Err(self.unsupported("|", ty)),
+        }
     }
 
     fn bitwise_xor(&mut self) -> Result<(), Error> {
-        let rhs = self.stack.pop();
-        let lhs = self.stack.pop();
+        let ty = self.stack.tail_n(0).ty();
 
-        self.check_type(lhs.ty(), rhs.ty())?;
+        match ty {
+            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(i64::bitxor),
+            Type::Array | Type::Str if ty == self.stack.tail_n(1).ty() => {
+                let (lhs, rhs) = self.operands();
+                let value = self.concat(lhs, rhs)?;
 
-        if matches!(lhs.ty(), Type::Array | Type::Str) {
-            let value = self.concat(lhs, rhs)?;
+                self.stack.push(value);
+                self.gc_tick();
 
-            self.stack.push(value);
-            self.gc_tick();
-
-            return Ok(());
+                Ok(())
+            }
+            ty => Err(self.unsupported("^", ty)),
         }
-
-        binary!(self: Int, lhs, ^, rhs)
     }
 
     fn store(&mut self, idx: usize) {
@@ -697,17 +770,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.vars[idx] = self.stack.pop();
     }
 
-    #[inline]
     fn load(&mut self, idx: usize) {
         self.stack.push(self.vars[idx]);
     }
 
-    #[inline]
     fn load_const(&mut self, idx: usize) {
         self.stack.push(self.consts[idx]);
     }
 
-    #[inline]
     fn discard(&mut self) {
         self.stack.pop();
     }
@@ -717,7 +787,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.frame.offset = self.frame.func.body.len();
     }
 
-    #[inline(always)]
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval_loop(&mut self) -> Result<(), Error> {
         while let Some(code) = self.frame.next() {
@@ -790,7 +859,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                     .map(|s| Call::new(s.span, s.func))
                     .collect::<Vec<_>>();
 
-                stack_trace.remove(0);
                 stack_trace.reverse();
 
                 e.trace = Some(stack_trace);

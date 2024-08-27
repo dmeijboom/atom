@@ -20,7 +20,6 @@ impl<T> Default for ReuseVec<T> {
 }
 
 impl<T> ReuseVec<T> {
-    #[inline]
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }

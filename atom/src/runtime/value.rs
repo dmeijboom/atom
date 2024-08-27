@@ -67,8 +67,8 @@ impl Display for Type {
 
 const SIGN_BIT: u64 = 1 << 63;
 const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
-const INT_MASK: u64 = 0xffff_ffff_ffff;
 const TAG_MASK: u64 = 0b1111 << 48;
+pub const INT_MASK: u64 = 0xffff_ffff_ffff;
 
 #[derive(Clone, Copy)]
 pub struct Value {
@@ -81,9 +81,12 @@ impl Value {
     const NAN: Self = Self::new_primitive(Tag::Float);
     pub const NIL: Self = Self::new_primitive(Tag::Nil);
 
-    #[inline(always)]
-    const fn is_float(&self) -> bool {
+    pub const fn is_float(&self) -> bool {
         self.bits == Self::NAN.bits || (self.bits & SIG_NAN) != SIG_NAN
+    }
+
+    pub const fn is_int(&self) -> bool {
+        matches!(self.tag(), Tag::SmallInt | Tag::Int)
     }
 
     pub const fn tag(&self) -> Tag {
@@ -107,7 +110,6 @@ impl Value {
         }
     }
 
-    #[inline(always)]
     pub const fn ty(&self) -> Type {
         match self.tag() {
             Tag::SmallInt | Tag::Int => Type::Int,
@@ -316,6 +318,12 @@ impl From<Rc<Class>> for Value {
     }
 }
 
+impl From<Handle<i64>> for Value {
+    fn from(handle: Handle<i64>) -> Self {
+        Self::new(Tag::Int, handle.addr() as u64)
+    }
+}
+
 impl From<Handle<Str>> for Value {
     fn from(str: Handle<Str>) -> Self {
         Self::new(Tag::Str, str.addr() as u64)
@@ -381,7 +389,7 @@ impl TryIntoValue for i64 {
             Ok(value) => Ok(value),
             Err(IntOverflowError) => {
                 let handle = gc.alloc(self)?;
-                Ok(Value::new(Tag::Int, handle.addr() as u64))
+                Ok(handle.into())
             }
         }
     }
