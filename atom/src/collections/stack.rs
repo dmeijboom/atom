@@ -29,8 +29,13 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         self.len -= n;
     }
 
-    pub fn tail_n(&self, n: usize) -> &T {
-        &self.data[self.len - n - 1]
+    pub fn operands(&mut self) -> (T, T) {
+        let rhs = self.data[self.len - 1];
+        let lhs = self.data[self.len - 2];
+
+        self.len -= 2;
+
+        (lhs, rhs)
     }
 
     pub fn pop(&mut self) -> T {

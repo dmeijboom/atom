@@ -1,7 +1,7 @@
 use std::{
     collections::HashMap,
     mem,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Sub},
+    ops::{Add, Div, Mul, Rem, Sub},
     rc::Rc,
     time::Duration,
 };
@@ -605,40 +605,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn operands(&mut self) -> (Value, Value) {
-        let rhs = self.stack.pop();
-        let lhs = self.stack.pop();
-        (lhs, rhs)
-    }
-
-    fn binary_int(&mut self, f: impl FnOnce(i64, i64) -> i64) -> Result<(), Error> {
-        let (lhs, rhs) = self.operands();
-        self.push_int(f(lhs.int(), rhs.int()))
-    }
-
-    fn binary_float(&mut self, f: impl FnOnce(f64, f64) -> f64) -> Result<(), Error> {
-        let (lhs, rhs) = self.operands();
-        self.stack.push(Value::from(f(lhs.float(), rhs.float())));
-
-        Ok(())
-    }
-
-    fn compare_int(&mut self, f: impl FnOnce(&i64, &i64) -> bool) -> Result<(), Error> {
-        let (lhs, rhs) = self.operands();
-        self.stack.push(Value::from(f(&lhs.int(), &rhs.int())));
-
-        Ok(())
-    }
-
-    fn compare_float(&mut self, f: impl FnOnce(&f64, &f64) -> bool) -> Result<(), Error> {
-        let (lhs, rhs) = self.operands();
-        self.stack.push(Value::from(f(&lhs.float(), &rhs.float())));
-
-        Ok(())
-    }
-
     fn eq_op(&mut self) -> Result<bool, Error> {
-        let (lhs, rhs) = self.operands();
+        let (lhs, rhs) = self.stack.operands();
         let ty = lhs.ty();
 
         if ty != rhs.ty() {
@@ -670,28 +638,37 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn binary_numeric<I, F>(&mut self, op: &'static str, int: I, float: F) -> Result<(), Error>
+    fn binary_numeric<I, F>(&mut self, op: &'static str, i: I, f: F) -> Result<(), Error>
     where
         I: FnOnce(i64, i64) -> i64,
         F: FnOnce(f64, f64) -> f64,
     {
-        match self.stack.tail_n(0).ty() {
-            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(int),
-            Type::Float if self.stack.tail_n(1).is_float() => self.binary_float(float),
+        let (lhs, rhs) = self.stack.operands();
+
+        match lhs.ty() {
+            Type::Int if rhs.is_int() => self.push_int(i(lhs.int(), rhs.int())),
+            Type::Float if rhs.is_float() => {
+                self.stack.push(Value::from(f(lhs.float(), rhs.float())));
+                Ok(())
+            }
             ty => Err(self.unsupported(op, ty)),
         }
     }
 
-    fn compare_numeric<I, F>(&mut self, op: &'static str, int: I, float: F) -> Result<(), Error>
+    fn compare_numeric<I, F>(&mut self, op: &'static str, i: I, f: F) -> Result<(), Error>
     where
         I: FnOnce(&i64, &i64) -> bool,
         F: FnOnce(&f64, &f64) -> bool,
     {
-        match self.stack.tail_n(0).ty() {
-            Type::Int if self.stack.tail_n(1).is_int() => self.compare_int(int),
-            Type::Float if self.stack.tail_n(1).is_float() => self.compare_float(float),
-            ty => Err(self.unsupported(op, ty)),
-        }
+        let (lhs, rhs) = self.stack.operands();
+        let value = match lhs.ty() {
+            Type::Int if rhs.is_int() => Value::from(i(&lhs.int(), &rhs.int())),
+            Type::Float if rhs.is_float() => Value::from(f(&lhs.float(), &rhs.float())),
+            ty => return Err(self.unsupported(op, ty)),
+        };
+
+        self.stack.push(value);
+        Ok(())
     }
 
     fn lt(&mut self) -> Result<(), Error> {
@@ -715,42 +692,46 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn sub(&mut self) -> Result<(), Error> {
-        self.binary_numeric("-", i64::wrapping_sub, f64::sub)
+        self.binary_numeric("-", i64::sub, f64::sub)
     }
 
     fn mul(&mut self) -> Result<(), Error> {
-        self.binary_numeric("*", i64::wrapping_mul, f64::mul)
+        self.binary_numeric("*", i64::mul, f64::mul)
     }
 
     fn div(&mut self) -> Result<(), Error> {
-        self.binary_numeric("/", i64::wrapping_div, f64::div)
+        self.binary_numeric("/", i64::div, f64::div)
     }
 
     fn rem(&mut self) -> Result<(), Error> {
-        self.binary_numeric("%", i64::wrapping_rem, f64::rem)
+        self.binary_numeric("%", i64::rem, f64::rem)
     }
 
     fn bitwise_and(&mut self) -> Result<(), Error> {
-        match self.stack.tail_n(0).ty() {
-            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(i64::bitand),
+        let (lhs, rhs) = self.stack.operands();
+
+        match lhs.ty() {
+            Type::Int if rhs.is_int() => self.push_int(lhs.int() & rhs.int()),
             ty => Err(self.unsupported("&", ty)),
         }
     }
 
     fn bitwise_or(&mut self) -> Result<(), Error> {
-        match self.stack.tail_n(0).ty() {
-            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(i64::bitor),
+        let (lhs, rhs) = self.stack.operands();
+
+        match lhs.ty() {
+            Type::Int if rhs.is_int() => self.push_int(lhs.int() | rhs.int()),
             ty => Err(self.unsupported("|", ty)),
         }
     }
 
     fn bitwise_xor(&mut self) -> Result<(), Error> {
-        let ty = self.stack.tail_n(0).ty();
+        let (lhs, rhs) = self.stack.operands();
+        let ty = lhs.ty();
 
         match ty {
-            Type::Int if self.stack.tail_n(1).is_int() => self.binary_int(i64::bitxor),
-            Type::Array | Type::Str if ty == self.stack.tail_n(1).ty() => {
-                let (lhs, rhs) = self.operands();
+            Type::Int if rhs.is_int() => self.push_int(lhs.int() ^ rhs.int()),
+            Type::Array | Type::Str if ty == rhs.ty() => {
                 let value = self.concat(lhs, rhs)?;
 
                 self.stack.push(value);
@@ -788,7 +769,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
-    fn eval_loop(&mut self) -> Result<(), Error> {
+    fn eval(&mut self) -> Result<(), Error> {
         while let Some(code) = self.frame.next() {
             self.span = code.span();
 
@@ -871,7 +852,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     pub fn run(&mut self) -> Result<(), Error> {
         let mut start = || {
             loop {
-                self.eval_loop()?;
+                self.eval()?;
 
                 match self.call_stack.pop() {
                     Some(frame) => {
