@@ -24,9 +24,10 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         }
     }
 
-    pub fn copy_to(&mut self, other: &mut [T], n: usize) {
-        other.copy_from_slice(&self.data[self.len - n..self.len]);
+    pub fn split_to_vec(&mut self, n: usize) -> Vec<T> {
+        let vec = self.data[self.len - n..self.len].to_vec();
         self.len -= n;
+        vec
     }
 
     pub fn operands(&mut self) -> (T, T) {
@@ -73,9 +74,8 @@ mod tests {
         stack.push(5);
         stack.len -= 2;
 
-        let mut other = [0; 2];
-        stack.copy_to(&mut other, 2);
+        let vec = stack.split_to_vec(2);
 
-        assert_eq!(other, [2, 3]);
+        assert_eq!(vec, [2, 3]);
     }
 }

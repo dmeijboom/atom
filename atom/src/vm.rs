@@ -84,11 +84,6 @@ impl Frame {
         self
     }
 
-    pub fn with_locals(mut self, locals: Vec<Value>) -> Self {
-        self.locals = locals;
-        self
-    }
-
     pub fn next(&mut self) -> Option<Opcode> {
         if self.offset < self.func.body.len() {
             let buff = &self.func.body[self.offset..self.offset + 16];
@@ -234,12 +229,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.gc.sweep();
     }
 
-    fn push_tail_call(&mut self, arg_count: usize) {
-        self.frame.offset = 0;
-        self.frame.locals.resize(arg_count, Value::NIL);
-        self.returned = false;
-    }
-
     fn goto(&mut self, pos: usize) {
         let offset = pos * 16;
         self.frame.offset = offset;
@@ -368,15 +357,23 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn jump_cond(&mut self, idx: usize, push: bool, cond: bool) -> Result<(), Error> {
+    fn jump_if_false(&mut self, idx: usize) -> Result<(), Error> {
+        let value = self.stack.pop();
+
+        if value == Value::FALSE {
+            self.goto(idx);
+            return Ok(());
+        }
+
+        self.check_type(value.ty(), Type::Bool)
+    }
+
+    fn jump_cond(&mut self, idx: usize, cond: bool) -> Result<(), Error> {
         let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
 
         if value.bool() == cond {
-            if push {
-                self.stack.push(cond.into());
-            }
-
+            self.stack.push(cond.into());
             self.goto(idx);
         }
 
@@ -449,9 +446,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
 
         if tail_call {
-            self.push_tail_call(arg_count);
+            self.frame.offset = 0;
+            self.returned = false;
         } else {
-            let mut frame = Frame::new(self.span, func).with_locals(vec![Value::NIL; arg_count]);
+            let mut frame = Frame::new(self.span, func);
 
             if frame.func.method {
                 frame = frame.with_receiver(self.stack.pop());
@@ -460,7 +458,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             self.call_stack.push(mem::replace(&mut self.frame, frame));
         }
 
-        self.stack.copy_to(&mut self.frame.locals, arg_count);
+        self.frame.locals = self.stack.split_to_vec(arg_count);
         self.gc_tick();
 
         Ok(())
@@ -487,9 +485,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn make_array(&mut self, size: usize) -> Result<(), Error> {
-        let mut values = vec![];
-        self.stack.copy_to(&mut values, size);
-
+        let values = self.stack.split_to_vec(size);
         let array = Array::from_vec(&mut self.gc, values);
         let handle = self.gc.alloc(array)?;
 
@@ -799,9 +795,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::TailCall => self.call(code.code(), true)?,
                 Op::TailCallFn => self.call_fn(code.code2(), true)?,
                 Op::Jump => self.goto(code.code()),
-                Op::JumpIfFalse => self.jump_cond(code.code(), false, false)?,
-                Op::PushJumpIfTrue => self.jump_cond(code.code(), true, true)?,
-                Op::PushJumpIfFalse => self.jump_cond(code.code(), true, false)?,
+                Op::JumpIfFalse => self.jump_if_false(code.code())?,
+                Op::PushJumpIfTrue => self.jump_cond(code.code(), true)?,
+                Op::PushJumpIfFalse => self.jump_cond(code.code(), false)?,
                 Op::MakeArray => self.make_array(code.code())?,
                 Op::MakeSlice => self.make_slice(code.code())?,
                 Op::LoadElement => self.load_elem()?,

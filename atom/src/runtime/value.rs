@@ -76,8 +76,8 @@ pub struct Value {
 }
 
 impl Value {
-    const FALSE: Self = Self::new_primitive(Tag::False);
-    const TRUE: Self = Self::new_primitive(Tag::True);
+    pub const FALSE: Self = Self::new_primitive(Tag::False);
+    pub const TRUE: Self = Self::new_primitive(Tag::True);
     const NAN: Self = Self::new_primitive(Tag::Float);
     pub const NIL: Self = Self::new_primitive(Tag::Nil);
 
