@@ -388,7 +388,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         if let Some(func) = init_fn {
             self.stack.push(handle.into());
             self.stack.push(func.into());
-            self.call(arg_count, false)?;
+            self.call(arg_count)?;
         } else {
             self.stack.push(handle.into());
         }
@@ -420,44 +420,46 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32), tail_call: bool) -> Result<(), Error> {
+    fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
         self.fn_call(
             Rc::clone(&self.module.funcs[fn_idx as usize]),
             arg_count as usize,
-            tail_call,
         )
     }
 
-    fn call(&mut self, arg_count: usize, tail_call: bool) -> Result<(), Error> {
+    fn call(&mut self, arg_count: usize) -> Result<(), Error> {
         let callee = self.stack.pop();
 
         match callee.ty() {
-            Type::Fn => self.fn_call(callee.func(), arg_count, tail_call),
+            Type::Fn => self.fn_call(callee.func(), arg_count),
             Type::Class => self.init_class(callee.class(), arg_count),
             ty => Err(ErrorKind::NotCallable(ty).at(self.span).into()),
         }
     }
 
-    fn fn_call(&mut self, func: Rc<Func>, arg_count: usize, tail_call: bool) -> Result<(), Error> {
+    fn fn_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
         if arg_count != func.arg_count {
             return Err(ErrorKind::ArgCountMismatch { func, arg_count }
                 .at(self.span)
                 .into());
         }
 
-        if tail_call {
-            self.frame.offset = 0;
-            self.returned = false;
-        } else {
-            let mut frame = Frame::new(self.span, func);
+        let mut frame = Frame::new(self.span, func);
 
-            if frame.func.method {
-                frame = frame.with_receiver(self.stack.pop());
-            }
-
-            self.call_stack.push(mem::replace(&mut self.frame, frame));
+        if frame.func.method {
+            frame = frame.with_receiver(self.stack.pop());
         }
 
+        self.call_stack.push(mem::replace(&mut self.frame, frame));
+        self.frame.locals = self.stack.split_to_vec(arg_count);
+        self.gc_tick();
+
+        Ok(())
+    }
+
+    fn tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
+        self.frame.offset = 0;
+        self.returned = false;
         self.frame.locals = self.stack.split_to_vec(arg_count);
         self.gc_tick();
 
@@ -789,11 +791,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::Discard => self.discard(),
                 Op::Return => self.ret(),
                 Op::ReturnArg => self.return_arg(code.code()),
-                Op::Call => self.call(code.code(), false)?,
-                Op::CallFn => self.call_fn(code.code2(), false)?,
+                Op::Call => self.call(code.code())?,
+                Op::CallFn => self.call_fn(code.code2())?,
                 Op::CallExtern => self.call_extern(code.code())?,
-                Op::TailCall => self.call(code.code(), true)?,
-                Op::TailCallFn => self.call_fn(code.code2(), true)?,
+                Op::TailCall => self.tail_call(code.code())?,
                 Op::Jump => self.goto(code.code()),
                 Op::JumpIfFalse => self.jump_if_false(code.code())?,
                 Op::PushJumpIfTrue => self.jump_cond(code.code(), true)?,

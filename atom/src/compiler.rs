@@ -730,7 +730,8 @@ impl Compiler {
                 Op::Return => continue,
                 Op::CallFn if code.code2().0 as usize == func => {
                     let mut buff = &mut body[i * 16..];
-                    Opcode::with_code(Op::TailCallFn, code.code()).serialize(&mut buff);
+                    let (arg_count, _) = code.code2();
+                    Opcode::with_code(Op::TailCall, arg_count as usize).serialize(&mut buff);
                     break;
                 }
                 Op::Call => {
