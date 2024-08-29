@@ -17,7 +17,7 @@ use crate::{
     error::{IntoSpanned, SpannedError},
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    opcode::{Const, Op, Opcode},
+    opcode::{Op, Opcode},
     runtime::{
         array::Array,
         class::{Class, Object},
@@ -105,19 +105,6 @@ fn top_frame(module: &mut Module) -> Frame {
     )
 }
 
-fn map_const(gc: &mut Gc, const_: Const) -> Result<Value, Error> {
-    Ok(match const_ {
-        Const::Nil => Value::NIL,
-        Const::Int(n) => n.into_value(gc)?,
-        Const::Float(n) => Value::from(n),
-        Const::Bool(b) => Value::from(b),
-        Const::Str(s) => {
-            let str = Str::from_string(gc, s);
-            Value::from(gc.alloc(str)?)
-        }
-    })
-}
-
 pub type BoxedFn = Rc<Box<dyn Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
 
 pub trait DynamicLinker {
@@ -162,7 +149,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let mut consts = [Value::NIL; C];
 
         for (i, const_) in mem::take(&mut module.consts).into_iter().enumerate() {
-            consts[i] = map_const(&mut gc, const_)?;
+            consts[i] = const_.into_value(&mut gc)?;
         }
 
         Ok(Self {

@@ -2,7 +2,12 @@ use std::fmt::Display;
 
 use bytes::{Buf, BufMut};
 
-use crate::lexer::Span;
+use crate::{
+    gc::Gc,
+    lexer::Span,
+    runtime::{error::RuntimeError, str::Str, value::TryIntoValue},
+    Value,
+};
 
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -189,6 +194,21 @@ pub enum Const {
 }
 
 impl Eq for Const {}
+
+impl TryIntoValue for Const {
+    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+        Ok(match self {
+            Const::Nil => Value::NIL,
+            Const::Int(n) => n.into_value(gc)?,
+            Const::Float(n) => Value::from(n),
+            Const::Bool(b) => Value::from(b),
+            Const::Str(s) => {
+                let str = Str::from_string(gc, s);
+                Value::from(gc.alloc(str)?)
+            }
+        })
+    }
+}
 
 #[cfg(test)]
 mod tests {
