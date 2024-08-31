@@ -4,13 +4,13 @@ use bytes::Bytes;
 
 use crate::opcode::Const;
 
-use super::{class::Class, func::Func};
+use super::{class::Class, function::Fn};
 
 #[derive(Debug, Default)]
 pub struct Module {
     pub body: Bytes,
     pub consts: Vec<Const>,
-    pub funcs: Vec<Rc<Func>>,
+    pub functions: Vec<Rc<Fn>>,
     pub classes: Vec<Rc<Class>>,
 }
 
@@ -24,8 +24,8 @@ impl ModuleBuilder {
         self.module
     }
 
-    pub fn func(mut self, func: impl FnOnce() -> Func) -> Self {
-        self.module.funcs.push(Rc::new(func()));
+    pub fn function(mut self, f: impl FnOnce() -> Fn) -> Self {
+        self.module.functions.push(Rc::new(f()));
         self
     }
 

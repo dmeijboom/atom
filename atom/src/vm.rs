@@ -22,7 +22,7 @@ use crate::{
         array::Array,
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
-        func::Func,
+        function::Fn,
         module::Module,
         str::Str,
         value::{self, TryIntoValue, Type, Value},
@@ -61,18 +61,18 @@ pub enum Error {
 
 #[derive(Debug)]
 struct Frame {
-    span: Span,
+    call_site: Span,
     offset: usize,
-    func: Rc<Func>,
+    function: Rc<Fn>,
     locals: Vec<Value>,
     receiver: Option<Value>,
 }
 
 impl Frame {
-    pub fn new(span: Span, func: Rc<Func>) -> Self {
+    pub fn new(call_site: Span, function: Rc<Fn>) -> Self {
         Self {
-            span,
-            func,
+            call_site,
+            function,
             offset: 0,
             locals: vec![],
             receiver: None,
@@ -85,10 +85,10 @@ impl Frame {
     }
 
     pub fn next(&mut self) -> Option<Opcode> {
-        if self.offset < self.func.body.len() {
-            let buff = &self.func.body[self.offset..self.offset + 16];
+        if self.offset < self.function.body.len() {
+            let code = Opcode::deserialize(&self.function.body[self.offset..self.offset + 16]);
             self.offset += 16;
-            Some(Opcode::deserialize(buff))
+            Some(code)
         } else {
             None
         }
@@ -98,14 +98,15 @@ impl Frame {
 fn top_frame(module: &mut Module) -> Frame {
     Frame::new(
         Span::default(),
-        Rc::new(Func {
+        Rc::new(Fn {
             body: mem::take(&mut module.body),
-            ..Func::default()
+            ..Fn::default()
         }),
     )
 }
 
-pub type BoxedFn = Rc<Box<dyn Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
+pub type BoxedFn =
+    Rc<Box<dyn std::ops::Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
 
 pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
@@ -219,7 +220,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn goto(&mut self, pos: usize) {
         let offset = pos * 16;
         self.frame.offset = offset;
-        self.span = Span::deserialize(&self.frame.func.body[offset + 8..offset + 16]);
+        self.span = Span::deserialize(&self.frame.function.body[offset + 8..offset + 16]);
     }
 
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
@@ -313,7 +314,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_fn(&mut self, idx: usize) {
-        let func = Rc::clone(&self.module.funcs[idx]);
+        let func = Rc::clone(&self.module.functions[idx]);
         self.stack.push(func.into());
     }
 
@@ -409,7 +410,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
         self.fn_call(
-            Rc::clone(&self.module.funcs[fn_idx as usize]),
+            Rc::clone(&self.module.functions[fn_idx as usize]),
             arg_count as usize,
         )
     }
@@ -424,7 +425,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
     }
 
-    fn fn_call(&mut self, func: Rc<Func>, arg_count: usize) -> Result<(), Error> {
+    fn fn_call(&mut self, func: Rc<Fn>, arg_count: usize) -> Result<(), Error> {
         if arg_count != func.arg_count {
             return Err(ErrorKind::ArgCountMismatch { func, arg_count }
                 .at(self.span)
@@ -433,7 +434,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         let mut frame = Frame::new(self.span, func);
 
-        if frame.func.method {
+        if frame.function.method {
             frame = frame.with_receiver(self.stack.pop());
         }
 
@@ -740,7 +741,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn ret(&mut self) {
         self.returned = true;
-        self.frame.offset = self.frame.func.body.len();
+        self.frame.offset = self.frame.function.body.len();
     }
 
     #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
@@ -811,7 +812,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 let mut stack_trace = call_stack
                     .into_iter()
                     .rev()
-                    .map(|s| Call::new(s.span, s.func))
+                    .map(|s| Call::new(s.call_site, s.function))
                     .collect::<Vec<_>>();
 
                 stack_trace.reverse();

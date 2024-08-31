@@ -9,7 +9,7 @@ use super::{
     array::Array,
     class::{Class, Object},
     error::RuntimeError,
-    func::Func,
+    function::Fn,
     str::Str,
 };
 
@@ -200,7 +200,7 @@ impl Value {
         self.into_rc()
     }
 
-    pub fn func(self) -> Rc<Func> {
+    pub fn func(self) -> Rc<Fn> {
         self.into_rc()
     }
 
@@ -340,8 +340,8 @@ impl From<Handle<Array<Value>>> for Value {
     }
 }
 
-impl From<Rc<Func>> for Value {
-    fn from(func: Rc<Func>) -> Self {
+impl From<Rc<Fn>> for Value {
+    fn from(func: Rc<Fn>) -> Self {
         let value = Rc::into_raw(func);
         Self::new(Tag::Fn, value as u64)
     }

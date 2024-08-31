@@ -10,7 +10,7 @@ use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use opcode::Opcode;
-use runtime::{func::Func, module::Module, value::Value};
+use runtime::{function::Fn, module::Module, value::Value};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -90,16 +90,11 @@ fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
     println!("{prefix}{opcode}");
 }
 
-fn print_func(func: &Func, indent: usize) {
+fn print_func(f: &Fn, indent: usize) {
     let prefix = " ".repeat(indent * 2);
-    println!("{prefix}fn {}:", func.name);
+    println!("{prefix}fn {}:", f.name);
 
-    for (i, opcode) in func
-        .body
-        .chunks_exact(16)
-        .map(Opcode::deserialize)
-        .enumerate()
-    {
+    for (i, opcode) in f.body.chunks_exact(16).map(Opcode::deserialize).enumerate() {
         print_opcode(i, &opcode, indent + 1);
     }
 }
@@ -108,19 +103,19 @@ fn print_module(module: &Module) {
     for class in module.classes.iter().filter(|c| !c.is_extern()) {
         println!("class {}:", class.name);
 
-        for (i, func) in class.methods.values().enumerate() {
+        for (i, f) in class.methods.values().enumerate() {
             if i > 0 {
                 println!();
             }
 
-            print_func(func, 1);
+            print_func(f, 1);
         }
 
         println!();
     }
 
-    for func in module.funcs.iter().filter(|f| !f.is_extern()) {
-        print_func(func, 0);
+    for f in module.functions.iter().filter(|f| !f.is_extern()) {
+        print_func(f, 0);
         println!();
     }
 

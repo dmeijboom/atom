@@ -12,7 +12,7 @@ use crate::{
     error::{IntoSpanned, SpannedError},
     lexer::Span,
     opcode::{Const, Op, Opcode},
-    runtime::{class::Class, func::Func, module::Module, Name},
+    runtime::{class::Class, function::Fn, module::Module, Name},
 };
 
 #[derive(Debug, thiserror::Error)]
@@ -119,7 +119,7 @@ pub struct Compiler {
     scope: VecDeque<Scope>,
     body: BytesMut,
     consts: Vec<Const>,
-    funcs: Vec<Func>,
+    funcs: Vec<Fn>,
     classes: Vec<Class>,
     markers: Vec<Marker>,
     locals: VecDeque<HashMap<String, Var, WyHash>>,
@@ -208,14 +208,14 @@ impl Compiler {
         span: Span,
         name: String,
         arg_count: usize,
-    ) -> Result<Func, CompileError> {
+    ) -> Result<Fn, CompileError> {
         let idx = self.push_const(Const::Str(name.clone()));
         let code = Opcode::with_code(Op::CallExtern, idx).at(span);
 
         let mut body = BytesMut::new();
         code.serialize(&mut body);
 
-        Ok(Func::with_body(name, arg_count, body.freeze()))
+        Ok(Fn::with_body(name, arg_count, body.freeze()))
     }
 
     fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, CompileError> {
@@ -459,7 +459,7 @@ impl Compiler {
     fn method(
         &mut self,
         span: Span,
-        methods: &mut HashMap<String, Func, WyHash>,
+        methods: &mut HashMap<String, Fn, WyHash>,
         name: String,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
@@ -468,7 +468,7 @@ impl Compiler {
             return Err(ErrorKind::DuplicateMethod(name).at(span));
         }
 
-        let func = Func::new(name.clone(), args.len()).with_method();
+        let func = Fn::new(name.clone(), args.len()).with_method();
         methods.insert(name.clone(), func);
 
         let mut body = self.compile_fn_body(Scope::with_method(), args, stmts)?;
@@ -526,7 +526,7 @@ impl Compiler {
         }
 
         let idx = self.funcs.len();
-        let func = Func::new(name, args.len());
+        let func = Fn::new(name, args.len());
 
         self.funcs.push(func);
 
@@ -789,7 +789,7 @@ impl Compiler {
         Ok(Module {
             body: self.body.freeze(),
             consts: self.consts,
-            funcs: self.funcs.into_iter().map(Rc::new).collect(),
+            functions: self.funcs.into_iter().map(Rc::new).collect(),
             classes: self.classes.into_iter().map(Rc::new).collect(),
         })
     }

@@ -5,7 +5,7 @@ use std::{
 
 use crate::lexer::Span;
 
-use super::{class::Class, func::Func, value::Type};
+use super::{class::Class, function::Fn, value::Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
@@ -18,7 +18,7 @@ pub enum ErrorKind {
     #[error("cannot call non-function: {0}")]
     NotCallable(Type),
     #[error("invalid argument count on '{}(..)': expected {}, got: {arg_count}", func.name, func.arg_count)]
-    ArgCountMismatch { arg_count: usize, func: Rc<Func> },
+    ArgCountMismatch { arg_count: usize, func: Rc<Fn> },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
     #[error("no such attribute '{attribute}' in {}", class.name)]
@@ -51,11 +51,11 @@ impl ErrorKind {
 pub struct Call {
     #[allow(dead_code)]
     pub span: Span,
-    pub func: Rc<Func>,
+    pub func: Rc<Fn>,
 }
 
 impl Call {
-    pub fn new(span: Span, func: Rc<Func>) -> Self {
+    pub fn new(span: Span, func: Rc<Fn>) -> Self {
         Call { span, func }
     }
 }

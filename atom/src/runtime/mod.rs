@@ -14,7 +14,7 @@ pub mod array;
 pub mod class;
 pub mod core;
 pub mod error;
-pub mod func;
+pub mod function;
 pub mod module;
 pub mod str;
 pub mod value;

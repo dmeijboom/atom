@@ -10,14 +10,14 @@ use crate::{
 use super::Name;
 
 #[derive(Default)]
-pub struct Func {
+pub struct Fn {
     pub name: Name,
+    pub body: Bytes,
     pub method: bool,
     pub arg_count: usize,
-    pub body: Bytes,
 }
 
-impl Func {
+impl Fn {
     pub fn new(name: impl Into<Name>, arg_count: usize) -> Self {
         Self {
             name: name.into(),
@@ -46,11 +46,11 @@ impl Func {
     }
 }
 
-impl Trace for Func {
+impl Trace for Fn {
     fn trace(&self, _gc: &mut crate::gc::Gc) {}
 }
 
-impl Debug for Func {
+impl Debug for Fn {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Func")
             .field("name", &self.name)

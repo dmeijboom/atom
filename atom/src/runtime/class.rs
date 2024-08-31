@@ -4,12 +4,12 @@ use wyhash2::WyHash;
 
 use crate::gc::{Handle, Trace};
 
-use super::{func::Func, str::Str, value::Value, Name};
+use super::{function::Fn, str::Str, value::Value, Name};
 
 #[derive(Debug)]
 pub struct Class {
     pub name: Name,
-    pub methods: HashMap<Name, Rc<Func>, WyHash>,
+    pub methods: HashMap<Name, Rc<Fn>, WyHash>,
 }
 
 impl Class {
