@@ -20,11 +20,6 @@ tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
 mimalloc = { version = "0.1.43", optional = true }
-clap = { version = "4.5.11", default-features = false, features = [
-    "derive",
-    "help",
-    "std",
-    "usage",
-] }
 bytes = "1.7.1"
 nohash-hasher = "0.2.0"
+argh = "0.1.12"

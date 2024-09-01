@@ -4,8 +4,8 @@ use std::{
     process::exit,
 };
 
+use argh::FromArgs;
 use ast::Stmt;
-use clap::Parser;
 use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
@@ -41,26 +41,41 @@ const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
 
 type AtomVm<L> = Vm<L, MAX_STACK_SIZE, MAX_CONST_SIZE>;
 
-#[derive(Parser)]
+/// CLI options
+#[derive(FromArgs)]
 struct Opts {
-    #[clap(subcommand)]
+    #[argh(subcommand)]
     cmd: Cmd,
 }
 
-#[derive(Parser)]
+/// Command
+#[derive(FromArgs)]
+#[argh(subcommand)]
 enum Cmd {
-    Run {
-        source: PathBuf,
-        #[clap(long)]
-        no_optimize: bool,
-    },
-    Compile {
-        source: PathBuf,
-        #[clap(long)]
-        no_optimize: bool,
-        #[clap(short, long)]
-        verbose: bool,
-    },
+    Run(RunCmd),
+    Compile(CompileCmd),
+}
+
+/// Run a program
+#[derive(FromArgs)]
+#[argh(subcommand, name = "run")]
+struct RunCmd {
+    #[argh(positional)]
+    source: PathBuf,
+    #[argh(switch, description = "disable optimizations")]
+    no_optimize: bool,
+}
+
+/// Compile a program
+#[derive(FromArgs)]
+#[argh(subcommand, name = "compile")]
+struct CompileCmd {
+    #[argh(positional)]
+    source: PathBuf,
+    #[argh(switch, description = "disable optimizations")]
+    no_optimize: bool,
+    #[argh(switch, description = "show verbose output")]
+    verbose: bool,
 }
 
 fn parse(source: &str) -> Result<Vec<Stmt>, Error> {
@@ -134,10 +149,10 @@ fn print_module(module: &Module) {
 
 fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
-        Cmd::Run {
+        Cmd::Run(RunCmd {
             source,
             no_optimize,
-        } => {
+        }) => {
             let module = compile(source, !no_optimize)?;
             let mut vm = AtomVm::with_module(module, runtime::linker())?;
             vm.run()?;
@@ -158,11 +173,11 @@ fn cmd(opts: Opts) -> Result<(), Error> {
                 }
             }
         }
-        Cmd::Compile {
+        Cmd::Compile(CompileCmd {
             source,
             verbose,
             no_optimize,
-        } => {
+        }) => {
             let module = compile(source, !no_optimize)?;
 
             if verbose {
@@ -180,7 +195,7 @@ fn main() {
         .with_env_filter(EnvFilter::from_default_env())
         .init();
 
-    let opts = Opts::parse();
+    let opts = argh::from_env();
 
     if let Err(e) = cmd(opts) {
         eprintln!("{e} at {}", e.span());
