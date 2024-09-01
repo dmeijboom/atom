@@ -32,12 +32,6 @@ use crate::{
     },
 };
 
-fn resize<T: Default + Clone>(vec: &mut Vec<T>, len: usize) {
-    if vec.len() != len {
-        vec.resize_with(len, || T::default());
-    }
-}
-
 fn array_idx(elem: Value, len: usize) -> usize {
     match elem.int() {
         n if n < 0 => (len as i64 + n) as usize,
@@ -159,14 +153,14 @@ struct Context<const C: usize> {
     cache: Cache,
     module: Module,
     consts: [Value; C],
-    vars: Vec<Value>,
+    vars: IntMap<usize, Value>,
 }
 
 impl<const C: usize> Trace for Context<C> {
     fn trace(&self, gc: &mut Gc) {
         self.consts
             .iter()
-            .chain(self.vars.iter())
+            .chain(self.vars.values())
             .for_each(|value| value.trace(gc));
 
         self.cache.trace(gc);
@@ -283,7 +277,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             cache: Cache::default(),
             module,
             consts,
-            vars: vec![],
+            vars: IntMap::default(),
         };
 
         Ok(Self {
@@ -848,15 +842,12 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn store(&mut self, idx: usize) {
-        if self.context.vars.len() <= idx {
-            resize(&mut self.context.vars, idx + 1);
-        }
-
-        self.context.vars[idx] = self.stack.pop();
+        self.context.vars.insert(idx, self.stack.pop());
     }
 
     fn load(&mut self, idx: usize) {
-        self.stack.push(self.context.vars[idx]);
+        self.stack
+            .push(self.context.vars.get(&idx).copied().unwrap_or_default());
     }
 
     fn load_const(&mut self, idx: usize) {
