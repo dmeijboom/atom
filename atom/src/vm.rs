@@ -280,15 +280,16 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
         let member_handle = self.context.consts[member].str();
         let member = member_handle.as_str();
-        let class = self
-            .context
-            .load_class_by_name(&mut self.gc, object.ty().name())?;
 
-        if let Some(method) = class.and_then(|class| class.methods.get(member).cloned()) {
-            let method = self.gc.alloc(method)?;
-            self.stack.push(object);
-            self.stack.push(method.into());
-            return Ok(());
+        if let Some(class) = self
+            .context
+            .load_class_by_name(&mut self.gc, object.ty().name())?
+        {
+            if let Some(method) = self.context.load_method(&mut self.gc, &class, member)? {
+                self.stack.push(object);
+                self.stack.push(method.into());
+                return Ok(());
+            }
         }
 
         Err(ErrorKind::UnknownField {
@@ -362,12 +363,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn init_class(&mut self, class: Handle<Class>, arg_count: usize) -> Result<(), Error> {
-        let init_fn = class.methods.get("init").cloned();
+        let init_fn = self.context.load_method(&mut self.gc, &class, "init")?;
         let object = Object::new(class);
         let handle = self.gc.alloc(object)?;
 
         if let Some(f) = init_fn {
-            let f = self.gc.alloc(f)?;
             self.stack.push(handle.into());
             self.stack.push(f.into());
             self.call(arg_count)?;
