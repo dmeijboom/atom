@@ -1,6 +1,7 @@
 pub mod ast;
 mod collections;
 mod compiler;
+mod context;
 mod error;
 mod gc;
 mod lexer;

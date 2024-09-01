@@ -9,13 +9,12 @@ use std::{
 #[cfg(feature = "timings")]
 use std::time::Instant;
 
-use nohash_hasher::IntMap;
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
-use wyhash2::WyHash;
 
 use crate::{
     collections::Stack,
+    context::Context,
     error::{IntoSpanned, SpannedError},
     gc::{Gc, Handle, Trace},
     lexer::Span,
@@ -122,130 +121,6 @@ impl Timing {
     }
 }
 
-#[derive(Default)]
-struct Cache {
-    functions: IntMap<usize, Handle<Fn>>,
-    classes: IntMap<usize, Handle<Class>>,
-    named_classes: HashMap<String, Handle<Class>, WyHash>,
-    methods: IntMap<usize, HashMap<String, Handle<Fn>, WyHash>>,
-}
-
-impl Trace for Cache {
-    fn trace(&self, gc: &mut Gc) {
-        self.classes
-            .values()
-            .map(Handle::boxed)
-            .chain(self.named_classes.values().map(Handle::boxed))
-            .chain(self.functions.values().map(Handle::boxed))
-            .chain(
-                self.methods
-                    .values()
-                    .flat_map(|m| m.values().map(Handle::boxed)),
-            )
-            .for_each(|h| {
-                h.trace(gc);
-                gc.mark(h);
-            });
-    }
-}
-
-struct Context<const C: usize> {
-    cache: Cache,
-    module: Module,
-    consts: [Value; C],
-    vars: IntMap<usize, Value>,
-}
-
-impl<const C: usize> Trace for Context<C> {
-    fn trace(&self, gc: &mut Gc) {
-        self.consts
-            .iter()
-            .chain(self.vars.values())
-            .for_each(|value| value.trace(gc));
-
-        self.cache.trace(gc);
-    }
-}
-
-impl<const C: usize> Context<C> {
-    fn load_class_by_name(
-        &mut self,
-        gc: &mut Gc,
-        name: &str,
-    ) -> Result<Option<Handle<Class>>, Error> {
-        if let Some(class) = self.cache.named_classes.get(name) {
-            return Ok(Some(Handle::clone(class)));
-        }
-
-        let Some(class) = self
-            .module
-            .classes
-            .iter()
-            .find(|class| class.name == name)
-            .cloned()
-        else {
-            return Ok(None);
-        };
-
-        let handle = gc.alloc(class.clone())?;
-        self.cache
-            .named_classes
-            .insert(name.to_string(), Handle::clone(&handle));
-
-        Ok(Some(handle))
-    }
-
-    fn load_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
-        if let Some(class) = self.cache.classes.get(&idx).cloned() {
-            return Ok(class);
-        }
-
-        let class = self.module.classes[idx].clone();
-        let handle = gc.alloc(class)?;
-
-        self.cache.classes.insert(idx, Handle::clone(&handle));
-
-        Ok(handle)
-    }
-
-    fn load_fn(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Fn>, Error> {
-        if let Some(f) = self.cache.functions.get(&idx).cloned() {
-            return Ok(f);
-        }
-
-        let f = self.module.functions[idx].clone();
-        let handle = gc.alloc(f)?;
-
-        self.cache.functions.insert(idx, Handle::clone(&handle));
-
-        Ok(handle)
-    }
-
-    fn load_method(
-        &mut self,
-        gc: &mut Gc,
-        class: &Handle<Class>,
-        name: &str,
-    ) -> Result<Option<Handle<Fn>>, Error> {
-        if let Some(entry) = self.cache.methods.get(&class.addr()) {
-            if let Some(method) = entry.get(name) {
-                return Ok(Some(Handle::clone(method)));
-            }
-        }
-
-        let Some(method) = class.methods.get(name).cloned() else {
-            return Ok(None);
-        };
-
-        let handle = gc.alloc(method.clone())?;
-        let methods = self.cache.methods.entry(class.addr()).or_default();
-
-        methods.insert(name.to_string(), Handle::clone(&handle));
-
-        Ok(Some(handle))
-    }
-}
-
 pub struct Vm<L: DynamicLinker, const S: usize, const C: usize> {
     gc: Gc,
     linker: L,
@@ -273,12 +148,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
 
         let frame = top_frame(&mut module, &mut gc)?;
-        let context = Context {
-            cache: Cache::default(),
-            module,
-            consts,
-            vars: IntMap::default(),
-        };
+        let context = Context::new(module, consts);
 
         Ok(Self {
             gc,
