@@ -138,7 +138,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             no_optimize,
         } => {
             let module = compile(source, !no_optimize)?;
-            let mut vm = AtomVm::new(module, runtime::linker())?;
+            let mut vm = AtomVm::with_module(module, runtime::linker())?;
             vm.run()?;
 
             #[cfg(feature = "timings")]

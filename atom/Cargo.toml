@@ -27,3 +27,4 @@ clap = { version = "4.5.11", default-features = false, features = [
     "usage",
 ] }
 bytes = "1.7.1"
+nohash-hasher = "0.2.0"

@@ -61,7 +61,7 @@ pub fn run(name: &str) -> Result<(TestVm, Option<Value>), Error> {
     let module = compile(name)?;
     let return_value = Rc::new(RefCell::new(None));
     let linker = TestLinker::new(runtime::linker(), Rc::clone(&return_value));
-    let mut vm = TestVm::new(module, linker)?;
+    let mut vm = TestVm::with_module(module, linker)?;
     vm.run()?;
 
     let return_value = return_value.borrow_mut().take();

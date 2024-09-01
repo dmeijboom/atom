@@ -1,5 +1,3 @@
-use std::rc::Rc;
-
 use bytes::Bytes;
 
 use crate::opcode::Const;
@@ -10,8 +8,8 @@ use super::{class::Class, function::Fn};
 pub struct Module {
     pub body: Bytes,
     pub consts: Vec<Const>,
-    pub functions: Vec<Rc<Fn>>,
-    pub classes: Vec<Rc<Class>>,
+    pub functions: Vec<Fn>,
+    pub classes: Vec<Class>,
 }
 
 #[derive(Default)]
@@ -25,12 +23,12 @@ impl ModuleBuilder {
     }
 
     pub fn function(mut self, f: impl FnOnce() -> Fn) -> Self {
-        self.module.functions.push(Rc::new(f()));
+        self.module.functions.push(f());
         self
     }
 
     pub fn class(mut self, class: Class) -> Self {
-        self.module.classes.push(Rc::new(class));
+        self.module.classes.push(class);
         self
     }
 }

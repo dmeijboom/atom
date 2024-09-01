@@ -1,7 +1,6 @@
 use std::{
     collections::{HashMap, VecDeque},
     io, mem,
-    rc::Rc,
 };
 
 use bytes::{Buf, BufMut, BytesMut};
@@ -574,7 +573,7 @@ impl Compiler {
 
         self.classes[idx].methods = funcs
             .into_iter()
-            .map(|(name, func)| (Name::Owned(name), Rc::new(func)))
+            .map(|(name, func)| (Name::Owned(name), func))
             .collect();
 
         Ok(())
@@ -789,8 +788,8 @@ impl Compiler {
         Ok(Module {
             body: self.body.freeze(),
             consts: self.consts,
-            functions: self.funcs.into_iter().map(Rc::new).collect(),
-            classes: self.classes.into_iter().map(Rc::new).collect(),
+            functions: self.funcs,
+            classes: self.classes,
         })
     }
 }

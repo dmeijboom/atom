@@ -9,12 +9,16 @@ use crate::{
 
 use super::Name;
 
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct Fn {
     pub name: Name,
     pub body: Bytes,
     pub method: bool,
     pub arg_count: usize,
+}
+
+impl Trace for Fn {
+    fn trace(&self, _gc: &mut crate::gc::Gc) {}
 }
 
 impl Fn {
@@ -44,10 +48,6 @@ impl Fn {
     pub fn is_extern(&self) -> bool {
         matches!(self.body.chunks_exact(16).map(Opcode::deserialize).next(), Some(c) if c.op() == Op::CallExtern)
     }
-}
-
-impl Trace for Fn {
-    fn trace(&self, _gc: &mut crate::gc::Gc) {}
 }
 
 impl Debug for Fn {

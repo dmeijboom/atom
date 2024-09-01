@@ -1,9 +1,6 @@
-use std::{
-    fmt::{Debug, Display},
-    rc::Rc,
-};
+use std::fmt::{Debug, Display};
 
-use crate::lexer::Span;
+use crate::{gc::Handle, lexer::Span};
 
 use super::{class::Class, function::Fn, value::Type};
 
@@ -18,11 +15,14 @@ pub enum ErrorKind {
     #[error("cannot call non-function: {0}")]
     NotCallable(Type),
     #[error("invalid argument count on '{}(..)': expected {}, got: {arg_count}", func.name, func.arg_count)]
-    ArgCountMismatch { arg_count: usize, func: Rc<Fn> },
+    ArgCountMismatch { arg_count: usize, func: Handle<Fn> },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
     #[error("no such attribute '{attribute}' in {}", class.name)]
-    UnknownAttr { class: Rc<Class>, attribute: String },
+    UnknownAttr {
+        class: Handle<Class>,
+        attribute: String,
+    },
     #[error("out of memory")]
     OutOfMemory,
     #[error("invalid memory layout")]
@@ -51,11 +51,11 @@ impl ErrorKind {
 pub struct Call {
     #[allow(dead_code)]
     pub span: Span,
-    pub func: Rc<Fn>,
+    pub func: Handle<Fn>,
 }
 
 impl Call {
-    pub fn new(span: Span, func: Rc<Fn>) -> Self {
+    pub fn new(span: Span, func: Handle<Fn>) -> Self {
         Call { span, func }
     }
 }

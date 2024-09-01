@@ -1,7 +1,4 @@
-use std::{
-    fmt::{Debug, Display},
-    rc::Rc,
-};
+use std::fmt::{Debug, Display};
 
 use crate::gc::{AnyHandle, Gc, Handle, Trace};
 
@@ -187,21 +184,12 @@ impl Value {
         }
     }
 
-    fn into_rc<T>(self) -> Rc<T> {
-        unsafe {
-            let value = self.bits & INT_MASK;
-            let ptr = value as *const T;
-
-            Rc::from_raw(ptr)
-        }
+    pub fn class(self) -> Handle<Class> {
+        self.into_handle()
     }
 
-    pub fn class(self) -> Rc<Class> {
-        self.into_rc()
-    }
-
-    pub fn func(self) -> Rc<Fn> {
-        self.into_rc()
+    pub fn func(self) -> Handle<Fn> {
+        self.into_handle()
     }
 
     fn into_handle<T: Trace>(self) -> Handle<T> {
@@ -315,10 +303,9 @@ impl From<Handle<Object>> for Value {
     }
 }
 
-impl From<Rc<Class>> for Value {
-    fn from(class: Rc<Class>) -> Self {
-        let value = Rc::into_raw(class);
-        Self::new(Tag::Class, value as u64)
+impl From<Handle<Class>> for Value {
+    fn from(handle: Handle<Class>) -> Self {
+        Self::new(Tag::Class, handle.addr() as u64)
     }
 }
 
@@ -329,21 +316,20 @@ impl From<Handle<i64>> for Value {
 }
 
 impl From<Handle<Str>> for Value {
-    fn from(str: Handle<Str>) -> Self {
-        Self::new(Tag::Str, str.addr() as u64)
+    fn from(handle: Handle<Str>) -> Self {
+        Self::new(Tag::Str, handle.addr() as u64)
     }
 }
 
 impl From<Handle<Array<Value>>> for Value {
-    fn from(array: Handle<Array<Value>>) -> Self {
-        Self::new(Tag::Array, array.addr() as u64)
+    fn from(handle: Handle<Array<Value>>) -> Self {
+        Self::new(Tag::Array, handle.addr() as u64)
     }
 }
 
-impl From<Rc<Fn>> for Value {
-    fn from(func: Rc<Fn>) -> Self {
-        let value = Rc::into_raw(func);
-        Self::new(Tag::Fn, value as u64)
+impl From<Handle<Fn>> for Value {
+    fn from(handle: Handle<Fn>) -> Self {
+        Self::new(Tag::Fn, handle.addr() as u64)
     }
 }
 

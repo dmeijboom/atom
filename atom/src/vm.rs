@@ -9,8 +9,10 @@ use std::{
 #[cfg(feature = "timings")]
 use std::time::Instant;
 
+use nohash_hasher::IntMap;
 #[cfg(feature = "tracing")]
 use tracing::{instrument, Level};
+use wyhash2::WyHash;
 
 use crate::{
     collections::Stack,
@@ -63,17 +65,19 @@ pub enum Error {
 struct Frame {
     call_site: Span,
     offset: usize,
-    function: Rc<Fn>,
+    returned: bool,
+    function: Handle<Fn>,
     locals: Vec<Value>,
     receiver: Option<Value>,
 }
 
 impl Frame {
-    pub fn new(call_site: Span, function: Rc<Fn>) -> Self {
+    pub fn new(call_site: Span, function: Handle<Fn>) -> Self {
         Self {
             call_site,
             function,
             offset: 0,
+            returned: false,
             locals: vec![],
             receiver: None,
         }
@@ -95,14 +99,14 @@ impl Frame {
     }
 }
 
-fn top_frame(module: &mut Module) -> Frame {
-    Frame::new(
+fn top_frame(module: &mut Module, gc: &mut Gc) -> Result<Frame, Error> {
+    Ok(Frame::new(
         Span::default(),
-        Rc::new(Fn {
+        gc.alloc(Fn {
             body: mem::take(&mut module.body),
             ..Fn::default()
-        }),
-    )
+        })?,
+    ))
 }
 
 pub type BoxedFn =
@@ -124,15 +128,136 @@ impl Timing {
     }
 }
 
+#[derive(Default)]
+struct Cache {
+    functions: IntMap<usize, Handle<Fn>>,
+    classes: IntMap<usize, Handle<Class>>,
+    named_classes: HashMap<String, Handle<Class>, WyHash>,
+    methods: IntMap<usize, HashMap<String, Handle<Fn>, WyHash>>,
+}
+
+impl Trace for Cache {
+    fn trace(&self, gc: &mut Gc) {
+        self.classes
+            .values()
+            .map(Handle::boxed)
+            .chain(self.named_classes.values().map(Handle::boxed))
+            .chain(self.functions.values().map(Handle::boxed))
+            .chain(
+                self.methods
+                    .values()
+                    .flat_map(|m| m.values().map(Handle::boxed)),
+            )
+            .for_each(|h| {
+                h.trace(gc);
+                gc.mark(h);
+            });
+    }
+}
+
+struct Context<const C: usize> {
+    cache: Cache,
+    module: Module,
+    consts: [Value; C],
+    vars: Vec<Value>,
+}
+
+impl<const C: usize> Trace for Context<C> {
+    fn trace(&self, gc: &mut Gc) {
+        self.consts
+            .iter()
+            .chain(self.vars.iter())
+            .for_each(|value| value.trace(gc));
+
+        self.cache.trace(gc);
+    }
+}
+
+impl<const C: usize> Context<C> {
+    fn load_class_by_name(
+        &mut self,
+        gc: &mut Gc,
+        name: &str,
+    ) -> Result<Option<Handle<Class>>, Error> {
+        if let Some(class) = self.cache.named_classes.get(name) {
+            return Ok(Some(Handle::clone(class)));
+        }
+
+        let Some(class) = self
+            .module
+            .classes
+            .iter()
+            .find(|class| class.name == name)
+            .cloned()
+        else {
+            return Ok(None);
+        };
+
+        let handle = gc.alloc(class.clone())?;
+        self.cache
+            .named_classes
+            .insert(name.to_string(), Handle::clone(&handle));
+
+        Ok(Some(handle))
+    }
+
+    fn load_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
+        if let Some(class) = self.cache.classes.get(&idx).cloned() {
+            return Ok(class);
+        }
+
+        let class = self.module.classes[idx].clone();
+        let handle = gc.alloc(class)?;
+
+        self.cache.classes.insert(idx, Handle::clone(&handle));
+
+        Ok(handle)
+    }
+
+    fn load_fn(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Fn>, Error> {
+        if let Some(f) = self.cache.functions.get(&idx).cloned() {
+            return Ok(f);
+        }
+
+        let f = self.module.functions[idx].clone();
+        let handle = gc.alloc(f)?;
+
+        self.cache.functions.insert(idx, Handle::clone(&handle));
+
+        Ok(handle)
+    }
+
+    fn load_method(
+        &mut self,
+        gc: &mut Gc,
+        class: &Handle<Class>,
+        name: &str,
+    ) -> Result<Option<Handle<Fn>>, Error> {
+        if let Some(entry) = self.cache.methods.get(&class.addr()) {
+            if let Some(method) = entry.get(name) {
+                return Ok(Some(Handle::clone(method)));
+            }
+        }
+
+        let Some(method) = class.methods.get(name).cloned() else {
+            return Ok(None);
+        };
+
+        let handle = gc.alloc(method.clone())?;
+        let methods = self.cache.methods.entry(class.addr()).or_default();
+
+        methods.insert(name.to_string(), Handle::clone(&handle));
+
+        Ok(Some(handle))
+    }
+}
+
 pub struct Vm<L: DynamicLinker, const S: usize, const C: usize> {
     gc: Gc,
-    span: Span,
     linker: L,
-    module: Module,
-    returned: bool,
+    span: Span,
     frame: Frame,
-    vars: Vec<Value>,
-    consts: [Value; C],
+    context: Context<C>,
     stack: Stack<Value, S>,
     call_stack: Vec<Frame>,
     timing: HashMap<Op, Timing>,
@@ -145,7 +270,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Drop for Vm<L, S, C> {
 }
 
 impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
-    pub fn new(mut module: Module, linker: L) -> Result<Self, Error> {
+    pub fn with_module(mut module: Module, linker: L) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; C];
 
@@ -153,18 +278,23 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             consts[i] = const_.into_value(&mut gc)?;
         }
 
-        Ok(Self {
-            vars: vec![],
+        let frame = top_frame(&mut module, &mut gc)?;
+        let context = Context {
+            cache: Cache::default(),
+            module,
             consts,
-            linker,
-            returned: false,
+            vars: vec![],
+        };
+
+        Ok(Self {
             gc,
-            frame: top_frame(&mut module),
+            linker,
+            frame,
+            context,
             span: Span::default(),
             call_stack: vec![],
             timing: HashMap::default(),
             stack: Stack::default(),
-            module,
         })
     }
 
@@ -203,10 +333,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn mark_sweep(&mut self) {
-        self.vars
+        self.context.trace(&mut self.gc);
+        self.stack
             .iter()
-            .chain(self.consts.iter())
-            .chain(self.stack.iter())
             .chain(
                 self.call_stack
                     .iter()
@@ -233,7 +362,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        let member = self.consts[member].str();
+        let member = self.context.consts[member].str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
@@ -246,7 +375,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member = self.consts[member].str();
+        let member = self.context.consts[member].str();
         let object = object.object();
 
         if object.attrs.is_empty() {
@@ -265,16 +394,18 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn load_method(&mut self, object: Handle<Object>, member: Handle<Str>) -> Result<(), Error> {
         let member = member.as_str();
 
-        match object.class.methods.get(member) {
+        match self
+            .context
+            .load_method(&mut self.gc, &object.class, member)?
+        {
             Some(method) => {
-                let method = Rc::clone(method);
                 self.stack.push(object.into());
                 self.stack.push(method.into());
 
                 Ok(())
             }
             None => Err(ErrorKind::UnknownAttr {
-                class: Rc::clone(&object.class),
+                class: object.class.clone(),
                 attribute: member.to_string(),
             }
             .at(self.span)
@@ -283,18 +414,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member_handle = self.consts[member].str();
+        let member_handle = self.context.consts[member].str();
         let member = member_handle.as_str();
         let class = self
-            .module
-            .classes
-            .iter()
-            .find(|class| class.name == object.ty().name());
+            .context
+            .load_class_by_name(&mut self.gc, object.ty().name())?;
 
-        if let Some(method) = class
-            .and_then(|class| class.methods.get(member))
-            .map(Rc::clone)
-        {
+        if let Some(method) = class.and_then(|class| class.methods.get(member).cloned()) {
+            let method = self.gc.alloc(method)?;
             self.stack.push(object);
             self.stack.push(method.into());
             return Ok(());
@@ -308,14 +435,16 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         .into())
     }
 
-    fn load_class(&mut self, idx: usize) {
-        let class = Rc::clone(&self.module.classes[idx]);
+    fn load_class(&mut self, idx: usize) -> Result<(), Error> {
+        let class = self.context.load_class(&mut self.gc, idx)?;
         self.stack.push(class.into());
+        Ok(())
     }
 
-    fn load_fn(&mut self, idx: usize) {
-        let func = Rc::clone(&self.module.functions[idx]);
-        self.stack.push(func.into());
+    fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
+        let f = self.context.load_fn(&mut self.gc, idx)?;
+        self.stack.push(f.into());
+        Ok(())
     }
 
     fn return_arg(&mut self, idx: usize) {
@@ -368,14 +497,15 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn init_class(&mut self, class: Rc<Class>, arg_count: usize) -> Result<(), Error> {
-        let init_fn = class.methods.get("init").map(Rc::clone);
+    fn init_class(&mut self, class: Handle<Class>, arg_count: usize) -> Result<(), Error> {
+        let init_fn = class.methods.get("init").cloned();
         let object = Object::new(class);
         let handle = self.gc.alloc(object)?;
 
-        if let Some(func) = init_fn {
+        if let Some(f) = init_fn {
+            let f = self.gc.alloc(f)?;
             self.stack.push(handle.into());
-            self.stack.push(func.into());
+            self.stack.push(f.into());
             self.call(arg_count)?;
         } else {
             self.stack.push(handle.into());
@@ -387,7 +517,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
-        let name = self.consts[idx].str();
+        let name = self.context.consts[idx].str();
         let handler = self
             .linker
             .resolve(name.as_ref())
@@ -401,7 +531,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         let return_value = (handler)(atom, args)?;
 
-        self.returned = true;
+        self.frame.returned = true;
         self.stack.push(return_value);
         self.gc_tick();
 
@@ -409,10 +539,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
-        self.fn_call(
-            Rc::clone(&self.module.functions[fn_idx as usize]),
-            arg_count as usize,
-        )
+        let f = self.context.load_fn(&mut self.gc, fn_idx as usize)?;
+        self.fn_call(f, arg_count as usize)
     }
 
     fn call(&mut self, arg_count: usize) -> Result<(), Error> {
@@ -425,14 +553,14 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
     }
 
-    fn fn_call(&mut self, func: Rc<Fn>, arg_count: usize) -> Result<(), Error> {
-        if arg_count != func.arg_count {
-            return Err(ErrorKind::ArgCountMismatch { func, arg_count }
+    fn fn_call(&mut self, f: Handle<Fn>, arg_count: usize) -> Result<(), Error> {
+        if arg_count != f.arg_count {
+            return Err(ErrorKind::ArgCountMismatch { func: f, arg_count }
                 .at(self.span)
                 .into());
         }
 
-        let mut frame = Frame::new(self.span, func);
+        let mut frame = Frame::new(self.span, f);
 
         if frame.function.method {
             frame = frame.with_receiver(self.stack.pop());
@@ -447,7 +575,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
         self.frame.offset = 0;
-        self.returned = false;
+        self.frame.returned = false;
         self.frame.locals = self.stack.split_to_vec(arg_count);
         self.gc_tick();
 
@@ -720,19 +848,19 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn store(&mut self, idx: usize) {
-        if self.vars.len() <= idx {
-            resize(&mut self.vars, idx + 1);
+        if self.context.vars.len() <= idx {
+            resize(&mut self.context.vars, idx + 1);
         }
 
-        self.vars[idx] = self.stack.pop();
+        self.context.vars[idx] = self.stack.pop();
     }
 
     fn load(&mut self, idx: usize) {
-        self.stack.push(self.vars[idx]);
+        self.stack.push(self.context.vars[idx]);
     }
 
     fn load_const(&mut self, idx: usize) {
-        self.stack.push(self.consts[idx]);
+        self.stack.push(self.context.consts[idx]);
     }
 
     fn discard(&mut self) {
@@ -740,7 +868,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn ret(&mut self) {
-        self.returned = true;
+        self.frame.returned = true;
         self.frame.offset = self.frame.function.body.len();
     }
 
@@ -770,8 +898,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::LoadConst => self.load_const(code.code()),
                 Op::LoadMember => self.load_member(code.code())?,
                 Op::StoreMember => self.store_member(code.code())?,
-                Op::LoadFn => self.load_fn(code.code()),
-                Op::LoadClass => self.load_class(code.code()),
+                Op::LoadFn => self.load_fn(code.code())?,
+                Op::LoadClass => self.load_class(code.code())?,
                 Op::Store => self.store(code.code()),
                 Op::Load => self.load(code.code()),
                 Op::LoadArg => self.load_arg(code.code()),
@@ -831,11 +959,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
                 match self.call_stack.pop() {
                     Some(frame) => {
-                        if !self.returned {
+                        if !self.frame.returned {
                             self.stack.push(Value::NIL);
                         }
 
-                        self.returned = false;
                         self.frame = frame;
                     }
                     None => break,
