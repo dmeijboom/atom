@@ -260,7 +260,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         match self
             .context
-            .load_method(&mut self.gc, &object.class, member)?
+            .get_method(&mut self.gc, &object.class, member)?
         {
             Some(method) => {
                 self.stack.push(object.into());
@@ -283,9 +283,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
         if let Some(class) = self
             .context
-            .load_class_by_name(&mut self.gc, object.ty().name())?
+            .get_class_by_name(&mut self.gc, object.ty().name())?
         {
-            if let Some(method) = self.context.load_method(&mut self.gc, &class, member)? {
+            if let Some(method) = self.context.get_method(&mut self.gc, &class, member)? {
                 self.stack.push(object);
                 self.stack.push(method.into());
                 return Ok(());
@@ -301,13 +301,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_class(&mut self, idx: usize) -> Result<(), Error> {
-        let class = self.context.load_class(&mut self.gc, idx)?;
+        let class = self.context.get_class(&mut self.gc, idx)?;
         self.stack.push(class.into());
         Ok(())
     }
 
     fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
-        let f = self.context.load_fn(&mut self.gc, idx)?;
+        let f = self.context.get_fn(&mut self.gc, idx)?;
         self.stack.push(f.into());
         Ok(())
     }
@@ -363,7 +363,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn init_class(&mut self, class: Handle<Class>, arg_count: usize) -> Result<(), Error> {
-        let init_fn = self.context.load_method(&mut self.gc, &class, "init")?;
+        let init_fn = self.context.get_method(&mut self.gc, &class, "init")?;
         let object = Object::new(class);
         let handle = self.gc.alloc(object)?;
 
@@ -403,7 +403,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
-        let f = self.context.load_fn(&mut self.gc, fn_idx as usize)?;
+        let f = self.context.get_fn(&mut self.gc, fn_idx as usize)?;
         self.fn_call(f, arg_count as usize)
     }
 
@@ -578,7 +578,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let ty = lhs.ty();
 
         if ty != rhs.ty() {
-            return Ok(false);
+            return Err(self.unsupported_rhs(lhs, rhs, "=="));
         }
 
         if lhs == rhs {
@@ -785,7 +785,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
             #[cfg(feature = "timings")]
             {
-                let entry = self.timing.entry(op).or_insert(Timing::default());
+                let entry = self.timing.entry(op).or_default();
                 entry.elapsed += now.elapsed();
                 entry.count += 1;
             }

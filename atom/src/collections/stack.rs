@@ -15,15 +15,6 @@ impl<T: Copy + Default, const N: usize> Default for Stack<T, N> {
 }
 
 impl<T: Copy + Default, const N: usize> Stack<T, N> {
-    pub fn try_pop(&mut self) -> Option<T> {
-        if self.len == 0 {
-            None
-        } else {
-            self.len -= 1;
-            Some(self.data[self.len])
-        }
-    }
-
     pub fn split_to_vec(&mut self, n: usize) -> Vec<T> {
         let vec = self.data[self.len - n..self.len].to_vec();
         self.len -= n;
@@ -49,16 +40,8 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         self.len += 1;
     }
 
-    pub fn is_full(&self) -> bool {
-        self.len == N
-    }
-
     pub fn iter(&self) -> Iter<'_, T> {
         self.data[..self.len].iter()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.len == 0
     }
 }
 

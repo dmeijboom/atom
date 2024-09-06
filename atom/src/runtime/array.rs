@@ -27,9 +27,8 @@ impl<'a, T: Trace> Iterator for Iter<'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
-        self.array.get(self.idx).map(|item| {
+        self.array.get(self.idx).inspect(|_| {
             self.idx += 1;
-            item
         })
     }
 }

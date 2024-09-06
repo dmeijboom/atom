@@ -1,12 +1,13 @@
 use std::{
     alloc::{alloc_zeroed, dealloc, Layout},
-    collections::{HashMap, HashSet},
+    collections::HashSet,
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
+use nohash_hasher::IntMap;
 use wyhash2::WyHash;
 
 use crate::{
@@ -152,7 +153,7 @@ pub struct Gc {
     cycle: Cycle,
     marked: HashSet<usize, WyHash>,
     roots: Vec<Box<dyn AnyHandle>>,
-    arrays: HashMap<usize, Layout, WyHash>,
+    arrays: IntMap<usize, Layout>,
 }
 
 impl Gc {
@@ -160,14 +161,10 @@ impl Gc {
         self.ready
     }
 
-    pub unsafe fn track<T: Trace + 'static>(
-        &mut self,
-        ptr: NonNull<T>,
-        layout: Layout,
-    ) -> Handle<T> {
+    pub fn track<T: Trace + 'static>(&mut self, ptr: NonNull<T>, layout: Layout) -> Handle<T> {
         let handle = Handle::new(ptr);
 
-        self.roots.push(Box::new(handle.clone()));
+        self.roots.push(Box::new(Handle::clone(&handle)));
         self.cycle.allocated += layout.size();
 
         if !self.ready && self.cycle.allocated >= 1_000_000 {

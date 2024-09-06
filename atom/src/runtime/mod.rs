@@ -36,10 +36,6 @@ impl<'a> Atom<'a> {
         }
     }
 
-    pub fn span(&self) -> Span {
-        self.span
-    }
-
     pub fn receiver(&self) -> Result<Value, RuntimeError> {
         self.receiver
             .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))

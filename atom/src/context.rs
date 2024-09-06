@@ -62,7 +62,7 @@ impl<const C: usize> Context<C> {
         }
     }
 
-    pub fn load_class_by_name(
+    pub fn get_class_by_name(
         &mut self,
         gc: &mut Gc,
         name: &str,
@@ -80,10 +80,10 @@ impl<const C: usize> Context<C> {
             },
         };
 
-        self.load_class(gc, idx).map(Some)
+        self.get_class(gc, idx).map(Some)
     }
 
-    pub fn load_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
+    pub fn get_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
         match self.cache.classes.get(&idx) {
             Some(class) => Ok(Handle::clone(class)),
             None => {
@@ -97,7 +97,7 @@ impl<const C: usize> Context<C> {
         }
     }
 
-    pub fn load_fn(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Fn>, Error> {
+    pub fn get_fn(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Fn>, Error> {
         match self.cache.functions.get(&idx) {
             Some(f) => Ok(Handle::clone(f)),
             None => {
@@ -111,7 +111,7 @@ impl<const C: usize> Context<C> {
         }
     }
 
-    pub fn load_method(
+    pub fn get_method(
         &mut self,
         gc: &mut Gc,
         class: &Handle<Class>,
