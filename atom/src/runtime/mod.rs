@@ -36,6 +36,10 @@ impl<'a> Atom<'a> {
         }
     }
 
+    pub fn gc(&mut self) -> &mut Gc {
+        self.gc
+    }
+
     pub fn receiver(&self) -> Result<Value, RuntimeError> {
         self.receiver
             .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))
@@ -53,13 +57,6 @@ impl<'a> Atom<'a> {
 
     pub fn alloc<T: Trace + 'static>(&mut self, value: T) -> Result<Handle<T>, RuntimeError> {
         self.gc.alloc(value)
-    }
-
-    pub fn alloc_array<T: Trace + 'static>(
-        &mut self,
-        cap: usize,
-    ) -> Result<Handle<T>, RuntimeError> {
-        self.gc.alloc_array(cap)
     }
 }
 

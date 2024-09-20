@@ -156,22 +156,6 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let module = compile(source, !no_optimize)?;
             let mut vm = AtomVm::with_module(module, runtime::linker())?;
             vm.run()?;
-
-            #[cfg(feature = "timings")]
-            {
-                println!();
-                println!("[Timings]");
-
-                for (op, timing) in vm.timing() {
-                    println!(
-                        "{:?} took {:.2?} ({:.2?}/op, {}x)",
-                        op,
-                        timing.elapsed,
-                        timing.avg(),
-                        timing.count,
-                    );
-                }
-            }
         }
         Cmd::Compile(CompileCmd {
             source,

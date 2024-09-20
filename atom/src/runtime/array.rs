@@ -159,6 +159,56 @@ impl<T: Trace> Array<T> {
         self.iter().chain(other.iter()).copied().collect::<Vec<_>>()
     }
 
+    pub fn push(&mut self, gc: &mut Gc, item: T) -> Result<(), RuntimeError>
+    where
+        T: Copy + 'static,
+    {
+        let (len, cap) = (self.len, self.cap);
+
+        unsafe {
+            if len == 0 {
+                let new_handle: Handle<T> = gc.alloc_array(1)?;
+                new_handle.as_ptr().write(item);
+                *self = Array::from_raw_parts(new_handle, 1, 1);
+            } else if cap > len {
+                self.data.assume_init_ref().as_ptr().add(len).write(item);
+                self.len += 1;
+            } else {
+                let handle: Handle<T> = gc.alloc_array(cap * 2)?;
+                let ptr = handle.as_ptr();
+
+                for (i, item) in self.iter().copied().enumerate() {
+                    ptr.add(i).write(item);
+                }
+
+                ptr.add(len).write(item);
+
+                let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
+                *self = new_array;
+            }
+        }
+
+        Ok(())
+    }
+
+    pub fn pop(&mut self) -> Option<T> {
+        if self.is_empty() {
+            return None;
+        }
+
+        let item = unsafe {
+            self.data
+                .assume_init_ref()
+                .as_ptr()
+                .add(self.len - 1)
+                .read()
+        };
+
+        self.len -= 1;
+
+        Some(item)
+    }
+
     pub fn iter(&self) -> Iter<'_, T> {
         Iter::new(self)
     }
@@ -167,52 +217,15 @@ impl<T: Trace> Array<T> {
 #[export]
 fn array_pop(atom: Atom<'_>) -> Result<Value, RuntimeError> {
     let mut array = atom.receiver()?.array();
-
-    if array.is_empty() {
-        return Err(ErrorKind::IndexOutOfBounds(0).at(atom.span));
-    }
-
-    let item = unsafe {
-        array
-            .data
-            .assume_init_ref()
-            .as_ptr()
-            .add(array.len - 1)
-            .read()
-    };
-
-    array.len -= 1;
-
-    Ok(item)
+    array
+        .pop()
+        .map_or_else(|| Err(ErrorKind::IndexOutOfBounds(0).at(atom.span)), Ok)
 }
 
 #[export]
 fn array_push(atom: Atom<'_>, item: Value) -> Result<(), RuntimeError> {
     let mut array = atom.receiver()?.array();
-    let (len, cap) = (array.len, array.cap);
-
-    unsafe {
-        if len == 0 {
-            let new_handle: Handle<Value> = atom.alloc_array(1)?;
-            new_handle.as_ptr().write(item);
-            *array = Array::from_raw_parts(new_handle, 1, 1);
-        } else if cap > len {
-            array.data.assume_init_ref().as_ptr().add(len).write(item);
-            array.len += 1;
-        } else {
-            let handle: Handle<Value> = atom.alloc_array(cap * 2)?;
-            let ptr = handle.as_ptr();
-
-            for (i, item) in array.iter().copied().enumerate() {
-                ptr.add(i).write(item);
-            }
-
-            ptr.add(len).write(item);
-
-            let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
-            *array = new_array;
-        }
-    }
+    array.push(atom.gc(), item)?;
 
     Ok(())
 }
@@ -241,6 +254,26 @@ mod tests {
     use crate::runtime::value::Type;
 
     use super::*;
+
+    #[test]
+    fn array_push_slice() {
+        let mut gc = Gc::default();
+        let mut array = Array::from_vec(&mut gc, vec![1, 2, 3, 4, 5, 6]);
+
+        assert_eq!(array.as_slice(), &[1, 2, 3, 4, 5, 6]);
+
+        let slice = array.slice(2, 4);
+
+        assert_eq!(slice.as_slice(), &[3, 4]);
+        assert_eq!(slice.len(), 2);
+        assert_eq!(slice.cap, 4);
+
+        array.push(&mut gc, 7).expect("Array.push failed");
+
+        assert_eq!(array.as_slice(), &[1, 2, 3, 4, 5, 6, 7]);
+        assert_eq!(slice.as_slice(), &[3, 4]);
+        assert_eq!(slice.len(), 2);
+    }
 
     #[test]
     fn array_push() {

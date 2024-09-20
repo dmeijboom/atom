@@ -6,6 +6,8 @@ use super::{class::Class, function::Fn, value::Type};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
+    #[error("stack is empty")]
+    StackEmpty,
     #[error("type mismatch: {left} != {right}")]
     TypeMismatch { left: Type, right: Type },
     #[error("index out of bounds: {0}")]

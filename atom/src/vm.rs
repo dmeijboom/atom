@@ -1,16 +1,8 @@
 use std::{
-    collections::HashMap,
     mem,
     ops::{Add, Div, Mul, Rem, Sub},
     rc::Rc,
-    time::Duration,
 };
-
-#[cfg(feature = "timings")]
-use std::time::Instant;
-
-#[cfg(feature = "tracing")]
-use tracing::{instrument, Level};
 
 use crate::{
     collections::Stack,
@@ -54,7 +46,6 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-#[derive(Debug)]
 struct Frame {
     call_site: Span,
     offset: usize,
@@ -109,19 +100,7 @@ pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
 }
 
-#[derive(Default, Clone)]
-pub struct Timing {
-    pub count: u32,
-    pub elapsed: Duration,
-}
-
-impl Timing {
-    pub fn avg(&self) -> Duration {
-        self.elapsed / self.count
-    }
-}
-
-pub struct Vm<L: DynamicLinker, const S: usize, const C: usize> {
+pub struct Vm<L: DynamicLinker, const C: usize, const S: usize> {
     gc: Gc,
     linker: L,
     span: Span,
@@ -129,16 +108,15 @@ pub struct Vm<L: DynamicLinker, const S: usize, const C: usize> {
     context: Context<C>,
     stack: Stack<Value, S>,
     call_stack: Vec<Frame>,
-    timing: HashMap<Op, Timing>,
 }
 
-impl<L: DynamicLinker, const S: usize, const C: usize> Drop for Vm<L, S, C> {
+impl<L: DynamicLinker, const C: usize, const S: usize> Drop for Vm<L, C, S> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
+impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
     pub fn with_module(mut module: Module, linker: L) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; C];
@@ -157,7 +135,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             context,
             span: Span::default(),
             call_stack: vec![],
-            timing: HashMap::default(),
             stack: Stack::default(),
         })
     }
@@ -176,16 +153,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         ErrorKind::UnsupportedOp { ty, op }.at(self.span).into()
     }
 
-    pub fn timing(&self) -> Vec<(Op, Timing)> {
-        let mut entries = self
-            .timing
-            .iter()
-            .map(|(op, timing)| (*op, timing.clone()))
-            .collect::<Vec<_>>();
-
-        entries.sort_by_key(|(_, timing)| timing.elapsed);
-        entries.reverse();
-        entries
+    fn pop(&mut self) -> Result<Value, RuntimeError> {
+        self.stack
+            .pop()
+            .ok_or_else(|| ErrorKind::StackEmpty.at(self.span))
     }
 
     fn gc_tick(&mut self) {
@@ -205,6 +176,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                     .iter()
                     .flat_map(|frame| frame.locals.iter().chain(frame.receiver.as_ref())),
             )
+            .chain(self.frame.locals.iter().chain(self.frame.receiver.as_ref()))
             .for_each(|value| value.trace(&mut self.gc));
 
         self.gc.sweep();
@@ -217,7 +189,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
-        let object = self.stack.pop();
+        let object = self.pop()?;
 
         match object.ty() {
             Type::Object => self.load_attr(object, idx),
@@ -227,8 +199,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
         let member = self.context.consts[member].str();
-        let value = self.stack.pop();
-        let object = self.stack.pop();
+        let value = self.pop()?;
+        let object = self.pop()?;
 
         self.check_type(object.ty(), Type::Object)?;
 
@@ -312,13 +284,15 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         Ok(())
     }
 
-    fn return_arg(&mut self, idx: usize) {
+    fn return_arg(&mut self, idx: usize) -> Result<(), Error> {
         self.load_arg(idx);
         self.ret();
+        Ok(())
     }
 
     fn load_arg(&mut self, idx: usize) {
-        self.stack.push(self.frame.locals[idx]);
+        self.stack
+            .push(self.frame.locals.get(idx).copied().unwrap_or_default());
     }
 
     fn load_self(&mut self) -> Result<(), Error> {
@@ -340,7 +314,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn jump_if_false(&mut self, idx: usize) -> Result<(), Error> {
-        let value = self.stack.pop();
+        let value = self.pop()?;
 
         if value == Value::FALSE {
             self.goto(idx);
@@ -351,7 +325,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn jump_cond(&mut self, idx: usize, cond: bool) -> Result<(), Error> {
-        let value = self.stack.pop();
+        let value = self.pop()?;
         self.check_type(value.ty(), Type::Bool)?;
 
         if value.bool() == cond {
@@ -408,7 +382,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn call(&mut self, arg_count: usize) -> Result<(), Error> {
-        let callee = self.stack.pop();
+        let callee = self.pop()?;
 
         match callee.ty() {
             Type::Fn => self.fn_call(callee.func(), arg_count),
@@ -427,11 +401,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         let mut frame = Frame::new(self.span, f);
 
         if frame.function.method {
-            frame = frame.with_receiver(self.stack.pop());
+            frame = frame.with_receiver(self.pop()?);
         }
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
-        self.frame.locals = self.stack.split_to_vec(arg_count);
+        self.frame.locals = self.stack.slice_at(arg_count);
         self.gc_tick();
 
         Ok(())
@@ -440,7 +414,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
         self.frame.offset = 0;
         self.frame.returned = false;
-        self.frame.locals = self.stack.split_to_vec(arg_count);
+        self.frame.locals = self.stack.slice_at(arg_count);
         self.gc_tick();
 
         Ok(())
@@ -467,8 +441,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn make_array(&mut self, size: usize) -> Result<(), Error> {
-        let values = self.stack.split_to_vec(size);
-        let array = Array::from_vec(&mut self.gc, values);
+        let array = self.stack.slice_at(size);
+        let array = Array::from_vec(&mut self.gc, array);
         let handle = self.gc.alloc(array)?;
 
         self.stack.push(handle.into());
@@ -480,11 +454,11 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     fn make_slice(&mut self, opts: usize) -> Result<(), Error> {
         let (from, to) = match opts {
             0 => (None, None),
-            1 => (Some(self.stack.pop()), None),
-            2 => (None, Some(self.stack.pop())),
+            1 => (Some(self.pop()?), None),
+            2 => (None, Some(self.pop()?)),
             3 => {
-                let to = self.stack.pop();
-                let from = self.stack.pop();
+                let to = self.pop()?;
+                let from = self.pop()?;
                 (Some(from), Some(to))
             }
             _ => unreachable!(),
@@ -498,7 +472,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
             self.check_type(to.ty(), Type::Int)?;
         }
 
-        let array = self.stack.pop();
+        let array = self.pop()?;
         self.check_type(array.ty(), Type::Array)?;
 
         let array = array.array();
@@ -518,8 +492,8 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn prepare_elem(&mut self) -> Result<(Handle<Array<Value>>, usize), Error> {
-        let elem = self.stack.pop();
-        let array = self.stack.pop();
+        let elem = self.pop()?;
+        let array = self.pop()?;
 
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
@@ -531,7 +505,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn store_elem(&mut self) -> Result<(), Error> {
-        let value = self.stack.pop();
+        let value = self.pop()?;
         let (mut array, n) = self.prepare_elem()?;
 
         match array.get_mut(n) {
@@ -556,7 +530,7 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
     }
 
     fn not(&mut self) -> Result<(), Error> {
-        let value = self.stack.pop();
+        let value = self.pop()?;
         self.check_type(value.ty(), Type::Bool)?;
         self.stack.push((!value.bool()).into());
         Ok(())
@@ -711,8 +685,10 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         }
     }
 
-    fn store(&mut self, idx: usize) {
-        self.context.vars.insert(idx, self.stack.pop());
+    fn store(&mut self, idx: usize) -> Result<(), Error> {
+        let var = self.pop()?;
+        self.context.vars.insert(idx, var);
+        Ok(())
     }
 
     fn load(&mut self, idx: usize) {
@@ -724,8 +700,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.stack.push(self.context.consts[idx]);
     }
 
-    fn discard(&mut self) {
-        self.stack.pop();
+    fn discard(&mut self) -> Result<(), Error> {
+        let _ = self.pop()?;
+        Ok(())
     }
 
     fn ret(&mut self) {
@@ -733,13 +710,9 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
         self.frame.offset = self.frame.function.body.len();
     }
 
-    #[cfg_attr(feature = "tracing", instrument(level = Level::DEBUG, skip(self), ret(Debug)))]
     fn eval(&mut self) -> Result<(), Error> {
         while let Some(code) = self.frame.next() {
             self.span = code.span();
-
-            #[cfg(feature = "timings")]
-            let (op, now) = (code.op(), Instant::now());
 
             match code.op() {
                 Op::Add => self.add()?,
@@ -761,13 +734,13 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::StoreMember => self.store_member(code.code())?,
                 Op::LoadFn => self.load_fn(code.code())?,
                 Op::LoadClass => self.load_class(code.code())?,
-                Op::Store => self.store(code.code()),
+                Op::Store => self.store(code.code())?,
                 Op::Load => self.load(code.code()),
                 Op::LoadArg => self.load_arg(code.code()),
                 Op::LoadSelf => self.load_self()?,
-                Op::Discard => self.discard(),
+                Op::Discard => self.discard()?,
                 Op::Return => self.ret(),
-                Op::ReturnArg => self.return_arg(code.code()),
+                Op::ReturnArg => self.return_arg(code.code())?,
                 Op::Call => self.call(code.code())?,
                 Op::CallFn => self.call_fn(code.code2())?,
                 Op::CallExtern => self.call_extern(code.code())?,
@@ -781,13 +754,6 @@ impl<L: DynamicLinker, const S: usize, const C: usize> Vm<L, S, C> {
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
-            }
-
-            #[cfg(feature = "timings")]
-            {
-                let entry = self.timing.entry(op).or_default();
-                entry.elapsed += now.elapsed();
-                entry.count += 1;
             }
         }
 

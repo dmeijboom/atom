@@ -15,10 +15,10 @@ impl<T: Copy + Default, const N: usize> Default for Stack<T, N> {
 }
 
 impl<T: Copy + Default, const N: usize> Stack<T, N> {
-    pub fn split_to_vec(&mut self, n: usize) -> Vec<T> {
-        let vec = self.data[self.len - n..self.len].to_vec();
+    pub fn slice_at(&mut self, n: usize) -> Vec<T> {
+        let slice = &self.data[self.len - n..self.len];
         self.len -= n;
-        vec
+        slice.to_vec()
     }
 
     pub fn operands(&mut self) -> (T, T) {
@@ -30,9 +30,13 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
         (lhs, rhs)
     }
 
-    pub fn pop(&mut self) -> T {
-        self.len -= 1;
-        self.data[self.len]
+    pub fn pop(&mut self) -> Option<T> {
+        if self.data.is_empty() {
+            None
+        } else {
+            self.len -= 1;
+            Some(self.data[self.len])
+        }
     }
 
     pub fn push(&mut self, item: T) {
@@ -57,7 +61,7 @@ mod tests {
         stack.push(5);
         stack.len -= 2;
 
-        let vec = stack.split_to_vec(2);
+        let vec = stack.slice_at(2);
 
         assert_eq!(vec, [2, 3]);
     }
