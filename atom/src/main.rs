@@ -19,7 +19,6 @@ use lexer::Lexer;
 use vm::Vm;
 
 mod ast;
-mod collections;
 mod compiler;
 mod context;
 mod error;
@@ -28,6 +27,7 @@ mod lexer;
 mod opcode;
 mod parser;
 mod runtime;
+mod stack;
 mod vm;
 
 #[cfg(feature = "mimalloc")]

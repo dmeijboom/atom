@@ -5,7 +5,6 @@ use std::{
 };
 
 use crate::{
-    collections::Stack,
     context::Context,
     error::{IntoSpanned, SpannedError},
     gc::{Gc, Handle, Trace},
@@ -21,6 +20,7 @@ use crate::{
         value::{self, TryIntoValue, Type, Value},
         Atom,
     },
+    stack::Stack,
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {
