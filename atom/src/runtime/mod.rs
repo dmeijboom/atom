@@ -1,12 +1,16 @@
 use ::std::{borrow::Cow, collections::HashMap, rc::Rc};
 
-use error::{ErrorKind, RuntimeError};
-use value::Value;
+use bytes::Bytes;
 use wyhash2::WyHash;
 
+use class::Class;
+use error::{ErrorKind, RuntimeError};
+use value::Value;
+
 use crate::{
-    gc::{Gc, Handle, Trace},
+    gc::Gc,
     lexer::Span,
+    opcode::Const,
     vm::{BoxedFn, DynamicLinker},
 };
 
@@ -15,19 +19,26 @@ pub mod class;
 pub mod core;
 pub mod error;
 pub mod function;
-pub mod module;
 pub mod str;
 pub mod value;
 
 pub type Name = Cow<'static, str>;
 
-pub struct Atom<'a> {
+#[derive(Debug, Default)]
+pub struct Module {
+    pub body: Bytes,
+    pub consts: Vec<Const>,
+    pub functions: Vec<function::Fn>,
+    pub classes: Vec<Class>,
+}
+
+pub struct Api<'a> {
     gc: &'a mut Gc,
     span: Span,
     receiver: Option<Value>,
 }
 
-impl<'a> Atom<'a> {
+impl<'a> Api<'a> {
     pub fn new(gc: &'a mut Gc) -> Self {
         Self {
             gc,
@@ -54,10 +65,6 @@ impl<'a> Atom<'a> {
         self.receiver = Some(receiver);
         self
     }
-
-    pub fn alloc<T: Trace + 'static>(&mut self, value: T) -> Result<Handle<T>, RuntimeError> {
-        self.gc.alloc(value)
-    }
 }
 
 #[derive(Default)]
@@ -73,7 +80,7 @@ impl Lib {
 
     pub fn set<F>(mut self, name: &str, func: F) -> Self
     where
-        F: Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
+        F: Fn(Api, Vec<Value>) -> Result<Value, RuntimeError> + 'static,
     {
         let name = match self.class_name {
             Some(class_name) => format!("{}.{}", class_name, name),

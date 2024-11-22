@@ -15,10 +15,9 @@ use crate::{
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
         function::Fn,
-        module::Module,
         str::Str,
         value::{self, TryIntoValue, Type, Value},
-        Atom,
+        Api, Module,
     },
     stack::Stack,
 };
@@ -94,7 +93,7 @@ fn top_frame(module: &mut Module, gc: &mut Gc) -> Result<Frame, Error> {
 }
 
 pub type BoxedFn =
-    Rc<Box<dyn std::ops::Fn(Atom, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
+    Rc<Box<dyn std::ops::Fn(Api, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
 
 pub trait DynamicLinker {
     fn resolve(&self, name: &str) -> Option<BoxedFn>;
@@ -361,7 +360,7 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
             .resolve(name.as_ref())
             .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
         let args = mem::take(&mut self.frame.locals);
-        let mut atom = Atom::new(&mut self.gc).with_span(self.span);
+        let mut atom = Api::new(&mut self.gc).with_span(self.span);
 
         if let Some(receiver) = self.frame.receiver {
             atom = atom.with_receiver(receiver);

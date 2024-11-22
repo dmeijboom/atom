@@ -8,7 +8,7 @@ use crate::{
     runtime::{error::RuntimeError, value::Value},
 };
 
-use super::{array::Array, Atom, Lib};
+use super::{array::Array, Api, Lib};
 
 pub struct Str(pub Array<u8>);
 
@@ -61,17 +61,17 @@ impl AsRef<str> for Str {
 }
 
 #[export]
-fn str_len(_atom: Atom<'_>, this: Handle<Str>) -> Result<usize, RuntimeError> {
+fn str_len(_api: Api<'_>, this: Handle<Str>) -> Result<usize, RuntimeError> {
     Ok(this.0.len())
 }
 
 macro_rules! map_fn {
     ($func:ident, $rust_fn:ident) => {
         #[export]
-        fn $func(atom: Atom<'_>, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
+        fn $func(api: Api<'_>, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
             let rust_string = this.as_str().$rust_fn();
-            let str = Str::from_string(atom.gc, rust_string);
-            atom.alloc(str)
+            let str = Str::from_string(api.gc, rust_string);
+            api.gc().alloc(str)
         }
     };
 }

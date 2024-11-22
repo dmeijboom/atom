@@ -237,21 +237,17 @@ impl Display for Value {
             Type::Int => write!(f, "{}", self.int()),
             Type::Float => write!(f, "{}", self.float()),
             Type::Bool => write!(f, "{}", self.bool()),
-            Type::Array => write!(f, "Array"),
-            Type::Fn => write!(f, "Fn"),
-            Type::Str => write!(f, "Str"),
-            Type::Nil => write!(f, "Nil"),
-            Type::Class => write!(f, "Class"),
-            Type::Object => write!(f, "Object"),
+            Type::Array => write!(
+                f,
+                "[{}]",
+                self.array()
+                    .iter()
+                    .map(|v| v.to_string())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ),
+            ty => write!(f, "{ty}"),
         }
-    }
-}
-
-impl Debug for Value {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Value{{")?;
-        std::fmt::Display::fmt(&self, f)?;
-        write!(f, "}}")
     }
 }
 

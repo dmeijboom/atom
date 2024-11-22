@@ -33,7 +33,6 @@ impl Class {
     }
 }
 
-#[derive(Debug)]
 pub struct Object {
     pub class: Handle<Class>,
     pub attrs: HashMap<Handle<Str>, Value, WyHash>,

@@ -11,7 +11,7 @@ use crate::{
     error::{IntoSpanned, SpannedError},
     lexer::Span,
     opcode::{Const, Op, Opcode},
-    runtime::{class::Class, function::Fn, module::Module, Name},
+    runtime::{class::Class, function::Fn, Module, Name},
 };
 
 #[derive(Debug, thiserror::Error)]

@@ -9,7 +9,7 @@ use crate::{
 
 use super::Name;
 
-#[derive(Default, Clone)]
+#[derive(Debug, Default, Clone)]
 pub struct Fn {
     pub name: Name,
     pub body: Bytes,
@@ -47,14 +47,5 @@ impl Fn {
 
     pub fn is_extern(&self) -> bool {
         matches!(self.body.chunks_exact(16).map(Opcode::deserialize).next(), Some(c) if c.op() == Op::CallExtern)
-    }
-}
-
-impl Debug for Fn {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("Func")
-            .field("name", &self.name)
-            .field("arg_count", &self.arg_count)
-            .finish()
     }
 }

@@ -10,7 +10,7 @@ use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use opcode::Opcode;
-use runtime::{function::Fn, module::Module, value::Value};
+use runtime::{function::Fn, value::Value, Module};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 

@@ -10,7 +10,7 @@ use crate::{
     },
 };
 
-use super::{Atom, Lib};
+use super::{Api, Lib};
 
 pub struct Iter<'a, T: Trace> {
     idx: usize,
@@ -92,6 +92,9 @@ impl<T: Trace> Array<T> {
         }
     }
 
+    /// # Safety
+    /// 
+    /// The caller must ensure that the handle is valid.
     pub unsafe fn from_raw_parts(handle: Handle<T>, len: usize, cap: usize) -> Self {
         Self {
             data: MaybeUninit::new(handle),
@@ -215,7 +218,7 @@ impl<T: Trace> Array<T> {
 }
 
 #[export]
-fn array_pop(atom: Atom<'_>) -> Result<Value, RuntimeError> {
+fn array_pop(atom: Api<'_>) -> Result<Value, RuntimeError> {
     let mut array = atom.receiver()?.array();
     array
         .pop()
@@ -223,7 +226,7 @@ fn array_pop(atom: Atom<'_>) -> Result<Value, RuntimeError> {
 }
 
 #[export]
-fn array_push(atom: Atom<'_>, item: Value) -> Result<(), RuntimeError> {
+fn array_push(atom: Api<'_>, item: Value) -> Result<(), RuntimeError> {
     let mut array = atom.receiver()?.array();
     array.push(atom.gc(), item)?;
 
@@ -231,12 +234,12 @@ fn array_push(atom: Atom<'_>, item: Value) -> Result<(), RuntimeError> {
 }
 
 #[export]
-fn array_len(atom: Atom<'_>) -> Result<usize, RuntimeError> {
+fn array_len(atom: Api<'_>) -> Result<usize, RuntimeError> {
     Ok(atom.receiver()?.array().len)
 }
 
 #[export]
-fn array_cap(atom: Atom<'_>) -> Result<usize, RuntimeError> {
+fn array_cap(atom: Api<'_>) -> Result<usize, RuntimeError> {
     Ok(atom.receiver()?.array().cap)
 }
 
@@ -297,7 +300,7 @@ mod tests {
 
         for (i, (len, cap)) in expected.into_iter().enumerate() {
             atom_array_push(
-                Atom::new(&mut gc).with_receiver(handle.clone().into()),
+                Api::new(&mut gc).with_receiver(handle.clone().into()),
                 vec![(10 * i).try_into().unwrap()],
             )
             .expect("Array.push failed");

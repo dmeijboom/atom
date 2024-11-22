@@ -49,7 +49,7 @@ impl ErrorKind {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub struct Call {
     #[allow(dead_code)]
     pub span: Span,
@@ -65,14 +65,6 @@ impl Call {
 impl Display for Call {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}(..)", self.func.name)
-    }
-}
-
-impl Debug for Call {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "Call{{")?;
-        std::fmt::Display::fmt(&self, f)?;
-        write!(f, "}}")
     }
 }
 
