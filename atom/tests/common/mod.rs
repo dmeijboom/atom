@@ -5,17 +5,17 @@ mod tests {
 
     use atom::{
         ast::Stmt, runtime::Runtime, Compiler, Error, Gc, Lexer, Module, Parser, Value, Vm,
-        VmError, FFI,
+        VmError, Ffi,
     };
 
     const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
 
-    pub struct TestRuntime<F: FFI> {
+    pub struct TestRuntime<F: Ffi> {
         fallback: F,
         return_value: Rc<RefCell<Option<Value>>>,
     }
 
-    impl<L: FFI> FFI for TestRuntime<L> {
+    impl<L: Ffi> Ffi for TestRuntime<L> {
         fn call(
             &self,
             name: &str,
@@ -35,7 +35,7 @@ mod tests {
         }
     }
 
-    impl<F: FFI> TestRuntime<F> {
+    impl<F: Ffi> TestRuntime<F> {
         fn new(fallback: F, return_value: Rc<RefCell<Option<Value>>>) -> Self {
             Self {
                 fallback,

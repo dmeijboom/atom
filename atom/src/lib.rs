@@ -16,4 +16,4 @@ pub use gc::Gc;
 pub use lexer::Lexer;
 pub use parser::Parser;
 pub use runtime::{value::Value, Module};
-pub use vm::{Error as VmError, Vm, FFI};
+pub use vm::{Error as VmError, Vm, Ffi};

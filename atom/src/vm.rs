@@ -90,7 +90,7 @@ fn top_frame(module: &mut Module, gc: &mut Gc) -> Result<Frame, Error> {
     ))
 }
 
-pub trait FFI {
+pub trait Ffi {
     fn call(
         &self,
         name: &str,
@@ -100,7 +100,7 @@ pub trait FFI {
     ) -> Result<Value, Error>;
 }
 
-pub struct Vm<F: FFI, const C: usize, const S: usize> {
+pub struct Vm<F: Ffi, const C: usize, const S: usize> {
     gc: Gc,
     ffi: F,
     span: Span,
@@ -110,13 +110,13 @@ pub struct Vm<F: FFI, const C: usize, const S: usize> {
     call_stack: Vec<Frame>,
 }
 
-impl<F: FFI, const C: usize, const S: usize> Drop for Vm<F, C, S> {
+impl<F: Ffi, const C: usize, const S: usize> Drop for Vm<F, C, S> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<F: FFI, const C: usize, const S: usize> Vm<F, C, S> {
+impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     pub fn with(mut module: Module, ffi: F) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; C];

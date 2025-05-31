@@ -7,7 +7,7 @@ use crate::{
     gc::{Gc, Handle},
     lexer::Span,
     opcode::Const,
-    vm::{self, FatalErrorKind, FFI},
+    vm::{self, FatalErrorKind, Ffi},
 };
 
 use array::Array;
@@ -167,7 +167,7 @@ impl Runtime {
     }
 }
 
-impl FFI for Runtime {
+impl Ffi for Runtime {
     fn call(
         &self,
         name: &str,
