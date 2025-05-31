@@ -33,8 +33,14 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         .rev()
         .enumerate()
         .map(|(i, (name, ty))| {
-            syn::parse_quote! {
-                let mut #name: #ty = args[#i].into();
+            if name == "this" {
+                syn::parse_quote! {
+                    let this: #ty = recv.ok_or_else(|| ErrorKind::NoReceiver.at(Span::default()))?.into();
+                }
+            } else {
+                syn::parse_quote! {
+                    let mut #name: #ty = args[#i].into();
+                }
             }
         })
         .collect::<Vec<Stmt>>();
@@ -49,10 +55,10 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #f
 
-        fn #export_fn(mut api: crate::runtime::Api<'_>, args: Vec<crate::runtime::value::Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
+        fn #export_fn(gc: &mut crate::gc::Gc, recv: Option<Value>, args: Vec<crate::runtime::value::Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
             #(#args)*
-            let return_value = Self::#name(&mut api, #(#arg_names),*)?;
-            return_value.into_value(api.gc())
+            let return_value = Self::#name(gc, #(#arg_names),*)?;
+            return_value.into_value(gc)
         }
     }
     .into()

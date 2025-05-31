@@ -12,6 +12,7 @@ mod vm;
 
 pub use compiler::Compiler;
 pub use error::Error;
+pub use gc::Gc;
 pub use lexer::Lexer;
 pub use parser::Parser;
 pub use runtime::{value::Value, Module};

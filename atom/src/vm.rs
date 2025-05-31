@@ -15,7 +15,7 @@ use crate::{
         error::{Call, ErrorKind, RuntimeError},
         function::Fn,
         value::{self, TryIntoValue, Type, Value},
-        Api, Module,
+        Module,
     },
     stack::Stack,
 };
@@ -91,7 +91,13 @@ fn top_frame(module: &mut Module, gc: &mut Gc) -> Result<Frame, Error> {
 }
 
 pub trait FFI {
-    fn call(&self, name: &str, api: Api, args: Vec<Value>) -> Result<Value, Error>;
+    fn call(
+        &self,
+        name: &str,
+        gc: &mut Gc,
+        recv: Option<Value>,
+        args: Vec<Value>,
+    ) -> Result<Value, Error>;
 }
 
 pub struct Vm<F: FFI, const C: usize, const S: usize> {
@@ -351,13 +357,9 @@ impl<F: FFI, const C: usize, const S: usize> Vm<F, C, S> {
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
         let name = self.context.consts[idx].str();
         let args = mem::take(&mut self.frame.locals);
-        let mut api = Api::new(&mut self.gc).with_span(self.span);
-
-        if let Some(receiver) = self.frame.receiver {
-            api = api.with_receiver(receiver);
-        }
-
-        let return_value = self.ffi.call(name.as_ref(), api, args)?;
+        let return_value = self
+            .ffi
+            .call(name.as_ref(), &mut self.gc, self.frame.receiver, args)?;
 
         self.frame.returned = true;
         self.stack.push(return_value);

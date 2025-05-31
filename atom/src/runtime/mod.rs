@@ -34,41 +34,6 @@ pub struct Module {
     pub classes: Vec<Class>,
 }
 
-pub struct Api<'a> {
-    gc: &'a mut Gc,
-    span: Span,
-    receiver: Option<Value>,
-}
-
-impl<'a> Api<'a> {
-    pub fn new(gc: &'a mut Gc) -> Self {
-        Self {
-            gc,
-            span: Span::default(),
-            receiver: None,
-        }
-    }
-
-    pub fn gc(&mut self) -> &mut Gc {
-        self.gc
-    }
-
-    pub fn receiver(&self) -> Result<Value, RuntimeError> {
-        self.receiver
-            .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))
-    }
-
-    pub fn with_span(mut self, span: Span) -> Self {
-        self.span = span;
-        self
-    }
-
-    pub fn with_receiver(mut self, receiver: Value) -> Self {
-        self.receiver = Some(receiver);
-        self
-    }
-}
-
 macro_rules! match_fn {
     ($fn:ident, [$($name:ident),+]) => {
         pastey::paste!{
@@ -85,11 +50,14 @@ macro_rules! match_fn {
 }
 
 #[inline]
-fn map_str(api: &mut Api<'_>, f: impl FnOnce(&str) -> String) -> Result<Handle<Str>, RuntimeError> {
-    let handle = api.receiver()?.str();
+fn map_str(
+    gc: &mut Gc,
+    handle: Handle<Str>,
+    f: impl FnOnce(&str) -> String,
+) -> Result<Handle<Str>, RuntimeError> {
     let rust_string = f(handle.as_str());
-    let str = Str::from_string(api.gc, rust_string);
-    api.gc().alloc(str)
+    let str = Str::from_string(gc, rust_string);
+    gc.alloc(str)
 }
 
 #[derive(Default)]
@@ -97,19 +65,19 @@ pub struct Runtime {}
 
 impl Runtime {
     #[atom_fn("println")]
-    fn println(_atom: &mut Api<'_>, arg: Value) -> Result<(), RuntimeError> {
+    fn println(_gc: &mut Gc, arg: Value) -> Result<(), RuntimeError> {
         match arg.ty() {
             Type::Str => {
                 println!("{}", arg.str().as_str());
             }
-            _ => println!("{}", Self::repr(_atom, arg)?),
+            _ => println!("{}", Self::repr(_gc, arg)?),
         }
 
         Ok(())
     }
 
     #[atom_fn("repr")]
-    fn repr(_atom: &mut Api<'_>, value: Value) -> Result<String, RuntimeError> {
+    fn repr(_atom: &mut Gc, value: Value) -> Result<String, RuntimeError> {
         Ok(match value.ty() {
             Type::Array => {
                 let array = value.array();
@@ -140,63 +108,73 @@ impl Runtime {
     }
 
     #[atom_fn("Array.pop")]
-    fn array_pop(api: &mut Api<'_>) -> Result<Value, RuntimeError> {
-        let mut array = api.receiver()?.array();
-        array
-            .pop()
-            .map_or_else(|| Err(ErrorKind::IndexOutOfBounds(0).at(api.span)), Ok)
+    fn array_pop(_gc: &mut Gc, mut this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
+        this.pop().map_or_else(
+            || Err(ErrorKind::IndexOutOfBounds(0).at(Span::default())),
+            Ok,
+        )
     }
 
     #[atom_fn("Array.push")]
-    fn array_push(api: &mut Api<'_>, item: Value) -> Result<(), RuntimeError> {
-        let mut array = api.receiver()?.array();
-        array.push(api.gc(), item)?;
-
+    fn array_push(
+        gc: &mut Gc,
+        mut this: Handle<Array<Value>>,
+        item: Value,
+    ) -> Result<(), RuntimeError> {
+        this.push(gc, item)?;
         Ok(())
     }
 
     #[atom_fn("Array.len")]
-    fn array_len(api: &mut Api<'_>) -> Result<usize, RuntimeError> {
-        Ok(api.receiver()?.array().len)
+    fn array_len(_gc: &mut Gc, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+        Ok(this.len)
     }
 
     #[atom_fn("Array.cap")]
-    fn array_cap(api: &mut Api<'_>) -> Result<usize, RuntimeError> {
-        Ok(api.receiver()?.array().cap)
+    fn array_cap(_gc: &mut Gc, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+        Ok(this.cap)
     }
 
     #[atom_fn("Array.concat")]
-    fn array_concat(api: &mut Api<'_>, other: Value) -> Result<Handle<Array<Value>>, RuntimeError> {
-        let handle = api.receiver()?.array();
-        let array = handle.concat(api.gc(), &other.array());
-        api.gc().alloc(array)
+    fn array_concat(
+        gc: &mut Gc,
+        this: Handle<Array<Value>>,
+        other: Value,
+    ) -> Result<Handle<Array<Value>>, RuntimeError> {
+        let array = this.concat(gc, &other.array());
+        gc.alloc(array)
     }
 
     #[atom_fn("Str.len")]
-    fn str_len(_api: &mut Api<'_>, s: Handle<Str>) -> Result<usize, RuntimeError> {
-        Ok(s.0.len())
+    fn str_len(_gc: &mut Gc, this: Handle<Str>) -> Result<usize, RuntimeError> {
+        Ok(this.0.len())
     }
 
     #[atom_fn("Str.concat")]
-    fn str_concat(api: &mut Api<'_>, other: Value) -> Result<Value, RuntimeError> {
-        let handle = api.receiver()?.str();
-        let array = handle.0.concat(api.gc(), &other.str().0);
-        api.gc().alloc(Str(array)).map(Value::from)
+    fn str_concat(gc: &mut Gc, this: Handle<Str>, other: Value) -> Result<Value, RuntimeError> {
+        let array = this.0.concat(gc, &other.str().0);
+        gc.alloc(Str(array)).map(Value::from)
     }
 
     #[atom_fn("Str.upper")]
-    fn str_upper(api: &mut Api<'_>) -> Result<Handle<Str>, RuntimeError> {
-        map_str(api, |s| s.to_uppercase())
+    fn str_upper(gc: &mut Gc, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
+        map_str(gc, this, |s| s.to_uppercase())
     }
 
     #[atom_fn("Str.lower")]
-    fn str_lower(api: &mut Api<'_>) -> Result<Handle<Str>, RuntimeError> {
-        map_str(api, |s| s.to_lowercase())
+    fn str_lower(gc: &mut Gc, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
+        map_str(gc, this, |s| s.to_lowercase())
     }
 }
 
 impl FFI for Runtime {
-    fn call(&self, name: &str, api: Api, args: Vec<Value>) -> Result<Value, vm::Error> {
+    fn call(
+        &self,
+        name: &str,
+        gc: &mut Gc,
+        recv: Option<Value>,
+        args: Vec<Value>,
+    ) -> Result<Value, vm::Error> {
         let handler = match_fn!(
             name,
             [
@@ -214,7 +192,7 @@ impl FFI for Runtime {
             ]
         );
 
-        Ok((handler)(api, args)?)
+        Ok((handler)(gc, recv, args)?)
     }
 }
 
@@ -243,8 +221,8 @@ mod tests {
         ];
 
         for (i, (len, cap)) in expected.into_iter().enumerate() {
-            let mut api = Api::new(&mut gc).with_receiver(handle.clone().into());
-            Runtime::array_push(&mut api, (10 * i).try_into().unwrap()).expect("Array.push failed");
+            Runtime::array_push(&mut gc, handle.clone(), (10 * i).try_into().unwrap())
+                .expect("Array.push failed");
 
             assert_eq!(handle.len() as i64, len);
             assert_eq!(handle.cap as i64, cap);

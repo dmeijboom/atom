@@ -4,9 +4,8 @@ mod tests {
     use std::{cell::RefCell, fs, rc::Rc};
 
     use atom::{
-        ast::Stmt,
-        runtime::{Api, Runtime},
-        Compiler, Error, Lexer, Module, Parser, Value, Vm, VmError, FFI,
+        ast::Stmt, runtime::Runtime, Compiler, Error, Gc, Lexer, Module, Parser, Value, Vm,
+        VmError, FFI,
     };
 
     const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
@@ -17,7 +16,13 @@ mod tests {
     }
 
     impl<L: FFI> FFI for TestRuntime<L> {
-        fn call(&self, name: &str, api: Api, args: Vec<Value>) -> Result<Value, VmError> {
+        fn call(
+            &self,
+            name: &str,
+            gc: &mut Gc,
+            recv: Option<Value>,
+            args: Vec<Value>,
+        ) -> Result<Value, VmError> {
             if name == "assert" {
                 let return_value = Rc::clone(&self.return_value);
 
@@ -25,7 +30,7 @@ mod tests {
                 *return_value.borrow_mut() = Some(value.unwrap_or(Value::NIL));
                 Ok(Value::NIL)
             } else {
-                self.fallback.call(name, api, args)
+                self.fallback.call(name, gc, recv, args)
             }
         }
     }
