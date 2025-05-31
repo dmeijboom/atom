@@ -375,11 +375,11 @@ impl Compiler {
                     ast::BinaryOp::Gte => Opcode::new(Op::Gte).at(expr.span),
                     ast::BinaryOp::Lt => Opcode::new(Op::Lt).at(expr.span),
                     ast::BinaryOp::Lte => Opcode::new(Op::Lte).at(expr.span),
-                    ast::BinaryOp::LogicalOr => return self.logical(expr.span, *rhs, true),
-                    ast::BinaryOp::LogicalAnd => return self.logical(expr.span, *rhs, false),
-                    ast::BinaryOp::BitwiseOr => Opcode::new(Op::BitwiseOr).at(expr.span),
-                    ast::BinaryOp::BitwiseAnd => Opcode::new(Op::BitwiseAnd).at(expr.span),
-                    ast::BinaryOp::BitwiseXor => Opcode::new(Op::BitwiseXor).at(expr.span),
+                    ast::BinaryOp::Or => return self.logical(expr.span, *rhs, true),
+                    ast::BinaryOp::And => return self.logical(expr.span, *rhs, false),
+                    ast::BinaryOp::BitOr => Opcode::new(Op::BitwiseOr).at(expr.span),
+                    ast::BinaryOp::BitAnd => Opcode::new(Op::BitwiseAnd).at(expr.span),
+                    ast::BinaryOp::Xor => Opcode::new(Op::BitwiseXor).at(expr.span),
                 };
 
                 self.expr(*rhs)?;

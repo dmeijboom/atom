@@ -7,7 +7,7 @@
                     span: Span(
                         offset: 0,
                     ),
-                ), logicalAnd, Expr(
+                ), and, Expr(
                     kind: literal(bool(false)),
                     span: Span(
                         offset: 8,
@@ -16,7 +16,7 @@
                 span: Span(
                     offset: 0,
                 ),
-            ), logicalOr, Expr(
+            ), or, Expr(
                 kind: literal(bool(true)),
                 span: Span(
                     offset: 17,

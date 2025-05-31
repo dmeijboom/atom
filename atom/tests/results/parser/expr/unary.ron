@@ -11,7 +11,7 @@
                 span: Span(
                     offset: 1,
                 ),
-            ), logicalOr, Expr(
+            ), or, Expr(
                 kind: literal(bool(false)),
                 span: Span(
                     offset: 9,

@@ -47,7 +47,7 @@
                     span: Span(
                         offset: 0,
                     ),
-                ), logicalAnd, Expr(
+                ), and, Expr(
                     kind: ident("f"),
                     span: Span(
                         offset: 21,
@@ -56,7 +56,7 @@
                 span: Span(
                     offset: 0,
                 ),
-            ), logicalOr, Expr(
+            ), or, Expr(
                 kind: binary(Expr(
                     kind: ident("g"),
                     span: Span(

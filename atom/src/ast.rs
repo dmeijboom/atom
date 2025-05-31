@@ -30,7 +30,7 @@ pub enum UnaryOp {
     Not,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum BinaryOp {
     Add,
@@ -44,11 +44,11 @@ pub enum BinaryOp {
     Gte,
     Lt,
     Lte,
-    LogicalOr,
-    LogicalAnd,
-    BitwiseOr,
-    BitwiseAnd,
-    BitwiseXor,
+    Or,
+    And,
+    BitOr,
+    BitAnd,
+    Xor,
 }
 
 #[derive(Debug, Clone, Serialize)]

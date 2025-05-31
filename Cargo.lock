@@ -49,6 +49,7 @@ dependencies = [
  "argh",
  "atom-macros",
  "bytes",
+ "lazy_static",
  "mimalloc",
  "nohash-hasher",
  "ron",

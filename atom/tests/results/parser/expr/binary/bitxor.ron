@@ -6,7 +6,7 @@
                 span: Span(
                     offset: 0,
                 ),
-            ), bitwiseXor, Expr(
+            ), xor, Expr(
                 kind: literal(int(4)),
                 span: Span(
                     offset: 5,
