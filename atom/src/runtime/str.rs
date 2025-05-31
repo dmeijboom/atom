@@ -1,14 +1,9 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use atom_macros::export;
+use crate::gc::{Gc, Trace};
 
-use crate::{
-    gc::{Gc, Handle, Trace},
-    runtime::{error::RuntimeError, value::Value},
-};
-
-use super::{array::Array, Api, Lib};
+use super::array::Array;
 
 pub struct Str(pub Array<u8>);
 
@@ -58,39 +53,4 @@ impl AsRef<str> for Str {
     fn as_ref(&self) -> &str {
         unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) }
     }
-}
-
-#[export]
-fn str_len(_api: Api<'_>, this: Handle<Str>) -> Result<usize, RuntimeError> {
-    Ok(this.0.len())
-}
-
-macro_rules! map_fn {
-    ($func:ident, $rust_fn:ident) => {
-        #[export]
-        fn $func(api: Api<'_>, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
-            let rust_string = this.as_str().$rust_fn();
-            let str = Str::from_string(api.gc, rust_string);
-            api.gc().alloc(str)
-        }
-    };
-}
-
-#[export]
-fn str_concat(atom: Api<'_>, other: Value) -> Result<Value, RuntimeError> {
-    let handle = atom.receiver()?.str();
-    let array = handle.0.concat(atom.gc(), &other.str().0);
-    atom.gc().alloc(Str(array)).map(Value::from)
-}
-
-map_fn!(str_upper, to_uppercase);
-map_fn!(str_lower, to_lowercase);
-
-pub fn register(lib: Lib) -> Lib {
-    lib.class("Str", |lib| {
-        lib.set("len", atom_str_len)
-            .set("upper", atom_str_upper)
-            .set("lower", atom_str_lower)
-            .set("concat", atom_str_concat)
-    })
 }

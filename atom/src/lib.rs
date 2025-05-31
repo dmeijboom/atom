@@ -14,5 +14,5 @@ pub use compiler::Compiler;
 pub use error::Error;
 pub use lexer::Lexer;
 pub use parser::Parser;
-pub use runtime::{value::Value, Lib, Module};
-pub use vm::{BoxedFn, DynamicLinker, Vm};
+pub use runtime::{value::Value, Module};
+pub use vm::{Error as VmError, Vm, FFI};

@@ -1,16 +1,9 @@
 use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
-use atom_macros::export;
-
 use crate::{
     gc::{Gc, Handle, Trace},
-    runtime::{
-        error::{ErrorKind, RuntimeError},
-        value::Value,
-    },
+    runtime::error::RuntimeError,
 };
-
-use super::{Api, Lib};
 
 pub struct Iter<'a, T: Trace> {
     idx: usize,
@@ -35,8 +28,8 @@ impl<'a, T: Trace> Iterator for Iter<'a, T> {
 
 pub struct Array<T: Trace> {
     data: MaybeUninit<Handle<T>>,
-    len: usize,
-    cap: usize,
+    pub len: usize,
+    pub cap: usize,
     _marker: PhantomData<[T]>,
 }
 
@@ -220,53 +213,8 @@ impl<T: Trace> Array<T> {
     }
 }
 
-#[export]
-fn array_pop(atom: Api<'_>) -> Result<Value, RuntimeError> {
-    let mut array = atom.receiver()?.array();
-    array
-        .pop()
-        .map_or_else(|| Err(ErrorKind::IndexOutOfBounds(0).at(atom.span)), Ok)
-}
-
-#[export]
-fn array_push(atom: Api<'_>, item: Value) -> Result<(), RuntimeError> {
-    let mut array = atom.receiver()?.array();
-    array.push(atom.gc(), item)?;
-
-    Ok(())
-}
-
-#[export]
-fn array_len(atom: Api<'_>) -> Result<usize, RuntimeError> {
-    Ok(atom.receiver()?.array().len)
-}
-
-#[export]
-fn array_cap(atom: Api<'_>) -> Result<usize, RuntimeError> {
-    Ok(atom.receiver()?.array().cap)
-}
-
-#[export]
-fn array_concat(atom: Api<'_>, other: Value) -> Result<Value, RuntimeError> {
-    let handle = atom.receiver()?.array();
-    let array = handle.concat(atom.gc(), &other.array());
-    atom.gc().alloc(array).map(Value::from)
-}
-
-pub fn register(lib: Lib) -> Lib {
-    lib.class("Array", |lib| {
-        lib.set("pop", atom_array_pop)
-            .set("push", atom_array_push)
-            .set("len", atom_array_len)
-            .set("concat", atom_array_concat)
-            .set("cap", atom_array_cap)
-    })
-}
-
 #[cfg(test)]
 mod tests {
-    use crate::runtime::value::Type;
-
     use super::*;
 
     #[test]
@@ -287,43 +235,6 @@ mod tests {
         assert_eq!(array.as_slice(), &[1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(slice.as_slice(), &[3, 4]);
         assert_eq!(slice.len(), 2);
-    }
-
-    #[test]
-    fn array_push() {
-        let mut gc = Gc::default();
-        let array: Array<Value> = Array::default();
-
-        assert_eq!(array.len(), 0);
-
-        let handle = gc.alloc(array).unwrap();
-        let expected = [
-            (1, 1),
-            (2, 2),
-            (3, 4),
-            (4, 4),
-            (5, 8),
-            (6, 8),
-            (7, 8),
-            (8, 8),
-            (9, 16),
-        ];
-
-        for (i, (len, cap)) in expected.into_iter().enumerate() {
-            atom_array_push(
-                Api::new(&mut gc).with_receiver(handle.clone().into()),
-                vec![(10 * i).try_into().unwrap()],
-            )
-            .expect("Array.push failed");
-
-            assert_eq!(handle.len() as i64, len);
-            assert_eq!(handle.cap as i64, cap);
-        }
-
-        for (i, item) in handle.iter().copied().enumerate() {
-            assert_eq!(Type::Int, item.ty());
-            assert_eq!(10 * i, item.int() as usize);
-        }
     }
 
     #[test]

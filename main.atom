@@ -1,1 +1,1 @@
-object.property;
+println("hello world".upper());

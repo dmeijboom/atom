@@ -4,37 +4,36 @@ mod tests {
     use std::{cell::RefCell, fs, rc::Rc};
 
     use atom::{
-        ast::Stmt, runtime, BoxedFn, Compiler, DynamicLinker, Error, Lexer, Lib, Module, Parser,
-        Value, Vm,
+        ast::Stmt,
+        runtime::{Api, Runtime},
+        Compiler, Error, Lexer, Module, Parser, Value, Vm, VmError, FFI,
     };
 
     const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
 
-    pub struct TestLinker<L: DynamicLinker> {
-        linker: L,
+    pub struct TestRuntime<F: FFI> {
+        fallback: F,
         return_value: Rc<RefCell<Option<Value>>>,
     }
 
-    impl<L: DynamicLinker> DynamicLinker for TestLinker<L> {
-        fn resolve(&self, name: &str) -> Option<BoxedFn> {
+    impl<L: FFI> FFI for TestRuntime<L> {
+        fn call(&self, name: &str, api: Api, args: Vec<Value>) -> Result<Value, VmError> {
             if name == "assert" {
                 let return_value = Rc::clone(&self.return_value);
 
-                Some(Rc::new(Box::new(move |_ctx, args| {
-                    let value = args.get(0).copied();
-                    *return_value.borrow_mut() = Some(value.unwrap_or(Value::NIL));
-                    Ok(Value::NIL)
-                })))
+                let value = args.get(0).copied();
+                *return_value.borrow_mut() = Some(value.unwrap_or(Value::NIL));
+                Ok(Value::NIL)
             } else {
-                self.linker.resolve(name)
+                self.fallback.call(name, api, args)
             }
         }
     }
 
-    impl<L: DynamicLinker> TestLinker<L> {
-        fn new(linker: L, return_value: Rc<RefCell<Option<Value>>>) -> Self {
+    impl<F: FFI> TestRuntime<F> {
+        fn new(fallback: F, return_value: Rc<RefCell<Option<Value>>>) -> Self {
             Self {
-                linker,
+                fallback,
                 return_value,
             }
         }
@@ -64,13 +63,13 @@ mod tests {
         Ok(compiler.compile(program)?)
     }
 
-    pub type TestVm = Vm<TestLinker<Lib>, 1000, 1000>;
+    pub type TestVm = Vm<TestRuntime<Runtime>, 1000, 1000>;
 
     pub fn run(name: &str) -> Result<(TestVm, Option<Value>), Error> {
         let module = compile(name)?;
         let return_value = Rc::new(RefCell::new(None));
-        let linker = TestLinker::new(runtime::linker(), Rc::clone(&return_value));
-        let mut vm = TestVm::with_module(module, linker)?;
+        let linker = TestRuntime::new(Runtime::default(), Rc::clone(&return_value));
+        let mut vm = TestVm::with(module, linker)?;
         vm.run()?;
 
         let return_value = return_value.borrow_mut().take();

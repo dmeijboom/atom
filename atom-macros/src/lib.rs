@@ -1,11 +1,21 @@
 use proc_macro::TokenStream;
 use quote::quote;
-use syn::{FnArg, Ident, ItemFn, Stmt};
+use syn::{FnArg, Ident, ItemFn, LitStr, Stmt};
 
-fn parse_arg(arg: FnArg) -> (Ident, syn::Type) {
+fn parse_arg_name(arg: &FnArg) -> Ident {
     if let FnArg::Typed(pat) = arg {
-        if let syn::Pat::Ident(ident) = *pat.pat {
-            return (ident.ident, *pat.ty);
+        if let syn::Pat::Ident(ident) = pat.pat.as_ref() {
+            return ident.ident.clone();
+        }
+    }
+
+    unimplemented!()
+}
+
+fn parse_arg(arg: &FnArg) -> (Ident, syn::Type) {
+    if let FnArg::Typed(pat) = arg {
+        if let syn::Pat::Ident(ident) = pat.pat.as_ref() {
+            return (ident.ident.clone(), *pat.ty.clone());
         }
     }
 
@@ -13,11 +23,12 @@ fn parse_arg(arg: FnArg) -> (Ident, syn::Type) {
 }
 
 #[proc_macro_attribute]
-pub fn export(_attr: TokenStream, item: TokenStream) -> TokenStream {
+pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
+    let export_as: LitStr = syn::parse_macro_input!(attr);
     let f: ItemFn = syn::parse_macro_input!(item);
-    let mut iter = f.sig.inputs.into_iter();
-    let (ctx_name, ctx_ty) = parse_arg(iter.next().expect("expected context argument"));
-    let args = iter
+    let inputs = || f.sig.inputs.iter().skip(1);
+    let arg_names = inputs().map(parse_arg_name).collect::<Vec<_>>();
+    let args = inputs()
         .map(parse_arg)
         .rev()
         .enumerate()
@@ -28,23 +39,20 @@ pub fn export(_attr: TokenStream, item: TokenStream) -> TokenStream {
         })
         .collect::<Vec<Stmt>>();
 
-    let body = f.block.stmts;
-    let return_type = match f.sig.output {
-        syn::ReturnType::Type(_, ret) => ret,
-        syn::ReturnType::Default => unreachable!(),
-    };
-
-    let export_name = Ident::new(&format!("atom_{}", f.sig.ident), f.sig.ident.span());
+    let name = f.sig.ident.clone();
+    let export_fn = Ident::new(&format!("_atom_{}", f.sig.ident), f.sig.ident.span());
+    let export_name = Ident::new(&format!("_atom_{}_name", f.sig.ident), f.sig.ident.span());
 
     quote! {
-        use crate::runtime::value::TryIntoValue as _;
+        #[allow(non_upper_case_globals)]
+        const #export_name: &str = #export_as;
 
-        pub fn #export_name(mut #ctx_name: #ctx_ty, args: Vec<Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
-            let mut _inner = || -> #return_type {
-                #(#args)*
-                #(#body)*
-            };
-            _inner().and_then(|v| v.into_value(&mut #ctx_name.gc))
+        #f
+
+        fn #export_fn(mut api: crate::runtime::Api<'_>, args: Vec<crate::runtime::value::Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
+            #(#args)*
+            let return_value = Self::#name(&mut api, #(#arg_names),*)?;
+            return_value.into_value(api.gc())
         }
     }
     .into()

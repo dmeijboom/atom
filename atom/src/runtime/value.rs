@@ -363,6 +363,14 @@ impl<T: Into<Value>> TryIntoValue for T {
     }
 }
 
+impl TryIntoValue for String {
+    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+        let bytes = self.into_bytes();
+        let array = Array::from_vec(gc, bytes);
+        Ok(gc.alloc(Str(array))?.into())
+    }
+}
+
 impl TryIntoValue for usize {
     fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
         (self as i64).into_value(gc)

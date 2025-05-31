@@ -10,7 +10,7 @@ use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use opcode::Opcode;
-use runtime::{function::Fn, value::Value, Module};
+use runtime::{function::Fn, value::Value, Module, Runtime};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -154,7 +154,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             no_optimize,
         }) => {
             let module = compile(source, !no_optimize)?;
-            let mut vm = AtomVm::with_module(module, runtime::linker())?;
+            let mut vm = AtomVm::with(module, Runtime::default())?;
             vm.run()?;
         }
         Cmd::Compile(CompileCmd {

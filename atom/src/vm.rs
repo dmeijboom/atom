@@ -1,12 +1,11 @@
 use std::{
     mem,
     ops::{Add, Div, Mul, Rem, Sub},
-    rc::Rc,
 };
 
 use crate::{
     context::Context,
-    error::{IntoSpanned, SpannedError},
+    error::SpannedError,
     gc::{Gc, Handle, Trace},
     lexer::Span,
     opcode::{Op, Opcode},
@@ -91,16 +90,13 @@ fn top_frame(module: &mut Module, gc: &mut Gc) -> Result<Frame, Error> {
     ))
 }
 
-pub type BoxedFn =
-    Rc<Box<dyn std::ops::Fn(Api, Vec<Value>) -> Result<Value, RuntimeError> + 'static>>;
-
-pub trait DynamicLinker {
-    fn resolve(&self, name: &str) -> Option<BoxedFn>;
+pub trait FFI {
+    fn call(&self, name: &str, api: Api, args: Vec<Value>) -> Result<Value, Error>;
 }
 
-pub struct Vm<L: DynamicLinker, const C: usize, const S: usize> {
+pub struct Vm<F: FFI, const C: usize, const S: usize> {
     gc: Gc,
-    linker: L,
+    ffi: F,
     span: Span,
     frame: Frame,
     context: Context<C>,
@@ -108,14 +104,14 @@ pub struct Vm<L: DynamicLinker, const C: usize, const S: usize> {
     call_stack: Vec<Frame>,
 }
 
-impl<L: DynamicLinker, const C: usize, const S: usize> Drop for Vm<L, C, S> {
+impl<F: FFI, const C: usize, const S: usize> Drop for Vm<F, C, S> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
-    pub fn with_module(mut module: Module, linker: L) -> Result<Self, Error> {
+impl<F: FFI, const C: usize, const S: usize> Vm<F, C, S> {
+    pub fn with(mut module: Module, ffi: F) -> Result<Self, Error> {
         let mut gc = Gc::default();
         let mut consts = [Value::NIL; C];
 
@@ -128,7 +124,7 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
 
         Ok(Self {
             gc,
-            linker,
+            ffi,
             frame,
             context,
             span: Span::default(),
@@ -354,18 +350,14 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
 
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
         let name = self.context.consts[idx].str();
-        let handler = self
-            .linker
-            .resolve(name.as_ref())
-            .ok_or_else(|| FatalErrorKind::InvalidExternFn(name.to_string()).at(self.span))?;
         let args = mem::take(&mut self.frame.locals);
-        let mut atom = Api::new(&mut self.gc).with_span(self.span);
+        let mut api = Api::new(&mut self.gc).with_span(self.span);
 
         if let Some(receiver) = self.frame.receiver {
-            atom = atom.with_receiver(receiver);
+            api = api.with_receiver(receiver);
         }
 
-        let return_value = (handler)(atom, args)?;
+        let return_value = self.ffi.call(name.as_ref(), api, args)?;
 
         self.frame.returned = true;
         self.stack.push(return_value);
@@ -558,10 +550,10 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
         Ok(())
     }
 
-    fn binary_numeric<I, F>(&mut self, op: &'static str, i: I, f: F) -> Result<(), Error>
+    fn binary_numeric<I, FL>(&mut self, op: &'static str, i: I, f: FL) -> Result<(), Error>
     where
         I: FnOnce(i64, i64) -> i64,
-        F: FnOnce(f64, f64) -> f64,
+        FL: FnOnce(f64, f64) -> f64,
     {
         let (lhs, rhs) = self.stack.operands();
 
@@ -575,10 +567,10 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
         }
     }
 
-    fn compare_numeric<I, F>(&mut self, op: &'static str, i: I, f: F) -> Result<(), Error>
+    fn compare_numeric<I, FL>(&mut self, op: &'static str, i: I, f: FL) -> Result<(), Error>
     where
         I: FnOnce(&i64, &i64) -> bool,
-        F: FnOnce(&f64, &f64) -> bool,
+        FL: FnOnce(&f64, &f64) -> bool,
     {
         let (lhs, rhs) = self.stack.operands();
         let value = match lhs.ty() {
