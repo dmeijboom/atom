@@ -15,7 +15,6 @@ use crate::{
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
         function::Fn,
-        str::Str,
         value::{self, TryIntoValue, Type, Value},
         Api, Module,
     },
@@ -214,7 +213,7 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
         let object = object.object();
 
         if object.attrs.is_empty() {
-            return self.load_method(object, member);
+            return self.load_method(object, member.as_str());
         }
 
         match object.attrs.get(&member).copied() {
@@ -222,13 +221,11 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
                 self.stack.push(value);
                 Ok(())
             }
-            None => self.load_method(object, member),
+            None => self.load_method(object, member.as_str()),
         }
     }
 
-    fn load_method(&mut self, object: Handle<Object>, member: Handle<Str>) -> Result<(), Error> {
-        let member = member.as_str();
-
+    fn load_method(&mut self, object: Handle<Object>, member: &str) -> Result<(), Error> {
         match self
             .context
             .get_method(&mut self.gc, &object.class, member)?
@@ -249,9 +246,11 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
     }
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member_handle = self.context.consts[member].str();
-        let member = member_handle.as_str();
+        let handle = self.context.consts[member].str();
+        self.load_field_by_name(object, handle.as_str())
+    }
 
+    fn load_field_by_name(&mut self, object: Value, member: &str) -> Result<(), Error> {
         if let Some(class) = self
             .context
             .get_class_by_name(&mut self.gc, object.ty().name())?
@@ -417,26 +416,6 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
         self.gc_tick();
 
         Ok(())
-    }
-
-    fn concat(&mut self, lhs: Value, rhs: Value) -> Result<Value, Error> {
-        let value = match lhs.ty() {
-            Type::Array => {
-                let lhs = lhs.array();
-                let rhs = rhs.array();
-                let array = Array::from_vec(&mut self.gc, lhs.concat(&rhs));
-                Value::from(self.gc.alloc(array)?)
-            }
-            Type::Str => {
-                let lhs = lhs.str();
-                let rhs = rhs.str();
-                let array = Array::from_vec(&mut self.gc, lhs.0.concat(&rhs.0));
-                Value::from(self.gc.alloc(Str(array))?)
-            }
-            _ => unreachable!(),
-        };
-
-        Ok(value)
     }
 
     fn make_array(&mut self, size: usize) -> Result<(), Error> {
@@ -673,10 +652,9 @@ impl<L: DynamicLinker, const C: usize, const S: usize> Vm<L, C, S> {
         match ty {
             Type::Int if rhs.is_int() => self.push_int(lhs.int() ^ rhs.int()),
             Type::Array | Type::Str if ty == rhs.ty() => {
-                let value = self.concat(lhs, rhs)?;
-
-                self.stack.push(value);
-                self.gc_tick();
+                self.stack.push(rhs);
+                self.load_field_by_name(lhs, "concat")?;
+                self.call(1)?;
 
                 Ok(())
             }

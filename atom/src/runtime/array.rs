@@ -93,7 +93,7 @@ impl<T: Trace> Array<T> {
     }
 
     /// # Safety
-    /// 
+    ///
     /// The caller must ensure that the handle is valid.
     pub unsafe fn from_raw_parts(handle: Handle<T>, len: usize, cap: usize) -> Self {
         Self {
@@ -155,11 +155,14 @@ impl<T: Trace> Array<T> {
         }
     }
 
-    pub fn concat(&self, other: &Array<T>) -> Vec<T>
+    pub fn concat(&self, gc: &mut Gc, other: &Array<T>) -> Self
     where
-        T: Copy,
+        T: Copy + 'static,
     {
-        self.iter().chain(other.iter()).copied().collect::<Vec<_>>()
+        Self::from_vec(
+            gc,
+            self.iter().chain(other.iter()).copied().collect::<Vec<_>>(),
+        )
     }
 
     pub fn push(&mut self, gc: &mut Gc, item: T) -> Result<(), RuntimeError>
@@ -243,11 +246,19 @@ fn array_cap(atom: Api<'_>) -> Result<usize, RuntimeError> {
     Ok(atom.receiver()?.array().cap)
 }
 
+#[export]
+fn array_concat(atom: Api<'_>, other: Value) -> Result<Value, RuntimeError> {
+    let handle = atom.receiver()?.array();
+    let array = handle.concat(atom.gc(), &other.array());
+    atom.gc().alloc(array).map(Value::from)
+}
+
 pub fn register(lib: Lib) -> Lib {
     lib.class("Array", |lib| {
         lib.set("pop", atom_array_pop)
             .set("push", atom_array_push)
             .set("len", atom_array_len)
+            .set("concat", atom_array_concat)
             .set("cap", atom_array_cap)
     })
 }

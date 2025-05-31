@@ -76,6 +76,13 @@ macro_rules! map_fn {
     };
 }
 
+#[export]
+fn str_concat(atom: Api<'_>, other: Value) -> Result<Value, RuntimeError> {
+    let handle = atom.receiver()?.str();
+    let array = handle.0.concat(atom.gc(), &other.str().0);
+    atom.gc().alloc(Str(array)).map(Value::from)
+}
+
 map_fn!(str_upper, to_uppercase);
 map_fn!(str_lower, to_lowercase);
 
@@ -84,5 +91,6 @@ pub fn register(lib: Lib) -> Lib {
         lib.set("len", atom_str_len)
             .set("upper", atom_str_upper)
             .set("lower", atom_str_lower)
+            .set("concat", atom_str_concat)
     })
 }

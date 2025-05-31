@@ -1,11 +1,1 @@
-fn test(x, y) {
-    println("x=");
-    println(x);
-    println("y=");
-    println(y);
-}
-
-let x = 10;
-test(50, 2);
-println("final");
-println(x);
+println("hello " ^ "world");

@@ -44,13 +44,18 @@ impl<const C: usize> Trace for Context<C> {
 impl<const C: usize> Context<C> {
     pub fn new(module: Module, consts: [Value; C]) -> Self {
         Self {
-            module,
             consts,
             vars: IntMap::default(),
             methods: IntMap::default(),
             functions: IntMap::default(),
             classes: IntMap::default(),
-            classes_by_name: HashMap::default(),
+            classes_by_name: module
+                .classes
+                .iter()
+                .enumerate()
+                .map(|(i, class)| (class.name.to_string(), i))
+                .collect::<HashMap<_, _, WyHash>>(),
+            module,
         }
     }
 
@@ -65,7 +70,7 @@ impl<const C: usize> Context<C> {
                 .module
                 .functions
                 .iter()
-                .position(|class| class.name == name)
+                .position(|func| func.name == name)
             {
                 Some(idx) => idx,
                 None => return Ok(None),

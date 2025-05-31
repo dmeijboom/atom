@@ -4,3 +4,5 @@
 # Added by cargo
 
 /target
+/.devenv.flake.nix
+.devenv
