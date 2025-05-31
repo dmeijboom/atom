@@ -1,6 +1,9 @@
+use serde::Serialize;
+
 use crate::lexer::Span;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum AssignOp {
     Add,
     Sub,
@@ -21,12 +24,14 @@ impl From<AssignOp> for BinaryOp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum UnaryOp {
     Not,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum BinaryOp {
     Add,
     Sub,
@@ -46,7 +51,8 @@ pub enum BinaryOp {
     BitwiseXor,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum Literal {
     Nil,
     Bool(bool),
@@ -55,7 +61,8 @@ pub enum Literal {
     String(String),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ExprKind {
     Ident(String),
     Array(Vec<Expr>),
@@ -75,7 +82,8 @@ impl ExprKind {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Expr {
     pub kind: ExprKind,
     pub span: Span,
@@ -87,12 +95,14 @@ impl Expr {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
 pub type Path = Vec<String>;
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct FnArg {
     pub name: String,
     pub span: Span,
@@ -104,7 +114,8 @@ impl FnArg {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum StmtKind {
     Break,
     Continue,
@@ -126,7 +137,8 @@ impl StmtKind {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Stmt {
     pub kind: StmtKind,
     pub span: Span,

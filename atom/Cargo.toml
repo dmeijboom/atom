@@ -13,13 +13,17 @@ tracing = ["dep:tracing", "dep:tracing-subscriber"]
 atom-macros = { path = "../atom-macros" }
 
 wyhash2 = "0.2.1"
-test-case = "3.3.1"
 thiserror = "1.0.61"
 tracing = { version = "0.1.40", optional = true }
 tracing-subscriber = { version = "0.3.18", features = [
     "env-filter",
 ], optional = true }
-mimalloc = { version = "0.1.43", optional = true }
 bytes = "1.7.1"
 nohash-hasher = "0.2.0"
 argh = "0.1.12"
+mimalloc = { version = "0.1.43", optional = true }
+serde = { version = "1.0.219", features = ["derive"] }
+
+[dev-dependencies]
+ron = "0.10.1"
+test-case = "3.3.1"

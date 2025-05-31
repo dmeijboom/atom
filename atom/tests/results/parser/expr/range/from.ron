@@ -1,0 +1,28 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: compMember(Expr(
+                kind: ident("x"),
+                span: Span(
+                    offset: 0,
+                ),
+            ), Expr(
+                kind: range(Some(Expr(
+                    kind: literal(int(4)),
+                    span: Span(
+                        offset: 2,
+                    ),
+                )), None),
+                span: Span(
+                    offset: 2,
+                ),
+            )),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

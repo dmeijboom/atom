@@ -1,0 +1,49 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: array([
+                Expr(
+                    kind: array([
+                        Expr(
+                            kind: binary(Expr(
+                                kind: literal(int(10)),
+                                span: Span(
+                                    offset: 2,
+                                ),
+                            ), add, Expr(
+                                kind: literal(int(3)),
+                                span: Span(
+                                    offset: 7,
+                                ),
+                            )),
+                            span: Span(
+                                offset: 2,
+                            ),
+                        ),
+                    ]),
+                    span: Span(
+                        offset: 1,
+                    ),
+                ),
+                Expr(
+                    kind: literal(string("hello")),
+                    span: Span(
+                        offset: 11,
+                    ),
+                ),
+                Expr(
+                    kind: ident("ident39"),
+                    span: Span(
+                        offset: 20,
+                    ),
+                ),
+            ]),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

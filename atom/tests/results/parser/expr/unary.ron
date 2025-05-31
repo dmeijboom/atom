@@ -1,0 +1,28 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: binary(Expr(
+                kind: unary(not, Expr(
+                    kind: literal(bool(true)),
+                    span: Span(
+                        offset: 1,
+                    ),
+                )),
+                span: Span(
+                    offset: 1,
+                ),
+            ), logicalOr, Expr(
+                kind: literal(bool(false)),
+                span: Span(
+                    offset: 9,
+                ),
+            )),
+            span: Span(
+                offset: 1,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

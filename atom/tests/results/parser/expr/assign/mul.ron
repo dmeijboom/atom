@@ -1,0 +1,23 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: assign(Some(mul), Expr(
+                kind: ident("name4"),
+                span: Span(
+                    offset: 0,
+                ),
+            ), Expr(
+                kind: literal(int(40)),
+                span: Span(
+                    offset: 9,
+                ),
+            )),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

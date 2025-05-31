@@ -1,0 +1,18 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: member(Expr(
+                kind: ident("object"),
+                span: Span(
+                    offset: 0,
+                ),
+            ), "property"),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

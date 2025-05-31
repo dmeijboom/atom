@@ -1,0 +1,25 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: call(Expr(
+                kind: ident("println"),
+                span: Span(
+                    offset: 0,
+                ),
+            ), [
+                Expr(
+                    kind: literal(string("hello")),
+                    span: Span(
+                        offset: 8,
+                    ),
+                ),
+            ]),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

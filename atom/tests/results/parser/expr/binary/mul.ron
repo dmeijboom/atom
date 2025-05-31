@@ -1,0 +1,23 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: binary(Expr(
+                kind: literal(int(10)),
+                span: Span(
+                    offset: 0,
+                ),
+            ), mul, Expr(
+                kind: literal(int(4)),
+                span: Span(
+                    offset: 5,
+                ),
+            )),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

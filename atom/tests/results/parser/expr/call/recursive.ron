@@ -1,0 +1,47 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: call(Expr(
+                kind: ident("println"),
+                span: Span(
+                    offset: 0,
+                ),
+            ), [
+                Expr(
+                    kind: call(Expr(
+                        kind: ident("to_string"),
+                        span: Span(
+                            offset: 8,
+                        ),
+                    ), [
+                        Expr(
+                            kind: binary(Expr(
+                                kind: literal(int(10)),
+                                span: Span(
+                                    offset: 18,
+                                ),
+                            ), add, Expr(
+                                kind: literal(int(5)),
+                                span: Span(
+                                    offset: 23,
+                                ),
+                            )),
+                            span: Span(
+                                offset: 18,
+                            ),
+                        ),
+                    ]),
+                    span: Span(
+                        offset: 8,
+                    ),
+                ),
+            ]),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

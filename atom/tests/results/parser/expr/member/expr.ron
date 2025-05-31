@@ -1,0 +1,31 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: member(Expr(
+                kind: array([
+                    Expr(
+                        kind: literal(int(1)),
+                        span: Span(
+                            offset: 1,
+                        ),
+                    ),
+                    Expr(
+                        kind: literal(int(3)),
+                        span: Span(
+                            offset: 4,
+                        ),
+                    ),
+                ]),
+                span: Span(
+                    offset: 0,
+                ),
+            ), "len"),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

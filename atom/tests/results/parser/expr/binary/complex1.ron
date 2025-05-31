@@ -1,0 +1,33 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: binary(Expr(
+                kind: binary(Expr(
+                    kind: literal(bool(true)),
+                    span: Span(
+                        offset: 0,
+                    ),
+                ), logicalAnd, Expr(
+                    kind: literal(bool(false)),
+                    span: Span(
+                        offset: 8,
+                    ),
+                )),
+                span: Span(
+                    offset: 0,
+                ),
+            ), logicalOr, Expr(
+                kind: literal(bool(true)),
+                span: Span(
+                    offset: 17,
+                ),
+            )),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

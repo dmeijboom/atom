@@ -1,0 +1,83 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: binary(Expr(
+                kind: binary(Expr(
+                    kind: binary(Expr(
+                        kind: binary(Expr(
+                            kind: ident("a"),
+                            span: Span(
+                                offset: 0,
+                            ),
+                        ), add, Expr(
+                            kind: binary(Expr(
+                                kind: ident("b"),
+                                span: Span(
+                                    offset: 4,
+                                ),
+                            ), mul, Expr(
+                                kind: ident("c"),
+                                span: Span(
+                                    offset: 8,
+                                ),
+                            )),
+                            span: Span(
+                                offset: 4,
+                            ),
+                        )),
+                        span: Span(
+                            offset: 0,
+                        ),
+                    ), sub, Expr(
+                        kind: binary(Expr(
+                            kind: ident("d"),
+                            span: Span(
+                                offset: 12,
+                            ),
+                        ), div, Expr(
+                            kind: ident("e"),
+                            span: Span(
+                                offset: 16,
+                            ),
+                        )),
+                        span: Span(
+                            offset: 12,
+                        ),
+                    )),
+                    span: Span(
+                        offset: 0,
+                    ),
+                ), logicalAnd, Expr(
+                    kind: ident("f"),
+                    span: Span(
+                        offset: 21,
+                    ),
+                )),
+                span: Span(
+                    offset: 0,
+                ),
+            ), logicalOr, Expr(
+                kind: binary(Expr(
+                    kind: ident("g"),
+                    span: Span(
+                        offset: 26,
+                    ),
+                ), lt, Expr(
+                    kind: ident("h"),
+                    span: Span(
+                        offset: 30,
+                    ),
+                )),
+                span: Span(
+                    offset: 26,
+                ),
+            )),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

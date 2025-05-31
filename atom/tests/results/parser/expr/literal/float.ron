@@ -1,0 +1,13 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: literal(float(0.4)),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

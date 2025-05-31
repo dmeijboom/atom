@@ -1,0 +1,24 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: literal(bool(true)),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+    Stmt(
+        kind: expr(Expr(
+            kind: literal(bool(false)),
+            span: Span(
+                offset: 5,
+            ),
+        )),
+        span: Span(
+            offset: 5,
+        ),
+    ),
+]

@@ -4,10 +4,11 @@ use std::{
 };
 
 use bytes::{Buf, BufMut};
+use serde::Serialize;
 
 use crate::error::{IntoSpanned, SpannedError};
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
 pub struct Span {
     pub offset: usize,
 }
