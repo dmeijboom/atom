@@ -64,20 +64,11 @@ impl<const C: usize> Context<C> {
         gc: &mut Gc,
         name: &str,
     ) -> Result<Option<Handle<Class>>, Error> {
-        let idx = match self.classes_by_name.get(name) {
-            Some(idx) => *idx,
-            None => match self
-                .module
-                .functions
-                .iter()
-                .position(|func| func.name == name)
-            {
-                Some(idx) => idx,
-                None => return Ok(None),
-            },
-        };
-
-        self.get_class(gc, idx).map(Some)
+        self.classes_by_name
+            .get(name)
+            .copied()
+            .map(|idx| self.get_class(gc, idx))
+            .transpose()
     }
 
     pub fn get_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
