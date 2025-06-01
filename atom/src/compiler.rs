@@ -647,7 +647,10 @@ impl Compiler {
 
     fn stmt(&mut self, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
-            StmtKind::Import(_path) => unimplemented!(),
+            StmtKind::Import(path) => {
+                let idx = self.push_const(Const::Str(path.join("/")));
+                self.push_opcode(Opcode::with_code(Op::Import, idx).at(stmt.span));
+            }
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
                 if let Some(expr) = expr {
@@ -729,7 +732,7 @@ impl Compiler {
                 Op::Return => continue,
                 Op::CallFn if code.code2().0 as usize == func => {
                     let mut buff = &mut body[i * 16..];
-                    let (arg_count, _) = code.code2();
+                    let (_, arg_count) = code.code2();
                     Opcode::with_code(Op::TailCall, arg_count as usize).serialize(&mut buff);
                     break;
                 }

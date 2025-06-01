@@ -71,14 +71,7 @@ impl Runtime {
         arg3: Value,
         arg4: Value,
     ) -> Result<i64, RuntimeError> {
-        unsafe {
-            Ok(libc::syscall(
-                arg1.int() as i32,
-                arg2.int() as i32,
-                arg3.int() as i32,
-                arg4.int() as i32,
-            ) as i64)
-        }
+        unsafe { Ok(libc::syscall(arg1.int() as i32, arg2.int(), arg3.int(), arg4.int()) as i64) }
     }
 
     #[atom_fn("println")]

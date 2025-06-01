@@ -501,6 +501,12 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
+    fn import(&mut self, idx: usize) -> Result<(), Error> {
+        let path = self.context.consts[idx].str();
+
+        todo!()
+    }
+
     fn not(&mut self) -> Result<(), Error> {
         let value = self.pop()?;
         self.check_type(value.ty(), Type::Bool)?;
@@ -684,7 +690,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     fn eval(&mut self) -> Result<(), Error> {
         while let Some(code) = self.frame.next() {
             self.span = code.span();
-            
+
             match code.op() {
                 Op::Add => self.add()?,
                 Op::Sub => self.sub()?,
@@ -725,6 +731,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
+                Op::Import => self.import(code.code())?,
             }
         }
 

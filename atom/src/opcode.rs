@@ -51,6 +51,7 @@ pub enum Op {
     LoadMember,
     StoreMember,
     LoadArg,
+    Import,
 }
 
 const TAG_MASK: u64 = 0b111111 << 48;
@@ -129,6 +130,7 @@ impl Opcode {
             o if o == Op::LoadMember as u64 => Op::LoadMember,
             o if o == Op::StoreMember as u64 => Op::StoreMember,
             o if o == Op::LoadArg as u64 => Op::LoadArg,
+            o if o == Op::Import as u64 => Op::Import,
             _ => unreachable!(),
         }
     }
