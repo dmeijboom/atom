@@ -10,6 +10,8 @@
   ];
 
   languages = {
+    javascript.enable = true;
+    javascript.npm.enable = true;
     rust.enable = true;
     rust.channel = "stable";
   };
