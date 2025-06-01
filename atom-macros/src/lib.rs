@@ -28,19 +28,23 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let f: ItemFn = syn::parse_macro_input!(item);
     let inputs = || f.sig.inputs.iter().skip(1);
     let arg_names = inputs().map(parse_arg_name).collect::<Vec<_>>();
-    let args = inputs()
-        .map(parse_arg)
-        .rev()
+    let mut args = inputs().map(parse_arg).peekable();
+    let mut thisarg: Option<Stmt> = None;
+
+    if let Some((name, ty)) = args.peek() {
+        if name == "this" {
+            thisarg = Some(syn::parse_quote! {
+                let this: #ty = recv.ok_or_else(|| ErrorKind::NoReceiver.at(Span::default()))?.into();
+            });
+            args.next();
+        }
+    };
+
+    let args = args
         .enumerate()
         .map(|(i, (name, ty))| {
-            if name == "this" {
-                syn::parse_quote! {
-                    let this: #ty = recv.ok_or_else(|| ErrorKind::NoReceiver.at(Span::default()))?.into();
-                }
-            } else {
-                syn::parse_quote! {
-                    let mut #name: #ty = args[#i].into();
-                }
+            syn::parse_quote! {
+                let mut #name: #ty = args[#i].into();
             }
         })
         .collect::<Vec<Stmt>>();
@@ -56,6 +60,7 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         #f
 
         fn #export_fn(gc: &mut crate::gc::Gc, recv: Option<Value>, args: Vec<crate::runtime::value::Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
+            #thisarg
             #(#args)*
             let return_value = Self::#name(gc, #(#arg_names),*)?;
             return_value.into_value(gc)

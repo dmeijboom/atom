@@ -49,21 +49,38 @@ macro_rules! match_fn {
     };
 }
 
-#[inline]
-fn map_str(
-    gc: &mut Gc,
-    handle: Handle<Str>,
-    f: impl FnOnce(&str) -> String,
-) -> Result<Handle<Str>, RuntimeError> {
-    let rust_string = f(handle.as_str());
-    let str = Str::from_string(gc, rust_string);
-    gc.alloc(str)
-}
-
 #[derive(Default)]
 pub struct Runtime {}
 
 impl Runtime {
+    #[atom_fn("isDarwin")]
+    fn is_darwin(_gc: &mut Gc) -> Result<bool, RuntimeError> {
+        Ok(cfg!(target_os = "macos"))
+    }
+
+    #[atom_fn("typeOf")]
+    fn type_of(_gc: &mut Gc, value: Value) -> Result<String, RuntimeError> {
+        Ok(value.ty().name().to_string())
+    }
+
+    #[atom_fn("syscall4")]
+    fn syscall4(
+        _gc: &mut Gc,
+        arg1: Value,
+        arg2: Value,
+        arg3: Value,
+        arg4: Value,
+    ) -> Result<i64, RuntimeError> {
+        unsafe {
+            Ok(libc::syscall(
+                arg1.int() as i32,
+                arg2.int() as i32,
+                arg3.int() as i32,
+                arg4.int() as i32,
+            ) as i64)
+        }
+    }
+
     #[atom_fn("println")]
     fn println(_gc: &mut Gc, arg: Value) -> Result<(), RuntimeError> {
         match arg.ty() {
@@ -157,13 +174,19 @@ impl Runtime {
     }
 
     #[atom_fn("Str.upper")]
-    fn str_upper(gc: &mut Gc, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
-        map_str(gc, this, |s| s.to_uppercase())
+    fn str_upper(_gc: &mut Gc, this: Handle<Str>) -> Result<String, RuntimeError> {
+        Ok(this.as_str().to_uppercase())
     }
 
     #[atom_fn("Str.lower")]
-    fn str_lower(gc: &mut Gc, this: Handle<Str>) -> Result<Handle<Str>, RuntimeError> {
-        map_str(gc, this, |s| s.to_lowercase())
+    fn str_lower(_gc: &mut Gc, this: Handle<Str>) -> Result<String, RuntimeError> {
+        Ok(this.as_str().to_lowercase())
+    }
+
+    #[atom_fn("Str.cptr")]
+    fn str_cptr(_gc: &mut Gc, this: Handle<Str>) -> Result<i64, RuntimeError> {
+        // @TODO: what to do with an empty string?
+        Ok(this.0.addr().unwrap_or(0) as i64)
     }
 }
 
@@ -180,6 +203,9 @@ impl Ffi for Runtime {
             [
                 println,
                 repr,
+                type_of,
+                syscall4,
+                is_darwin,
                 array_pop,
                 array_push,
                 array_len,
@@ -188,7 +214,8 @@ impl Ffi for Runtime {
                 str_len,
                 str_upper,
                 str_lower,
-                str_concat
+                str_concat,
+                str_cptr
             ]
         );
 

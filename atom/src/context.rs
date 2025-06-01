@@ -105,22 +105,22 @@ impl<const C: usize> Context<C> {
         class: &Handle<Class>,
         name: &str,
     ) -> Result<Option<Handle<Fn>>, Error> {
-        match self.methods.get(&class.addr()) {
-            Some(entry) => match entry.get(name) {
-                Some(method) => Ok(Some(Handle::clone(method))),
-                None => Ok(None),
-            },
-            None => match class.methods.get(name) {
-                Some(method) => {
-                    let handle = gc.alloc(method.clone())?;
-                    let methods = self.methods.entry(class.addr()).or_default();
+        if let Some(entry) = self.methods.get(&class.addr()) {
+            if let Some(method) = entry.get(name) {
+                return Ok(Some(Handle::clone(method)));
+            }
+        }
 
-                    methods.insert(name.to_string(), Handle::clone(&handle));
+        match class.methods.get(name) {
+            Some(method) => {
+                let handle = gc.alloc(method.clone())?;
+                let methods = self.methods.entry(class.addr()).or_default();
 
-                    Ok(Some(handle))
-                }
-                None => Ok(None),
-            },
+                methods.insert(name.to_string(), Handle::clone(&handle));
+
+                Ok(Some(handle))
+            }
+            None => Ok(None),
         }
     }
 }

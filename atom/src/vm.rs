@@ -684,7 +684,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     fn eval(&mut self) -> Result<(), Error> {
         while let Some(code) = self.frame.next() {
             self.span = code.span();
-
+            
             match code.op() {
                 Op::Add => self.add()?,
                 Op::Sub => self.sub()?,

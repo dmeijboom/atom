@@ -85,6 +85,14 @@ impl<T: Trace> Array<T> {
         }
     }
 
+    pub fn addr(&self) -> Option<usize> {
+        if self.len == 0 {
+            return None;
+        }
+
+        unsafe { Some(self.data.assume_init_ref().addr()) }
+    }
+
     /// # Safety
     ///
     /// The caller must ensure that the handle is valid.

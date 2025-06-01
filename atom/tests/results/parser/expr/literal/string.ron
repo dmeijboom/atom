@@ -1,7 +1,7 @@
 [
     Stmt(
         kind: expr(Expr(
-            kind: literal(string("hello world")),
+            kind: literal(string("hello world\n")),
             span: Span(
                 offset: 0,
             ),

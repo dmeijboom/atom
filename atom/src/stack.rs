@@ -31,7 +31,7 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
     }
 
     pub fn pop(&mut self) -> Option<T> {
-        if self.data.is_empty() {
+        if self.data.is_empty() || self.len == 0 {
             None
         } else {
             self.len -= 1;

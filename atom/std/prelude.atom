@@ -1,5 +1,7 @@
 extern fn repr(value);
-extern fn println(value);
+extern fn typeOf(value);
+extern fn isDarwin();
+extern fn syscall4(arg1, arg2, arg3, arg4);
 
 class Array {
     extern fn push(self, item);
@@ -14,4 +16,43 @@ class Str {
     extern fn upper(self);
     extern fn lower(self);
     extern fn concat(self, other);
+    extern fn cptr(self);
+}
+
+class Darwin {
+    fn init(self) {
+        self.name = "linux";
+        self.SYS_WRITE = 4;
+    }
+}
+
+class Linux {
+    fn init(self) {
+        self.name = "macos";
+        self.SYS_WRITE = 1;
+    }
+}
+
+let os;
+
+if isDarwin() {
+    os = Darwin();
+} else {
+    os = Linux();
+}
+
+let STDOUT = 1;
+
+fn println(val) {
+    let line;
+
+    if typeOf(val) == "Str" {
+        line = val;
+    } else {
+        line = repr(val);
+    }
+
+    line = line ^ "\n";
+
+    syscall4(os.SYS_WRITE, STDOUT, line.cptr(), line.len());
 }

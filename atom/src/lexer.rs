@@ -106,6 +106,8 @@ pub enum ErrorKind {
     ParseFloat(#[from] ParseFloatError),
     #[error("failed to parse int: {0}")]
     ParseInt(#[from] ParseIntError),
+    #[error("invalid escape sequence at: {0}")]
+    InvalidEscapeSequence(char),
     #[error("unexpected EOF")]
     UnexpectedEof,
     #[error("invalid input at: {0}")]
@@ -218,10 +220,14 @@ impl<'a> Lexer<'a> {
             match c {
                 '"' => break,
                 '\\' => match self.next() {
-                    Some(c) => {
-                        s.push('\\');
-                        s.push(c);
-                    }
+                    Some(c) => match c {
+                        'n' => s.push('\n'),
+                        'r' => s.push('\r'),
+                        't' => s.push('\t'),
+                        '0' => s.push('\0'),
+                        '\\' => s.push('\\'),
+                        c => return Err(ErrorKind::InvalidEscapeSequence(c).at(self.span())),
+                    },
                     None => return Err(ErrorKind::UnexpectedEof.at(self.span())),
                 },
                 c => s.push(c),
