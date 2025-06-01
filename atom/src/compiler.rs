@@ -195,9 +195,9 @@ impl Compiler {
         let id = self.vars_seq;
         self.vars_seq += 1;
 
-        let len = self.scope.len();
-        let scope = &mut self.scope[len - 1];
-        scope.vars.insert(name, Var::with_init(span, id, init));
+        if let Some(scope) = self.scope.front_mut() {
+            scope.vars.insert(name, Var::with_init(span, id, init));
+        }
 
         Ok(id)
     }

@@ -1,0 +1,9 @@
+if true {
+    let x = 4;
+    println(x);
+} else {
+    let x = 10;
+    println(x);
+}
+
+println(x);
