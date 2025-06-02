@@ -150,12 +150,6 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         ErrorKind::UnsupportedOp { ty, op }.at(self.span).into()
     }
 
-    fn pop(&mut self) -> Result<Value, RuntimeError> {
-        self.stack
-            .pop()
-            .ok_or_else(|| ErrorKind::StackEmpty.at(self.span))
-    }
-
     fn gc_tick(&mut self) {
         if !self.gc.ready() {
             return;
@@ -182,13 +176,11 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn goto(&mut self, pos: usize) {
-        let offset = pos * 16;
-        self.frame.offset = offset;
-        self.span = Span::deserialize(&self.frame.function.body[offset + 8..offset + 16]);
+        self.frame.offset = pos * 16;
     }
 
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
-        let object = self.pop()?;
+        let object = self.stack.pop();
 
         match object.ty() {
             Type::Object => self.load_attr(object, idx),
@@ -198,8 +190,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
         let member = self.instances[self.frame.instance_id].consts[member].str();
-        let value = self.pop()?;
-        let object = self.pop()?;
+        let value = self.stack.pop();
+        let object = self.stack.pop();
 
         self.check_type(object.ty(), Type::Object)?;
 
@@ -313,7 +305,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn jump_if_false(&mut self, idx: usize) -> Result<(), Error> {
-        let value = self.pop()?;
+        let value = self.stack.pop();
 
         if value == Value::FALSE {
             self.goto(idx);
@@ -324,7 +316,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn jump_cond(&mut self, idx: usize, cond: bool) -> Result<(), Error> {
-        let value = self.pop()?;
+        let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
 
         if value.bool() == cond {
@@ -374,7 +366,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn call(&mut self, arg_count: usize) -> Result<(), Error> {
-        let callee = self.pop()?;
+        let callee = self.stack.pop();
 
         match callee.ty() {
             Type::Fn => self.fn_call(callee.func(), arg_count),
@@ -393,7 +385,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         let mut frame = Frame::new(self.frame.instance_id, self.span, f);
 
         if frame.function.method {
-            frame = frame.with_receiver(self.pop()?);
+            frame = frame.with_receiver(self.stack.pop());
         }
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
@@ -426,11 +418,11 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     fn make_slice(&mut self, opts: usize) -> Result<(), Error> {
         let (from, to) = match opts {
             0 => (None, None),
-            1 => (Some(self.pop()?), None),
-            2 => (None, Some(self.pop()?)),
+            1 => (Some(self.stack.pop()), None),
+            2 => (None, Some(self.stack.pop())),
             3 => {
-                let to = self.pop()?;
-                let from = self.pop()?;
+                let to = self.stack.pop();
+                let from = self.stack.pop();
                 (Some(from), Some(to))
             }
             _ => unreachable!(),
@@ -444,7 +436,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             self.check_type(to.ty(), Type::Int)?;
         }
 
-        let array = self.pop()?;
+        let array = self.stack.pop();
         self.check_type(array.ty(), Type::Array)?;
 
         let array = array.array();
@@ -464,8 +456,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn prepare_elem(&mut self) -> Result<(Handle<Array<Value>>, usize), Error> {
-        let elem = self.pop()?;
-        let array = self.pop()?;
+        let elem = self.stack.pop();
+        let array = self.stack.pop();
 
         self.check_type(elem.ty(), Type::Int)?;
         self.check_type(array.ty(), Type::Array)?;
@@ -477,7 +469,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn store_elem(&mut self) -> Result<(), Error> {
-        let value = self.pop()?;
+        let value = self.stack.pop();
         let (mut array, n) = self.prepare_elem()?;
 
         match array.get_mut(n) {
@@ -506,7 +498,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn not(&mut self) -> Result<(), Error> {
-        let value = self.pop()?;
+        let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
         self.stack.push((!value.bool()).into());
         Ok(())
@@ -661,7 +653,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn store(&mut self, idx: usize) -> Result<(), Error> {
-        let var = self.pop()?;
+        let var = self.stack.pop();
         self.instances[self.frame.instance_id].vars.insert(idx, var);
         Ok(())
     }
@@ -681,9 +673,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             .push(self.instances[self.frame.instance_id].consts[idx]);
     }
 
-    fn discard(&mut self) -> Result<(), Error> {
-        let _ = self.pop()?;
-        Ok(())
+    fn discard(&mut self) {
+        let _ = self.stack.pop();
     }
 
     fn ret(&mut self) {
@@ -719,7 +710,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 Op::Load => self.load(code.code()),
                 Op::LoadArg => self.load_arg(code.code()),
                 Op::LoadSelf => self.load_self()?,
-                Op::Discard => self.discard()?,
+                Op::Discard => self.discard(),
                 Op::Return => self.ret(),
                 Op::ReturnArg => self.return_arg(code.code())?,
                 Op::Call => self.call(code.code())?,
