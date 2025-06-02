@@ -20,9 +20,9 @@ use vm::Vm;
 
 mod ast;
 mod compiler;
-mod context;
 mod error;
 mod gc;
+mod instance;
 mod lexer;
 mod opcode;
 mod parser;

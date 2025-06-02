@@ -14,7 +14,7 @@ fn map_handle<T: Trace + 'static, K, S>(
     map.values().map(Handle::boxed)
 }
 
-pub struct Context<const C: usize> {
+pub struct Instance<const C: usize> {
     module: Module,
     pub consts: [Value; C],
     pub vars: IntMap<usize, Value>,
@@ -24,7 +24,7 @@ pub struct Context<const C: usize> {
     methods: IntMap<usize, HashMap<String, Handle<Fn>, WyHash>>,
 }
 
-impl<const C: usize> Trace for Context<C> {
+impl<const C: usize> Trace for Instance<C> {
     fn trace(&self, gc: &mut Gc) {
         self.consts
             .iter()
@@ -41,7 +41,7 @@ impl<const C: usize> Trace for Context<C> {
     }
 }
 
-impl<const C: usize> Context<C> {
+impl<const C: usize> Instance<C> {
     pub fn new(module: Module, consts: [Value; C]) -> Self {
         Self {
             consts,

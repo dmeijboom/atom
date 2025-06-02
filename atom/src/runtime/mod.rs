@@ -30,8 +30,8 @@ pub type Name = Cow<'static, str>;
 pub struct Module {
     pub body: Bytes,
     pub consts: Vec<Const>,
-    pub functions: Vec<function::Fn>,
     pub classes: Vec<Class>,
+    pub functions: Vec<function::Fn>,
 }
 
 macro_rules! match_fn {

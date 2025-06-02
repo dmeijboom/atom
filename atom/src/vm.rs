@@ -4,9 +4,9 @@ use std::{
 };
 
 use crate::{
-    context::Context,
     error::SpannedError,
     gc::{Gc, Handle, Trace},
+    instance::Instance,
     lexer::Span,
     opcode::{Op, Opcode},
     runtime::{
@@ -47,17 +47,19 @@ struct Frame {
     call_site: Span,
     offset: usize,
     returned: bool,
+    instance_id: usize,
     function: Handle<Fn>,
     locals: Vec<Value>,
     receiver: Option<Value>,
 }
 
 impl Frame {
-    pub fn new(call_site: Span, function: Handle<Fn>) -> Self {
+    pub fn new(instance_id: usize, call_site: Span, function: Handle<Fn>) -> Self {
         Self {
             call_site,
             function,
             offset: 0,
+            instance_id,
             returned: false,
             locals: vec![],
             receiver: None,
@@ -80,16 +82,6 @@ impl Frame {
     }
 }
 
-fn top_frame(module: &mut Module, gc: &mut Gc) -> Result<Frame, Error> {
-    Ok(Frame::new(
-        Span::default(),
-        gc.alloc(Fn {
-            body: mem::take(&mut module.body),
-            ..Fn::default()
-        })?,
-    ))
-}
-
 pub trait Ffi {
     fn call(
         &self,
@@ -105,9 +97,9 @@ pub struct Vm<F: Ffi, const C: usize, const S: usize> {
     ffi: F,
     span: Span,
     frame: Frame,
-    context: Context<C>,
     stack: Stack<Value, S>,
     call_stack: Vec<Frame>,
+    instances: Vec<Instance<C>>,
 }
 
 impl<F: Ffi, const C: usize, const S: usize> Drop for Vm<F, C, S> {
@@ -119,20 +111,25 @@ impl<F: Ffi, const C: usize, const S: usize> Drop for Vm<F, C, S> {
 impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     pub fn with(mut module: Module, ffi: F) -> Result<Self, Error> {
         let mut gc = Gc::default();
+        let func = gc.alloc(Fn {
+            body: mem::take(&mut module.body),
+            ..Fn::default()
+        })?;
+
         let mut consts = [Value::NIL; C];
 
         for (i, const_) in mem::take(&mut module.consts).into_iter().enumerate() {
             consts[i] = const_.into_value(&mut gc)?;
         }
 
-        let frame = top_frame(&mut module, &mut gc)?;
-        let context = Context::new(module, consts);
+        let instance = Instance::new(module, consts);
+        let frame = Frame::new(0, Span::default(), func);
 
         Ok(Self {
             gc,
             ffi,
             frame,
-            context,
+            instances: vec![instance],
             span: Span::default(),
             call_stack: vec![],
             stack: Stack::default(),
@@ -168,7 +165,9 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn mark_sweep(&mut self) {
-        self.context.trace(&mut self.gc);
+        self.instances
+            .iter()
+            .for_each(|instance| instance.trace(&mut self.gc));
         self.stack
             .iter()
             .chain(
@@ -198,7 +197,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        let member = self.context.consts[member].str();
+        let member = self.instances[self.frame.instance_id].consts[member].str();
         let value = self.pop()?;
         let object = self.pop()?;
 
@@ -211,7 +210,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member = self.context.consts[member].str();
+        let member = self.instances[self.frame.instance_id].consts[member].str();
         let object = object.object();
 
         if object.attrs.is_empty() {
@@ -228,10 +227,11 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load_method(&mut self, object: Handle<Object>, member: &str) -> Result<(), Error> {
-        match self
-            .context
-            .get_method(&mut self.gc, &object.class, member)?
-        {
+        match self.instances[self.frame.instance_id].get_method(
+            &mut self.gc,
+            &object.class,
+            member,
+        )? {
             Some(method) => {
                 self.stack.push(object.into());
                 self.stack.push(method.into());
@@ -248,16 +248,15 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let handle = self.context.consts[member].str();
+        let handle = self.instances[self.frame.instance_id].consts[member].str();
         self.load_field_by_name(object, handle.as_str())
     }
 
     fn load_field_by_name(&mut self, object: Value, member: &str) -> Result<(), Error> {
-        if let Some(class) = self
-            .context
-            .get_class_by_name(&mut self.gc, object.ty().name())?
-        {
-            if let Some(method) = self.context.get_method(&mut self.gc, &class, member)? {
+        let instance = &mut self.instances[self.frame.instance_id];
+
+        if let Some(class) = instance.get_class_by_name(&mut self.gc, object.ty().name())? {
+            if let Some(method) = instance.get_method(&mut self.gc, &class, member)? {
                 self.stack.push(object);
                 self.stack.push(method.into());
                 return Ok(());
@@ -273,13 +272,13 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load_class(&mut self, idx: usize) -> Result<(), Error> {
-        let class = self.context.get_class(&mut self.gc, idx)?;
+        let class = self.instances[self.frame.instance_id].get_class(&mut self.gc, idx)?;
         self.stack.push(class.into());
         Ok(())
     }
 
     fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
-        let f = self.context.get_fn(&mut self.gc, idx)?;
+        let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, idx)?;
         self.stack.push(f.into());
         Ok(())
     }
@@ -337,7 +336,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn init_class(&mut self, class: Handle<Class>, arg_count: usize) -> Result<(), Error> {
-        let init_fn = self.context.get_method(&mut self.gc, &class, "init")?;
+        let init_fn =
+            self.instances[self.frame.instance_id].get_method(&mut self.gc, &class, "init")?;
         let object = Object::new(class);
         let handle = self.gc.alloc(object)?;
 
@@ -355,7 +355,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
-        let name = self.context.consts[idx].str();
+        let name = self.instances[self.frame.instance_id].consts[idx].str();
         let args = mem::take(&mut self.frame.locals);
         let return_value = self
             .ffi
@@ -369,7 +369,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
-        let f = self.context.get_fn(&mut self.gc, fn_idx as usize)?;
+        let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, fn_idx as usize)?;
         self.fn_call(f, arg_count as usize)
     }
 
@@ -390,7 +390,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 .into());
         }
 
-        let mut frame = Frame::new(self.span, f);
+        let mut frame = Frame::new(self.frame.instance_id, self.span, f);
 
         if frame.function.method {
             frame = frame.with_receiver(self.pop()?);
@@ -501,9 +501,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
-    fn import(&mut self, idx: usize) -> Result<(), Error> {
-        let path = self.context.consts[idx].str();
-
+    fn import(&mut self, _idx: usize) -> Result<(), Error> {
         todo!()
     }
 
@@ -664,17 +662,23 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
 
     fn store(&mut self, idx: usize) -> Result<(), Error> {
         let var = self.pop()?;
-        self.context.vars.insert(idx, var);
+        self.instances[self.frame.instance_id].vars.insert(idx, var);
         Ok(())
     }
 
     fn load(&mut self, idx: usize) {
-        self.stack
-            .push(self.context.vars.get(&idx).copied().unwrap_or_default());
+        self.stack.push(
+            self.instances[self.frame.instance_id]
+                .vars
+                .get(&idx)
+                .copied()
+                .unwrap_or_default(),
+        );
     }
 
     fn load_const(&mut self, idx: usize) {
-        self.stack.push(self.context.consts[idx]);
+        self.stack
+            .push(self.instances[self.frame.instance_id].consts[idx]);
     }
 
     fn discard(&mut self) -> Result<(), Error> {
