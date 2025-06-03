@@ -1,0 +1,7 @@
+class Test {
+    fn init(self) {
+        self.test = 10;
+    }
+}
+
+println(Test().test);

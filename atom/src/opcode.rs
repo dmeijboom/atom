@@ -30,7 +30,6 @@ pub enum Op {
     Store,
     Load,
     LoadFn,
-    LoadSelf,
     LoadClass,
     Discard,
     Return,
@@ -109,7 +108,6 @@ impl Opcode {
             o if o == Op::Store as u64 => Op::Store,
             o if o == Op::Load as u64 => Op::Load,
             o if o == Op::LoadFn as u64 => Op::LoadFn,
-            o if o == Op::LoadSelf as u64 => Op::LoadSelf,
             o if o == Op::LoadClass as u64 => Op::LoadClass,
             o if o == Op::Discard as u64 => Op::Discard,
             o if o == Op::Return as u64 => Op::Return,
@@ -167,6 +165,7 @@ impl Display for Opcode {
             Op::Store
             | Op::Load
             | Op::LoadFn
+            | Op::LoadClass
             | Op::LoadConst
             | Op::Jump
             | Op::JumpIfFalse

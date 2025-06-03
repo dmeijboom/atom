@@ -6,7 +6,7 @@ echo ">> building atom"
 cargo build --release 2> /dev/null
 
 PROGRAM="$1"
-PROGRAMS="fib factorial calc fizzbuzz fib_method"
+PROGRAMS="fib fib_method factorial calc fizzbuzz"
 
 for program in $PROGRAMS
 do

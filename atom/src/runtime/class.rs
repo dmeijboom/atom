@@ -9,6 +9,7 @@ use super::{function::Fn, str::Str, value::Value, Name};
 #[derive(Debug, Clone)]
 pub struct Class {
     pub name: Name,
+    pub init: Option<Handle<Fn>>,
     pub methods: HashMap<Name, Fn, WyHash>,
 }
 
@@ -24,6 +25,7 @@ impl Class {
     pub fn new(name: impl Into<Name>) -> Self {
         Self {
             name: name.into(),
+            init: None,
             methods: HashMap::with_hasher(WyHash::default()),
         }
     }

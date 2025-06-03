@@ -47,7 +47,6 @@ struct Frame {
     instance_id: usize,
     function: Handle<Fn>,
     locals: Vec<Value>,
-    receiver: Option<Value>,
 }
 
 impl Frame {
@@ -59,13 +58,7 @@ impl Frame {
             instance_id,
             returned: false,
             locals: vec![],
-            receiver: None,
         }
-    }
-
-    pub fn with_receiver(mut self, receiver: Value) -> Self {
-        self.receiver = Some(receiver);
-        self
     }
 
     pub fn next(&mut self) -> Option<Opcode> {
@@ -102,13 +95,7 @@ macro_rules! impl_binary {
 }
 
 pub trait Ffi {
-    fn call(
-        &self,
-        name: &str,
-        gc: &mut Gc,
-        recv: Option<Value>,
-        args: Vec<Value>,
-    ) -> Result<Value, Error>;
+    fn call(&self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, Error>;
 }
 
 pub struct Vm<F: Ffi, const C: usize, const S: usize> {
@@ -185,12 +172,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             .for_each(|instance| instance.trace(&mut self.gc));
         self.stack
             .iter()
-            .chain(
-                self.call_stack
-                    .iter()
-                    .flat_map(|frame| frame.locals.iter().chain(frame.receiver.as_ref())),
-            )
-            .chain(self.frame.locals.iter().chain(self.frame.receiver.as_ref()))
+            .chain(self.call_stack.iter().flat_map(|frame| frame.locals.iter()))
+            .chain(self.frame.locals.iter())
             .for_each(|value| value.trace(&mut self.gc));
 
         self.gc.sweep();
@@ -203,9 +186,10 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     fn load_member(&mut self, idx: usize) -> Result<(), Error> {
         let object = self.stack.pop();
 
-        match object.ty() {
-            Type::Object => self.load_attr(object, idx),
-            _ => self.load_field(object, idx),
+        if object.is_object() {
+            self.load_attr(object, idx)
+        } else {
+            self.load_field(object, idx)
         }
     }
 
@@ -240,24 +224,20 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load_method(&mut self, object: Handle<Object>, member: &str) -> Result<(), Error> {
-        match self.instances[self.frame.instance_id].get_method(
-            &mut self.gc,
-            &object.class,
-            member,
-        )? {
-            Some(method) => {
-                self.stack.push(object.into());
-                self.stack.push(method.into());
+        let method = self.instances[self.frame.instance_id]
+            .get_method(&mut self.gc, &object.class, member)?
+            .ok_or_else(|| {
+                ErrorKind::UnknownAttr {
+                    class: object.class.clone(),
+                    attribute: member.to_string(),
+                }
+                .at(self.span)
+            })?;
 
-                Ok(())
-            }
-            None => Err(ErrorKind::UnknownAttr {
-                class: object.class.clone(),
-                attribute: member.to_string(),
-            }
-            .at(self.span)
-            .into()),
-        }
+        self.stack.push(object.into());
+        self.stack.push(method.into());
+
+        Ok(())
     }
 
     fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
@@ -307,16 +287,6 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             .push(self.frame.locals.get(idx).copied().unwrap_or_default());
     }
 
-    fn load_self(&mut self) -> Result<(), Error> {
-        let receiver = self
-            .frame
-            .receiver
-            .ok_or_else(|| ErrorKind::NoReceiver.at(self.span))?;
-
-        self.stack.push(receiver);
-        Ok(())
-    }
-
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
             return Err(ErrorKind::TypeMismatch { left, right }.at(self.span).into());
@@ -349,12 +319,11 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn init_class(&mut self, class: Handle<Class>, arg_count: usize) -> Result<(), Error> {
-        let init_fn =
-            self.instances[self.frame.instance_id].get_method(&mut self.gc, &class, "init")?;
+        let init = class.init.clone();
         let object = Object::new(class);
         let handle = self.gc.alloc(object)?;
 
-        if let Some(f) = init_fn {
+        if let Some(f) = init {
             self.stack.push(handle.into());
             self.stack.push(f.into());
             self.call(arg_count)?;
@@ -370,9 +339,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
         let name = self.instances[self.frame.instance_id].consts[idx].str();
         let args = mem::take(&mut self.frame.locals);
-        let return_value = self
-            .ffi
-            .call(name.as_ref(), &mut self.gc, self.frame.receiver, args)?;
+        let return_value = self.ffi.call(name.as_ref(), &mut self.gc, args)?;
 
         self.frame.returned = true;
         self.stack.push(return_value);
@@ -397,20 +364,26 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn fn_call(&mut self, f: Handle<Fn>, arg_count: usize) -> Result<(), Error> {
-        if arg_count != f.arg_count {
+        let is_method = f.method;
+        let num_args = if is_method { arg_count + 1 } else { arg_count };
+
+        if num_args != f.arg_count {
             return Err(ErrorKind::ArgCountMismatch { func: f, arg_count }
                 .at(self.span)
                 .into());
         }
 
-        let mut frame = Frame::new(self.frame.instance_id, self.span, f);
-
-        if frame.function.method {
-            frame = frame.with_receiver(self.stack.pop());
-        }
+        let frame = Frame::new(self.frame.instance_id, self.span, f);
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
-        self.frame.locals = self.stack.slice_to_end(arg_count);
+        self.frame.locals = self.stack.slice_to_end(num_args);
+
+        // During a method call the receiver and arguments are swapped
+        if is_method && self.frame.locals.len() > 1 {
+            let end = self.frame.locals.len() - 1;
+            self.frame.locals.swap(0, end);
+        }
+
         self.gc_tick();
 
         Ok(())
@@ -661,7 +634,6 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 Op::Store => self.store(code.code())?,
                 Op::Load => self.load(code.code()),
                 Op::LoadArg => self.load_arg(code.code()),
-                Op::LoadSelf => self.load_self()?,
                 Op::Discard => self.discard(),
                 Op::Return => self.ret(),
                 Op::ReturnArg => self.return_arg(code.code())?,

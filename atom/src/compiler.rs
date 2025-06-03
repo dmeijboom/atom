@@ -61,7 +61,6 @@ impl Var {
 
 #[derive(Default)]
 struct Scope {
-    method: bool,
     fn_id: Option<usize>,
     vars: HashMap<String, Var, WyHash>,
 }
@@ -80,14 +79,6 @@ impl Scope {
             ..Self::default()
         }
     }
-
-    pub fn with_method() -> Self {
-        Self {
-            fn_id: None,
-            method: true,
-            ..Self::default()
-        }
-    }
 }
 
 enum Marker {
@@ -96,7 +87,11 @@ enum Marker {
 }
 
 fn check_used(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
-    if let Some((name, var)) = vars.iter().find(|(_, var)| !var.used) {
+    if let Some((name, var)) = vars
+        .iter()
+        .filter(|(name, _)| name.as_str() != "self")
+        .find(|(_, var)| !var.used)
+    {
         return Err(ErrorKind::NameUnused(name.to_string()).at(var.span));
     }
 
@@ -268,12 +263,8 @@ impl Compiler {
         Ok(())
     }
 
-    // Load a name based in the following order: self > var > local > class > func
+    // Load a name based in the following order: var > local > class > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
-        if name == "self" && self.scope.front().map(|s| s.method).unwrap_or(false) {
-            return Ok(Opcode::new(Op::LoadSelf));
-        }
-
         match self.load_var(span, &name) {
             Ok(var) => {
                 check_usage(&name, var)?;
@@ -470,15 +461,10 @@ impl Compiler {
         let func = Fn::new(name.clone(), args.len()).with_method();
         methods.insert(name.clone(), func);
 
-        let mut body = self.compile_fn_body(Scope::with_method(), args, stmts)?;
+        let mut body = self.compile_fn_body(Scope::new(), args, stmts)?;
 
         if name == "init" {
-            [
-                Opcode::new(Op::LoadSelf).at(span),
-                Opcode::new(Op::Return).at(span),
-            ]
-            .into_iter()
-            .for_each(|code| code.serialize(&mut body))
+            Opcode::with_code(Op::ReturnArg, 0).serialize(&mut body);
         }
 
         if let Some(method) = methods.get_mut(&name) {

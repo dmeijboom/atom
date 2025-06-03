@@ -87,6 +87,10 @@ impl Value {
         tag == Tag::SmallInt as u64 || tag == Tag::Int as u64
     }
 
+    pub const fn is_object(&self) -> bool {
+        (self.bits & TAG_MASK) >> 48 == Tag::Object as u64
+    }
+
     pub const fn tag(&self) -> Tag {
         if self.is_float() {
             return Tag::Float;
