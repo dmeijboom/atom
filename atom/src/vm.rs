@@ -106,6 +106,8 @@ pub struct Vm<F: Ffi, const C: usize, const S: usize> {
     stack: Stack<Value, S>,
     call_stack: Vec<Frame>,
     instances: Vec<Instance<C>>,
+    #[cfg(feature = "profiler")]
+    profiler: crate::profiler::VmProfiler,
 }
 
 impl<F: Ffi, const C: usize, const S: usize> Drop for Vm<F, C, S> {
@@ -136,9 +138,11 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             ffi,
             frame,
             instances: vec![instance],
-            span: Span::default(),
             call_stack: vec![],
+            span: Span::default(),
             stack: Stack::default(),
+            #[cfg(feature = "profiler")]
+            profiler: crate::profiler::VmProfiler::default(),
         })
     }
 
@@ -611,6 +615,9 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         while let Some(code) = self.frame.next() {
             self.span = code.span();
 
+            #[cfg(feature = "profiler")]
+            self.profiler.enter_instruction(code.op());
+
             match code.op() {
                 Op::Add => self.add()?,
                 Op::Sub => self.sub()?,
@@ -652,6 +659,9 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 Op::UnaryNot => self.not()?,
                 Op::Import => self.import(code.code())?,
             }
+
+            #[cfg(feature = "profiler")]
+            self.profiler.record_instruction(code.op());
         }
 
         Ok(())
@@ -676,8 +686,16 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
+    #[cfg(feature = "profiler")]
+    pub fn profiler(mut self) -> crate::profiler::VmProfiler {
+        mem::take(&mut self.profiler)
+    }
+
     pub fn run(&mut self) -> Result<(), Error> {
         let mut start = || {
+            #[cfg(feature = "profiler")]
+            self.profiler.enter();
+
             loop {
                 self.eval()?;
 

@@ -6,6 +6,8 @@ mod instance;
 mod lexer;
 mod opcode;
 mod parser;
+#[cfg(feature = "profiler")]
+mod profiler;
 pub mod runtime;
 mod stack;
 mod vm;

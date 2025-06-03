@@ -53,43 +53,9 @@ pub enum Op {
     Import,
 }
 
-const TAG_MASK: u64 = 0b111111 << 48;
-const INT_MASK: u64 = 0xffff_ffff_ffff;
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct Opcode {
-    bits: u64,
-    span: Span,
-}
-
-impl Opcode {
-    pub fn new(op: Op) -> Self {
-        Self::with_code(op, 0)
-    }
-
-    pub fn span(&self) -> Span {
-        self.span
-    }
-
-    pub fn with_code(op: Op, code: usize) -> Self {
-        Self {
-            bits: (op as u64) << 48 | code as u64,
-            span: Span::default(),
-        }
-    }
-
-    pub fn with_code2(op: Op, code1: u32, code2: u32) -> Self {
-        let code = (code1 as u64) << 32 | code2 as u64;
-        Self::with_code(op, code as usize)
-    }
-
-    pub fn at(mut self, span: Span) -> Self {
-        self.span = span;
-        self
-    }
-
-    pub fn op(&self) -> Op {
-        match (self.bits & TAG_MASK) >> 48 {
+impl From<u64> for Op {
+    fn from(value: u64) -> Self {
+        match value {
             o if o == Op::Eq as u64 => Op::Eq,
             o if o == Op::Ne as u64 => Op::Ne,
             o if o == Op::Lt as u64 => Op::Lt,
@@ -131,6 +97,46 @@ impl Opcode {
             o if o == Op::Import as u64 => Op::Import,
             _ => unreachable!(),
         }
+    }
+}
+
+const TAG_MASK: u64 = 0b111111 << 48;
+const INT_MASK: u64 = 0xffff_ffff_ffff;
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Opcode {
+    bits: u64,
+    span: Span,
+}
+
+impl Opcode {
+    pub fn new(op: Op) -> Self {
+        Self::with_code(op, 0)
+    }
+
+    pub fn span(&self) -> Span {
+        self.span
+    }
+
+    pub fn with_code(op: Op, code: usize) -> Self {
+        Self {
+            bits: (op as u64) << 48 | code as u64,
+            span: Span::default(),
+        }
+    }
+
+    pub fn with_code2(op: Op, code1: u32, code2: u32) -> Self {
+        let code = (code1 as u64) << 32 | code2 as u64;
+        Self::with_code(op, code as usize)
+    }
+
+    pub fn at(mut self, span: Span) -> Self {
+        self.span = span;
+        self
+    }
+
+    pub fn op(&self) -> Op {
+        ((self.bits & TAG_MASK) >> 48).into()
     }
 
     pub fn code(&self) -> usize {

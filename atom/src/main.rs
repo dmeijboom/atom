@@ -26,6 +26,8 @@ mod instance;
 mod lexer;
 mod opcode;
 mod parser;
+#[cfg(feature = "profiler")]
+mod profiler;
 mod runtime;
 mod stack;
 mod vm;
@@ -147,6 +149,14 @@ fn print_module(module: &Module) {
     }
 }
 
+#[cfg(feature = "profiler")]
+macro_rules! format_col {
+    ($max_len:expr, $($arg:tt)*) => {{
+        let col = std::fmt::format(format_args!($($arg)*));
+        format!("{}{}", col, " ".repeat($max_len - col.len()))
+    }};
+}
+
 fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run(RunCmd {
@@ -156,6 +166,21 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let module = compile(source, !no_optimize)?;
             let mut vm = AtomVm::with(module, Runtime::default())?;
             vm.run()?;
+
+            #[cfg(feature = "profiler")]
+            {
+                let report = vm.profiler().report();
+
+                println!("\n-- REPORT (took {:?}) --", report.exec_time);
+
+                for record in report.records {
+                    println!(
+                        "{} {}",
+                        format_col!(15, "{:?}", record.op),
+                        format_col!(15, "{} calls", record.call_count),
+                    );
+                }
+            }
         }
         Cmd::Compile(CompileCmd {
             source,
