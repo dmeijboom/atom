@@ -33,8 +33,12 @@ pub enum ErrorKind {
         right: Type,
         op: &'static str,
     },
-    #[error("unsupported operation `{op}` on: {ty}")]
-    UnsupportedOp { ty: Type, op: &'static str },
+    #[error("unsupported operation {lty} {op} {rty}")]
+    UnsupportedOp {
+        lty: Type,
+        rty: Type,
+        op: &'static str,
+    },
 }
 
 impl ErrorKind {

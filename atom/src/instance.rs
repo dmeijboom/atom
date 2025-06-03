@@ -8,18 +8,12 @@ use crate::runtime::{class::Class, function::Fn};
 use crate::vm::Error;
 use crate::{Module, Value};
 
-fn map_handle<T: Trace + 'static, K, S>(
-    map: &HashMap<K, Handle<T>, S>,
-) -> impl Iterator<Item = Box<dyn AnyHandle>> + '_ {
-    map.values().map(Handle::boxed)
-}
-
 pub struct Instance<const C: usize> {
     module: Module,
     pub consts: [Value; C],
     pub vars: IntMap<usize, Value>,
-    functions: IntMap<usize, Handle<Fn>>,
-    classes: IntMap<usize, Handle<Class>>,
+    functions: Vec<Option<Handle<Fn>>>,
+    classes: Vec<Option<Handle<Class>>>,
     classes_by_name: HashMap<String, usize, WyHash>,
     methods: IntMap<usize, HashMap<String, Handle<Fn>, WyHash>>,
 }
@@ -31,12 +25,20 @@ impl<const C: usize> Trace for Instance<C> {
             .chain(self.vars.values())
             .for_each(|value| value.trace(gc));
 
-        map_handle(&self.classes)
-            .chain(map_handle(&self.classes))
-            .chain(self.methods.values().flat_map(map_handle))
+        self.classes
+            .iter()
+            .filter_map(|c| match c {
+                Some(handle) => Some(handle),
+                None => None,
+            })
+            .for_each(|value| value.trace(gc));
+
+        self.methods
+            .values()
+            .flat_map(|methods| methods.values())
             .for_each(|h| {
                 h.trace(gc);
-                gc.mark(h);
+                gc.mark(h.boxed());
             });
     }
 }
@@ -47,8 +49,8 @@ impl<const C: usize> Instance<C> {
             consts,
             vars: IntMap::default(),
             methods: IntMap::default(),
-            functions: IntMap::default(),
-            classes: IntMap::default(),
+            functions: vec![None; module.functions.len()],
+            classes: vec![None; module.classes.len()],
             classes_by_name: module
                 .classes
                 .iter()
@@ -72,13 +74,12 @@ impl<const C: usize> Instance<C> {
     }
 
     pub fn get_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
-        match self.classes.get(&idx) {
-            Some(class) => Ok(Handle::clone(class)),
+        match &self.classes[idx] {
+            Some(handle) => Ok(Handle::clone(&handle)),
             None => {
                 let class = self.module.classes[idx].clone();
                 let handle = gc.alloc(class)?;
-
-                self.classes.insert(idx, Handle::clone(&handle));
+                self.classes[idx] = Some(Handle::clone(&handle));
 
                 Ok(handle)
             }
@@ -86,13 +87,12 @@ impl<const C: usize> Instance<C> {
     }
 
     pub fn get_fn(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Fn>, Error> {
-        match self.functions.get(&idx) {
-            Some(f) => Ok(Handle::clone(f)),
+        match &self.functions[idx] {
+            Some(handle) => Ok(Handle::clone(&handle)),
             None => {
-                let class = self.module.functions[idx].clone();
-                let handle = gc.alloc(class)?;
-
-                self.functions.insert(idx, Handle::clone(&handle));
+                let func = self.module.functions[idx].clone();
+                let handle = gc.alloc(func)?;
+                self.functions[idx] = Some(Handle::clone(&handle));
 
                 Ok(handle)
             }

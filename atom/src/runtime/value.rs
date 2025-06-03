@@ -83,7 +83,8 @@ impl Value {
     }
 
     pub const fn is_int(&self) -> bool {
-        matches!(self.tag(), Tag::SmallInt | Tag::Int)
+        let tag = (self.bits & TAG_MASK) >> 48;
+        tag == Tag::SmallInt as u64 || tag == Tag::Int as u64
     }
 
     pub const fn tag(&self) -> Tag {
@@ -165,7 +166,7 @@ impl Value {
     }
 
     pub fn bool(self) -> bool {
-        self.tag() == Tag::True
+        self == Value::TRUE
     }
 
     pub fn handle(&self) -> Option<Box<dyn AnyHandle>> {
