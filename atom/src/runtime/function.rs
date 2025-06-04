@@ -3,8 +3,8 @@ use std::fmt::Debug;
 use bytes::Bytes;
 
 use crate::{
+    bytecode::{Bytecode, Op},
     gc::Trace,
-    opcode::{Op, Opcode},
 };
 
 use super::Name;
@@ -14,7 +14,7 @@ pub struct Fn {
     pub name: Name,
     pub body: Bytes,
     pub method: bool,
-    pub arg_count: usize,
+    pub arg_count: u32,
 }
 
 impl Trace for Fn {
@@ -22,7 +22,7 @@ impl Trace for Fn {
 }
 
 impl Fn {
-    pub fn new(name: impl Into<Name>, arg_count: usize) -> Self {
+    pub fn new(name: impl Into<Name>, arg_count: u32) -> Self {
         Self {
             name: name.into(),
             arg_count,
@@ -31,7 +31,7 @@ impl Fn {
         }
     }
 
-    pub fn with_body(name: impl Into<Name>, arg_count: usize, body: Bytes) -> Self {
+    pub fn with_body(name: impl Into<Name>, arg_count: u32, body: Bytes) -> Self {
         Self {
             name: name.into(),
             arg_count,
@@ -46,6 +46,6 @@ impl Fn {
     }
 
     pub fn is_extern(&self) -> bool {
-        matches!(self.body.chunks_exact(16).map(Opcode::deserialize).next(), Some(c) if c.op() == Op::CallExtern)
+        matches!(self.body.chunks_exact(8).map(Bytecode::deserialize).next(), Some(c) if c.op == Op::CallExtern)
     }
 }

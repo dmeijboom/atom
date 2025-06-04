@@ -3,26 +3,13 @@ use std::{
     num::{ParseFloatError, ParseIntError},
 };
 
-use bytes::{Buf, BufMut};
 use serde::Serialize;
 
 use crate::error::{IntoSpanned, SpannedError};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
 pub struct Span {
-    pub offset: usize,
-}
-
-impl Span {
-    pub fn serialize(&self, buff: &mut impl BufMut) {
-        buff.put_u64(self.offset as u64);
-    }
-
-    pub fn deserialize(mut buff: impl Buf) -> Self {
-        Self {
-            offset: buff.get_u64() as usize,
-        }
-    }
+    pub offset: u32,
 }
 
 impl Display for Span {
@@ -154,7 +141,7 @@ impl<'a> Lexer<'a> {
 
     fn span(&self) -> Span {
         Span {
-            offset: self.offset,
+            offset: self.offset as u32,
         }
     }
 

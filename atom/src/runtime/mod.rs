@@ -3,10 +3,10 @@ use std::borrow::Cow;
 use bytes::Bytes;
 
 use crate::{
+    bytecode::Const,
     error::IntoSpanned,
     gc::{Gc, Handle},
     lexer::Span,
-    opcode::Const,
     vm::{self, FatalErrorKind, Ffi},
 };
 

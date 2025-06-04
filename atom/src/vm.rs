@@ -1,11 +1,11 @@
 use std::mem;
 
 use crate::{
+    bytecode::{Bytecode, Op},
     error::SpannedError,
     gc::{Gc, Handle, Trace},
     instance::Instance,
     lexer::Span,
-    opcode::{Op, Opcode},
     runtime::{
         array::Array,
         class::{Class, Object},
@@ -61,10 +61,10 @@ impl Frame {
         }
     }
 
-    pub fn next(&mut self) -> Option<Opcode> {
+    pub fn next(&mut self) -> Option<Bytecode> {
         if self.offset < self.function.body.len() {
-            let code = Opcode::deserialize(&self.function.body[self.offset..self.offset + 16]);
-            self.offset += 16;
+            let code = Bytecode::deserialize(&self.function.body[self.offset..self.offset + 8]);
+            self.offset += 8;
             Some(code)
         } else {
             None
@@ -183,22 +183,22 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         self.gc.sweep();
     }
 
-    fn goto(&mut self, pos: usize) {
-        self.frame.offset = pos * 16;
+    fn goto(&mut self, pos: u32) {
+        self.frame.offset = pos as usize * 8;
     }
 
-    fn load_member(&mut self, idx: usize) -> Result<(), Error> {
+    fn load_member(&mut self, idx: u32) -> Result<(), Error> {
         let object = self.stack.pop();
 
         if object.is_object() {
-            self.load_attr(object, idx)
+            self.load_attr(object, idx as usize)
         } else {
-            self.load_field(object, idx)
+            self.load_field(object, idx as usize)
         }
     }
 
-    fn store_member(&mut self, member: usize) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance_id].consts[member].str();
+    fn store_member(&mut self, member: u32) -> Result<(), Error> {
+        let member = self.instances[self.frame.instance_id].consts[member as usize].str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
@@ -268,27 +268,32 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         .into())
     }
 
-    fn load_class(&mut self, idx: usize) -> Result<(), Error> {
-        let class = self.instances[self.frame.instance_id].get_class(&mut self.gc, idx)?;
+    fn load_class(&mut self, idx: u32) -> Result<(), Error> {
+        let class = self.instances[self.frame.instance_id].get_class(&mut self.gc, idx as usize)?;
         self.stack.push(class.into());
         Ok(())
     }
 
-    fn load_fn(&mut self, idx: usize) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, idx)?;
+    fn load_fn(&mut self, idx: u32) -> Result<(), Error> {
+        let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, idx as usize)?;
         self.stack.push(f.into());
         Ok(())
     }
 
-    fn return_arg(&mut self, idx: usize) -> Result<(), Error> {
+    fn return_arg(&mut self, idx: u32) -> Result<(), Error> {
         self.load_arg(idx);
         self.ret();
         Ok(())
     }
 
-    fn load_arg(&mut self, idx: usize) {
-        self.stack
-            .push(self.frame.locals.get(idx).copied().unwrap_or_default());
+    fn load_arg(&mut self, idx: u32) {
+        self.stack.push(
+            self.frame
+                .locals
+                .get(idx as usize)
+                .copied()
+                .unwrap_or_default(),
+        );
     }
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
@@ -299,7 +304,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         Ok(())
     }
 
-    fn jump_if_false(&mut self, idx: usize) -> Result<(), Error> {
+    fn jump_if_false(&mut self, idx: u32) -> Result<(), Error> {
         let value = self.stack.pop();
 
         if value == Value::FALSE {
@@ -310,7 +315,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         self.check_type(value.ty(), Type::Bool)
     }
 
-    fn jump_cond(&mut self, idx: usize, cond: bool) -> Result<(), Error> {
+    fn jump_cond(&mut self, idx: u32, cond: bool) -> Result<(), Error> {
         let value = self.stack.pop();
         self.check_type(value.ty(), Type::Bool)?;
 
@@ -322,7 +327,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         Ok(())
     }
 
-    fn init_class(&mut self, class: Handle<Class>, arg_count: usize) -> Result<(), Error> {
+    fn init_class(&mut self, class: Handle<Class>, arg_count: u32) -> Result<(), Error> {
         let init = class.init.clone();
         let object = Object::new(class);
         let handle = self.gc.alloc(object)?;
@@ -340,8 +345,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         Ok(())
     }
 
-    fn call_extern(&mut self, idx: usize) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance_id].consts[idx].str();
+    fn call_extern(&mut self, idx: u32) -> Result<(), Error> {
+        let name = self.instances[self.frame.instance_id].consts[idx as usize].str();
         let args = mem::take(&mut self.frame.locals);
         let return_value = self.ffi.call(name.as_ref(), &mut self.gc, args)?;
 
@@ -352,12 +357,12 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         Ok(())
     }
 
-    fn call_fn(&mut self, (fn_idx, arg_count): (u32, u32)) -> Result<(), Error> {
+    fn call_fn(&mut self, (fn_idx, arg_count): (u16, u16)) -> Result<(), Error> {
         let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, fn_idx as usize)?;
-        self.fn_call(f, arg_count as usize)
+        self.fn_call(f, arg_count as u32)
     }
 
-    fn call(&mut self, arg_count: usize) -> Result<(), Error> {
+    fn call(&mut self, arg_count: u32) -> Result<(), Error> {
         let callee = self.stack.pop();
 
         match callee.ty() {
@@ -367,7 +372,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
-    fn fn_call(&mut self, f: Handle<Fn>, arg_count: usize) -> Result<(), Error> {
+    fn fn_call(&mut self, f: Handle<Fn>, arg_count: u32) -> Result<(), Error> {
         let is_method = f.method;
         let num_args = if is_method { arg_count + 1 } else { arg_count };
 
@@ -380,7 +385,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         let frame = Frame::new(self.frame.instance_id, self.span, f);
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
-        self.frame.locals = self.stack.slice_to_end(num_args);
+        self.frame.locals = self.stack.slice_to_end(num_args as usize);
 
         // During a method call the receiver and arguments are swapped
         if is_method && self.frame.locals.len() > 1 {
@@ -393,17 +398,17 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         Ok(())
     }
 
-    fn tail_call(&mut self, arg_count: usize) -> Result<(), Error> {
+    fn tail_call(&mut self, arg_count: u32) -> Result<(), Error> {
         self.frame.offset = 0;
         self.frame.returned = false;
-        self.frame.locals = self.stack.slice_to_end(arg_count);
+        self.frame.locals = self.stack.slice_to_end(arg_count as usize);
         self.gc_tick();
 
         Ok(())
     }
 
-    fn make_array(&mut self, size: usize) -> Result<(), Error> {
-        let array = self.stack.slice_to_end(size);
+    fn make_array(&mut self, size: u32) -> Result<(), Error> {
+        let array = self.stack.slice_to_end(size as usize);
         let array = Array::from_vec(&mut self.gc, array);
         let handle = self.gc.alloc(array)?;
 
@@ -413,7 +418,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         Ok(())
     }
 
-    fn make_slice(&mut self, opts: usize) -> Result<(), Error> {
+    fn make_slice(&mut self, opts: u32) -> Result<(), Error> {
         let (from, to) = match opts {
             0 => (None, None),
             1 => (Some(self.stack.pop()), None),
@@ -491,7 +496,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
-    fn import(&mut self, _idx: usize) -> Result<(), Error> {
+    fn import(&mut self, _idx: u32) -> Result<(), Error> {
         todo!()
     }
 
@@ -581,13 +586,13 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
-    fn store(&mut self, idx: usize) -> Result<(), Error> {
+    fn store(&mut self, idx: u32) -> Result<(), Error> {
         let var = self.stack.pop();
         self.instances[self.frame.instance_id].vars.insert(idx, var);
         Ok(())
     }
 
-    fn load(&mut self, idx: usize) {
+    fn load(&mut self, idx: u32) {
         self.stack.push(
             self.instances[self.frame.instance_id]
                 .vars
@@ -597,9 +602,9 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         );
     }
 
-    fn load_const(&mut self, idx: usize) {
+    fn load_const(&mut self, idx: u32) {
         self.stack
-            .push(self.instances[self.frame.instance_id].consts[idx]);
+            .push(self.instances[self.frame.instance_id].consts[idx as usize]);
     }
 
     fn discard(&mut self) {
@@ -612,13 +617,13 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn eval(&mut self) -> Result<(), Error> {
-        while let Some(code) = self.frame.next() {
-            self.span = code.span();
+        while let Some(bc) = self.frame.next() {
+            self.span = bc.span();
 
             #[cfg(feature = "profiler")]
-            self.profiler.enter_instruction(code.op());
+            self.profiler.enter_instruction(bc.op);
 
-            match code.op() {
+            match bc.op {
                 Op::Add => self.add()?,
                 Op::Sub => self.sub()?,
                 Op::Mul => self.mul()?,
@@ -633,35 +638,36 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 Op::BitwiseAnd => self.bitwise_and()?,
                 Op::BitwiseOr => self.bitwise_or()?,
                 Op::BitwiseXor => self.bitwise_xor()?,
-                Op::LoadConst => self.load_const(code.code()),
-                Op::LoadMember => self.load_member(code.code())?,
-                Op::StoreMember => self.store_member(code.code())?,
-                Op::LoadFn => self.load_fn(code.code())?,
-                Op::LoadClass => self.load_class(code.code())?,
-                Op::Store => self.store(code.code())?,
-                Op::Load => self.load(code.code()),
-                Op::LoadArg => self.load_arg(code.code()),
+                Op::LoadConst => self.load_const(bc.code),
+                Op::LoadMember => self.load_member(bc.code)?,
+                Op::StoreMember => self.store_member(bc.code)?,
+                Op::LoadFn => self.load_fn(bc.code)?,
+                Op::LoadClass => self.load_class(bc.code)?,
+                Op::Store => self.store(bc.code)?,
+                Op::Load => self.load(bc.code),
+                Op::LoadArg => self.load_arg(bc.code),
                 Op::Discard => self.discard(),
                 Op::Return => self.ret(),
-                Op::ReturnArg => self.return_arg(code.code())?,
-                Op::Call => self.call(code.code())?,
-                Op::CallFn => self.call_fn(code.code2())?,
-                Op::CallExtern => self.call_extern(code.code())?,
-                Op::TailCall => self.tail_call(code.code())?,
-                Op::Jump => self.goto(code.code()),
-                Op::JumpIfFalse => self.jump_if_false(code.code())?,
-                Op::PushJumpIfTrue => self.jump_cond(code.code(), true)?,
-                Op::PushJumpIfFalse => self.jump_cond(code.code(), false)?,
-                Op::MakeArray => self.make_array(code.code())?,
-                Op::MakeSlice => self.make_slice(code.code())?,
+                Op::ReturnArg => self.return_arg(bc.code)?,
+                Op::Call => self.call(bc.code)?,
+                Op::CallFn => self.call_fn(bc.code2())?,
+                Op::CallExtern => self.call_extern(bc.code)?,
+                Op::TailCall => self.tail_call(bc.code)?,
+                Op::Jump => self.goto(bc.code),
+                Op::JumpIfFalse => self.jump_if_false(bc.code)?,
+                Op::PushJumpIfTrue => self.jump_cond(bc.code, true)?,
+                Op::PushJumpIfFalse => self.jump_cond(bc.code, false)?,
+                Op::MakeArray => self.make_array(bc.code)?,
+                Op::MakeSlice => self.make_slice(bc.code)?,
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
-                Op::Import => self.import(code.code())?,
+                Op::Import => self.import(bc.code)?,
+                Op::Nop => unreachable!(),
             }
 
             #[cfg(feature = "profiler")]
-            self.profiler.record_instruction(code.op());
+            self.profiler.record_instruction(bc.op);
         }
 
         Ok(())

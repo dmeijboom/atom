@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use crate::opcode::Op;
+use crate::bytecode::Op;
 
 pub struct Record {
     pub op: Op,
@@ -47,7 +47,7 @@ impl VmProfiler {
             }
 
             records.push(Record {
-                op: (i as u64).into(),
+                op: (i as u8).into(),
                 call_count: self.counters[i],
             });
         }

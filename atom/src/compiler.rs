@@ -3,14 +3,14 @@ use std::{
     io, mem,
 };
 
-use bytes::{Buf, BufMut, BytesMut};
+use bytes::BytesMut;
 use wyhash2::WyHash;
 
 use crate::{
     ast::{self, Expr, ExprKind, FnArg, IfStmt, Literal, Stmt, StmtKind},
+    bytecode::{Bytecode, Const, Op},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
-    opcode::{Const, Op, Opcode},
     runtime::{class::Class, function::Fn, Module, Name},
 };
 
@@ -28,8 +28,8 @@ pub enum ErrorKind {
     NameUninitialized(String),
     #[error("name '{0}' is not used")]
     NameUnused(String),
-    #[error("failed to write opcode(s): {0}")]
-    FailedWriteOpcode(#[from] io::Error),
+    #[error("failed to write bytecode(s): {0}")]
+    FailedWriteBytecode(#[from] io::Error),
 }
 
 pub type CompileError = SpannedError<ErrorKind>;
@@ -154,36 +154,36 @@ impl Compiler {
         Ok(None)
     }
 
-    fn push_const(&mut self, const_: Const) -> usize {
+    fn push_const(&mut self, const_: Const) -> u32 {
         if let Some(idx) = self.consts.iter().position(|c| c == &const_) {
-            return idx;
+            return idx as u32;
         }
 
         let idx = self.consts.len();
         self.consts.push(const_);
-        idx
+        idx as u32
     }
 
-    fn push_opcode(&mut self, code: Opcode) -> usize {
+    fn push_opcode(&mut self, code: Bytecode) -> usize {
         let offset = self.body.len();
         code.serialize(&mut self.body);
         offset
     }
 
     fn set_pos(&mut self, offset: usize, new_offset: usize) {
-        let mut buff = &self.body[offset..offset + 8];
-        let bits = buff.get_u64();
-
+        let orig = Bytecode::deserialize(&self.body[offset..offset + 8]);
+        let (code1, _) = orig.code2();
         let mut buff = &mut self.body[offset..];
-        buff.put_u64(bits | (new_offset / 16) as u64);
+        let bc = Bytecode::with_code2(orig.op, code1, (new_offset / 8) as u16);
+        bc.serialize(&mut buff);
     }
 
     fn remote_last(&mut self) {
-        self.body.truncate(self.body.len() - 16);
+        self.body.truncate(self.body.len() - 8);
     }
 
-    fn iter(&self) -> impl Iterator<Item = Opcode> + '_ {
-        self.body.chunks_exact(16).map(Opcode::deserialize)
+    fn iter(&self) -> impl Iterator<Item = Bytecode> + '_ {
+        self.body.chunks_exact(8).map(Bytecode::deserialize)
     }
 
     fn push_var(&mut self, span: Span, name: String, init: bool) -> Result<usize, CompileError> {
@@ -204,27 +204,32 @@ impl Compiler {
         arg_count: usize,
     ) -> Result<Fn, CompileError> {
         let idx = self.push_const(Const::Str(name.clone()));
-        let code = Opcode::with_code(Op::CallExtern, idx).at(span);
+        let code = Bytecode::with_code(Op::CallExtern, idx).at(span);
 
         let mut body = BytesMut::new();
         code.serialize(&mut body);
 
-        Ok(Fn::with_body(name, arg_count, body.freeze()))
+        Ok(Fn::with_body(name, arg_count as u32, body.freeze()))
     }
 
-    fn call(&mut self, span: Span, callee: Expr, args: Vec<Expr>) -> Result<Opcode, CompileError> {
+    fn call(
+        &mut self,
+        span: Span,
+        callee: Expr,
+        args: Vec<Expr>,
+    ) -> Result<Bytecode, CompileError> {
         let arg_count = args.len();
         self.expr_list(args)?;
         self.expr(callee)?;
 
         match self.iter().last() {
-            Some(opcode) if self.optimize && opcode.op() == Op::LoadFn => {
-                let opcode = Opcode::with_code2(Op::CallFn, opcode.code() as u32, arg_count as u32)
-                    .at(opcode.span());
+            Some(bc) if self.optimize && bc.op == Op::LoadFn => {
+                let opcode = Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16)
+                    .at(bc.span());
                 self.remote_last();
                 Ok(opcode)
             }
-            _ => Ok(Opcode::with_code(Op::Call, arg_count).at(span)),
+            _ => Ok(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
         }
     }
 
@@ -245,8 +250,8 @@ impl Compiler {
 
     fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), CompileError> {
         let offset = self.push_opcode(match cond {
-            true => Opcode::new(Op::PushJumpIfTrue).at(span),
-            false => Opcode::new(Op::PushJumpIfFalse).at(span),
+            true => Bytecode::new(Op::PushJumpIfTrue).at(span),
+            false => Bytecode::new(Op::PushJumpIfFalse).at(span),
         });
 
         self.expr(rhs)?;
@@ -264,21 +269,21 @@ impl Compiler {
     }
 
     // Load a name based in the following order: var > local > class > func
-    fn load_name(&mut self, span: Span, name: String) -> Result<Opcode, CompileError> {
+    fn load_name(&mut self, span: Span, name: String) -> Result<Bytecode, CompileError> {
         match self.load_var(span, &name) {
             Ok(var) => {
                 check_usage(&name, var)?;
-                Ok(Opcode::with_code(Op::Load, var.id).at(span))
+                Ok(Bytecode::with_code(Op::Load, var.id as u32).at(span))
             }
             Err(e) => match self.load_local(&name) {
                 Some(var) => {
                     check_usage(&name, var)?;
-                    Ok(Opcode::with_code(Op::LoadArg, var.id).at(span))
+                    Ok(Bytecode::with_code(Op::LoadArg, var.id as u32).at(span))
                 }
                 None => match self.classes.iter().position(|c| c.name == name) {
-                    Some(idx) => Ok(Opcode::with_code(Op::LoadClass, idx).at(span)),
+                    Some(idx) => Ok(Bytecode::with_code(Op::LoadClass, idx as u32).at(span)),
                     None => match self.funcs.iter().position(|f| f.name == name) {
-                        Some(idx) => Ok(Opcode::with_code(Op::LoadFn, idx).at(span)),
+                        Some(idx) => Ok(Bytecode::with_code(Op::LoadFn, idx as u32).at(span)),
                         None => Err(e),
                     },
                 },
@@ -292,7 +297,7 @@ impl Compiler {
         op: Option<ast::AssignOp>,
         lhs: Expr,
         mut rhs: Expr,
-    ) -> Result<Opcode, CompileError> {
+    ) -> Result<Bytecode, CompileError> {
         if let Some(op) = op {
             rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
         }
@@ -303,19 +308,19 @@ impl Compiler {
                 var.init = true;
                 let idx = var.id;
                 self.expr(rhs)?;
-                Opcode::with_code(Op::Store, idx).at(span)
+                Bytecode::with_code(Op::Store, idx as u32).at(span)
             }
             ExprKind::Member(object, member) => {
                 self.expr(*object)?;
                 self.expr(rhs)?;
                 let idx = self.push_const(Const::Str(member));
-                Opcode::with_code(Op::StoreMember, idx).at(span)
+                Bytecode::with_code(Op::StoreMember, idx).at(span)
             }
             ExprKind::CompMember(object, index) => {
                 self.expr(*object)?;
                 self.expr(*index)?;
                 self.expr(rhs)?;
-                Opcode::new(Op::StoreElement).at(span)
+                Bytecode::new(Op::StoreElement).at(span)
             }
             _ => unimplemented!(),
         })
@@ -325,7 +330,7 @@ impl Compiler {
         &mut self,
         begin: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
-    ) -> Result<Opcode, CompileError> {
+    ) -> Result<Bytecode, CompileError> {
         let mut code = 0;
 
         if let Some(begin) = begin {
@@ -338,7 +343,7 @@ impl Compiler {
             self.expr(*end)?;
         }
 
-        Ok(Opcode::with_code(Op::MakeSlice, code))
+        Ok(Bytecode::with_code(Op::MakeSlice, code))
     }
 
     fn expr(&mut self, expr: Expr) -> Result<(), CompileError> {
@@ -347,7 +352,7 @@ impl Compiler {
                 ast::UnaryOp::Not => {
                     let span = expr.span;
                     self.expr(*unary_expr)?;
-                    Opcode::new(Op::UnaryNot).at(span)
+                    Bytecode::new(Op::UnaryNot).at(span)
                 }
             },
             ExprKind::Assign(op, lhs, rhs) => self.assign(expr.span, op, *lhs, *rhs)?,
@@ -355,22 +360,22 @@ impl Compiler {
                 self.expr(*lhs)?;
 
                 let code = match op {
-                    ast::BinaryOp::Add => Opcode::new(Op::Add).at(expr.span),
-                    ast::BinaryOp::Sub => Opcode::new(Op::Sub).at(expr.span),
-                    ast::BinaryOp::Mul => Opcode::new(Op::Mul).at(expr.span),
-                    ast::BinaryOp::Rem => Opcode::new(Op::Rem).at(expr.span),
-                    ast::BinaryOp::Div => Opcode::new(Op::Div).at(expr.span),
-                    ast::BinaryOp::Eq => Opcode::new(Op::Eq).at(expr.span),
-                    ast::BinaryOp::Ne => Opcode::new(Op::Ne).at(expr.span),
-                    ast::BinaryOp::Gt => Opcode::new(Op::Gt).at(expr.span),
-                    ast::BinaryOp::Gte => Opcode::new(Op::Gte).at(expr.span),
-                    ast::BinaryOp::Lt => Opcode::new(Op::Lt).at(expr.span),
-                    ast::BinaryOp::Lte => Opcode::new(Op::Lte).at(expr.span),
+                    ast::BinaryOp::Add => Bytecode::new(Op::Add).at(expr.span),
+                    ast::BinaryOp::Sub => Bytecode::new(Op::Sub).at(expr.span),
+                    ast::BinaryOp::Mul => Bytecode::new(Op::Mul).at(expr.span),
+                    ast::BinaryOp::Rem => Bytecode::new(Op::Rem).at(expr.span),
+                    ast::BinaryOp::Div => Bytecode::new(Op::Div).at(expr.span),
+                    ast::BinaryOp::Eq => Bytecode::new(Op::Eq).at(expr.span),
+                    ast::BinaryOp::Ne => Bytecode::new(Op::Ne).at(expr.span),
+                    ast::BinaryOp::Gt => Bytecode::new(Op::Gt).at(expr.span),
+                    ast::BinaryOp::Gte => Bytecode::new(Op::Gte).at(expr.span),
+                    ast::BinaryOp::Lt => Bytecode::new(Op::Lt).at(expr.span),
+                    ast::BinaryOp::Lte => Bytecode::new(Op::Lte).at(expr.span),
                     ast::BinaryOp::Or => return self.logical(expr.span, *rhs, true),
                     ast::BinaryOp::And => return self.logical(expr.span, *rhs, false),
-                    ast::BinaryOp::BitOr => Opcode::new(Op::BitwiseOr).at(expr.span),
-                    ast::BinaryOp::BitAnd => Opcode::new(Op::BitwiseAnd).at(expr.span),
-                    ast::BinaryOp::Xor => Opcode::new(Op::BitwiseXor).at(expr.span),
+                    ast::BinaryOp::BitOr => Bytecode::new(Op::BitwiseOr).at(expr.span),
+                    ast::BinaryOp::BitAnd => Bytecode::new(Op::BitwiseAnd).at(expr.span),
+                    ast::BinaryOp::Xor => Bytecode::new(Op::BitwiseXor).at(expr.span),
                 };
 
                 self.expr(*rhs)?;
@@ -379,12 +384,12 @@ impl Compiler {
             ExprKind::Array(items) => {
                 let len = items.len();
                 self.expr_list(items)?;
-                Opcode::with_code(Op::MakeArray, len).at(expr.span)
+                Bytecode::with_code(Op::MakeArray, len as u32).at(expr.span)
             }
             ExprKind::Member(object, member) => {
                 self.expr(*object)?;
                 let idx = self.push_const(Const::Str(member));
-                Opcode::with_code(Op::LoadMember, idx).at(expr.span)
+                Bytecode::with_code(Op::LoadMember, idx).at(expr.span)
             }
             ExprKind::CompMember(object, elem) => {
                 self.expr(*object)?;
@@ -394,14 +399,14 @@ impl Compiler {
                     ExprKind::Range(begin, end) => self.slice(begin, end)?,
                     elem => {
                         self.expr(elem.at(span))?;
-                        Opcode::new(Op::LoadElement)
+                        Bytecode::new(Op::LoadElement)
                     }
                 }
                 .at(span)
             }
             ExprKind::Ident(name) => self.load_name(expr.span, name)?,
             ExprKind::Call(callee, args) => self.call(expr.span, *callee, args)?,
-            ExprKind::Literal(lit) => Opcode::with_code(
+            ExprKind::Literal(lit) => Bytecode::with_code(
                 Op::LoadConst,
                 match lit {
                     Literal::Nil => self.push_const(Const::Nil),
@@ -458,13 +463,13 @@ impl Compiler {
             return Err(ErrorKind::DuplicateMethod(name).at(span));
         }
 
-        let func = Fn::new(name.clone(), args.len()).with_method();
+        let func = Fn::new(name.clone(), args.len() as u32).with_method();
         methods.insert(name.clone(), func);
 
         let mut body = self.compile_fn_body(Scope::new(), args, stmts)?;
 
         if name == "init" {
-            Opcode::with_code(Op::ReturnArg, 0).serialize(&mut body);
+            Bytecode::with_code(Op::ReturnArg, 0).serialize(&mut body);
         }
 
         if let Some(method) = methods.get_mut(&name) {
@@ -511,7 +516,7 @@ impl Compiler {
         }
 
         let idx = self.funcs.len();
-        let func = Fn::new(name, args.len());
+        let func = Fn::new(name, args.len() as u32);
 
         self.funcs.push(func);
 
@@ -568,9 +573,9 @@ impl Compiler {
     fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
         let begin = self.offset();
         self.expr(expr)?;
-        let offset = self.push_opcode(Opcode::new(Op::JumpIfFalse).at(span));
+        let offset = self.push_opcode(Bytecode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
-        self.push_opcode(Opcode::with_code(Op::Jump, begin / 16));
+        self.push_opcode(Bytecode::with_code(Op::Jump, (begin as u32) / 8));
         self.set_pos(offset, self.offset());
         self.handle_markers(begin, self.offset());
 
@@ -588,11 +593,11 @@ impl Compiler {
         self.stmt(pre)?;
         let begin = self.offset();
         self.expr(expr)?;
-        let offset = self.push_opcode(Opcode::new(Op::JumpIfFalse).at(span));
+        let offset = self.push_opcode(Bytecode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
         let post_idx = self.offset();
         self.expr(post)?;
-        self.push_opcode(Opcode::with_code(Op::Jump, begin / 16));
+        self.push_opcode(Bytecode::with_code(Op::Jump, (begin as u32) / 8));
         self.set_pos(offset, self.offset());
         self.handle_markers(post_idx, self.offset());
 
@@ -603,7 +608,7 @@ impl Compiler {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
         let end_block_offset = if let Some(expr) = expr {
             self.expr(expr)?;
-            Some(self.push_opcode(Opcode::new(Op::JumpIfFalse)))
+            Some(self.push_opcode(Bytecode::new(Op::JumpIfFalse)))
         } else {
             None
         };
@@ -612,7 +617,7 @@ impl Compiler {
 
         match alt {
             Some(alt) => {
-                let end_stmt_offset = self.push_opcode(Opcode::new(Op::Jump).at(span));
+                let end_stmt_offset = self.push_opcode(Bytecode::new(Op::Jump).at(span));
 
                 if let Some(offset) = end_block_offset {
                     self.set_pos(offset, self.offset());
@@ -635,14 +640,14 @@ impl Compiler {
         match stmt.kind {
             StmtKind::Import(path) => {
                 let idx = self.push_const(Const::Str(path.join("/")));
-                self.push_opcode(Opcode::with_code(Op::Import, idx).at(stmt.span));
+                self.push_opcode(Bytecode::with_code(Op::Import, idx).at(stmt.span));
             }
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
                 if let Some(expr) = expr {
                     let idx = self.push_var(expr.span, name, true)?;
                     self.expr(expr)?;
-                    self.push_opcode(Opcode::with_code(Op::Store, idx).at(stmt.span));
+                    self.push_opcode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
                 } else {
                     self.push_var(stmt.span, name, false)?;
                 }
@@ -652,30 +657,30 @@ impl Compiler {
                 self.expr(expr)?;
 
                 if !assignment {
-                    self.push_opcode(Opcode::new(Op::Discard).at(stmt.span));
+                    self.push_opcode(Bytecode::new(Op::Discard).at(stmt.span));
                 }
             }
             StmtKind::Return(expr) => {
                 self.expr(expr)?;
 
                 match self.iter().last() {
-                    Some(opcode) if self.optimize && opcode.op() == Op::LoadArg => {
+                    Some(opcode) if self.optimize && opcode.op == Op::LoadArg => {
                         self.remote_last();
                         self.push_opcode(
-                            Opcode::with_code(Op::ReturnArg, opcode.code()).at(stmt.span),
+                            Bytecode::with_code(Op::ReturnArg, opcode.code).at(stmt.span),
                         );
                     }
                     _ => {
-                        self.push_opcode(Opcode::new(Op::Return).at(stmt.span));
+                        self.push_opcode(Bytecode::new(Op::Return).at(stmt.span));
                     }
                 }
             }
             StmtKind::Break => {
-                let offset = self.push_opcode(Opcode::new(Op::Jump).at(stmt.span));
+                let offset = self.push_opcode(Bytecode::new(Op::Jump).at(stmt.span));
                 self.markers.push(Marker::End(offset));
             }
             StmtKind::Continue => {
-                let offset = self.push_opcode(Opcode::new(Op::Jump).at(stmt.span));
+                let offset = self.push_opcode(Bytecode::new(Op::Jump).at(stmt.span));
                 self.markers.push(Marker::Begin(offset));
             }
             StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
@@ -708,33 +713,33 @@ impl Compiler {
 
     fn optim_tail_call(&mut self, func: usize, body: &mut [u8]) -> Result<(), CompileError> {
         let mut iter = body
-            .chunks_exact(16)
-            .map(Opcode::deserialize)
+            .chunks_exact(8)
+            .map(Bytecode::deserialize)
             .enumerate()
             .rev();
 
         while let Some((i, code)) = iter.next() {
-            match code.op() {
+            match code.op {
                 Op::Return => continue,
                 Op::CallFn if code.code2().0 as usize == func => {
-                    let mut buff = &mut body[i * 16..];
+                    let mut buff = &mut body[i * 8..];
                     let (_, arg_count) = code.code2();
-                    Opcode::with_code(Op::TailCall, arg_count as usize).serialize(&mut buff);
+                    Bytecode::with_code(Op::TailCall, arg_count as u32).serialize(&mut buff);
                     break;
                 }
                 Op::Call => {
-                    let arg_count = code.code();
+                    let arg_count = code.code;
                     let (i, idx) = match iter.next() {
-                        Some((i, code)) if code.op() == Op::LoadFn => (i, code.code()),
+                        Some((i, code)) if code.op == Op::LoadFn => (i, code.code),
                         _ => break,
                     };
 
-                    if idx != func {
+                    if idx as usize != func {
                         break;
                     }
 
-                    let mut buff = &mut body[i * 16..];
-                    Opcode::with_code(Op::TailCall, arg_count).serialize(&mut buff);
+                    let mut buff = &mut body[i * 8..];
+                    Bytecode::with_code(Op::TailCall, arg_count).serialize(&mut buff);
                     break;
                 }
                 _ => {}
@@ -751,11 +756,11 @@ impl Compiler {
 
         if let Some(func) = scope.fn_id {
             if body
-                .chunks_exact(16)
-                .map(Opcode::deserialize)
-                .filter(|c| match c.op() {
-                    Op::LoadFn => c.code() == func,
-                    Op::CallFn => c.code2().0 == func as u32,
+                .chunks_exact(8)
+                .map(Bytecode::deserialize)
+                .filter(|c| match c.op {
+                    Op::LoadFn => c.code as usize == func,
+                    Op::CallFn => c.code2().0 as usize == func,
                     _ => false,
                 })
                 .count()
@@ -790,33 +795,33 @@ mod tests {
     #[test]
     fn test_push_code() {
         let mut compiler = Compiler::default();
-        let code = Opcode::new(Op::Load).at(Span::default());
+        let code = Bytecode::new(Op::Load).at(Span::default());
         let offset = compiler.push_opcode(code.clone());
 
         assert_eq!(0, offset);
         assert_eq!(code, compiler.iter().last().unwrap());
-        assert_eq!(16, compiler.body.len());
+        assert_eq!(8, compiler.body.len());
 
-        let code2 = Opcode::new(Op::Lt).at(Span::default());
+        let code2 = Bytecode::new(Op::Lt).at(Span::default());
         let offset = compiler.push_opcode(code2.clone());
 
-        assert_eq!(16, offset);
+        assert_eq!(8, offset);
         assert_eq!(code2, compiler.iter().last().unwrap());
-        assert_eq!(32, compiler.body.len());
+        assert_eq!(16, compiler.body.len());
     }
 
     #[test]
     fn test_replace_code() {
         let mut compiler = Compiler::default();
-        let code = Opcode::new(Op::Load).at(Span::default());
+        let code = Bytecode::new(Op::Load).at(Span::default());
         let offset = compiler.push_opcode(code.clone());
 
-        compiler.push_opcode(Opcode::new(Op::Lt).at(Span::default()));
-        compiler.set_pos(offset, 1600);
+        compiler.push_opcode(Bytecode::new(Op::Lt).at(Span::default()));
+        compiler.set_pos(offset, 800);
 
         let code = compiler.iter().next().unwrap();
-        assert_eq!(Op::Load, code.op());
-        assert_eq!(100, code.code());
+        assert_eq!(Op::Load, code.op);
+        assert_eq!(100, code.code);
     }
 
     #[test]
@@ -849,8 +854,8 @@ mod tests {
             .assign(Span::default(), None, ident("n"), expr.clone())
             .unwrap();
 
-        assert_eq!(Op::Store, code.op());
-        assert_eq!(idx, code.code());
+        assert_eq!(Op::Store, code.op);
+        assert_eq!(idx, code.code as usize);
 
         let result = compiler.assign(Span::default(), None, ident("y"), expr);
         assert!(result.is_err());

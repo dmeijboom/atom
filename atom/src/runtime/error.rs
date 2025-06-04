@@ -13,7 +13,7 @@ pub enum ErrorKind {
     #[error("cannot call non-function: {0}")]
     NotCallable(Type),
     #[error("invalid argument count on '{}(..)': expected {}, got: {arg_count}", func.name, func.arg_count)]
-    ArgCountMismatch { arg_count: usize, func: Handle<Fn> },
+    ArgCountMismatch { arg_count: u32, func: Handle<Fn> },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
     #[error("no such attribute '{attribute}' in {}", class.name)]

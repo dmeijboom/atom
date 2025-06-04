@@ -61,7 +61,7 @@ pub struct Instance<const C: usize> {
     module: Module,
     cache: Cache,
     pub consts: [Value; C],
-    pub vars: IntMap<usize, Value>,
+    pub vars: IntMap<u32, Value>,
 }
 
 impl<const C: usize> Trace for Instance<C> {

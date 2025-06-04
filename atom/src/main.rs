@@ -6,10 +6,10 @@ use std::{
 
 use argh::FromArgs;
 use ast::Stmt;
+use bytecode::Bytecode;
 use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
-use opcode::Opcode;
 use runtime::{function::Fn, value::Value, Module, Runtime};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
@@ -19,12 +19,12 @@ use lexer::Lexer;
 use vm::Vm;
 
 mod ast;
+mod bytecode;
 mod compiler;
 mod error;
 mod gc;
 mod instance;
 mod lexer;
-mod opcode;
 mod parser;
 #[cfg(feature = "profiler")]
 mod profiler;
@@ -98,7 +98,7 @@ fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Module, Error> {
     Ok(compiler.compile(program)?)
 }
 
-fn print_opcode(i: usize, opcode: &Opcode, indent: usize) {
+fn print_opcode(i: usize, opcode: &Bytecode, indent: usize) {
     let mut prefix = format!("{}{i}:", " ".repeat(indent * 2));
 
     while prefix.len() < 4 + (indent * 2) {
@@ -112,7 +112,12 @@ fn print_func(f: &Fn, indent: usize) {
     let prefix = " ".repeat(indent * 2);
     println!("{prefix}fn {}:", f.name);
 
-    for (i, opcode) in f.body.chunks_exact(16).map(Opcode::deserialize).enumerate() {
+    for (i, opcode) in f
+        .body
+        .chunks_exact(16)
+        .map(Bytecode::deserialize)
+        .enumerate()
+    {
         print_opcode(i, &opcode, indent + 1);
     }
 }
@@ -142,7 +147,7 @@ fn print_module(module: &Module) {
     for (i, opcode) in module
         .body
         .chunks_exact(16)
-        .map(Opcode::deserialize)
+        .map(Bytecode::deserialize)
         .enumerate()
     {
         print_opcode(i, &opcode, 1);

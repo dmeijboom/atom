@@ -1,10 +1,10 @@
 pub mod ast;
+mod bytecode;
 mod compiler;
 mod error;
 mod gc;
 mod instance;
 mod lexer;
-mod opcode;
 mod parser;
 #[cfg(feature = "profiler")]
 mod profiler;
