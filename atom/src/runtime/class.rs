@@ -1,6 +1,4 @@
-use std::collections::HashMap;
-
-use wyhash2::WyHash;
+use linear_map::LinearMap;
 
 use crate::gc::{Handle, Trace};
 
@@ -10,7 +8,7 @@ use super::{function::Fn, str::Str, value::Value, Name};
 pub struct Class {
     pub name: Name,
     pub init: Option<Handle<Fn>>,
-    pub methods: HashMap<Name, Fn, WyHash>,
+    pub methods: LinearMap<Name, Fn>,
 }
 
 impl Trace for Class {
@@ -26,7 +24,7 @@ impl Class {
         Self {
             name: name.into(),
             init: None,
-            methods: HashMap::with_hasher(WyHash::default()),
+            methods: LinearMap::default(),
         }
     }
 
@@ -37,7 +35,7 @@ impl Class {
 
 pub struct Object {
     pub class: Handle<Class>,
-    pub attrs: HashMap<Handle<Str>, Value, WyHash>,
+    pub attrs: LinearMap<Handle<Str>, Value>,
 }
 
 impl Trace for Object {
@@ -57,7 +55,7 @@ impl Object {
     pub fn new(class: Handle<Class>) -> Self {
         Self {
             class,
-            attrs: HashMap::default(),
+            attrs: LinearMap::default(),
         }
     }
 }

@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use linear_map::LinearMap;
 use nohash_hasher::IntMap;
 use wyhash2::WyHash;
 
@@ -12,7 +13,7 @@ struct Cache {
     functions: Vec<Option<Handle<Fn>>>,
     classes: Vec<Option<Handle<Class>>>,
     classes_by_name: HashMap<String, usize, WyHash>,
-    methods: IntMap<usize, HashMap<String, Handle<Fn>, WyHash>>,
+    methods: IntMap<usize, LinearMap<String, Handle<Fn>>>,
 }
 
 impl Cache {
