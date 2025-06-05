@@ -3,7 +3,7 @@ use std::fmt::Debug;
 use bytes::Bytes;
 
 use crate::{
-    bytecode::{Bytecode, Op},
+    bytecode::{Bytecode, Op, Serializable, Spanned},
     gc::Trace,
 };
 
@@ -46,6 +46,6 @@ impl Fn {
     }
 
     pub fn is_extern(&self) -> bool {
-        matches!(self.body.chunks_exact(8).map(Bytecode::deserialize).next(), Some(c) if c.op == Op::CallExtern)
+        matches!(self.body.chunks_exact(8).map(|mut buff| Spanned::<Bytecode>::deserialize(&mut buff)).next(), Some(c) if c.op == Op::CallExtern)
     }
 }

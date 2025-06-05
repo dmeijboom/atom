@@ -1,7 +1,9 @@
 use std::mem;
 
+use bytes::Buf;
+
 use crate::{
-    bytecode::{Bytecode, Op},
+    bytecode::{Bytecode, Op, Serializable},
     error::SpannedError,
     gc::{Gc, Handle, Trace},
     instance::Instance,
@@ -41,7 +43,7 @@ pub enum Error {
 }
 
 struct Frame {
-    call_site: Span,
+    call_site: usize,
     offset: usize,
     returned: bool,
     instance_id: usize,
@@ -50,7 +52,7 @@ struct Frame {
 }
 
 impl Frame {
-    pub fn new(instance_id: usize, call_site: Span, function: Handle<Fn>) -> Self {
+    pub fn new(instance_id: usize, call_site: usize, function: Handle<Fn>) -> Self {
         Self {
             call_site,
             function,
@@ -63,11 +65,23 @@ impl Frame {
 
     pub fn next(&mut self) -> Option<Bytecode> {
         if self.offset < self.function.body.len() {
-            let code = Bytecode::deserialize(&self.function.body[self.offset..self.offset + 8]);
+            let bc = Bytecode::deserialize(&mut &self.function.body[self.offset..self.offset + 5]);
             self.offset += 8;
-            Some(code)
-        } else {
-            None
+            return Some(bc);
+        }
+
+        None
+    }
+
+    /// Get the span given the assumption that we're already at the next bytecode
+    pub fn span(&self) -> Span {
+        self.span_at(self.offset - 3)
+    }
+
+    pub fn span_at(&self, offset: usize) -> Span {
+        let mut tail = &self.function.body[offset..offset + 3];
+        Span {
+            offset: tail.get_uint(3) as u32,
         }
     }
 }
@@ -101,7 +115,6 @@ pub trait Ffi {
 pub struct Vm<F: Ffi, const C: usize, const S: usize> {
     gc: Gc,
     ffi: F,
-    span: Span,
     frame: Frame,
     stack: Stack<Value, S>,
     call_stack: Vec<Frame>,
@@ -131,7 +144,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
 
         let instance = Instance::new(module, consts);
-        let frame = Frame::new(0, Span::default(), func);
+        let frame = Frame::new(0, 0, func);
 
         Ok(Self {
             gc,
@@ -139,7 +152,6 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             frame,
             instances: vec![instance],
             call_stack: vec![],
-            span: Span::default(),
             stack: Stack::default(),
             #[cfg(feature = "profiler")]
             profiler: crate::profiler::VmProfiler::default(),
@@ -152,13 +164,13 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             right: rhs.ty(),
             op,
         }
-        .at(self.span)
+        .at(self.frame.span())
         .into()
     }
 
     fn unsupported(&self, op: &'static str, lty: Type, rty: Type) -> Error {
         ErrorKind::UnsupportedOp { lty, rty, op }
-            .at(self.span)
+            .at(self.frame.span())
             .into()
     }
 
@@ -235,7 +247,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                     class: object.class.clone(),
                     attribute: member.to_string(),
                 }
-                .at(self.span)
+                .at(self.frame.span())
             })?;
 
         self.stack.push(object.into());
@@ -264,7 +276,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             ty: object.ty(),
             field: member.to_string(),
         }
-        .at(self.span)
+        .at(self.frame.span())
         .into())
     }
 
@@ -298,7 +310,9 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
-            return Err(ErrorKind::TypeMismatch { left, right }.at(self.span).into());
+            return Err(ErrorKind::TypeMismatch { left, right }
+                .at(self.frame.span())
+                .into());
         }
 
         Ok(())
@@ -368,7 +382,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         match callee.ty() {
             Type::Fn => self.fn_call(callee.func(), arg_count),
             Type::Class => self.init_class(callee.class(), arg_count),
-            ty => Err(ErrorKind::NotCallable(ty).at(self.span).into()),
+            ty => Err(ErrorKind::NotCallable(ty).at(self.frame.span()).into()),
         }
     }
 
@@ -378,11 +392,11 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
 
         if num_args != f.arg_count {
             return Err(ErrorKind::ArgCountMismatch { func: f, arg_count }
-                .at(self.span)
+                .at(self.frame.span())
                 .into());
         }
 
-        let frame = Frame::new(self.frame.instance_id, self.span, f);
+        let frame = Frame::new(self.frame.instance_id, self.frame.offset, f);
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
         self.frame.locals = self.stack.slice_to_end(num_args as usize);
@@ -447,7 +461,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         let to = to.map(|v| array_idx(v, array.len())).unwrap_or(array.len());
 
         if to > array.len() || to < from {
-            return Err(ErrorKind::IndexOutOfBounds(to).at(self.span).into());
+            return Err(ErrorKind::IndexOutOfBounds(to).at(self.frame.span()).into());
         }
 
         let new_array = self.gc.alloc(array.slice(from, to))?;
@@ -480,7 +494,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 *elem = value;
                 Ok(())
             }
-            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
+            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.frame.span()).into()),
         }
     }
 
@@ -492,7 +506,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 self.stack.push(elem);
                 Ok(())
             }
-            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.span).into()),
+            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.frame.span()).into()),
         }
     }
 
@@ -618,8 +632,6 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
 
     fn eval(&mut self) -> Result<(), Error> {
         while let Some(bc) = self.frame.next() {
-            self.span = bc.span();
-
             #[cfg(feature = "profiler")]
             self.profiler.enter_instruction(bc.op);
 
@@ -680,7 +692,16 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 let mut stack_trace = call_stack
                     .into_iter()
                     .rev()
-                    .map(|s| Call::new(s.call_site, s.function))
+                    .map(|frame| {
+                        Call::new(
+                            if frame.call_site == 0 {
+                                Span::default()
+                            } else {
+                                frame.span_at(frame.call_site)
+                            },
+                            frame.function,
+                        )
+                    })
                     .collect::<Vec<_>>();
 
                 stack_trace.reverse();

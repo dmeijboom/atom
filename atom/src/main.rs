@@ -6,7 +6,7 @@ use std::{
 
 use argh::FromArgs;
 use ast::Stmt;
-use bytecode::Bytecode;
+use bytecode::{Bytecode, Serializable, Spanned};
 use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
@@ -114,8 +114,8 @@ fn print_func(f: &Fn, indent: usize) {
 
     for (i, opcode) in f
         .body
-        .chunks_exact(16)
-        .map(Bytecode::deserialize)
+        .chunks_exact(8)
+        .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
         .enumerate()
     {
         print_opcode(i, &opcode, indent + 1);
@@ -146,8 +146,8 @@ fn print_module(module: &Module) {
 
     for (i, opcode) in module
         .body
-        .chunks_exact(16)
-        .map(Bytecode::deserialize)
+        .chunks_exact(8)
+        .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
         .enumerate()
     {
         print_opcode(i, &opcode, 1);
