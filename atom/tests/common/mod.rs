@@ -4,8 +4,8 @@ mod tests {
     use std::{fs, sync::mpsc::Sender};
 
     use atom::{
-        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Module, Parser, Trace, Value,
-        Vm, VmError,
+        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Module, Parser, Value, Vm,
+        VmError,
     };
 
     const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");

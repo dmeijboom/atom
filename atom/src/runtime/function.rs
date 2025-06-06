@@ -2,10 +2,7 @@ use std::fmt::Debug;
 
 use bytes::Bytes;
 
-use crate::{
-    bytecode::{Bytecode, Op, Serializable, Spanned},
-    gc::Trace,
-};
+use crate::gc::Trace;
 
 use super::Name;
 
@@ -15,6 +12,7 @@ pub struct Fn {
     pub body: Bytes,
     pub method: bool,
     pub arg_count: u32,
+    pub instance_id: usize,
 }
 
 impl Trace for Fn {
@@ -28,6 +26,7 @@ impl Fn {
             arg_count,
             method: false,
             body: Bytes::default(),
+            instance_id: 0,
         }
     }
 
@@ -37,15 +36,12 @@ impl Fn {
             arg_count,
             method: false,
             body,
+            instance_id: 0,
         }
     }
 
     pub fn with_method(mut self) -> Self {
         self.method = true;
         self
-    }
-
-    pub fn is_extern(&self) -> bool {
-        matches!(self.body.chunks_exact(8).map(|mut buff| Spanned::<Bytecode>::deserialize(&mut buff)).next(), Some(c) if c.op == Op::CallExtern)
     }
 }

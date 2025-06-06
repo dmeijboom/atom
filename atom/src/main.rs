@@ -123,7 +123,7 @@ fn print_func(f: &Fn, indent: usize) {
 }
 
 fn print_module(module: &Module) {
-    for class in module.classes.iter().filter(|c| !c.is_extern()) {
+    for class in module.classes.iter() {
         println!("class {}:", class.name);
 
         for (i, f) in class.methods.values().enumerate() {
@@ -137,7 +137,7 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for f in module.functions.iter().filter(|f| !f.is_extern()) {
+    for f in module.functions.iter() {
         print_func(f, 0);
         println!();
     }

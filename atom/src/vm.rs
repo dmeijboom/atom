@@ -150,7 +150,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
             consts[i] = const_.into_value(&mut gc)?;
         }
 
-        let instance = Instance::new(module, consts);
+        let instance = Instance::new(0, module, consts);
         let frame = Frame::new(0, 0, func);
 
         Ok(Self {
@@ -399,7 +399,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 .into());
         }
 
-        let frame = Frame::new(self.frame.instance_id, self.frame.offset, f);
+        let frame = Frame::new(f.instance_id, self.frame.offset, f);
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
         self.frame.locals = self.stack.slice_to_end(num_args as usize);

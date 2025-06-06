@@ -31,10 +31,6 @@ impl Class {
             methods: LinearMap::default(),
         }
     }
-
-    pub fn is_extern(&self) -> bool {
-        self.methods.values().all(|f| f.is_extern())
-    }
 }
 
 pub struct Object {

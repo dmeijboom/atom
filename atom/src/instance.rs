@@ -50,6 +50,7 @@ impl Trace for Cache {
 }
 
 pub struct Instance<const C: usize> {
+    id: usize,
     module: Module,
     cache: Cache,
     pub consts: [Value; C],
@@ -67,8 +68,9 @@ impl<const C: usize> Trace for Instance<C> {
 }
 
 impl<const C: usize> Instance<C> {
-    pub fn new(module: Module, consts: [Value; C]) -> Self {
+    pub fn new(id: usize, module: Module, consts: [Value; C]) -> Self {
         Self {
+            id,
             vars: IntMap::default(),
             cache: Cache::new(&module),
             consts,
@@ -95,7 +97,8 @@ impl<const C: usize> Instance<C> {
             None => {
                 let mut class = self.module.classes[idx].clone();
 
-                if let Some(init) = class.methods.remove("init") {
+                if let Some(mut init) = class.methods.remove("init") {
+                    init.instance_id = self.id;
                     let handle = gc.alloc(init)?;
                     class.init = Some(handle);
                 }
@@ -112,7 +115,9 @@ impl<const C: usize> Instance<C> {
         match &self.cache.functions[idx] {
             Some(handle) => Ok(Handle::clone(handle)),
             None => {
-                let func = self.module.functions[idx].clone();
+                let mut func = self.module.functions[idx].clone();
+                func.instance_id = self.id;
+
                 let handle = gc.alloc(func)?;
                 self.cache.functions[idx] = Some(Handle::clone(&handle));
 
