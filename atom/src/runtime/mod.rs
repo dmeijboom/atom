@@ -184,7 +184,7 @@ impl Runtime {
 }
 
 impl Ffi for Runtime {
-    fn call(&self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, vm::Error> {
+    fn call(&mut self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, vm::Error> {
         let handler = match_fn!(
             name,
             [

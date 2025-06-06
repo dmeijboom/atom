@@ -116,7 +116,7 @@ macro_rules! impl_binary {
 }
 
 pub trait Ffi {
-    fn call(&self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, Error>;
+    fn call(&mut self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, Error>;
 }
 
 pub struct Vm<F: Ffi, const C: usize, const S: usize> {
@@ -190,6 +190,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn mark_sweep(&mut self) {
+        self.frame.trace(&mut self.gc);
         self.call_stack
             .iter()
             .for_each(|frame| frame.trace(&mut self.gc));
@@ -609,13 +610,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load(&mut self, idx: u32) {
-        self.stack.push(
-            self.instances[self.frame.instance_id]
-                .vars
-                .get(&idx)
-                .copied()
-                .unwrap_or_default(),
-        );
+        self.stack
+            .push(self.instances[self.frame.instance_id].vars[&idx]);
     }
 
     fn load_const(&mut self, idx: u32) {

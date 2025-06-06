@@ -134,12 +134,37 @@ impl Root {
     }
 }
 
+const CYCLE_TRESHOLD: usize = 1_000_000;
+
+#[derive(Default)]
+struct Generation {
+    allocated: usize,
+    // For some reason a Box<Root> is faster than a Root directly in the lifetime of the GC
+    roots: Vec<Box<Root>>,
+}
+
+impl Generation {
+    fn sweep(&mut self, marked: &IntMap<usize, ()>) {
+        self.roots.retain(|root| {
+            if marked.contains_key(&(root.ptr as usize)) {
+                return true;
+            }
+
+            unsafe {
+                mi_free(root.ptr as *mut c_void);
+            }
+
+            false
+        });
+    }
+}
+
 #[derive(Default)]
 pub struct Gc {
     ready: bool,
     cycle: Cycle,
-    // For some reason a Box<Root> is faster than a Root directly in the lifetime of the GC
-    roots: Vec<Box<Root>>,
+    disabled: bool,
+    gen: Generation,
     marked: IntMap<usize, ()>,
 }
 
@@ -148,19 +173,23 @@ impl Gc {
         self.ready
     }
 
+    #[allow(dead_code)]
+    pub fn disable(&mut self) {
+        self.disabled = true;
+    }
+
     pub fn track<T: Trace + 'static>(&mut self, ptr: NonNull<T>, layout: Layout) -> Handle<T> {
         let handle = Handle::new(ptr);
 
         unsafe {
-            self.roots
+            self.gen
+                .roots
                 .push(Box::new(Root::new(handle.as_ptr() as *mut u8)));
         }
 
+        self.gen.allocated += layout.size();
         self.cycle.allocated += layout.size();
-
-        if !self.ready && self.cycle.allocated >= 1_000_000 {
-            self.ready = true;
-        }
+        self.ready = self.cycle.allocated >= CYCLE_TRESHOLD;
 
         handle
     }
@@ -195,18 +224,12 @@ impl Gc {
     }
 
     pub fn sweep(&mut self) {
+        if self.disabled {
+            return;
+        }
+
+        self.gen.sweep(&self.marked);
         self.cycle.allocated = 0;
-        self.roots.retain(|root| {
-            if self.marked.contains_key(&(root.ptr as usize)) {
-                return true;
-            }
-
-            unsafe {
-                mi_free(root.ptr as *mut c_void);
-            }
-
-            false
-        });
         self.marked.clear();
     }
 }

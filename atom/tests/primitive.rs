@@ -12,7 +12,7 @@ fn int(name: &str, expected: Result<i64, &'static str>) {
     let return_value = common::run(&format!("primitive/int/{name}.atom"));
     assert_eq!(
         return_value
-            .map(|(_, r)| r.map(|r| r.int()))
+            .map(|r| r.map(|value| value.int()))
             .map_err(|e| e.to_string()),
         expected.map(Some).map_err(ToOwned::to_owned)
     );
@@ -26,7 +26,7 @@ fn float(name: &str, expected: Result<f64, &'static str>) {
     let return_value = common::run(&format!("primitive/float/{name}.atom"));
     assert_eq!(
         return_value
-            .map(|(_, r)| r.map(|r| r.float()))
+            .map(|r| r.map(|r| r.float()))
             .map_err(|e| e.to_string()),
         expected.map(Some).map_err(ToOwned::to_owned)
     );

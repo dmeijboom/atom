@@ -1,27 +1,25 @@
 #[cfg(test)]
 #[allow(dead_code)]
 mod tests {
-    use std::{cell::RefCell, fs, rc::Rc};
+    use std::{fs, sync::mpsc::Sender};
 
     use atom::{
-        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Module, Parser, Value, Vm,
-        VmError,
+        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Module, Parser, Trace, Value,
+        Vm, VmError,
     };
 
     const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
 
     pub struct TestRuntime<F: Ffi> {
         fallback: F,
-        return_value: Rc<RefCell<Option<Value>>>,
+        sender: Sender<Value>,
     }
 
     impl<L: Ffi> Ffi for TestRuntime<L> {
-        fn call(&self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, VmError> {
-            if name == "assert" {
-                let return_value = Rc::clone(&self.return_value);
-
-                let value = args.get(0).copied();
-                *return_value.borrow_mut() = Some(value.unwrap_or(Value::NIL));
+        fn call(&mut self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, VmError> {
+            if name == "ret" {
+                gc.disable();
+                let _ = self.sender.send(args[0]);
                 Ok(Value::NIL)
             } else {
                 self.fallback.call(name, gc, args)
@@ -30,11 +28,8 @@ mod tests {
     }
 
     impl<F: Ffi> TestRuntime<F> {
-        fn new(fallback: F, return_value: Rc<RefCell<Option<Value>>>) -> Self {
-            Self {
-                fallback,
-                return_value,
-            }
+        fn new(fallback: F, sender: Sender<Value>) -> Self {
+            Self { fallback, sender }
         }
     }
 
@@ -54,7 +49,7 @@ mod tests {
     }
 
     pub fn compile(name: &str) -> Result<Module, Error> {
-        let mut program = _parse(&[PRELUDE_SOURCE, "\nextern fn assert(value);"].concat())?;
+        let mut program = _parse(&[PRELUDE_SOURCE, "\nextern fn ret(value);"].concat())?;
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
         program.extend(_parse(&source)?);
         let compiler = Compiler::default();
@@ -64,15 +59,14 @@ mod tests {
 
     pub type TestVm = Vm<TestRuntime<Runtime>, 1000, 1000>;
 
-    pub fn run(name: &str) -> Result<(TestVm, Option<Value>), Error> {
+    pub fn run(name: &str) -> Result<Option<Value>, Error> {
         let module = compile(name)?;
-        let return_value = Rc::new(RefCell::new(None));
-        let linker = TestRuntime::new(Runtime::default(), Rc::clone(&return_value));
-        let mut vm = TestVm::with(module, linker)?;
+        let (sender, recv) = std::sync::mpsc::channel();
+        let runtime = TestRuntime::new(Runtime::default(), sender);
+        let mut vm = TestVm::with(module, runtime)?;
         vm.run()?;
 
-        let return_value = return_value.borrow_mut().take();
-        Ok((vm, return_value))
+        Ok(recv.recv().ok())
     }
 }
 
