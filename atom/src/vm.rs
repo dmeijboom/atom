@@ -51,6 +51,13 @@ struct Frame {
     locals: Vec<Value>,
 }
 
+impl Trace for Frame {
+    fn trace(&self, gc: &mut Gc) {
+        gc.mark(&self.function);
+        self.locals.iter().for_each(|v| v.trace(gc));
+    }
+}
+
 impl Frame {
     pub fn new(instance_id: usize, call_site: usize, function: Handle<Fn>) -> Self {
         Self {
@@ -183,13 +190,14 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn mark_sweep(&mut self) {
+        self.call_stack
+            .iter()
+            .for_each(|frame| frame.trace(&mut self.gc));
         self.instances
             .iter()
             .for_each(|instance| instance.trace(&mut self.gc));
         self.stack
             .iter()
-            .chain(self.call_stack.iter().flat_map(|frame| frame.locals.iter()))
-            .chain(self.frame.locals.iter())
             .for_each(|value| value.trace(&mut self.gc));
 
         self.gc.sweep();
@@ -299,13 +307,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn load_arg(&mut self, idx: u32) {
-        self.stack.push(
-            self.frame
-                .locals
-                .get(idx as usize)
-                .copied()
-                .unwrap_or_default(),
-        );
+        self.stack.push(self.frame.locals[idx as usize]);
     }
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {

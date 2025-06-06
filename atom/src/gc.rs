@@ -1,14 +1,14 @@
 use std::{
-    alloc::{alloc_zeroed, dealloc, Layout},
-    collections::HashSet,
+    alloc::Layout,
+    ffi::c_void,
     fmt::Debug,
     hash::Hash,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
 
+use libmimalloc_sys::{mi_free, mi_malloc_aligned, mi_zalloc_aligned};
 use nohash_hasher::IntMap;
-use wyhash2::WyHash;
 
 use crate::{
     lexer::Span,
@@ -37,8 +37,7 @@ impl<T: Trace> Trace for Vec<T> {
     }
 }
 
-pub trait AnyHandle {
-    fn layout(&self) -> Layout;
+pub trait DynHandle {
     fn as_ptr(&self) -> *mut u8;
     fn trace(&self, gc: &mut Gc);
 }
@@ -94,12 +93,6 @@ impl<T: Trace> Handle<T> {
     }
 }
 
-impl<T: Trace + 'static> Handle<T> {
-    pub fn boxed(&self) -> Box<dyn AnyHandle> {
-        Box::new(self.clone())
-    }
-}
-
 impl<T: Trace> Deref for Handle<T> {
     type Target = T;
 
@@ -114,7 +107,7 @@ impl<T: Trace> DerefMut for Handle<T> {
     }
 }
 
-impl<T: Trace> AnyHandle for Handle<T> {
+impl<T: Trace> DynHandle for Handle<T> {
     fn trace(&self, gc: &mut Gc) {
         unsafe {
             self.ptr.as_ref().trace(gc);
@@ -124,22 +117,6 @@ impl<T: Trace> AnyHandle for Handle<T> {
     fn as_ptr(&self) -> *mut u8 {
         self.ptr.as_ptr().cast()
     }
-
-    fn layout(&self) -> Layout {
-        Layout::new::<T>()
-    }
-}
-
-pub fn alloc<T>(layout: Layout) -> Result<*mut T, RuntimeError> {
-    unsafe {
-        let ptr = std::alloc::alloc(layout);
-
-        if ptr.is_null() {
-            return Err(ErrorKind::OutOfMemory.at(Span::default()));
-        }
-
-        Ok(ptr.cast())
-    }
 }
 
 #[derive(Default)]
@@ -147,13 +124,23 @@ struct Cycle {
     allocated: usize,
 }
 
+struct Root {
+    ptr: *mut u8,
+}
+
+impl Root {
+    fn new(ptr: *mut u8) -> Self {
+        Self { ptr }
+    }
+}
+
 #[derive(Default)]
 pub struct Gc {
     ready: bool,
     cycle: Cycle,
-    marked: HashSet<usize, WyHash>,
-    roots: Vec<Box<dyn AnyHandle>>,
-    arrays: IntMap<usize, Layout>,
+    // For some reason a Box<Root> is faster than a Root directly in the lifetime of the GC
+    roots: Vec<Box<Root>>,
+    marked: IntMap<usize, ()>,
 }
 
 impl Gc {
@@ -164,15 +151,15 @@ impl Gc {
     pub fn track<T: Trace + 'static>(&mut self, ptr: NonNull<T>, layout: Layout) -> Handle<T> {
         let handle = Handle::new(ptr);
 
-        self.roots.push(Box::new(Handle::clone(&handle)));
+        unsafe {
+            self.roots
+                .push(Box::new(Root::new(handle.as_ptr() as *mut u8)));
+        }
+
         self.cycle.allocated += layout.size();
 
         if !self.ready && self.cycle.allocated >= 1_000_000 {
             self.ready = true;
-        }
-
-        if layout.size() != std::mem::size_of::<T>() {
-            self.arrays.insert(handle.addr(), layout);
         }
 
         handle
@@ -182,8 +169,9 @@ impl Gc {
         let layout = Layout::new::<T>();
 
         unsafe {
-            let ptr = alloc::<T>(layout)?;
+            let ptr = mi_malloc_aligned(layout.size(), layout.align()).cast::<T>();
             ptr.write(data);
+
             Ok(self.track(NonNull::new_unchecked(ptr), layout))
         }
     }
@@ -196,35 +184,29 @@ impl Gc {
             .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
 
         unsafe {
-            let ptr = alloc_zeroed(layout) as *mut T;
+            let ptr = mi_zalloc_aligned(layout.size(), layout.align()) as *mut T;
             Ok(self.track(NonNull::new_unchecked(ptr), layout))
         }
     }
 
-    pub fn mark(&mut self, handle: impl Into<Box<dyn AnyHandle>>) {
-        let handle = handle.into();
-        self.marked.insert(handle.as_ptr() as usize);
+    pub fn mark(&mut self, handle: &impl DynHandle) {
+        self.marked.insert(handle.as_ptr() as usize, ());
+        handle.trace(self);
     }
 
     pub fn sweep(&mut self) {
         self.cycle.allocated = 0;
         self.roots.retain(|root| {
-            let addr = root.as_ptr() as usize;
-
-            if self.marked.contains(&addr) {
+            if self.marked.contains_key(&(root.ptr as usize)) {
                 return true;
             }
 
             unsafe {
-                dealloc(
-                    root.as_ptr(),
-                    self.arrays.remove(&addr).unwrap_or_else(|| root.layout()),
-                );
+                mi_free(root.ptr as *mut c_void);
             }
 
             false
         });
-
         self.marked.clear();
     }
 }

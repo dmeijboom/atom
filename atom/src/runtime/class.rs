@@ -16,6 +16,10 @@ impl Trace for Class {
         for (_, f) in self.methods.iter() {
             f.trace(gc);
         }
+
+        if let Some(init) = &self.init {
+            gc.mark(init);
+        }
     }
 }
 
@@ -40,13 +44,11 @@ pub struct Object {
 
 impl Trace for Object {
     fn trace(&self, gc: &mut crate::gc::Gc) {
-        self.class.trace(gc);
-        gc.mark(self.class.boxed());
+        gc.mark(&self.class);
 
         for (key, value) in self.attrs.iter() {
-            key.trace(gc);
             value.trace(gc);
-            gc.mark(key.boxed());
+            gc.mark(key);
         }
     }
 }

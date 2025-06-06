@@ -28,6 +28,7 @@ pastey = "0.1.0"
 libc = "0.2.172"
 num_enum = "0.7.3"
 linear-map = "1.2.0"
+libmimalloc-sys = { version = "0.1.42", features = ["extended"] }
 
 [dev-dependencies]
 ron = "0.10.1"

@@ -54,7 +54,7 @@ impl<T: Trace + 'static> Trace for Array<T> {
             item.trace(gc);
         }
 
-        unsafe { gc.mark(self.data.assume_init_ref().boxed()) }
+        unsafe { gc.mark(self.data.assume_init_ref()) }
     }
 }
 

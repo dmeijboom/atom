@@ -4,7 +4,7 @@ use linear_map::LinearMap;
 use nohash_hasher::IntMap;
 use wyhash2::WyHash;
 
-use crate::gc::{AnyHandle, Gc, Handle, Trace};
+use crate::gc::{Gc, Handle, Trace};
 use crate::runtime::{class::Class, function::Fn};
 use crate::vm::Error;
 use crate::{Module, Value};
@@ -35,25 +35,16 @@ impl Cache {
 impl Trace for Cache {
     fn trace(&self, gc: &mut Gc) {
         self.classes.iter().flatten().for_each(|class| {
-            gc.mark(class.boxed());
-            class.trace(gc);
-
-            if let Some(init) = &class.init {
-                gc.mark(init.boxed());
-                init.trace(gc);
-            }
+            gc.mark(class);
         });
-
         self.functions.iter().flatten().for_each(|h| {
-            gc.mark(h.boxed());
-            h.trace(gc);
+            gc.mark(h);
         });
         self.methods
             .values()
             .flat_map(|methods| methods.values())
             .for_each(|h| {
-                gc.mark(h.boxed());
-                h.trace(gc);
+                gc.mark(h);
             });
     }
 }

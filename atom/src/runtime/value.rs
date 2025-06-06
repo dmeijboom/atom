@@ -1,6 +1,6 @@
 use std::fmt::{Debug, Display};
 
-use crate::gc::{AnyHandle, Gc, Handle, Trace};
+use crate::gc::{Gc, Handle, Trace};
 
 use super::{
     array::Array,
@@ -173,22 +173,6 @@ impl Value {
         self == Value::TRUE
     }
 
-    pub fn handle(&self) -> Option<Box<dyn AnyHandle>> {
-        match self.tag() {
-            Tag::Array => Some(Box::new(self.array())),
-            Tag::Str => Some(Box::new(self.str())),
-            Tag::Int => Some(Box::new(self.into_handle::<i64>())),
-            Tag::Object => Some(Box::new(self.object())),
-            Tag::SmallInt
-            | Tag::Float
-            | Tag::True
-            | Tag::False
-            | Tag::Fn
-            | Tag::Class
-            | Tag::Nil => None,
-        }
-    }
-
     pub fn class(self) -> Handle<Class> {
         self.into_handle()
     }
@@ -217,9 +201,14 @@ impl Value {
 
 impl Trace for Value {
     fn trace(&self, gc: &mut Gc) {
-        if let Some(handle) = self.handle() {
-            handle.trace(gc);
-            gc.mark(handle);
+        match self.tag() {
+            Tag::Array => gc.mark(&self.array()),
+            Tag::Str => gc.mark(&self.str()),
+            Tag::Int => gc.mark(&self.into_handle::<i64>()),
+            Tag::Object => gc.mark(&self.object()),
+            Tag::Fn => gc.mark(&self.func()),
+            Tag::Class => gc.mark(&self.class()),
+            Tag::SmallInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
         }
     }
 }
