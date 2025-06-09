@@ -1,5 +1,3 @@
-use std::borrow::Cow;
-
 use bytes::Bytes;
 
 use crate::{
@@ -24,10 +22,8 @@ pub mod function;
 pub mod str;
 pub mod value;
 
-pub type Name = Cow<'static, str>;
-
 #[derive(Debug, Default)]
-pub struct Module {
+pub struct Package {
     pub body: Bytes,
     pub consts: Vec<Const>,
     pub classes: Vec<Class>,

@@ -15,6 +15,11 @@ impl Str {
     pub fn from_string(gc: &mut Gc, s: String) -> Self {
         Self(Array::from_vec(gc, s.into_bytes()))
     }
+
+    pub unsafe fn as_static_str(&self) -> &'static str {
+        let bytes: &'static [u8] = std::mem::transmute(self.0.as_slice());
+        std::str::from_utf8_unchecked(bytes)
+    }
 }
 
 impl Hash for Str {

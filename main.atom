@@ -1,7 +1,2 @@
-class Test {
-    fn init(self) {
-        self.test = 10;
-    }
-}
-
-println(Test().test);
+let name = 10000000000000;
+println(name);

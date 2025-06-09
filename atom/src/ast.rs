@@ -124,10 +124,10 @@ pub enum StmtKind {
     Return(Expr),
     Import(Path),
     For(Expr, Vec<Stmt>),
-    Class(String, Vec<Stmt>),
+    Class(String, Vec<Stmt>, bool),
     Let(String, Option<Expr>),
-    ExternFn(String, Vec<FnArg>),
-    Fn(String, Vec<FnArg>, Vec<Stmt>),
+    ExternFn(String, Vec<FnArg>, bool),
+    Fn(String, Vec<FnArg>, Vec<Stmt>, bool),
     ForCond(Box<Stmt>, Expr, Expr, Vec<Stmt>),
 }
 

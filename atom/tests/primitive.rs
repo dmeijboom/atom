@@ -2,7 +2,6 @@ use test_case::test_case;
 
 mod common;
 
-// @TODO: handle error properly
 #[test_case("basic", Ok(42); "basic integer")]
 #[test_case("negative", Ok(-42); "negative integer")]
 #[test_case("min", Ok(-9_223_372_036_854_775_808); "minimum integer")]

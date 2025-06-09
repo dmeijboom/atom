@@ -1,9 +1,5 @@
-/target*
-
-
-# Added by cargo
-
 /target
 /.devenv.flake.nix
 .devenv
 node_modules
+profile.json.gz

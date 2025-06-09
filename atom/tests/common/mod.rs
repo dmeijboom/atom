@@ -4,7 +4,7 @@ mod tests {
     use std::{fs, sync::mpsc::Sender};
 
     use atom::{
-        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Module, Parser, Value, Vm,
+        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Package, Parser, Value, Vm,
         VmError,
     };
 
@@ -48,7 +48,7 @@ mod tests {
         Ok(program)
     }
 
-    pub fn compile(name: &str) -> Result<Module, Error> {
+    pub fn compile(name: &str) -> Result<Package, Error> {
         let mut program = _parse(&[PRELUDE_SOURCE, "\nextern fn ret(value);"].concat())?;
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
         program.extend(_parse(&source)?);
@@ -57,13 +57,13 @@ mod tests {
         Ok(compiler.compile(program)?)
     }
 
-    pub type TestVm = Vm<TestRuntime<Runtime>, 1000, 1000>;
+    pub type TestVm = Vm<TestRuntime<Runtime>, 1000>;
 
     pub fn run(name: &str) -> Result<Option<Value>, Error> {
         let module = compile(name)?;
         let (sender, recv) = std::sync::mpsc::channel();
         let runtime = TestRuntime::new(Runtime::default(), sender);
-        let mut vm = TestVm::with(module, runtime)?;
+        let mut vm = TestVm::new("".into(), module, runtime)?;
         vm.run()?;
 
         Ok(recv.recv().ok())

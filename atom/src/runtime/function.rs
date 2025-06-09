@@ -1,18 +1,69 @@
-use std::fmt::Debug;
+use std::{borrow::Cow, fmt::Debug};
 
 use bytes::Bytes;
 
 use crate::gc::Trace;
 
-use super::Name;
+#[derive(Default)]
+pub struct FnBuilder {
+    name: Cow<'static, str>,
+    arg_count: u32,
+    public: bool,
+    method: bool,
+    body: Bytes,
+}
+
+impl FnBuilder {
+    pub fn name(mut self, name: impl Into<Cow<'static, str>>) -> Self {
+        self.name = name.into();
+        self
+    }
+
+    pub fn arg_count(mut self, count: u32) -> Self {
+        self.arg_count = count;
+        self
+    }
+
+    pub fn public(mut self, public: bool) -> Self {
+        self.public = public;
+        self
+    }
+
+    pub fn method(mut self, is_method: bool) -> Self {
+        self.method = is_method;
+        self
+    }
+
+    pub fn body(mut self, body: Bytes) -> Self {
+        self.body = body;
+        self
+    }
+
+    pub fn build(self) -> Fn {
+        Fn {
+            name: self.name,
+            arg_count: self.arg_count,
+            public: self.public,
+            method: self.method,
+            body: self.body,
+            inline: Inline::default(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone)]
+pub struct Inline {
+    pub instance: usize,
+}
 
 #[derive(Debug, Default, Clone)]
 pub struct Fn {
-    pub name: Name,
+    pub name: Cow<'static, str>,
     pub body: Bytes,
     pub method: bool,
+    pub public: bool,
     pub arg_count: u32,
-    pub instance_id: usize,
+    pub inline: Inline,
 }
 
 impl Trace for Fn {
@@ -20,28 +71,7 @@ impl Trace for Fn {
 }
 
 impl Fn {
-    pub fn new(name: impl Into<Name>, arg_count: u32) -> Self {
-        Self {
-            name: name.into(),
-            arg_count,
-            method: false,
-            body: Bytes::default(),
-            instance_id: 0,
-        }
-    }
-
-    pub fn with_body(name: impl Into<Name>, arg_count: u32, body: Bytes) -> Self {
-        Self {
-            name: name.into(),
-            arg_count,
-            method: false,
-            body,
-            instance_id: 0,
-        }
-    }
-
-    pub fn with_method(mut self) -> Self {
-        self.method = true;
-        self
+    pub fn builder() -> FnBuilder {
+        FnBuilder::default()
     }
 }

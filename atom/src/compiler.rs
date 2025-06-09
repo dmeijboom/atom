@@ -1,4 +1,5 @@
 use std::{
+    borrow::Cow,
     collections::{HashMap, VecDeque},
     io, mem,
 };
@@ -11,13 +12,15 @@ use crate::{
     bytecode::{Bytecode, Const, Op, Serializable, Spanned},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
-    runtime::{class::Class, function::Fn, Module, Name},
+    runtime::{class::Class, function::Fn, Package},
 };
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
     #[error("unknown name '{0}'")]
     UnknownName(String),
+    #[error("package '{0}' already imported")]
+    DuplicateImport(String),
     #[error("fn '{0}' already exists")]
     DuplicateFn(String),
     #[error("method '{0}' already exists")]
@@ -86,7 +89,7 @@ enum Marker {
     End(usize),
 }
 
-fn check_used(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
+fn check_unused(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
     if let Some((name, var)) = vars
         .iter()
         .filter(|(name, _)| name.as_str() != "self")
@@ -98,7 +101,7 @@ fn check_used(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
     Ok(())
 }
 
-fn check_usage(name: &str, var: &mut Var) -> Result<(), CompileError> {
+fn set_used(name: &str, var: &mut Var) -> Result<(), CompileError> {
     if !var.init {
         return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
     }
@@ -116,6 +119,7 @@ pub struct Compiler {
     funcs: Vec<Fn>,
     classes: Vec<Class>,
     markers: Vec<Marker>,
+    imports: Vec<String>,
     locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
@@ -128,6 +132,7 @@ impl Default for Compiler {
             consts: vec![],
             classes: vec![],
             markers: vec![],
+            imports: vec![],
             optimize: true,
             locals: VecDeque::default(),
             scope: VecDeque::from(vec![Scope::new()]),
@@ -147,7 +152,7 @@ impl Compiler {
 
     fn pop_scope(&mut self) -> Result<Option<Scope>, CompileError> {
         if let Some(scope) = self.scope.pop_front() {
-            check_used(&scope.vars)?;
+            check_unused(&scope.vars)?;
             return Ok(Some(scope));
         }
 
@@ -208,14 +213,21 @@ impl Compiler {
         span: Span,
         name: String,
         arg_count: usize,
+        method: bool,
+        public: bool,
     ) -> Result<Fn, CompileError> {
         let idx = self.push_const(Const::Str(name.clone()));
         let code = Bytecode::with_code(Op::CallExtern, idx).at(span);
-
         let mut body = BytesMut::new();
         code.serialize(&mut body);
 
-        Ok(Fn::with_body(name, arg_count as u32, body.freeze()))
+        Ok(Fn::builder()
+            .name(name)
+            .public(public)
+            .arg_count(arg_count as u32)
+            .method(method)
+            .body(body.freeze())
+            .build())
     }
 
     fn call(
@@ -274,19 +286,19 @@ impl Compiler {
         Ok(())
     }
 
-    // Load a name based in the following order: var > local > class > func
+    // Load a name based in the following order: local > var > class > func
     fn load_name(&mut self, span: Span, name: String) -> Result<Spanned<Bytecode>, CompileError> {
-        match self.load_var(span, &name) {
-            Ok(var) => {
-                check_usage(&name, var)?;
-                Ok(Bytecode::with_code(Op::Load, var.id as u32).at(span))
+        match self.load_local(&name) {
+            Some(var) => {
+                set_used(&name, var)?;
+                Ok(Bytecode::with_code(Op::LoadArg, var.id as u32).at(span))
             }
-            Err(e) => match self.load_local(&name) {
-                Some(var) => {
-                    check_usage(&name, var)?;
-                    Ok(Bytecode::with_code(Op::LoadArg, var.id as u32).at(span))
+            None => match self.load_var(span, &name) {
+                Ok(var) => {
+                    set_used(&name, var)?;
+                    Ok(Bytecode::with_code(Op::Load, var.id as u32).at(span))
                 }
-                None => match self.classes.iter().position(|c| c.name == name) {
+                Err(e) => match self.classes.iter().position(|c| c.name == name) {
                     Some(idx) => Ok(Bytecode::with_code(Op::LoadClass, idx as u32).at(span)),
                     None => match self.funcs.iter().position(|f| f.name == name) {
                         Some(idx) => Ok(Bytecode::with_code(Op::LoadFn, idx as u32).at(span)),
@@ -450,7 +462,7 @@ impl Compiler {
         let scope = self.pop_scope()?;
 
         if let Some(locals) = self.locals.pop_front() {
-            check_used(&locals)?;
+            check_unused(&locals)?;
         }
 
         let body = mem::replace(&mut self.body, previous);
@@ -464,13 +476,21 @@ impl Compiler {
         name: String,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
+        public: bool,
     ) -> Result<(), CompileError> {
         if methods.contains_key(name.as_str()) {
             return Err(ErrorKind::DuplicateMethod(name).at(span));
         }
 
-        let func = Fn::new(name.clone(), args.len() as u32).with_method();
-        methods.insert(name.clone(), func);
+        methods.insert(
+            name.clone(),
+            Fn::builder()
+                .name(name.clone())
+                .arg_count(args.len() as u32)
+                .method(true)
+                .public(public)
+                .build(),
+        );
 
         let mut body = self.compile_fn_body(Scope::new(), args, stmts)?;
 
@@ -499,12 +519,13 @@ impl Compiler {
         span: Span,
         name: String,
         args: Vec<FnArg>,
+        public: bool,
     ) -> Result<(), CompileError> {
         if self.funcs.iter().any(|f| f.name == name) {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
-        let func = self.call_extern(span, name, args.len())?;
+        let func = self.call_extern(span, name, args.len(), false, public)?;
         self.funcs.push(func);
 
         Ok(())
@@ -516,15 +537,20 @@ impl Compiler {
         name: String,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
+        public: bool,
     ) -> Result<(), CompileError> {
         if self.funcs.iter().any(|f| f.name == name) {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
         let idx = self.funcs.len();
-        let func = Fn::new(name, args.len() as u32);
-
-        self.funcs.push(func);
+        self.funcs.push(
+            Fn::builder()
+                .name(name)
+                .public(public)
+                .arg_count(args.len() as u32)
+                .build(),
+        );
 
         let body = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
         self.funcs[idx].body = body.freeze();
@@ -537,13 +563,17 @@ impl Compiler {
         span: Span,
         class_name: String,
         methods: Vec<Stmt>,
+        public: bool,
     ) -> Result<(), CompileError> {
         if self.classes.iter().any(|c| c.name == class_name) {
             return Err(ErrorKind::DuplicateClass(class_name).at(span));
         }
 
         let idx = self.classes.len();
-        self.classes.push(Class::new(class_name.clone()));
+        let mut class = Class::new(class_name.clone());
+        class.public = public;
+
+        self.classes.push(class);
 
         let mut funcs = HashMap::with_hasher(WyHash::default());
 
@@ -551,17 +581,21 @@ impl Compiler {
             let span = method.span;
 
             match method.kind {
-                StmtKind::Fn(name, args, stmts) => {
-                    self.method(span, &mut funcs, name, args, stmts)?
+                StmtKind::Fn(name, args, stmts, public) => {
+                    self.method(span, &mut funcs, name, args, stmts, public)?
                 }
-                StmtKind::ExternFn(name, args) => {
+                StmtKind::ExternFn(name, args, public) => {
                     if funcs.contains_key(&name) {
                         return Err(ErrorKind::DuplicateMethod(name).at(span));
                     }
 
-                    let func = self
-                        .call_extern(span, format!("{class_name}.{name}"), args.len())?
-                        .with_method();
+                    let func = self.call_extern(
+                        span,
+                        format!("{class_name}.{name}"),
+                        args.len(),
+                        true,
+                        public,
+                    )?;
                     funcs.insert(name, func);
                 }
                 _ => unreachable!(),
@@ -570,7 +604,7 @@ impl Compiler {
 
         self.classes[idx].methods = funcs
             .into_iter()
-            .map(|(name, func)| (Name::Owned(name), func))
+            .map(|(name, func)| (Cow::Owned(name), func))
             .collect();
 
         Ok(())
@@ -645,8 +679,20 @@ impl Compiler {
     fn stmt(&mut self, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
             StmtKind::Import(path) => {
-                let idx = self.push_const(Const::Str(path.join("/")));
+                let name = path.join("/");
+
+                if self.imports.contains(&name) {
+                    return Err(ErrorKind::DuplicateImport(name).at(stmt.span));
+                }
+
+                self.imports.push(name.clone());
+
+                let idx = self.push_const(Const::Str(name));
                 self.push_bytecode(Bytecode::with_code(Op::Import, idx).at(stmt.span));
+
+                let idx =
+                    self.push_var(stmt.span, path.last().cloned().unwrap_or_default(), true)?;
+                self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
             }
             StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
             StmtKind::Let(name, expr) => {
@@ -689,9 +735,15 @@ impl Compiler {
                 let offset = self.push_bytecode(Bytecode::new(Op::Jump).at(stmt.span));
                 self.markers.push(Marker::Begin(offset));
             }
-            StmtKind::Class(name, methods) => self.class_stmt(stmt.span, name, methods)?,
-            StmtKind::ExternFn(name, args) => self.extern_fn_stmt(stmt.span, name, args)?,
-            StmtKind::Fn(name, args, stmts) => self.fn_stmt(stmt.span, name, args, stmts)?,
+            StmtKind::Class(name, methods, public) => {
+                self.class_stmt(stmt.span, name, methods, public)?
+            }
+            StmtKind::ExternFn(name, args, public) => {
+                self.extern_fn_stmt(stmt.span, name, args, public)?
+            }
+            StmtKind::Fn(name, args, stmts, public) => {
+                self.fn_stmt(stmt.span, name, args, stmts, public)?
+            }
             StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
             StmtKind::ForCond(pre, expr, post, body) => {
                 self.for_cond_stmt(stmt.span, *pre, expr, post, body)?
@@ -781,11 +833,13 @@ impl Compiler {
         Ok(body)
     }
 
-    pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Module, CompileError> {
+    pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Package, CompileError> {
+        // In the root scope, `self` refers to the current package
+        self.push_var(Span::default(), "self".to_string(), true)?;
         self.compile_scoped_body(stmts)?;
         self.pop_scope()?;
 
-        Ok(Module {
+        Ok(Package {
             body: self.body.freeze(),
             consts: self.consts,
             functions: self.funcs,

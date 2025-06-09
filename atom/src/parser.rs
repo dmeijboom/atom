@@ -147,6 +147,13 @@ fn supports_assign(expr: &Expr) -> bool {
     )
 }
 
+fn is_modifier(token: &TokenKind) -> bool {
+    matches!(
+        token,
+        TokenKind::Keyword(keyword) if keyword == "pub" || keyword == "extern"
+    )
+}
+
 pub struct Parser {
     loop_counter: usize,
     tokens: VecDeque<Token>,
@@ -162,6 +169,15 @@ impl Parser {
 
     fn test_keyword(&self, keyword: &str) -> bool {
         matches!(self.peek(), Some(TokenKind::Keyword(ref k)) if k == keyword)
+    }
+
+    fn accept_keyword(&mut self, keyword: &str) -> bool {
+        if self.test_keyword(keyword) {
+            self.advance();
+            return true;
+        }
+
+        false
     }
 
     fn expect_keyword(&mut self, keyword: &str) -> Result<(), ParseError> {
@@ -183,6 +199,19 @@ impl Parser {
 
     fn peek(&self) -> Option<&TokenKind> {
         self.tokens.front().map(|t| &t.kind)
+    }
+
+    fn peek_skip_modifiers(&self) -> Option<&TokenKind> {
+        let mut n = 0;
+
+        while let Some(token) = self.tokens.get(n) {
+            if !is_modifier(&token.kind) {
+                return Some(&token.kind);
+            }
+            n += 1;
+        }
+
+        None
     }
 
     fn peek2(&self) -> Option<&TokenKind> {
@@ -283,9 +312,6 @@ impl Parser {
                 TokenKind::BoolLit(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
                 TokenKind::StringLit(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
                 TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
-                // TokenKind::Keyword(n) if n == "self" => {
-                //     Ok(ExprKind::Ident("self".to_string()).at(token.span))
-                // }
                 TokenKind::Punct("[") => Ok(self.array()?.at(token.span)),
                 TokenKind::Punct("(") => {
                     let lhs = self.expr(Prec::default())?;
@@ -479,24 +505,20 @@ impl Parser {
 
     fn fn_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
-        let is_extern = self.test_keyword("extern");
-        self.advance();
-
-        if is_extern {
-            self.expect_keyword("fn")?;
-        }
-
+        let is_public = self.accept_keyword("pub");
+        let is_extern = self.accept_keyword("extern");
+        self.expect_keyword("fn")?;
         let name = self.ident()?;
         self.expect(TokenKind::Punct("("))?;
         let args = self.arg_list(TokenKind::Punct(")"))?;
 
         if is_extern {
             self.semi()?;
-            return Ok(StmtKind::ExternFn(name, args).at(span));
+            return Ok(StmtKind::ExternFn(name, args, is_public).at(span));
         }
 
         let body = self.block()?;
-        Ok(StmtKind::Fn(name, args, body).at(span))
+        Ok(StmtKind::Fn(name, args, body, is_public).at(span))
     }
 
     fn if_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -509,8 +531,7 @@ impl Parser {
         let mut cur = &mut if_stmt;
 
         loop {
-            if self.test_keyword("elif") {
-                self.advance();
+            if self.accept_keyword("elif") {
                 let expr = self.expr(Prec::Range)?;
                 let body = self.block()?;
 
@@ -520,8 +541,7 @@ impl Parser {
                 continue;
             }
 
-            if self.test_keyword("else") {
-                self.advance();
+            if self.accept_keyword("else") {
                 cur.2 = Some(Box::new(IfStmt(None, self.block()?, None)));
             }
 
@@ -544,17 +564,18 @@ impl Parser {
 
     fn class_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
-        self.advance();
+        let is_public = self.accept_keyword("pub");
+        self.expect_keyword("class")?;
         let name = self.ident()?;
         self.expect(TokenKind::Punct("{"))?;
         let mut methods = vec![];
 
-        while self.test_keyword("fn") || self.test_keyword("extern") {
+        while matches!(self.peek_skip_modifiers(), Some(TokenKind::Keyword(w)) if w == "fn") {
             methods.push(self.fn_stmt()?);
         }
 
         self.expect(TokenKind::Punct("}"))?;
-        Ok(StmtKind::Class(name, methods).at(span))
+        Ok(StmtKind::Class(name, methods, is_public).at(span))
     }
 
     fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -605,21 +626,17 @@ impl Parser {
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, ParseError> {
         let mut stmts = vec![];
 
-        while let Some(token) = self.peek() {
+        while let Some(token) = self.peek_skip_modifiers() {
             let stmt = match token {
-                TokenKind::Keyword(keyword) if keyword == "let" => self.let_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "fn" => self.fn_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "extern" => self.fn_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "if" => self.if_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "for" => self.for_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "class" => self.class_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "return" => self.return_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "import" => self.import_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "break" => self.break_stmt()?,
-                TokenKind::Keyword(keyword) if keyword == "continue" => self.continue_stmt()?,
-                // TokenKind::Keyword(keyword) if keyword != "self" => {
-                //     Err(ErrorKind::UnexpectedKeyword(keyword.to_string()).at(self.span()))?
-                // }
+                TokenKind::Keyword(w) if w == "let" => self.let_stmt()?,
+                TokenKind::Keyword(w) if w == "fn" => self.fn_stmt()?,
+                TokenKind::Keyword(w) if w == "if" => self.if_stmt()?,
+                TokenKind::Keyword(w) if w == "for" => self.for_stmt()?,
+                TokenKind::Keyword(w) if w == "class" => self.class_stmt()?,
+                TokenKind::Keyword(w) if w == "return" => self.return_stmt()?,
+                TokenKind::Keyword(w) if w == "import" => self.import_stmt()?,
+                TokenKind::Keyword(w) if w == "break" => self.break_stmt()?,
+                TokenKind::Keyword(w) if w == "continue" => self.continue_stmt()?,
                 TokenKind::Punct("}") if !global => break,
                 _ => self.expr_stmt()?,
             };

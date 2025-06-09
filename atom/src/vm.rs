@@ -1,6 +1,7 @@
-use std::mem;
+use std::{borrow::Cow, collections::HashMap, mem, path::PathBuf};
 
 use bytes::Buf;
+use wyhash2::WyHash;
 
 use crate::{
     bytecode::{Bytecode, Op, Serializable},
@@ -13,10 +14,12 @@ use crate::{
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
         function::Fn,
+        str::Str,
         value::{self, TryIntoValue, Type, Value},
-        Module,
+        Package,
     },
     stack::Stack,
+    utils,
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {
@@ -36,6 +39,8 @@ pub type FatalError = SpannedError<FatalErrorKind>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
+    #[error("ImportError: {0}")]
+    Import(#[from] Box<crate::Error>),
     #[error("RuntimeError: {0}")]
     Runtime(#[from] RuntimeError),
     #[error("FatalError: {0}")]
@@ -86,6 +91,10 @@ impl Frame {
     }
 
     pub fn span_at(&self, offset: usize) -> Span {
+        if offset >= self.function.body.len() {
+            return self.span_at(self.function.body.len() - 3);
+        }
+
         let mut tail = &self.function.body[offset..offset + 3];
         Span {
             offset: tail.get_uint(3) as u32,
@@ -95,7 +104,7 @@ impl Frame {
 
 macro_rules! impl_binary {
     ($(($name:ident: $op:tt)),+) => {
-        impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
+        impl<F: Ffi, const S: usize> Vm<F, S> {
             $(
                 fn $name(&mut self) -> Result<(), Error> {
                     let (lhs, rhs) = self.stack.operands();
@@ -119,44 +128,67 @@ pub trait Ffi {
     fn call(&mut self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, Error>;
 }
 
-pub struct Vm<F: Ffi, const C: usize, const S: usize> {
+struct Cache {
+    package_class: Handle<Class>,
+    packages: HashMap<String, Handle<Object>, WyHash>,
+}
+
+impl Trace for Cache {
+    fn trace(&self, gc: &mut Gc) {
+        gc.mark(&self.package_class);
+        self.packages.values().for_each(|handle| gc.mark(handle));
+    }
+}
+
+pub struct Vm<F: Ffi, const S: usize> {
     gc: Gc,
     ffi: F,
     frame: Frame,
+    cache: Cache,
+    search_path: PathBuf,
     stack: Stack<Value, S>,
     call_stack: Vec<Frame>,
-    instances: Vec<Instance<C>>,
+    instances: Vec<Instance>,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
 }
 
-impl<F: Ffi, const C: usize, const S: usize> Drop for Vm<F, C, S> {
+impl<F: Ffi, const S: usize> Drop for Vm<F, S> {
     fn drop(&mut self) {
         self.gc.sweep();
     }
 }
 
-impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
-    pub fn with(mut module: Module, ffi: F) -> Result<Self, Error> {
+fn prepare(id: usize, gc: &mut Gc, mut package: Package) -> Result<(Instance, Frame), Error> {
+    let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
+    func.inline.instance = id;
+
+    let consts = mem::take(&mut package.consts)
+        .into_iter()
+        .map(|c| c.into_value(gc))
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let instance = Instance::new(id, package, consts);
+    let frame = Frame::new(id, 0, func);
+
+    Ok((instance, frame))
+}
+
+impl<F: Ffi, const S: usize> Vm<F, S> {
+    pub fn new(search_path: PathBuf, package: Package, ffi: F) -> Result<Self, Error> {
         let mut gc = Gc::default();
-        let func = gc.alloc(Fn {
-            body: mem::take(&mut module.body),
-            ..Fn::default()
-        })?;
-
-        let mut consts = [Value::NIL; C];
-
-        for (i, const_) in mem::take(&mut module.consts).into_iter().enumerate() {
-            consts[i] = const_.into_value(&mut gc)?;
-        }
-
-        let instance = Instance::new(0, module, consts);
-        let frame = Frame::new(0, 0, func);
+        let (mut instance, frame) = prepare(0, &mut gc, package)?;
+        let cache = Cache {
+            packages: HashMap::default(),
+            package_class: instance.get_class_by_name(&mut gc, "Package")?.unwrap(), // @TODO: handle error
+        };
 
         Ok(Self {
             gc,
             ffi,
             frame,
+            cache,
+            search_path,
             instances: vec![instance],
             call_stack: vec![],
             stack: Stack::default(),
@@ -190,6 +222,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     }
 
     fn mark_sweep(&mut self) {
+        self.cache.trace(&mut self.gc);
         self.frame.trace(&mut self.gc);
         self.call_stack
             .iter()
@@ -200,7 +233,6 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         self.stack
             .iter()
             .for_each(|value| value.trace(&mut self.gc));
-
         self.gc.sweep();
     }
 
@@ -226,34 +258,60 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         self.check_type(object.ty(), Type::Object)?;
 
         let mut object = object.object();
-        object.attrs.insert(member, value);
+        let member = unsafe { member.as_static_str() };
+
+        object.attrs.insert(Cow::Borrowed(member), value);
 
         Ok(())
+    }
+
+    fn load_export(&mut self, object: Handle<Object>, member: Handle<Str>) -> Result<(), Error> {
+        let instance_id = object.attrs["instance"].int();
+        let instance = &mut self.instances[instance_id as usize];
+
+        if let Some(handle) = instance.get_fn_by_name(&mut self.gc, member.as_str())? {
+            if handle.public {
+                self.stack.push(handle.into());
+                return Ok(());
+            }
+        }
+
+        if let Some(handle) = instance.get_class_by_name(&mut self.gc, member.as_str())? {
+            if handle.public {
+                self.stack.push(handle.into());
+                return Ok(());
+            }
+        }
+
+        Err(ErrorKind::UnknownAttr {
+            class: Handle::clone(&object.class),
+            attribute: member.to_string(),
+        }
+        .at(self.frame.span())
+        .into())
     }
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
         let member = self.instances[self.frame.instance_id].consts[member].str();
         let object = object.object();
 
-        if object.attrs.is_empty() {
-            return self.load_method(object, member.as_str());
-        }
-
-        match object.attrs.get(&member).copied() {
+        match object.attrs.get(member.as_str()).copied() {
             Some(value) => {
                 self.stack.push(value);
                 Ok(())
             }
+            None if object.class == self.cache.package_class => self.load_export(object, member),
             None => self.load_method(object, member.as_str()),
         }
     }
 
-    fn load_method(&mut self, object: Handle<Object>, member: &str) -> Result<(), Error> {
-        let method = self.instances[self.frame.instance_id]
-            .get_method(&mut self.gc, &object.class, member)?
+    fn load_method(&mut self, mut object: Handle<Object>, member: &str) -> Result<(), Error> {
+        let method = object
+            .class
+            .get_method(&mut self.gc, member)?
             .ok_or_else(|| {
                 ErrorKind::UnknownAttr {
-                    class: object.class.clone(),
+                    class: Handle::clone(&object.class),
                     attribute: member.to_string(),
                 }
                 .at(self.frame.span())
@@ -273,8 +331,8 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
     fn load_field_by_name(&mut self, object: Value, member: &str) -> Result<(), Error> {
         let instance = &mut self.instances[self.frame.instance_id];
 
-        if let Some(class) = instance.get_class_by_name(&mut self.gc, object.ty().name())? {
-            if let Some(method) = instance.get_method(&mut self.gc, &class, member)? {
+        if let Some(mut class) = instance.get_class_by_name(&mut self.gc, object.ty().name())? {
+            if let Some(method) = class.get_method(&mut self.gc, member)? {
                 self.stack.push(object);
                 self.stack.push(method.into());
                 return Ok(());
@@ -399,7 +457,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 .into());
         }
 
-        let frame = Frame::new(f.instance_id, self.frame.offset, f);
+        let frame = Frame::new(f.inline.instance, self.frame.offset, f);
 
         self.call_stack.push(mem::replace(&mut self.frame, frame));
         self.frame.locals = self.stack.slice_to_end(num_args as usize);
@@ -513,8 +571,45 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
         }
     }
 
-    fn import(&mut self, _idx: u32) -> Result<(), Error> {
-        todo!()
+    fn import(&mut self, idx: u32) -> Result<(), Error> {
+        let name = self.instances[self.frame.instance_id].consts[idx as usize].str();
+
+        if let Some(handle) = self.cache.packages.get(name.as_str()) {
+            self.stack.push(Handle::clone(handle).into());
+            return Ok(());
+        }
+
+        let instance_id = self.instances.len();
+        let filename = self
+            .search_path
+            .join("std")
+            .join(format!("{}.atom", name.as_str()));
+        let module = utils::compile(&filename, true).map_err(|e| Error::Import(Box::new(e)))?;
+        let (mut instance, mut frame) = prepare(instance_id, &mut self.gc, module)?;
+        // As this is not a regular function call, make sure we don't push `NIL` to the stack
+        frame.returned = true;
+
+        let class = Handle::clone(&self.cache.package_class);
+        let mut object = Object::new(class);
+        object.attrs.insert(
+            Cow::Borrowed("instance"),
+            instance_id.into_value(&mut self.gc)?,
+        );
+
+        let handle = self.gc.alloc(object)?;
+
+        // Insert the package object as the first variable (which is `self`)
+        instance.vars.insert(0, Handle::clone(&handle).into());
+
+        self.instances.push(instance);
+        self.cache
+            .packages
+            .insert(name.to_string(), Handle::clone(&handle));
+        self.stack.push(handle.into());
+        self.call_stack.push(mem::replace(&mut self.frame, frame));
+        self.gc_tick();
+
+        Ok(())
     }
 
     fn not(&mut self) -> Result<(), Error> {
@@ -707,7 +802,7 @@ impl<F: Ffi, const C: usize, const S: usize> Vm<F, C, S> {
                 e.trace = Some(stack_trace);
                 Error::Runtime(e)
             }
-            Error::Fatal(e) => Error::Fatal(e),
+            e => e,
         }
     }
 

@@ -1,21 +1,14 @@
-use std::{
-    fs,
-    path::{Path, PathBuf},
-    process::exit,
-};
+use std::{path::PathBuf, process::exit};
 
 use argh::FromArgs;
-use ast::Stmt;
 use bytecode::{Bytecode, Serializable, Spanned};
 use error::Error;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
-use runtime::{function::Fn, value::Value, Module, Runtime};
+use runtime::{function::Fn, value::Value, Package, Runtime};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
-use compiler::Compiler;
-use lexer::Lexer;
 use vm::Vm;
 
 mod ast;
@@ -30,18 +23,16 @@ mod parser;
 mod profiler;
 mod runtime;
 mod stack;
+mod utils;
 mod vm;
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
 static GLOBAL: MiMalloc = MiMalloc;
 
-const PRELUDE_SOURCE: &str = include_str!("../std/prelude.atom");
-
 const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
-const MAX_CONST_SIZE: usize = 100000 / size_of::<Value>();
 
-type AtomVm<L> = Vm<L, MAX_STACK_SIZE, MAX_CONST_SIZE>;
+type AtomVm<L> = Vm<L, MAX_STACK_SIZE>;
 
 /// CLI options
 #[derive(FromArgs)]
@@ -80,24 +71,6 @@ struct CompileCmd {
     verbose: bool,
 }
 
-fn parse(source: &str) -> Result<Vec<Stmt>, Error> {
-    let chars = source.chars().collect::<Vec<_>>();
-    let mut lexer = Lexer::new(&chars);
-    let tokens = lexer.lex()?;
-    let parser = parser::Parser::new(tokens);
-
-    Ok(parser.parse()?)
-}
-
-fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Module, Error> {
-    let mut program = parse(PRELUDE_SOURCE)?;
-    let source = fs::read_to_string(source)?;
-    program.extend(parse(&source)?);
-    let compiler = Compiler::default().with_optimize(optimize);
-
-    Ok(compiler.compile(program)?)
-}
-
 fn print_opcode(i: usize, opcode: &Bytecode, indent: usize) {
     let mut prefix = format!("{}{i}:", " ".repeat(indent * 2));
 
@@ -122,8 +95,8 @@ fn print_func(f: &Fn, indent: usize) {
     }
 }
 
-fn print_module(module: &Module) {
-    for class in module.classes.iter() {
+fn print_module(package: &Package) {
+    for class in package.classes.iter() {
         println!("class {}:", class.name);
 
         for (i, f) in class.methods.values().enumerate() {
@@ -137,14 +110,14 @@ fn print_module(module: &Module) {
         println!();
     }
 
-    for f in module.functions.iter() {
+    for f in package.functions.iter() {
         print_func(f, 0);
         println!();
     }
 
     println!("main:");
 
-    for (i, opcode) in module
+    for (i, opcode) in package
         .body
         .chunks_exact(8)
         .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
@@ -168,8 +141,8 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             source,
             no_optimize,
         }) => {
-            let module = compile(source, !no_optimize)?;
-            let mut vm = AtomVm::with(module, Runtime::default())?;
+            let module = utils::compile(source, !no_optimize)?;
+            let mut vm = AtomVm::new("atom".into(), module, Runtime::default())?;
             vm.run()?;
 
             #[cfg(feature = "profiler")]
@@ -192,7 +165,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             verbose,
             no_optimize,
         }) => {
-            let module = compile(source, !no_optimize)?;
+            let module = utils::compile(source, !no_optimize)?;
 
             if verbose {
                 print_module(&module);

@@ -1,0 +1,24 @@
+pub extern fn isDarwin();
+pub extern fn syscall4(arg1, arg2, arg3, arg4);
+
+class Darwin {
+    fn init(self) {
+        self.name = "linux";
+        self.SYS_WRITE = 4;
+    }
+}
+
+class Linux {
+    fn init(self) {
+        self.name = "macos";
+        self.SYS_WRITE = 1;
+    }
+}
+
+if isDarwin() {
+    self.platform = Darwin();
+} else {
+    self.platform = Linux();
+}
+
+self.STDOUT = 1;
