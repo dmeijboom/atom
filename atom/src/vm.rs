@@ -6,14 +6,14 @@ use wyhash2::WyHash;
 use crate::{
     bytecode::{Bytecode, Op, Serializable},
     error::SpannedError,
-    gc::{Gc, Handle, Trace},
+    gc::{Gc, GcStats, Handle, Trace},
     instance::Instance,
     lexer::Span,
     runtime::{
         array::Array,
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
-        function::Fn,
+        function::{Fn, Method},
         str::Str,
         value::{self, TryIntoValue, Type, Value},
         Package,
@@ -50,34 +50,48 @@ pub enum Error {
 struct Frame {
     call_site: usize,
     offset: usize,
-    returned: bool,
-    instance_id: usize,
-    function: Handle<Fn>,
     locals: Vec<Value>,
+    instance: usize,
+    returned: bool,
+    global: bool,
+    handle: Handle<Fn>,
 }
 
 impl Trace for Frame {
     fn trace(&self, gc: &mut Gc) {
-        gc.mark(&self.function);
+        gc.mark(&self.handle);
         self.locals.iter().for_each(|v| v.trace(gc));
     }
 }
 
 impl Frame {
-    pub fn new(instance_id: usize, call_site: usize, function: Handle<Fn>) -> Self {
+    pub fn new(call_site: usize, handle: Handle<Fn>) -> Self {
         Self {
             call_site,
-            function,
             offset: 0,
-            instance_id,
-            returned: false,
             locals: vec![],
+            instance: handle.inline.instance,
+            returned: false,
+            handle,
+            global: false,
+        }
+    }
+
+    pub fn with_global(call_site: usize, handle: Handle<Fn>, instance: usize) -> Self {
+        Self {
+            call_site,
+            offset: 0,
+            locals: vec![],
+            instance,
+            returned: false,
+            handle,
+            global: true,
         }
     }
 
     pub fn next(&mut self) -> Option<Bytecode> {
-        if self.offset < self.function.body.len() {
-            let bc = Bytecode::deserialize(&mut &self.function.body[self.offset..self.offset + 5]);
+        if self.offset < self.handle.body.len() {
+            let bc = Bytecode::deserialize(&mut &self.handle.body[self.offset..self.offset + 5]);
             self.offset += 8;
             return Some(bc);
         }
@@ -91,11 +105,15 @@ impl Frame {
     }
 
     pub fn span_at(&self, offset: usize) -> Span {
-        if offset >= self.function.body.len() {
-            return self.span_at(self.function.body.len() - 3);
+        if offset >= self.handle.body.len() {
+            return self.span_at(self.handle.body.len() - 3);
         }
 
-        let mut tail = &self.function.body[offset..offset + 3];
+        let mut tail = &self.handle.body[if offset == 0 {
+            5..8
+        } else {
+            offset..offset + 3
+        }];
         Span {
             offset: tail.get_uint(3) as u32,
         }
@@ -159,17 +177,15 @@ impl<F: Ffi, const S: usize> Drop for Vm<F, S> {
     }
 }
 
-fn prepare(id: usize, gc: &mut Gc, mut package: Package) -> Result<(Instance, Frame), Error> {
-    let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
-    func.inline.instance = id;
-
+fn root_frame(id: usize, gc: &mut Gc, mut package: Package) -> Result<(Instance, Frame), Error> {
+    let func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
     let consts = mem::take(&mut package.consts)
         .into_iter()
         .map(|c| c.into_value(gc))
         .collect::<Result<Vec<_>, _>>()?;
 
     let instance = Instance::new(id, package, consts);
-    let frame = Frame::new(id, 0, func);
+    let frame = Frame::with_global(id, func, id);
 
     Ok((instance, frame))
 }
@@ -177,7 +193,7 @@ fn prepare(id: usize, gc: &mut Gc, mut package: Package) -> Result<(Instance, Fr
 impl<F: Ffi, const S: usize> Vm<F, S> {
     pub fn new(search_path: PathBuf, package: Package, ffi: F) -> Result<Self, Error> {
         let mut gc = Gc::default();
-        let (mut instance, frame) = prepare(0, &mut gc, package)?;
+        let (mut instance, frame) = root_frame(0, &mut gc, package)?;
         let cache = Cache {
             packages: HashMap::default(),
             package_class: instance.get_class_by_name(&mut gc, "Package")?.unwrap(), // @TODO: handle error
@@ -246,12 +262,13 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
         if object.is_object() {
             self.load_attr(object, idx as usize)
         } else {
-            self.load_field(object, idx as usize)
+            let member = self.instances[self.frame.instance].consts[idx as usize].str();
+            self.load_field(object, member.as_str())
         }
     }
 
     fn store_member(&mut self, member: u32) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance_id].consts[member as usize].str();
+        let member = self.instances[self.frame.instance].consts[member as usize].str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
@@ -292,7 +309,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     }
 
     fn load_attr(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance_id].consts[member].str();
+        let member = self.instances[self.frame.instance].consts[member].str();
         let object = object.object();
 
         match object.attrs.get(member.as_str()).copied() {
@@ -306,7 +323,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     }
 
     fn load_method(&mut self, mut object: Handle<Object>, member: &str) -> Result<(), Error> {
-        let method = object
+        let func = object
             .class
             .get_method(&mut self.gc, member)?
             .ok_or_else(|| {
@@ -316,25 +333,23 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
                 }
                 .at(self.frame.span())
             })?;
+        let method = Method::new(object.into(), func);
+        let handle = self.gc.alloc(method)?;
 
-        self.stack.push(object.into());
-        self.stack.push(method.into());
+        self.stack.push(handle.into());
 
         Ok(())
     }
 
-    fn load_field(&mut self, object: Value, member: usize) -> Result<(), Error> {
-        let handle = self.instances[self.frame.instance_id].consts[member].str();
-        self.load_field_by_name(object, handle.as_str())
-    }
-
-    fn load_field_by_name(&mut self, object: Value, member: &str) -> Result<(), Error> {
-        let instance = &mut self.instances[self.frame.instance_id];
+    fn load_field(&mut self, object: Value, member: &str) -> Result<(), Error> {
+        let instance = &mut self.instances[self.frame.instance];
 
         if let Some(mut class) = instance.get_class_by_name(&mut self.gc, object.ty().name())? {
-            if let Some(method) = class.get_method(&mut self.gc, member)? {
-                self.stack.push(object);
-                self.stack.push(method.into());
+            if let Some(func) = class.get_method(&mut self.gc, member)? {
+                let method = Method::new(object, func);
+                let handle = self.gc.alloc(method)?;
+
+                self.stack.push(handle.into());
                 return Ok(());
             }
         }
@@ -348,13 +363,13 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     }
 
     fn load_class(&mut self, idx: u32) -> Result<(), Error> {
-        let class = self.instances[self.frame.instance_id].get_class(&mut self.gc, idx as usize)?;
+        let class = self.instances[self.frame.instance].get_class(&mut self.gc, idx as usize)?;
         self.stack.push(class.into());
         Ok(())
     }
 
     fn load_fn(&mut self, idx: u32) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, idx as usize)?;
+        let f = self.instances[self.frame.instance].get_fn(&mut self.gc, idx as usize)?;
         self.stack.push(f.into());
         Ok(())
     }
@@ -408,8 +423,10 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
         let handle = self.gc.alloc(object)?;
 
         if let Some(f) = init {
+            let method = Method::new(handle.into(), f);
+            let handle = self.gc.alloc(method)?;
+
             self.stack.push(handle.into());
-            self.stack.push(f.into());
             self.call(arg_count)?;
         } else {
             self.stack.push(handle.into());
@@ -421,7 +438,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     }
 
     fn call_extern(&mut self, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance_id].consts[idx as usize].str();
+        let name = self.instances[self.frame.instance].consts[idx as usize].str();
         let args = mem::take(&mut self.frame.locals);
         let return_value = self.ffi.call(name.as_ref(), &mut self.gc, args)?;
 
@@ -433,7 +450,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     }
 
     fn call_fn(&mut self, (fn_idx, arg_count): (u16, u16)) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance_id].get_fn(&mut self.gc, fn_idx as usize)?;
+        let f = self.instances[self.frame.instance].get_fn(&mut self.gc, fn_idx as usize)?;
         self.fn_call(f, arg_count as u32)
     }
 
@@ -442,32 +459,41 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
 
         match callee.ty() {
             Type::Fn => self.fn_call(callee.func(), arg_count),
+            Type::Method => self.method_call(callee.method(), arg_count),
             Type::Class => self.init_class(callee.class(), arg_count),
             ty => Err(ErrorKind::NotCallable(ty).at(self.frame.span()).into()),
         }
     }
 
-    fn fn_call(&mut self, f: Handle<Fn>, arg_count: u32) -> Result<(), Error> {
-        let is_method = f.method;
-        let num_args = if is_method { arg_count + 1 } else { arg_count };
+    fn method_call(&mut self, method: Handle<Method>, arg_count: u32) -> Result<(), Error> {
+        if arg_count != method.func.arg_count - 1 {
+            return Err(ErrorKind::ArgCountMismatch {
+                func: Handle::clone(&method.func),
+                arg_count,
+            }
+            .at(self.frame.span())
+            .into());
+        }
 
-        if num_args != f.arg_count {
-            return Err(ErrorKind::ArgCountMismatch { func: f, arg_count }
+        let frame = Frame::new(self.frame.offset, Handle::clone(&method.func));
+        self.call_stack.push(mem::replace(&mut self.frame, frame));
+        let locals = self.stack.slice_to_end(arg_count as usize);
+        self.frame.locals = [&[method.recv], &*locals].concat();
+        self.gc_tick();
+
+        Ok(())
+    }
+
+    fn fn_call(&mut self, func: Handle<Fn>, arg_count: u32) -> Result<(), Error> {
+        if arg_count != func.arg_count {
+            return Err(ErrorKind::ArgCountMismatch { func, arg_count }
                 .at(self.frame.span())
                 .into());
         }
 
-        let frame = Frame::new(f.inline.instance, self.frame.offset, f);
-
+        let frame = Frame::new(self.frame.offset, func);
         self.call_stack.push(mem::replace(&mut self.frame, frame));
-        self.frame.locals = self.stack.slice_to_end(num_args as usize);
-
-        // During a method call the receiver and arguments are swapped
-        if is_method && self.frame.locals.len() > 1 {
-            let end = self.frame.locals.len() - 1;
-            self.frame.locals.swap(0, end);
-        }
-
+        self.frame.locals = self.stack.slice_to_end(arg_count as usize).to_vec();
         self.gc_tick();
 
         Ok(())
@@ -476,7 +502,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     fn tail_call(&mut self, arg_count: u32) -> Result<(), Error> {
         self.frame.offset = 0;
         self.frame.returned = false;
-        self.frame.locals = self.stack.slice_to_end(arg_count as usize);
+        self.frame.locals = self.stack.slice_to_end(arg_count as usize).to_vec();
         self.gc_tick();
 
         Ok(())
@@ -484,7 +510,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
 
     fn make_array(&mut self, size: u32) -> Result<(), Error> {
         let array = self.stack.slice_to_end(size as usize);
-        let array = Array::from_vec(&mut self.gc, array);
+        let array = Array::from_vec(&mut self.gc, array.to_vec());
         let handle = self.gc.alloc(array)?;
 
         self.stack.push(handle.into());
@@ -572,7 +598,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
     }
 
     fn import(&mut self, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance_id].consts[idx as usize].str();
+        let name = self.instances[self.frame.instance].consts[idx as usize].str();
 
         if let Some(handle) = self.cache.packages.get(name.as_str()) {
             self.stack.push(Handle::clone(handle).into());
@@ -585,9 +611,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
             .join("std")
             .join(format!("{}.atom", name.as_str()));
         let module = utils::compile(&filename, true).map_err(|e| Error::Import(Box::new(e)))?;
-        let (mut instance, mut frame) = prepare(instance_id, &mut self.gc, module)?;
-        // As this is not a regular function call, make sure we don't push `NIL` to the stack
-        frame.returned = true;
+        let (mut instance, frame) = root_frame(instance_id, &mut self.gc, module)?;
 
         let class = Handle::clone(&self.cache.package_class);
         let mut object = Object::new(class);
@@ -689,7 +713,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
             self.push_int(lhs.int() ^ rhs.int())
         } else if matches!(lhs.ty(), Type::Array | Type::Str) && lhs.ty() == rhs.ty() {
             self.stack.push(rhs);
-            self.load_field_by_name(lhs, "concat")?;
+            self.load_field(lhs, "concat")?;
             self.call(1)?;
 
             Ok(())
@@ -700,18 +724,18 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
 
     fn store(&mut self, idx: u32) -> Result<(), Error> {
         let var = self.stack.pop();
-        self.instances[self.frame.instance_id].vars.insert(idx, var);
+        self.instances[self.frame.instance].vars.insert(idx, var);
         Ok(())
     }
 
     fn load(&mut self, idx: u32) {
         self.stack
-            .push(self.instances[self.frame.instance_id].vars[&idx]);
+            .push(self.instances[self.frame.instance].vars[&idx]);
     }
 
     fn load_const(&mut self, idx: u32) {
         self.stack
-            .push(self.instances[self.frame.instance_id].consts[idx as usize]);
+            .push(self.instances[self.frame.instance].consts[idx as usize]);
     }
 
     fn discard(&mut self) {
@@ -720,7 +744,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
 
     fn ret(&mut self) {
         self.frame.returned = true;
-        self.frame.offset = self.frame.function.body.len();
+        self.frame.offset = self.frame.handle.body.len();
     }
 
     fn eval(&mut self) -> Result<(), Error> {
@@ -784,15 +808,14 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
                 let call_stack = mem::take(&mut self.call_stack);
                 let mut stack_trace = call_stack
                     .into_iter()
-                    .rev()
                     .map(|frame| {
                         Call::new(
-                            if frame.call_site == 0 {
-                                Span::default()
+                            frame.span_at(frame.call_site),
+                            if frame.global {
+                                None
                             } else {
-                                frame.span_at(frame.call_site)
+                                Some(frame.handle)
                             },
-                            frame.function,
                         )
                     })
                     .collect::<Vec<_>>();
@@ -804,6 +827,11 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
             }
             e => e,
         }
+    }
+
+    #[allow(dead_code)]
+    pub fn gc_stats(&self) -> GcStats {
+        self.gc.stats()
     }
 
     #[cfg(feature = "profiler")]
@@ -821,7 +849,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
 
                 match self.call_stack.pop() {
                     Some(frame) => {
-                        if !self.frame.returned {
+                        if !self.frame.returned && !self.frame.global {
                             self.stack.push(Value::NIL);
                         }
 

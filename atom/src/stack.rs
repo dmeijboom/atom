@@ -15,10 +15,10 @@ impl<T: Copy + Default, const N: usize> Default for Stack<T, N> {
 }
 
 impl<T: Copy + Default, const N: usize> Stack<T, N> {
-    pub fn slice_to_end(&mut self, n: usize) -> Vec<T> {
-        let slice = &self.data[self.sp - n..self.sp];
+    pub fn slice_to_end(&mut self, n: usize) -> &mut [T] {
+        let slice = &mut self.data[self.sp - n..self.sp];
         self.sp -= n;
-        slice.to_vec()
+        slice
     }
 
     pub fn operands(&mut self) -> (T, T) {

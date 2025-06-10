@@ -2,14 +2,16 @@ use std::{borrow::Cow, fmt::Debug};
 
 use bytes::Bytes;
 
-use crate::gc::Trace;
+use crate::{
+    gc::{Handle, Trace},
+    Value,
+};
 
 #[derive(Default)]
 pub struct FnBuilder {
     name: Cow<'static, str>,
     arg_count: u32,
     public: bool,
-    method: bool,
     body: Bytes,
 }
 
@@ -29,11 +31,6 @@ impl FnBuilder {
         self
     }
 
-    pub fn method(mut self, is_method: bool) -> Self {
-        self.method = is_method;
-        self
-    }
-
     pub fn body(mut self, body: Bytes) -> Self {
         self.body = body;
         self
@@ -44,7 +41,6 @@ impl FnBuilder {
             name: self.name,
             arg_count: self.arg_count,
             public: self.public,
-            method: self.method,
             body: self.body,
             inline: Inline::default(),
         }
@@ -60,7 +56,6 @@ pub struct Inline {
 pub struct Fn {
     pub name: Cow<'static, str>,
     pub body: Bytes,
-    pub method: bool,
     pub public: bool,
     pub arg_count: u32,
     pub inline: Inline,
@@ -73,5 +68,23 @@ impl Trace for Fn {
 impl Fn {
     pub fn builder() -> FnBuilder {
         FnBuilder::default()
+    }
+}
+
+pub struct Method {
+    pub func: Handle<Fn>,
+    pub recv: Value,
+}
+
+impl Method {
+    pub fn new(recv: Value, func: Handle<Fn>) -> Self {
+        Self { func, recv }
+    }
+}
+
+impl Trace for Method {
+    fn trace(&self, gc: &mut crate::gc::Gc) {
+        gc.mark(&self.func);
+        self.recv.trace(gc);
     }
 }

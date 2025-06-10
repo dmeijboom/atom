@@ -107,6 +107,7 @@ impl Runtime {
             Type::Float => format!("{}", value.float()),
             Type::Bool => format!("{}", value.bool()),
             Type::Fn => format!("{}(..)", value.func().name),
+            Type::Method => format!(".{}(..)", value.func().name),
             Type::Class => value.class().name.to_string(),
             Type::Object => format!("{}{{..}}", value.object().class.name),
             Type::Nil => "<nil>".to_string(),

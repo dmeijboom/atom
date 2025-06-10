@@ -213,7 +213,6 @@ impl Compiler {
         span: Span,
         name: String,
         arg_count: usize,
-        method: bool,
         public: bool,
     ) -> Result<Fn, CompileError> {
         let idx = self.push_const(Const::Str(name.clone()));
@@ -225,7 +224,6 @@ impl Compiler {
             .name(name)
             .public(public)
             .arg_count(arg_count as u32)
-            .method(method)
             .body(body.freeze())
             .build())
     }
@@ -487,7 +485,6 @@ impl Compiler {
             Fn::builder()
                 .name(name.clone())
                 .arg_count(args.len() as u32)
-                .method(true)
                 .public(public)
                 .build(),
         );
@@ -525,7 +522,7 @@ impl Compiler {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
-        let func = self.call_extern(span, name, args.len(), false, public)?;
+        let func = self.call_extern(span, name, args.len(), public)?;
         self.funcs.push(func);
 
         Ok(())
@@ -589,13 +586,8 @@ impl Compiler {
                         return Err(ErrorKind::DuplicateMethod(name).at(span));
                     }
 
-                    let func = self.call_extern(
-                        span,
-                        format!("{class_name}.{name}"),
-                        args.len(),
-                        true,
-                        public,
-                    )?;
+                    let func =
+                        self.call_extern(span, format!("{class_name}.{name}"), args.len(), public)?;
                     funcs.insert(name, func);
                 }
                 _ => unreachable!(),

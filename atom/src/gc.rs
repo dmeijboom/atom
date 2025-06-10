@@ -119,28 +119,25 @@ impl<T: Trace> DynHandle for Handle<T> {
     }
 }
 
-#[derive(Default)]
-struct Cycle {
-    allocated: usize,
-}
-
 struct Root {
     ptr: *mut u8,
+    size: usize,
 }
 
 impl Root {
-    fn new(ptr: *mut u8) -> Self {
-        Self { ptr }
+    fn new(ptr: *mut u8, size: usize) -> Self {
+        Self { ptr, size }
     }
 }
 
-const CYCLE_TRESHOLD: usize = 1_000_000;
+const GEN0_TRESHOLD: usize = 256_000;
+const GEN1_TRESHOLD: usize = 2_000_000;
+const GEN2_TRESHOLD: usize = 10_000_000;
 
 #[derive(Default)]
 struct Generation {
     allocated: usize,
-    // For some reason a Box<Root> is faster than a Root directly in the lifetime of the GC
-    roots: Vec<Box<Root>>,
+    roots: Vec<Root>,
 }
 
 impl Generation {
@@ -150,6 +147,8 @@ impl Generation {
                 return true;
             }
 
+            self.allocated -= root.size;
+
             unsafe {
                 mi_free(root.ptr as *mut c_void);
             }
@@ -157,20 +156,38 @@ impl Generation {
             false
         });
     }
+
+    fn promote(&mut self, other: &mut Generation) {
+        other.roots.append(&mut self.roots);
+        other.allocated += self.allocated;
+        self.allocated = 0;
+    }
+}
+
+#[derive(Default, Clone)]
+pub struct GcStats {
+    pub alloc_count: usize,
 }
 
 #[derive(Default)]
 pub struct Gc {
     ready: bool,
-    cycle: Cycle,
+    stats: GcStats,
     disabled: bool,
-    gen: Generation,
+    gen0: Generation,
+    gen1: Generation,
+    gen2: Generation,
     marked: IntMap<usize, ()>,
 }
 
 impl Gc {
     pub fn ready(&self) -> bool {
         self.ready
+    }
+
+    #[allow(dead_code)]
+    pub fn stats(&self) -> GcStats {
+        self.stats.clone()
     }
 
     #[allow(dead_code)]
@@ -182,14 +199,14 @@ impl Gc {
         let handle = Handle::new(ptr);
 
         unsafe {
-            self.gen
+            self.gen0
                 .roots
-                .push(Box::new(Root::new(handle.as_ptr() as *mut u8)));
+                .push(Root::new(handle.as_ptr() as *mut u8, layout.size()));
         }
 
-        self.gen.allocated += layout.size();
-        self.cycle.allocated += layout.size();
-        self.ready = self.cycle.allocated >= CYCLE_TRESHOLD;
+        self.gen0.allocated += layout.size();
+        self.ready = self.gen0.allocated >= GEN0_TRESHOLD;
+        self.stats.alloc_count += 1;
 
         handle
     }
@@ -228,8 +245,20 @@ impl Gc {
             return;
         }
 
-        self.gen.sweep(&self.marked);
-        self.cycle.allocated = 0;
+        if self.gen0.allocated >= GEN0_TRESHOLD {
+            self.gen0.sweep(&self.marked);
+            self.gen0.promote(&mut self.gen1);
+        }
+
+        if self.gen1.allocated >= GEN1_TRESHOLD {
+            self.gen1.sweep(&self.marked);
+            self.gen1.promote(&mut self.gen2);
+        }
+
+        if self.gen2.allocated >= GEN2_TRESHOLD {
+            self.gen2.sweep(&self.marked);
+        }
+
         self.marked.clear();
     }
 }
@@ -243,7 +272,7 @@ mod tests {
         let mut gc = Gc::default();
         let _handle: Handle<Vec<i64>> = gc.alloc_array(100).unwrap();
 
-        assert_eq!(gc.cycle.allocated, 2400);
+        assert_eq!(gc.gen0.allocated, 2400);
 
         gc.sweep();
     }

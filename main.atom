@@ -1,2 +1,1 @@
-let name = 10000000000000;
-println(name);
+println("hi");

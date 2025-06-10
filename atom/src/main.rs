@@ -147,9 +147,13 @@ fn cmd(opts: Opts) -> Result<(), Error> {
 
             #[cfg(feature = "profiler")]
             {
+                let gc_stats = vm.gc_stats();
                 let report = vm.profiler().report();
 
-                println!("\n-- REPORT (took {:?}) --", report.exec_time);
+                println!(
+                    "\n-- REPORT (took {:?}, {} allocations) --",
+                    report.exec_time, gc_stats.alloc_count
+                );
 
                 for record in report.records {
                     println!(
@@ -190,7 +194,7 @@ fn main() {
         if let Error::Runtime(vm::Error::Runtime(e)) = e {
             if let Some(trace) = e.trace {
                 for call in trace {
-                    eprintln!("  in {} at {}", call, call.span);
+                    eprintln!("{} at {}", call, call.span);
                 }
             }
         }

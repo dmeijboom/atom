@@ -6,7 +6,7 @@ use super::{
     array::Array,
     class::{Class, Object},
     error::RuntimeError,
-    function::Fn,
+    function::{Fn, Method},
     str::Str,
 };
 
@@ -18,6 +18,7 @@ pub enum Tag {
     Float,
     Array,
     Fn,
+    Method,
     Str,
     True,
     False,
@@ -34,6 +35,7 @@ pub enum Type {
     Bool,
     Array,
     Fn,
+    Method,
     Str,
     Nil,
     Class,
@@ -48,6 +50,7 @@ impl Type {
             Type::Bool => "Bool",
             Type::Array => "Array",
             Type::Fn => "Fn",
+            Type::Method => "Method",
             Type::Str => "Str",
             Type::Nil => "Nil",
             Type::Class => "Class",
@@ -104,6 +107,7 @@ impl Value {
             t if t == Tag::False as u64 => Tag::False,
             t if t == Tag::Array as u64 => Tag::Array,
             t if t == Tag::Fn as u64 => Tag::Fn,
+            t if t == Tag::Method as u64 => Tag::Method,
             t if t == Tag::Str as u64 => Tag::Str,
             t if t == Tag::Nil as u64 => Tag::Nil,
             t if t == Tag::Class as u64 => Tag::Class,
@@ -118,6 +122,7 @@ impl Value {
             Tag::Float => Type::Float,
             Tag::Array => Type::Array,
             Tag::Fn => Type::Fn,
+            Tag::Method => Type::Method,
             Tag::Str => Type::Str,
             Tag::True | Tag::False => Type::Bool,
             Tag::Nil => Type::Nil,
@@ -181,6 +186,10 @@ impl Value {
         self.into_handle()
     }
 
+    pub fn method(self) -> Handle<Method> {
+        self.into_handle()
+    }
+
     fn into_handle<T: Trace>(self) -> Handle<T> {
         let addr = self.bits & INT_MASK;
         Handle::from_addr(addr as usize).unwrap()
@@ -207,6 +216,7 @@ impl Trace for Value {
             Tag::Int => gc.mark(&self.into_handle::<i64>()),
             Tag::Object => gc.mark(&self.object()),
             Tag::Fn => gc.mark(&self.func()),
+            Tag::Method => gc.mark(&self.method()),
             Tag::Class => gc.mark(&self.class()),
             Tag::SmallInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
         }
@@ -320,6 +330,12 @@ impl From<Handle<Array<Value>>> for Value {
 impl From<Handle<Fn>> for Value {
     fn from(handle: Handle<Fn>) -> Self {
         Self::new(Tag::Fn, handle.addr() as u64)
+    }
+}
+
+impl From<Handle<Method>> for Value {
+    fn from(handle: Handle<Method>) -> Self {
+        Self::new(Tag::Method, handle.addr() as u64)
     }
 }
 

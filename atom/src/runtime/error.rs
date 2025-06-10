@@ -51,18 +51,21 @@ impl ErrorKind {
 pub struct Call {
     #[allow(dead_code)]
     pub span: Span,
-    pub func: Handle<Fn>,
+    pub func: Option<Handle<Fn>>,
 }
 
 impl Call {
-    pub fn new(span: Span, func: Handle<Fn>) -> Self {
+    pub fn new(span: Span, func: Option<Handle<Fn>>) -> Self {
         Call { span, func }
     }
 }
 
 impl Display for Call {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}(..)", self.func.name)
+        match self.func {
+            Some(ref func) => write!(f, "in function '{}'", func.name),
+            None => write!(f, "in main"),
+        }
     }
 }
 
