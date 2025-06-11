@@ -44,9 +44,9 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
 #[test_case("array_index", 200i64; "array index")]
 #[test_case("array_slice", vec![200i64, 300i64]; "array slice")]
 #[test_case("array_elem_assign", vec![100i64, 400i64, 300i64]; "array assign element")]
-fn runtime(name: &str, expected: impl TryIntoValue) {
+fn runtime(name: &str, expected: impl for<'gc> TryIntoValue<'gc>) {
     let mut gc = Gc::default();
-    let actual = common::run(&format!("runtime/{name}.atom"));
+    let actual = common::run(&mut gc, &format!("runtime/{name}.atom"));
     let actual = actual
         .expect("runtime error")
         .expect("return value not found");

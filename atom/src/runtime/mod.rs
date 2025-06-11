@@ -1,7 +1,4 @@
-use bytes::Bytes;
-
 use crate::{
-    bytecode::Const,
     error::IntoSpanned,
     gc::{Gc, Handle},
     lexer::Span,
@@ -10,7 +7,6 @@ use crate::{
 
 use array::Array;
 use atom_macros::atom_fn;
-use class::Class;
 use error::{ErrorKind, RuntimeError};
 use str::Str;
 use value::{TryIntoValue as _, Type, Value};
@@ -21,14 +17,6 @@ pub mod error;
 pub mod function;
 pub mod str;
 pub mod value;
-
-#[derive(Debug, Default)]
-pub struct Package {
-    pub body: Bytes,
-    pub consts: Vec<Const>,
-    pub classes: Vec<Class>,
-    pub functions: Vec<function::Fn>,
-}
 
 macro_rules! match_fn {
     ($fn:ident, [$($name:ident),+]) => {
@@ -115,39 +103,48 @@ impl Runtime {
     }
 
     #[atom_fn("Array.pop")]
-    fn array_pop(_gc: &mut Gc, mut this: Handle<Array<Value>>) -> Result<Value, RuntimeError> {
+    fn array_pop<'gc>(
+        _gc: &mut Gc<'gc>,
+        mut this: Handle<'gc, Array<'gc, Value<'gc>>>,
+    ) -> Result<Value<'gc>, RuntimeError> {
         this.pop().map_or_else(
-            || Err(ErrorKind::IndexOutOfBounds(0).at(Span::default())),
+            move || Err(ErrorKind::IndexOutOfBounds(0).at(Span::default())),
             Ok,
         )
     }
 
     #[atom_fn("Array.push")]
-    fn array_push(
-        gc: &mut Gc,
-        mut this: Handle<Array<Value>>,
-        item: Value,
+    fn array_push<'gc>(
+        gc: &mut Gc<'gc>,
+        mut this: Handle<'gc, Array<'gc, Value<'gc>>>,
+        item: Value<'gc>,
     ) -> Result<(), RuntimeError> {
         this.push(gc, item)?;
         Ok(())
     }
 
     #[atom_fn("Array.len")]
-    fn array_len(_gc: &mut Gc, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+    fn array_len<'gc>(
+        _gc: &mut Gc<'gc>,
+        this: Handle<'gc, Array<'gc, Value>>,
+    ) -> Result<usize, RuntimeError> {
         Ok(this.len)
     }
 
     #[atom_fn("Array.cap")]
-    fn array_cap(_gc: &mut Gc, this: Handle<Array<Value>>) -> Result<usize, RuntimeError> {
+    fn array_cap<'gc>(
+        _gc: &mut Gc<'gc>,
+        this: Handle<'gc, Array<'gc, Value<'gc>>>,
+    ) -> Result<usize, RuntimeError> {
         Ok(this.cap)
     }
 
     #[atom_fn("Array.concat")]
-    fn array_concat(
-        gc: &mut Gc,
-        this: Handle<Array<Value>>,
-        other: Value,
-    ) -> Result<Handle<Array<Value>>, RuntimeError> {
+    fn array_concat<'gc>(
+        gc: &mut Gc<'gc>,
+        this: Handle<'gc, Array<'gc, Value<'gc>>>,
+        other: Value<'gc>,
+    ) -> Result<Handle<'gc, Array<'gc, Value<'gc>>>, RuntimeError> {
         let array = this.concat(gc, &other.array());
         gc.alloc(array)
     }
@@ -158,7 +155,11 @@ impl Runtime {
     }
 
     #[atom_fn("Str.concat")]
-    fn str_concat(gc: &mut Gc, this: Handle<Str>, other: Value) -> Result<Value, RuntimeError> {
+    fn str_concat<'gc>(
+        gc: &mut Gc<'gc>,
+        this: Handle<'gc, Str>,
+        other: Value<'gc>,
+    ) -> Result<Value<'gc>, RuntimeError> {
         let array = this.0.concat(gc, &other.str().0);
         gc.alloc(Str(array)).map(Value::from)
     }
@@ -180,8 +181,13 @@ impl Runtime {
     }
 }
 
-impl Ffi for Runtime {
-    fn call(&mut self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, vm::Error> {
+impl<'gc> Ffi<'gc> for Runtime {
+    fn call(
+        &mut self,
+        name: &str,
+        gc: &mut Gc<'gc>,
+        args: Vec<Value<'gc>>,
+    ) -> Result<Value<'gc>, vm::Error> {
         let handler = match_fn!(
             name,
             [

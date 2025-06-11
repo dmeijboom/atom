@@ -5,18 +5,18 @@ use crate::{
     runtime::error::RuntimeError,
 };
 
-pub struct Iter<'a, T: Trace> {
+pub struct Iter<'gc, 'a, T: Trace> {
     idx: usize,
-    array: &'a Array<T>,
+    array: &'a Array<'gc, T>,
 }
 
-impl<'a, T: Trace> Iter<'a, T> {
-    pub fn new(array: &'a Array<T>) -> Self {
+impl<'gc, 'a, T: Trace> Iter<'gc, 'a, T> {
+    pub fn new(array: &'a Array<'gc, T>) -> Self {
         Self { idx: 0, array }
     }
 }
 
-impl<'a, T: Trace> Iterator for Iter<'a, T> {
+impl<'gc, 'a, T: Trace> Iterator for Iter<'gc, 'a, T> {
     type Item = &'a T;
 
     fn next(&mut self) -> Option<Self::Item> {
@@ -26,14 +26,14 @@ impl<'a, T: Trace> Iterator for Iter<'a, T> {
     }
 }
 
-pub struct Array<T: Trace> {
-    data: MaybeUninit<Handle<T>>,
+pub struct Array<'gc, T: Trace> {
+    data: MaybeUninit<Handle<'gc, T>>,
     pub len: usize,
     pub cap: usize,
     _marker: PhantomData<[T]>,
 }
 
-impl<T: Trace> Default for Array<T> {
+impl<'gc, T: Trace> Default for Array<'gc, T> {
     fn default() -> Self {
         Self {
             data: MaybeUninit::uninit(),
@@ -44,7 +44,7 @@ impl<T: Trace> Default for Array<T> {
     }
 }
 
-impl<T: Trace + 'static> Trace for Array<T> {
+impl<'gc, T: Trace> Trace for Array<'gc, T> {
     fn trace(&self, gc: &mut Gc) {
         if self.is_empty() {
             return;
@@ -58,7 +58,7 @@ impl<T: Trace + 'static> Trace for Array<T> {
     }
 }
 
-impl<T: Trace> Array<T> {
+impl<'gc, T: Trace> Array<'gc, T> {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
@@ -67,7 +67,7 @@ impl<T: Trace> Array<T> {
         self.len
     }
 
-    pub fn slice(&self, from: usize, to: usize) -> Array<T> {
+    pub fn slice(&self, from: usize, to: usize) -> Array<'gc, T> {
         if self.is_empty() {
             return Array::default();
         }
@@ -96,7 +96,7 @@ impl<T: Trace> Array<T> {
     /// # Safety
     ///
     /// The caller must ensure that the handle is valid.
-    pub unsafe fn from_raw_parts(handle: Handle<T>, len: usize, cap: usize) -> Self {
+    pub unsafe fn from_raw_parts(handle: Handle<'gc, T>, len: usize, cap: usize) -> Self {
         Self {
             data: MaybeUninit::new(handle),
             len,
@@ -137,10 +137,7 @@ impl<T: Trace> Array<T> {
         }
     }
 
-    pub fn from_vec(gc: &mut Gc, data: Vec<T>) -> Self
-    where
-        T: 'static,
-    {
+    pub fn from_vec(gc: &mut Gc<'gc>, data: Vec<T>) -> Self {
         if data.is_empty() {
             return Array::default();
         }
@@ -156,9 +153,9 @@ impl<T: Trace> Array<T> {
         }
     }
 
-    pub fn concat(&self, gc: &mut Gc, other: &Array<T>) -> Self
+    pub fn concat(&self, gc: &mut Gc<'gc>, other: &Array<'gc, T>) -> Self
     where
-        T: Copy + 'static,
+        T: Copy,
     {
         Self::from_vec(
             gc,
@@ -166,9 +163,9 @@ impl<T: Trace> Array<T> {
         )
     }
 
-    pub fn push(&mut self, gc: &mut Gc, item: T) -> Result<(), RuntimeError>
+    pub fn push(&mut self, gc: &mut Gc<'gc>, item: T) -> Result<(), RuntimeError>
     where
-        T: Copy + 'static,
+        T: Copy,
     {
         let (len, cap) = (self.len, self.cap);
 
@@ -216,7 +213,7 @@ impl<T: Trace> Array<T> {
         Some(item)
     }
 
-    pub fn iter(&self) -> Iter<'_, T> {
+    pub fn iter(&self) -> Iter<'gc, '_, T> {
         Iter::new(self)
     }
 }

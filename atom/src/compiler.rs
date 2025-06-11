@@ -4,7 +4,7 @@ use std::{
     io, mem,
 };
 
-use bytes::BytesMut;
+use bytes::{Bytes, BytesMut};
 use wyhash2::WyHash;
 
 use crate::{
@@ -12,8 +12,32 @@ use crate::{
     bytecode::{Bytecode, Const, Op, Serializable, Spanned},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
-    runtime::{class::Class, function::Fn, Package},
+    runtime::function::Fn,
 };
+
+#[derive(Debug, Default)]
+pub struct Class {
+    pub name: Cow<'static, str>,
+    pub public: bool,
+    pub methods: HashMap<Cow<'static, str>, Fn>,
+}
+
+impl Class {
+    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
+        Self {
+            name: name.into(),
+            ..Self::default()
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Package {
+    pub body: Bytes,
+    pub consts: Vec<Const>,
+    pub classes: Vec<Class>,
+    pub functions: Vec<Fn>,
+}
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {

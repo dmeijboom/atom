@@ -5,14 +5,14 @@ use crate::gc::{Gc, Trace};
 
 use super::array::Array;
 
-pub struct Str(pub Array<u8>);
+pub struct Str<'gc>(pub Array<'gc, u8>);
 
-impl Str {
+impl<'gc> Str<'gc> {
     pub fn as_str(&self) -> &str {
         self.as_ref()
     }
 
-    pub fn from_string(gc: &mut Gc, s: String) -> Self {
+    pub fn from_string(gc: &mut Gc<'gc>, s: String) -> Self {
         Self(Array::from_vec(gc, s.into_bytes()))
     }
 
@@ -22,39 +22,39 @@ impl Str {
     }
 }
 
-impl Hash for Str {
+impl<'gc> Hash for Str<'gc> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.as_str().hash(state);
     }
 }
 
-impl Eq for Str {}
+impl<'gc> Eq for Str<'gc> {}
 
-impl PartialEq for Str {
+impl<'gc> PartialEq for Str<'gc> {
     fn eq(&self, other: &Self) -> bool {
         self.as_str() == other.as_str()
     }
 }
 
-impl Debug for Str {
+impl<'gc> Debug for Str<'gc> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "Str(\"{}\")", self.as_str())
     }
 }
 
-impl Display for Str {
+impl<'gc> Display for Str<'gc> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_ref())
     }
 }
 
-impl Trace for Str {
+impl<'gc> Trace for Str<'gc> {
     fn trace(&self, gc: &mut Gc) {
         self.0.trace(gc);
     }
 }
 
-impl AsRef<str> for Str {
+impl<'gc> AsRef<str> for Str<'gc> {
     fn as_ref(&self) -> &str {
         unsafe { std::str::from_utf8_unchecked(self.0.as_slice()) }
     }

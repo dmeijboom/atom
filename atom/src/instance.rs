@@ -4,8 +4,10 @@ use linear_map::LinearMap;
 use nohash_hasher::IntMap;
 use wyhash2::WyHash;
 
+use crate::compiler::Package;
 use crate::gc::{DynHandle, Gc, Handle, Trace};
-use crate::runtime::{class::Class, function::Fn, value::Value, Package};
+use crate::runtime::class::Inline;
+use crate::runtime::{class::Class, function::Fn, value::Value};
 use crate::vm::Error;
 
 struct LazyCache<T> {
@@ -63,13 +65,13 @@ impl<T: Clone> LazyCache<T> {
     }
 }
 
-struct Cache {
-    functions: LazyCache<Handle<Fn>>,
-    classes: LazyCache<Handle<Class>>,
-    methods: LazyCache<HashMap<String, Handle<Fn>, WyHash>>,
+struct Cache<'gc> {
+    functions: LazyCache<Handle<'gc, Fn>>,
+    classes: LazyCache<Handle<'gc, Class<'gc>>>,
+    methods: LazyCache<HashMap<String, Handle<'gc, Fn>, WyHash>>,
 }
 
-impl Cache {
+impl<'gc> Cache<'gc> {
     pub fn new(classes: usize, functions: usize) -> Self {
         Self {
             classes: LazyCache::new(classes),
@@ -79,7 +81,7 @@ impl Cache {
     }
 }
 
-impl Trace for Cache {
+impl<'gc> Trace for Cache<'gc> {
     fn trace(&self, gc: &mut Gc) {
         self.classes.trace(gc);
         self.functions.trace(gc);
@@ -94,15 +96,15 @@ impl Trace for Cache {
     }
 }
 
-pub struct Instance {
+pub struct Instance<'gc> {
     id: usize,
-    cache: Cache,
+    cache: Cache<'gc>,
     package: Package,
-    pub consts: Vec<Value>,
-    pub vars: IntMap<u32, Value>,
+    pub consts: Vec<Value<'gc>>,
+    pub vars: IntMap<u32, Value<'gc>>,
 }
 
-impl Trace for Instance {
+impl<'gc> Trace for Instance<'gc> {
     fn trace(&self, gc: &mut Gc) {
         self.cache.trace(gc);
         self.consts
@@ -112,8 +114,8 @@ impl Trace for Instance {
     }
 }
 
-impl Instance {
-    pub fn new(id: usize, package: Package, consts: Vec<Value>) -> Self {
+impl<'gc> Instance<'gc> {
+    pub fn new(id: usize, package: Package, consts: Vec<Value<'gc>>) -> Self {
         Self {
             id,
             vars: IntMap::default(),
@@ -125,9 +127,9 @@ impl Instance {
 
     pub fn get_class_by_name(
         &mut self,
-        gc: &mut Gc,
+        gc: &mut Gc<'gc>,
         name: &str,
-    ) -> Result<Option<Handle<Class>>, Error> {
+    ) -> Result<Option<Handle<'gc, Class<'gc>>>, Error> {
         match self.cache.classes.lookup(name, || {
             self.package.classes.iter().position(|c| c.name == name)
         }) {
@@ -136,22 +138,42 @@ impl Instance {
         }
     }
 
-    pub fn get_class(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Class>, Error> {
+    pub fn get_class(
+        &mut self,
+        gc: &mut Gc<'gc>,
+        idx: usize,
+    ) -> Result<Handle<'gc, Class<'gc>>, Error> {
         self.cache.classes.get_or_insert(idx, || {
-            let mut class = self.package.classes[idx].clone();
-
-            if let Some(mut init) = class.methods.remove("init") {
-                init.inline.instance = self.id;
-                let handle = gc.alloc(init)?;
-                class.init = Some(handle);
-            }
+            let orig = &mut self.package.classes[idx];
+            let class = Class {
+                name: orig.name.clone(),
+                public: orig.public,
+                inline: Inline::default(),
+                init: orig
+                    .methods
+                    .remove("init")
+                    .map(|mut init| {
+                        init.inline.instance = self.id;
+                        gc.alloc(init)
+                    })
+                    .transpose()?,
+                methods: orig
+                    .methods
+                    .iter()
+                    .map(|(name, func)| (name.clone(), func.clone()))
+                    .collect(),
+            };
 
             let handle = gc.alloc(class)?;
             Ok(handle)
         })
     }
 
-    pub fn get_fn_by_name(&mut self, gc: &mut Gc, name: &str) -> Result<Option<Handle<Fn>>, Error> {
+    pub fn get_fn_by_name(
+        &mut self,
+        gc: &mut Gc<'gc>,
+        name: &str,
+    ) -> Result<Option<Handle<'gc, Fn>>, Error> {
         match self.cache.functions.lookup(name, || {
             self.package.functions.iter().position(|f| f.name == name)
         }) {
@@ -160,7 +182,7 @@ impl Instance {
         }
     }
 
-    pub fn get_fn(&mut self, gc: &mut Gc, idx: usize) -> Result<Handle<Fn>, Error> {
+    pub fn get_fn(&mut self, gc: &mut Gc<'gc>, idx: usize) -> Result<Handle<'gc, Fn>, Error> {
         self.cache.functions.get_or_insert(idx, || {
             let mut func = self.package.functions[idx].clone();
             func.inline.instance = self.id;

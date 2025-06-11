@@ -1,4 +1,7 @@
-use std::fmt::{Debug, Display};
+use std::{
+    fmt::{Debug, Display},
+    marker::PhantomData,
+};
 
 use crate::gc::{Gc, Handle, Trace};
 
@@ -71,11 +74,12 @@ const TAG_MASK: u64 = 0b1111 << 48;
 pub const INT_MASK: u64 = 0xffff_ffff_ffff;
 
 #[derive(Clone, Copy)]
-pub struct Value {
+pub struct Value<'gc> {
     bits: u64,
+    _phantom: PhantomData<&'gc ()>,
 }
 
-impl Value {
+impl<'gc> Value<'gc> {
     pub const FALSE: Self = Self::new_primitive(Tag::False);
     pub const TRUE: Self = Self::new_primitive(Tag::True);
     const NAN: Self = Self::new_primitive(Tag::Float);
@@ -134,12 +138,14 @@ impl Value {
     const fn new_primitive(tag: Tag) -> Self {
         Self {
             bits: (tag as u64) << 48 | SIG_NAN,
+            _phantom: PhantomData,
         }
     }
 
     const fn new(tag: Tag, value: u64) -> Self {
         Self {
             bits: (tag as u64) << 48 | SIG_NAN | value,
+            _phantom: PhantomData,
         }
     }
 
@@ -178,37 +184,37 @@ impl Value {
         self == Value::TRUE
     }
 
-    pub fn class(self) -> Handle<Class> {
+    pub fn class(self) -> Handle<'gc, Class<'gc>> {
         self.into_handle()
     }
 
-    pub fn func(self) -> Handle<Fn> {
+    pub fn func(self) -> Handle<'gc, Fn> {
         self.into_handle()
     }
 
-    pub fn method(self) -> Handle<Method> {
+    pub fn method(self) -> Handle<'gc, Method<'gc>> {
         self.into_handle()
     }
 
-    fn into_handle<T: Trace>(self) -> Handle<T> {
+    fn into_handle<T: Trace>(self) -> Handle<'gc, T> {
         let addr = self.bits & INT_MASK;
         Handle::from_addr(addr as usize).unwrap()
     }
 
-    pub fn object(self) -> Handle<Object> {
+    pub fn object(self) -> Handle<'gc, Object<'gc>> {
         self.into_handle()
     }
 
-    pub fn str(self) -> Handle<Str> {
+    pub fn str(self) -> Handle<'gc, Str<'gc>> {
         self.into_handle()
     }
 
-    pub fn array(self) -> Handle<Array<Value>> {
+    pub fn array(self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
         self.into_handle()
     }
 }
 
-impl Trace for Value {
+impl<'gc> Trace for Value<'gc> {
     fn trace(&self, gc: &mut Gc) {
         match self.tag() {
             Tag::Array => gc.mark(&self.array()),
@@ -223,19 +229,19 @@ impl Trace for Value {
     }
 }
 
-impl PartialEq for Value {
+impl<'gc> PartialEq for Value<'gc> {
     fn eq(&self, other: &Self) -> bool {
         self.bits == other.bits
     }
 }
 
-impl Default for Value {
+impl<'gc> Default for Value<'gc> {
     fn default() -> Self {
         Self::NIL
     }
 }
 
-impl Display for Value {
+impl<'gc> Display for Value<'gc> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.ty() {
             Type::Int => write!(f, "{}", self.int()),
@@ -259,7 +265,7 @@ impl Display for Value {
 #[error("integer overflow")]
 pub struct IntOverflowError;
 
-impl TryFrom<i64> for Value {
+impl<'gc> TryFrom<i64> for Value<'gc> {
     type Error = IntOverflowError;
 
     fn try_from(value: i64) -> Result<Self, Self::Error> {
@@ -271,15 +277,16 @@ impl TryFrom<i64> for Value {
     }
 }
 
-impl From<f64> for Value {
+impl<'gc> From<f64> for Value<'gc> {
     fn from(value: f64) -> Self {
         Self {
             bits: value.to_bits(),
+            _phantom: PhantomData,
         }
     }
 }
 
-impl From<bool> for Value {
+impl<'gc> From<bool> for Value<'gc> {
     fn from(value: bool) -> Self {
         if value {
             Self::TRUE
@@ -289,7 +296,7 @@ impl From<bool> for Value {
     }
 }
 
-impl TryFrom<usize> for Value {
+impl<'gc> TryFrom<usize> for Value<'gc> {
     type Error = IntOverflowError;
 
     fn try_from(value: usize) -> Result<Self, Self::Error> {
@@ -297,78 +304,78 @@ impl TryFrom<usize> for Value {
     }
 }
 
-impl From<Handle<Object>> for Value {
-    fn from(object: Handle<Object>) -> Self {
+impl<'gc> From<Handle<'gc, Object<'gc>>> for Value<'gc> {
+    fn from(object: Handle<'gc, Object>) -> Self {
         Self::new(Tag::Object, object.addr() as u64)
     }
 }
 
-impl From<Handle<Class>> for Value {
-    fn from(handle: Handle<Class>) -> Self {
+impl<'gc> From<Handle<'gc, Class<'gc>>> for Value<'gc> {
+    fn from(handle: Handle<'gc, Class<'gc>>) -> Self {
         Self::new(Tag::Class, handle.addr() as u64)
     }
 }
 
-impl From<Handle<i64>> for Value {
-    fn from(handle: Handle<i64>) -> Self {
+impl<'gc> From<Handle<'gc, i64>> for Value<'gc> {
+    fn from(handle: Handle<'gc, i64>) -> Self {
         Self::new(Tag::Int, handle.addr() as u64)
     }
 }
 
-impl From<Handle<Str>> for Value {
-    fn from(handle: Handle<Str>) -> Self {
+impl<'gc> From<Handle<'gc, Str<'gc>>> for Value<'gc> {
+    fn from(handle: Handle<'gc, Str<'gc>>) -> Self {
         Self::new(Tag::Str, handle.addr() as u64)
     }
 }
 
-impl From<Handle<Array<Value>>> for Value {
-    fn from(handle: Handle<Array<Value>>) -> Self {
+impl<'gc> From<Handle<'gc, Array<'gc, Value<'gc>>>> for Value<'gc> {
+    fn from(handle: Handle<'gc, Array<'gc, Value<'gc>>>) -> Self {
         Self::new(Tag::Array, handle.addr() as u64)
     }
 }
 
-impl From<Handle<Fn>> for Value {
-    fn from(handle: Handle<Fn>) -> Self {
+impl<'gc> From<Handle<'gc, Fn>> for Value<'gc> {
+    fn from(handle: Handle<'gc, Fn>) -> Self {
         Self::new(Tag::Fn, handle.addr() as u64)
     }
 }
 
-impl From<Handle<Method>> for Value {
-    fn from(handle: Handle<Method>) -> Self {
+impl<'gc> From<Handle<'gc, Method<'gc>>> for Value<'gc> {
+    fn from(handle: Handle<'gc, Method<'gc>>) -> Self {
         Self::new(Tag::Method, handle.addr() as u64)
     }
 }
 
-impl From<()> for Value {
+impl<'gc> From<()> for Value<'gc> {
     fn from(_: ()) -> Self {
         Value::NIL
     }
 }
 
-impl From<Value> for Handle<Str> {
-    fn from(value: Value) -> Self {
+impl<'gc> From<Value<'gc>> for Handle<'gc, Str<'gc>> {
+    fn from(value: Value<'gc>) -> Self {
         value.str()
     }
 }
 
-impl From<Value> for Handle<Object> {
-    fn from(value: Value) -> Self {
+impl<'gc> From<Value<'gc>> for Handle<'gc, Object<'gc>> {
+    fn from(value: Value<'gc>) -> Self {
         value.object()
     }
 }
 
-impl From<Value> for Handle<Array<Value>> {
-    fn from(value: Value) -> Self {
+impl<'gc> From<Value<'gc>> for Handle<'gc, Array<'gc, Value<'gc>>> {
+    fn from(value: Value<'gc>) -> Self {
         value.array()
     }
 }
 
-pub trait TryIntoValue {
-    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError>;
+pub trait TryIntoValue<'gc> {
+    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError>;
 }
 
-impl<T: TryIntoValue> TryIntoValue for Vec<T> {
-    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+impl<'gc, T: TryIntoValue<'gc>> TryIntoValue<'gc> for Vec<T> {
+    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         let data = self
             .into_iter()
             .map(|value| value.try_into_val(gc))
@@ -380,28 +387,28 @@ impl<T: TryIntoValue> TryIntoValue for Vec<T> {
     }
 }
 
-impl<T: Into<Value>> TryIntoValue for T {
-    fn try_into_val(self, _gc: &mut Gc) -> Result<Value, RuntimeError> {
+impl<'gc, T: Into<Value<'gc>>> TryIntoValue<'gc> for T {
+    fn try_into_val(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(self.into())
     }
 }
 
-impl TryIntoValue for String {
-    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+impl<'gc> TryIntoValue<'gc> for String {
+    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         let bytes = self.into_bytes();
         let array = Array::from_vec(gc, bytes);
         Ok(gc.alloc(Str(array))?.into())
     }
 }
 
-impl TryIntoValue for usize {
-    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+impl<'gc> TryIntoValue<'gc> for usize {
+    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         (self as i64).try_into_val(gc)
     }
 }
 
-impl TryIntoValue for i64 {
-    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+impl<'gc> TryIntoValue<'gc> for i64 {
+    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         match Value::try_from(self) {
             Ok(value) => Ok(value),
             Err(IntOverflowError) => {

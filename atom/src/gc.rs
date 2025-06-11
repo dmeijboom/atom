@@ -3,6 +3,7 @@ use std::{
     ffi::c_void,
     fmt::Debug,
     hash::Hash,
+    marker::PhantomData,
     ops::{Deref, DerefMut},
     ptr::NonNull,
 };
@@ -24,7 +25,7 @@ macro_rules! impl_trace {
 }
 
 pub trait Trace {
-    fn trace(&self, gc: &mut Gc);
+    fn trace(&self, gc: &mut Gc<'_>);
 }
 
 impl_trace!(u8, u16, u32, u64, i8, i16, i32, i64, usize, bool, f32, f64);
@@ -43,49 +44,59 @@ pub trait DynHandle {
 }
 
 #[derive(Copy)]
-pub struct Handle<T: ?Sized + Trace> {
+pub struct Handle<'gc, T: ?Sized + Trace> {
     ptr: NonNull<T>,
+    _phantom: PhantomData<&'gc T>,
 }
 
-impl<T: Trace + Hash> Hash for Handle<T> {
+impl<'gc, T: Trace + Hash> Hash for Handle<'gc, T> {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
         self.deref().hash(state);
     }
 }
 
-impl<T: ?Sized + Trace> Handle<T> {
+impl<'gc, T: ?Sized + Trace> Handle<'gc, T> {
     pub fn new(ptr: NonNull<T>) -> Self {
-        Self { ptr }
+        Self {
+            ptr,
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl<T: Trace + PartialEq> PartialEq for Handle<T> {
+impl<'gc, T: Trace + PartialEq> PartialEq for Handle<'gc, T> {
     fn eq(&self, other: &Self) -> bool {
         self.deref() == other.deref()
     }
 }
 
-impl<T: Trace + Eq> Eq for Handle<T> {}
+impl<'gc, T: Trace + Eq> Eq for Handle<'gc, T> {}
 
-impl<T: Trace + Debug> Debug for Handle<T> {
+impl<'gc, T: Trace + Debug> Debug for Handle<'gc, T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         self.deref().fmt(f)
     }
 }
 
-impl<T: Trace> Clone for Handle<T> {
+impl<'gc, T: Trace> Clone for Handle<'gc, T> {
     fn clone(&self) -> Self {
-        Self { ptr: self.ptr }
+        Self {
+            ptr: self.ptr,
+            _phantom: PhantomData,
+        }
     }
 }
 
-impl<T: Trace> Handle<T> {
+impl<'gc, T: Trace> Handle<'gc, T> {
     pub fn addr(&self) -> usize {
         self.ptr.as_ptr() as usize
     }
 
     pub fn from_addr(addr: usize) -> Option<Self> {
-        NonNull::new(addr as *mut T).map(|ptr| Handle { ptr })
+        NonNull::new(addr as *mut T).map(|ptr| Handle {
+            ptr,
+            _phantom: PhantomData,
+        })
     }
 
     pub unsafe fn as_ptr(&self) -> *mut T {
@@ -93,21 +104,21 @@ impl<T: Trace> Handle<T> {
     }
 }
 
-impl<T: Trace> Deref for Handle<T> {
+impl<'gc, T: Trace> Deref for Handle<'gc, T> {
     type Target = T;
 
-    fn deref(&self) -> &T {
+    fn deref(&self) -> &'gc T {
         unsafe { self.ptr.as_ref() }
     }
 }
 
-impl<T: Trace> DerefMut for Handle<T> {
+impl<'gc, T: Trace> DerefMut for Handle<'gc, T> {
     fn deref_mut(&mut self) -> &mut T {
         unsafe { self.ptr.as_mut() }
     }
 }
 
-impl<T: Trace> DynHandle for Handle<T> {
+impl<'gc, T: Trace> DynHandle for Handle<'gc, T> {
     fn trace(&self, gc: &mut Gc) {
         unsafe {
             self.ptr.as_ref().trace(gc);
@@ -170,7 +181,7 @@ pub struct GcStats {
 }
 
 #[derive(Default)]
-pub struct Gc {
+pub struct Gc<'gc> {
     ready: bool,
     stats: GcStats,
     disabled: bool,
@@ -178,9 +189,10 @@ pub struct Gc {
     gen1: Generation,
     gen2: Generation,
     marked: IntMap<usize, ()>,
+    _phantom: PhantomData<&'gc ()>,
 }
 
-impl Gc {
+impl<'gc> Gc<'gc> {
     pub fn ready(&self) -> bool {
         self.ready
     }
@@ -195,7 +207,7 @@ impl Gc {
         self.disabled = true;
     }
 
-    pub fn track<T: Trace + 'static>(&mut self, ptr: NonNull<T>, layout: Layout) -> Handle<T> {
+    pub fn track<T: Trace>(&mut self, ptr: NonNull<T>, layout: Layout) -> Handle<'gc, T> {
         let handle = Handle::new(ptr);
 
         unsafe {
@@ -211,7 +223,7 @@ impl Gc {
         handle
     }
 
-    pub fn alloc<T: Trace + 'static>(&mut self, data: T) -> Result<Handle<T>, RuntimeError> {
+    pub fn alloc<T: Trace>(&mut self, data: T) -> Result<Handle<'gc, T>, RuntimeError> {
         let layout = Layout::new::<T>();
 
         unsafe {
@@ -222,10 +234,7 @@ impl Gc {
         }
     }
 
-    pub fn alloc_array<T: Trace + 'static>(
-        &mut self,
-        cap: usize,
-    ) -> Result<Handle<T>, RuntimeError> {
+    pub fn alloc_array<T: Trace>(&mut self, cap: usize) -> Result<Handle<'gc, T>, RuntimeError> {
         let layout = Layout::array::<T>(cap)
             .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
 

@@ -7,12 +7,12 @@ use crate::gc::{Gc, Handle, Trace};
 use super::{error::RuntimeError, function::Fn, value::Value};
 
 #[derive(Debug, Default, Clone)]
-pub struct Inline {
+pub struct Inline<'gc> {
     pub instance: usize,
-    pub methods: LinearMap<Cow<'static, str>, Handle<Fn>>,
+    pub methods: LinearMap<Cow<'static, str>, Handle<'gc, Fn>>,
 }
 
-impl Trace for Inline {
+impl<'gc> Trace for Inline<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         for handle in self.methods.values() {
             gc.mark(handle);
@@ -21,21 +21,21 @@ impl Trace for Inline {
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Class {
+pub struct Class<'gc> {
     pub name: Cow<'static, str>,
     pub public: bool,
-    pub inline: Inline,
-    pub init: Option<Handle<Fn>>,
+    pub inline: Inline<'gc>,
+    pub init: Option<Handle<'gc, Fn>>,
     pub methods: LinearMap<Cow<'static, str>, Fn>,
 }
 
-impl PartialEq for Class {
+impl<'gc> PartialEq for Class<'gc> {
     fn eq(&self, other: &Self) -> bool {
         self.name == other.name
     }
 }
 
-impl Trace for Class {
+impl<'gc> Trace for Class<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         self.inline.trace(gc);
 
@@ -45,19 +45,12 @@ impl Trace for Class {
     }
 }
 
-impl Class {
-    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
-        Self {
-            name: name.into(),
-            ..Self::default()
-        }
-    }
-
+impl<'gc> Class<'gc> {
     pub fn get_method(
         &mut self,
-        gc: &mut Gc,
+        gc: &mut Gc<'gc>,
         name: &str,
-    ) -> Result<Option<Handle<Fn>>, RuntimeError> {
+    ) -> Result<Option<Handle<'gc, Fn>>, RuntimeError> {
         match self.inline.methods.get(name) {
             Some(handle) => Ok(Some(Handle::clone(handle))),
             None => match self.methods.get(name) {
@@ -76,12 +69,12 @@ impl Class {
     }
 }
 
-pub struct Object {
-    pub class: Handle<Class>,
-    pub attrs: LinearMap<Cow<'static, str>, Value>,
+pub struct Object<'gc> {
+    pub class: Handle<'gc, Class<'gc>>,
+    pub attrs: LinearMap<Cow<'static, str>, Value<'gc>>,
 }
 
-impl Trace for Object {
+impl<'gc> Trace for Object<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         gc.mark(&self.class);
 
@@ -91,8 +84,8 @@ impl Trace for Object {
     }
 }
 
-impl Object {
-    pub fn new(class: Handle<Class>) -> Self {
+impl<'gc> Object<'gc> {
+    pub fn new(class: Handle<'gc, Class<'gc>>) -> Self {
         Self {
             class,
             attrs: LinearMap::default(),

@@ -71,18 +71,18 @@ impl Fn {
     }
 }
 
-pub struct Method {
-    pub func: Handle<Fn>,
-    pub recv: Value,
+pub struct Method<'gc> {
+    pub func: Handle<'gc, Fn>,
+    pub recv: Value<'gc>,
 }
 
-impl Method {
-    pub fn new(recv: Value, func: Handle<Fn>) -> Self {
+impl<'gc> Method<'gc> {
+    pub fn new(recv: Value<'gc>, func: Handle<'gc, Fn>) -> Self {
         Self { func, recv }
     }
 }
 
-impl Trace for Method {
+impl<'gc> Trace for Method<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         gc.mark(&self.func);
         self.recv.trace(gc);

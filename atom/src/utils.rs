@@ -1,6 +1,11 @@
 use std::{fs, path::Path};
 
-use crate::{ast::Stmt, compiler::Compiler, lexer::Lexer, parser, runtime::Package, Error};
+use crate::{
+    ast::Stmt,
+    compiler::{Compiler, Package},
+    lexer::Lexer,
+    parser, Error,
+};
 
 const PRELUDE_SOURCE: &str = include_str!("../std/prelude.atom");
 

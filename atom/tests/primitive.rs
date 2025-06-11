@@ -1,3 +1,4 @@
+use atom::Gc;
 use test_case::test_case;
 
 mod common;
@@ -8,7 +9,9 @@ mod common;
 #[test_case("max", Ok(9_223_372_036_854_775_807i64); "maximum integer")]
 #[test_case("double-sign", Err("ParseError: invalid expr '-'"); "double sign not allowed")]
 fn int(name: &str, expected: Result<i64, &'static str>) {
-    let return_value = common::run(&format!("primitive/int/{name}.atom"));
+    let mut gc = Gc::default();
+    let return_value = common::run(&mut gc, &format!("primitive/int/{name}.atom"));
+
     assert_eq!(
         return_value
             .map(|r| r.map(|value| value.int()))
@@ -22,7 +25,9 @@ fn int(name: &str, expected: Result<i64, &'static str>) {
 #[test_case("max", Ok(1.7976931348623157E+308f64); "maximum float")]
 #[test_case("double-dot", Err("ParseError: unexpected token ., expected: )"); "double dot not allowed")]
 fn float(name: &str, expected: Result<f64, &'static str>) {
-    let return_value = common::run(&format!("primitive/float/{name}.atom"));
+    let mut gc = Gc::default();
+    let return_value = common::run(&mut gc, &format!("primitive/float/{name}.atom"));
+
     assert_eq!(
         return_value
             .map(|r| r.map(|r| r.float()))

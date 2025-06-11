@@ -10,13 +10,18 @@ mod tests {
 
     const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
 
-    pub struct TestRuntime<F: Ffi> {
+    pub struct TestRuntime<'gc, F: Ffi<'gc>> {
         fallback: F,
-        sender: Sender<Value>,
+        sender: Sender<Value<'gc>>,
     }
 
-    impl<L: Ffi> Ffi for TestRuntime<L> {
-        fn call(&mut self, name: &str, gc: &mut Gc, args: Vec<Value>) -> Result<Value, VmError> {
+    impl<'gc, F: Ffi<'gc>> Ffi<'gc> for TestRuntime<'gc, F> {
+        fn call(
+            &mut self,
+            name: &str,
+            gc: &mut Gc<'gc>,
+            args: Vec<Value<'gc>>,
+        ) -> Result<Value<'gc>, VmError> {
             if name == "ret" {
                 gc.disable();
                 let _ = self.sender.send(args[0]);
@@ -27,8 +32,8 @@ mod tests {
         }
     }
 
-    impl<F: Ffi> TestRuntime<F> {
-        fn new(fallback: F, sender: Sender<Value>) -> Self {
+    impl<'gc, F: Ffi<'gc>> TestRuntime<'gc, F> {
+        fn new(fallback: F, sender: Sender<Value<'gc>>) -> Self {
             Self { fallback, sender }
         }
     }
@@ -57,14 +62,15 @@ mod tests {
         Ok(compiler.compile(program)?)
     }
 
-    pub type TestVm = Vm<TestRuntime<Runtime>, 1000>;
+    pub type TestVm<'gc> = Vm<'gc, TestRuntime<'gc, Runtime>, 1000>;
 
-    pub fn run(name: &str) -> Result<Option<Value>, Error> {
+    pub fn run<'gc>(gc: &mut Gc<'gc>, name: &str) -> Result<Option<Value<'gc>>, Error> {
         let module = compile(name)?;
         let (sender, recv) = std::sync::mpsc::channel();
         let runtime = TestRuntime::new(Runtime::default(), sender);
-        let mut vm = TestVm::new("".into(), module, runtime)?;
-        vm.run()?;
+        let mut vm = TestVm::new(gc, "".into(), module, runtime)?;
+
+        vm.run(gc)?;
 
         Ok(recv.recv().ok())
     }

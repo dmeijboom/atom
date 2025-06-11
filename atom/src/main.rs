@@ -2,10 +2,12 @@ use std::{path::PathBuf, process::exit};
 
 use argh::FromArgs;
 use bytecode::{Bytecode, Serializable, Spanned};
+use compiler::Package;
 use error::Error;
+use gc::Gc;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
-use runtime::{function::Fn, value::Value, Package, Runtime};
+use runtime::{function::Fn, value::Value, Runtime};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -32,7 +34,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
 
-type AtomVm<L> = Vm<L, MAX_STACK_SIZE>;
+type AtomVm<'gc, L> = Vm<'gc, L, MAX_STACK_SIZE>;
 
 /// CLI options
 #[derive(FromArgs)]
@@ -142,17 +144,20 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             no_optimize,
         }) => {
             let module = utils::compile(source, !no_optimize)?;
-            let mut vm = AtomVm::new("atom".into(), module, Runtime::default())?;
-            vm.run()?;
+            let mut gc = Gc::default();
+            let mut vm = AtomVm::new(&mut gc, "atom".into(), module, Runtime::default())?;
+
+            vm.run(&mut gc)?;
+            gc.sweep();
 
             #[cfg(feature = "profiler")]
             {
-                let gc_stats = vm.gc_stats();
+                let stats = gc.stats();
                 let report = vm.profiler().report();
 
                 println!(
                     "\n-- REPORT (took {:?}, {} allocations) --",
-                    report.exec_time, gc_stats.alloc_count
+                    report.exec_time, stats.alloc_count
                 );
 
                 for record in report.records {
