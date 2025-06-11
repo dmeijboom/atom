@@ -1,0 +1,5 @@
+let array = [100, 200, 300];
+
+array[1] = 400;
+
+ret(array);

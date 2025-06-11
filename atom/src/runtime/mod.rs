@@ -83,7 +83,7 @@ impl Runtime {
     }
 
     #[atom_fn("repr")]
-    fn repr(_atom: &mut Gc, value: Value) -> Result<String, RuntimeError> {
+    pub fn repr(_atom: &mut Gc, value: Value) -> Result<String, RuntimeError> {
         Ok(match value.ty() {
             Type::Array => {
                 let array = value.array();

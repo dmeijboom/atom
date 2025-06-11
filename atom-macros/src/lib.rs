@@ -51,7 +51,7 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         fn #export_fn(gc: &mut crate::gc::Gc, args: Vec<crate::runtime::value::Value>) -> Result<crate::runtime::value::Value, crate::runtime::error::RuntimeError> {
             #(#args)*
             let return_value = Self::#name(gc, #(#arg_names),*)?;
-            return_value.into_value(gc)
+            return_value.try_into_val(gc)
         }
     }
     .into()

@@ -1,0 +1,25 @@
+class Level1 {
+    fn init(self) {
+        self.level = 10;
+    }
+}
+
+class Level2 {
+    fn init(self) {
+        self.level1 = Level1();
+    }
+}
+
+class Level3 {
+    fn init(self) {
+        self.level2 = Level2();
+    }
+}
+
+class Level4 {
+    fn init(self) {
+        self.level3 = Level3();
+    }
+}
+
+ret(Level4().level3.level2.level1.level);

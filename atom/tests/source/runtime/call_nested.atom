@@ -1,0 +1,13 @@
+fn last(a, b) {
+    a * b
+}
+
+fn second(a, b) {
+    last(b, a)
+}
+
+fn first(a, b) {
+    second(b, a)
+}
+
+ret(first(10, 20));

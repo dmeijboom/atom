@@ -1,0 +1,9 @@
+class Test {
+    fn init(self) {
+        self.name = "Hello World";
+    }
+}
+
+let test = Test();
+
+ret(test.name);

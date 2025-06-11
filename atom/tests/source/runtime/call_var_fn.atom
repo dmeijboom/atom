@@ -1,0 +1,7 @@
+fn simple(a, b) {
+    a + b
+}
+
+let function = simple;
+
+ret(function(10, 20));

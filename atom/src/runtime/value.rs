@@ -364,17 +364,30 @@ impl From<Value> for Handle<Array<Value>> {
 }
 
 pub trait TryIntoValue {
-    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError>;
+    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError>;
+}
+
+impl<T: TryIntoValue> TryIntoValue for Vec<T> {
+    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+        let data = self
+            .into_iter()
+            .map(|value| value.try_into_val(gc))
+            .collect::<Result<Vec<_>, _>>()?;
+        let array = Array::from_vec(gc, data);
+        let handle = gc.alloc(array)?;
+
+        Ok(handle.into())
+    }
 }
 
 impl<T: Into<Value>> TryIntoValue for T {
-    fn into_value(self, _gc: &mut Gc) -> Result<Value, RuntimeError> {
+    fn try_into_val(self, _gc: &mut Gc) -> Result<Value, RuntimeError> {
         Ok(self.into())
     }
 }
 
 impl TryIntoValue for String {
-    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
         let bytes = self.into_bytes();
         let array = Array::from_vec(gc, bytes);
         Ok(gc.alloc(Str(array))?.into())
@@ -382,13 +395,13 @@ impl TryIntoValue for String {
 }
 
 impl TryIntoValue for usize {
-    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
-        (self as i64).into_value(gc)
+    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+        (self as i64).try_into_val(gc)
     }
 }
 
 impl TryIntoValue for i64 {
-    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
         match Value::try_from(self) {
             Ok(value) => Ok(value),
             Err(IntOverflowError) => {
@@ -432,7 +445,7 @@ mod tests {
         let mut gc = Gc::default();
 
         for i in i64::MAX - 1000..i64::MAX {
-            let value = i.into_value(&mut gc).unwrap();
+            let value = i.try_into_val(&mut gc).unwrap();
             assert_eq!(value.int(), i);
         }
     }

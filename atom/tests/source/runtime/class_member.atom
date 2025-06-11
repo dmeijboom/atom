@@ -1,0 +1,9 @@
+class Test {}
+
+let a = Test();
+a.value = 10;
+
+let b = Test();
+b.value = a;
+
+ret(b.value.value);

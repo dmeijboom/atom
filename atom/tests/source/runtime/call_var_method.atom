@@ -1,0 +1,9 @@
+class Simple {
+    fn run(self, a, b) {
+        a + b
+    }
+}
+
+let function = Simple().run;
+
+ret(function(10, 20));

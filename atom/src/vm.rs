@@ -127,9 +127,9 @@ macro_rules! impl_binary {
                 fn $name(&mut self) -> Result<(), Error> {
                     let (lhs, rhs) = self.stack.operands();
                     let value = if lhs.is_int() && rhs.is_int() {
-                        (lhs.int() $op rhs.int()).into_value(&mut self.gc)?
+                        (lhs.int() $op rhs.int()).try_into_val(&mut self.gc)?
                     } else if lhs.is_float() && rhs.is_float() {
-                        (lhs.float() $op rhs.float()).into_value(&mut self.gc)?
+                        (lhs.float() $op rhs.float()).try_into_val(&mut self.gc)?
                     } else {
                         return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()));
                     };
@@ -181,7 +181,7 @@ fn root_frame(id: usize, gc: &mut Gc, mut package: Package) -> Result<(Instance,
     let func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
     let consts = mem::take(&mut package.consts)
         .into_iter()
-        .map(|c| c.into_value(gc))
+        .map(|c| c.try_into_val(gc))
         .collect::<Result<Vec<_>, _>>()?;
 
     let instance = Instance::new(id, package, consts);
@@ -617,7 +617,7 @@ impl<F: Ffi, const S: usize> Vm<F, S> {
         let mut object = Object::new(class);
         object.attrs.insert(
             Cow::Borrowed("instance"),
-            instance_id.into_value(&mut self.gc)?,
+            instance_id.try_into_val(&mut self.gc)?,
         );
 
         let handle = self.gc.alloc(object)?;

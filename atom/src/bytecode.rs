@@ -181,10 +181,10 @@ pub enum Const {
 impl Eq for Const {}
 
 impl TryIntoValue for Const {
-    fn into_value(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
+    fn try_into_val(self, gc: &mut Gc) -> Result<Value, RuntimeError> {
         Ok(match self {
             Const::Nil => Value::NIL,
-            Const::Int(n) => n.into_value(gc)?,
+            Const::Int(n) => n.try_into_val(gc)?,
             Const::Float(n) => Value::from(n),
             Const::Bool(b) => Value::from(b),
             Const::Str(s) => {
