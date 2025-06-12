@@ -1,10 +1,7 @@
-use atom::{
-    runtime::{
-        value::{IntoAtom, Type},
-        Runtime,
-    },
-    Gc, Value,
-};
+use atom::{gc::Gc, runtime::{
+    value::{IntoAtom, Type, Value},
+    Runtime,
+}};
 use test_case::test_case;
 
 mod common;

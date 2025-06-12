@@ -1,4 +1,4 @@
-use atom::Gc;
+use atom::gc::Gc;
 use test_case::test_case;
 
 mod common;

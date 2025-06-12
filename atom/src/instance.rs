@@ -148,7 +148,7 @@ impl<'gc> Instance<'gc> {
             let class = Class {
                 name: orig.name.clone(),
                 public: orig.public,
-                inline: Inline::default(),
+                inline: Inline::new(self.id),
                 init: orig
                     .methods
                     .remove("init")

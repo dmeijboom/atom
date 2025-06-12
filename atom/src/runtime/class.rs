@@ -4,12 +4,25 @@ use linear_map::LinearMap;
 
 use crate::gc::{Gc, Handle, Trace};
 
-use super::{error::RuntimeError, function::Fn, value::Value};
+use super::{
+    error::RuntimeError,
+    function::Fn,
+    value::{IntoAtom, Value},
+};
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Inline<'gc> {
     pub instance: usize,
     pub methods: LinearMap<Cow<'static, str>, Handle<'gc, Fn>>,
+}
+
+impl<'gc> Inline<'gc> {
+    pub fn new(instance: usize) -> Self {
+        Self {
+            instance,
+            methods: LinearMap::new(),
+        }
+    }
 }
 
 impl<'gc> Trace for Inline<'gc> {
@@ -20,7 +33,7 @@ impl<'gc> Trace for Inline<'gc> {
     }
 }
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct Class<'gc> {
     pub name: Cow<'static, str>,
     pub public: bool,
@@ -46,6 +59,16 @@ impl<'gc> Trace for Class<'gc> {
 }
 
 impl<'gc> Class<'gc> {
+    pub fn new(name: impl Into<Cow<'static, str>>, instance: usize) -> Self {
+        Self {
+            name: name.into(),
+            public: false,
+            inline: Inline::new(instance),
+            init: None,
+            methods: LinearMap::new(),
+        }
+    }
+
     pub fn get_method(
         &mut self,
         gc: &mut Gc<'gc>,
@@ -90,5 +113,25 @@ impl<'gc> Object<'gc> {
             class,
             attrs: LinearMap::default(),
         }
+    }
+
+    pub fn with_attr<K, V>(
+        gc: &mut Gc<'gc>,
+        class: Handle<'gc, Class<'gc>>,
+        attrs: Vec<(K, V)>,
+    ) -> Result<Self, RuntimeError>
+    where
+        K: Into<Cow<'static, str>>,
+        V: IntoAtom<'gc>,
+    {
+        let attrs = attrs
+            .into_iter()
+            .map(|(k, v)| Ok((k.into(), v.into_atom(gc)?)))
+            .collect::<Result<Vec<_>, _>>()?;
+
+        Ok(Self {
+            class,
+            attrs: LinearMap::from_iter(attrs),
+        })
     }
 }

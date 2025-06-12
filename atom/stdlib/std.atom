@@ -17,9 +17,6 @@ class Str {
     fn len(self) => read_usize(ptr(self), 0);
 }
 
-class Package {
-}
-
 pub fn println(val) {
     let line;
 

@@ -1,5 +1,7 @@
+import std;
+
 fn calc(x, y, z) {
     x + y * z
 }
 
-println(calc(1, 5, 22));
+std.println(calc(1, 5, 22));

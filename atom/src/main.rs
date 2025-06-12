@@ -17,6 +17,7 @@ mod ast;
 mod bytecode;
 mod compiler;
 mod error;
+mod frame;
 mod gc;
 mod instance;
 mod lexer;
@@ -25,7 +26,6 @@ mod parser;
 mod profiler;
 mod runtime;
 mod stack;
-mod utils;
 mod vm;
 
 #[cfg(feature = "mimalloc")]
@@ -143,7 +143,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             source,
             no_optimize,
         }) => {
-            let module = utils::compile(source, !no_optimize)?;
+            let module = vm::compile(source, !no_optimize)?;
             let mut gc = Gc::default();
             let mut vm = AtomVm::new(&mut gc, "atom".into(), module, Runtime::default())?;
 
@@ -174,7 +174,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             verbose,
             no_optimize,
         }) => {
-            let module = utils::compile(source, !no_optimize)?;
+            let module = vm::compile(source, !no_optimize)?;
 
             if verbose {
                 print_module(&module);

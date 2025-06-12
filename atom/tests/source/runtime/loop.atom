@@ -1,7 +1,7 @@
 let output = [];
 
 for let i = 0; i < 6; i += 1 {
-    output.push(i);
+    output = output ^ [i];
 }
 
 ret(output);

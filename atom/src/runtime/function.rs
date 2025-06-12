@@ -2,10 +2,9 @@ use std::{borrow::Cow, fmt::Debug};
 
 use bytes::Bytes;
 
-use crate::{
-    gc::{Handle, Trace},
-    Value,
-};
+use crate::gc::{Handle, Trace};
+
+use super::value::Value;
 
 #[derive(Default)]
 pub struct FnBuilder {

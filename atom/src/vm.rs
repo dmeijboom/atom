@@ -1,15 +1,22 @@
-use std::{borrow::Cow, collections::HashMap, mem, path::PathBuf};
+use std::{
+    borrow::Cow,
+    collections::HashMap,
+    fs, mem,
+    path::{Path, PathBuf},
+};
 
-use bytes::Buf;
 use wyhash2::WyHash;
 
 use crate::{
-    bytecode::{Bytecode, Op, Serializable},
-    compiler::Package,
+    ast::Stmt,
+    bytecode::Op,
+    compiler::{Compiler, Package},
     error::SpannedError,
+    frame::Frame,
     gc::{Gc, Handle, Trace},
     instance::Instance,
-    lexer::Span,
+    lexer::Lexer,
+    parser::{self},
     runtime::{
         array::Array,
         class::{Class, Object},
@@ -19,7 +26,6 @@ use crate::{
         value::{IntoAtom, Type, Value},
     },
     stack::Stack,
-    utils,
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {
@@ -40,84 +46,28 @@ pub type FatalError = SpannedError<FatalErrorKind>;
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("ImportError: {0}")]
-    Import(#[from] Box<crate::Error>),
+    Import(#[from] Box<crate::error::Error>),
     #[error("RuntimeError: {0}")]
     Runtime(#[from] RuntimeError),
     #[error("FatalError: {0}")]
     Fatal(#[from] FatalError),
 }
 
-struct Frame<'gc> {
-    call_site: usize,
-    offset: usize,
-    locals: Vec<Value<'gc>>,
-    instance: usize,
-    returned: bool,
-    global: bool,
-    handle: Handle<'gc, Fn>,
+fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
+    let chars = source.chars().collect::<Vec<_>>();
+    let mut lexer = Lexer::new(&chars);
+    let tokens = lexer.lex()?;
+    let parser = parser::Parser::new(tokens);
+
+    Ok(parser.parse()?)
 }
 
-impl<'gc> Trace for Frame<'gc> {
-    fn trace(&self, gc: &mut Gc) {
-        gc.mark(&self.handle);
-        self.locals.iter().for_each(|v| v.trace(gc));
-    }
-}
+pub fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Package, crate::error::Error> {
+    let source = fs::read_to_string(source)?;
+    let program = parse(&source)?;
+    let compiler = Compiler::default().with_optimize(optimize);
 
-impl<'gc> Frame<'gc> {
-    pub fn new(call_site: usize, handle: Handle<'gc, Fn>) -> Self {
-        Self {
-            call_site,
-            offset: 0,
-            locals: vec![],
-            instance: handle.inline.instance,
-            returned: false,
-            handle,
-            global: false,
-        }
-    }
-
-    pub fn with_global(call_site: usize, handle: Handle<'gc, Fn>, instance: usize) -> Self {
-        Self {
-            call_site,
-            offset: 0,
-            locals: vec![],
-            instance,
-            returned: false,
-            handle,
-            global: true,
-        }
-    }
-
-    pub fn next(&mut self) -> Option<Bytecode> {
-        if self.offset < self.handle.body.len() {
-            let bc = Bytecode::deserialize(&mut &self.handle.body[self.offset..self.offset + 5]);
-            self.offset += 8;
-            return Some(bc);
-        }
-
-        None
-    }
-
-    /// Get the span given the assumption that we're already at the next bytecode
-    pub fn span(&self) -> Span {
-        self.span_at(self.offset - 3)
-    }
-
-    pub fn span_at(&self, offset: usize) -> Span {
-        if offset >= self.handle.body.len() {
-            return self.span_at(self.handle.body.len() - 3);
-        }
-
-        let mut tail = &self.handle.body[if offset == 0 {
-            5..8
-        } else {
-            offset..offset + 3
-        }];
-        Span {
-            offset: tail.get_uint(3) as u32,
-        }
-    }
+    Ok(compiler.compile(program)?)
 }
 
 macro_rules! impl_binary {
@@ -151,31 +101,19 @@ pub trait Ffi<'gc> {
     ) -> Result<Value<'gc>, Error>;
 }
 
-struct Cache<'gc> {
-    package_class: Handle<'gc, Class<'gc>>,
-    packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
-}
-
-impl<'gc> Trace for Cache<'gc> {
-    fn trace(&self, gc: &mut Gc) {
-        gc.mark(&self.package_class);
-        self.packages.values().for_each(|handle| gc.mark(handle));
-    }
-}
-
 pub struct Vm<'gc, F: Ffi<'gc>, const S: usize> {
     ffi: F,
     frame: Frame<'gc>,
-    cache: Cache<'gc>,
     search_path: PathBuf,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
     instances: Vec<Instance<'gc>>,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
+    packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
 }
 
-fn root_frame<'gc>(
+fn instance_with_frame<'gc>(
     id: usize,
     gc: &mut Gc<'gc>,
     mut package: Package,
@@ -199,17 +137,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         package: Package,
         ffi: F,
     ) -> Result<Self, Error> {
-        let (mut instance, frame) = root_frame(0, gc, package)?;
-        let cache = Cache {
-            packages: HashMap::default(),
-            package_class: instance.get_class_by_name(gc, "Package")?.unwrap(), // @TODO: handle error
-        };
+        let (instance, frame) = instance_with_frame(0, gc, package)?;
 
         Ok(Self {
             ffi,
             frame,
-            cache,
             search_path,
+            packages: HashMap::default(),
             instances: vec![instance],
             call_stack: vec![],
             stack: Stack::default(),
@@ -243,8 +177,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn mark_sweep(&mut self, gc: &mut Gc) {
-        self.cache.trace(gc);
         self.frame.trace(gc);
+        self.packages.values().for_each(|handle| gc.mark(handle));
         self.call_stack.iter().for_each(|frame| frame.trace(gc));
         self.instances
             .iter()
@@ -328,9 +262,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 self.stack.push(value);
                 Ok(())
             }
-            None if object.class == self.cache.package_class => {
-                self.load_export(gc, object, member)
-            }
+            None if object.class.name == "Package" => self.load_export(gc, object, member),
             None => self.load_method(gc, object, member.as_str()),
         }
     }
@@ -530,8 +462,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             .into());
         }
 
-        let frame = Frame::new(self.frame.offset, func);
-        self.call_stack.push(mem::replace(&mut self.frame, frame));
+        self.set_frame(Frame::new(self.frame.offset, func));
         self.frame.locals = self.stack.slice_to_end(arg_count as usize).to_vec();
         self.gc_tick(gc);
 
@@ -636,39 +567,50 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         }
     }
 
+    fn make_path(&self, name: &str) -> PathBuf {
+        self.search_path
+            .join("stdlib")
+            .join(format!("{}.atom", name))
+    }
+
+    fn set_frame(&mut self, frame: Frame<'gc>) {
+        self.call_stack.push(mem::replace(&mut self.frame, frame));
+    }
+
     fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
         let name = self.instances[self.frame.instance].consts[idx as usize].str();
 
-        if let Some(handle) = self.cache.packages.get(name.as_str()) {
+        if let Some(handle) = self.packages.get(name.as_str()) {
             self.stack.push(Handle::clone(handle).into());
             return Ok(());
         }
 
-        let instance_id = self.instances.len();
-        let filename = self
-            .search_path
-            .join("std")
-            .join(format!("{}.atom", name.as_str()));
-        let module = utils::compile(&filename, true).map_err(|e| Error::Import(Box::new(e)))?;
-        let (mut instance, frame) = root_frame(instance_id, gc, module)?;
+        let id = self.instances.len();
 
-        let class = Handle::clone(&self.cache.package_class);
-        let mut object = Object::new(class);
-        object
-            .attrs
-            .insert(Cow::Borrowed("instance"), instance_id.into_atom(gc)?);
+        // Parse and compile module
+        let module =
+            compile(self.make_path(name.as_str()), true).map_err(|e| Error::Import(Box::new(e)))?;
 
+        // Initialize instance and frame
+        let (mut instance, frame) = instance_with_frame(id, gc, module)?;
+
+        // Setup package class
+        let class = gc.alloc(Class::new("Package", self.frame.instance))?;
+        let object = Object::with_attr(gc, class, vec![("instance", id)])?;
         let handle = gc.alloc(object)?;
 
         // Insert the package object as the first variable (which is `self`)
         instance.vars.insert(0, Handle::clone(&handle).into());
 
         self.instances.push(instance);
-        self.cache
-            .packages
+        self.packages
             .insert(name.to_string(), Handle::clone(&handle));
+
+        // Push package to the stack (it will be stored)
         self.stack.push(handle.into());
-        self.call_stack.push(mem::replace(&mut self.frame, frame));
+
+        // Activate the frame
+        self.set_frame(frame);
         self.gc_tick(gc);
 
         Ok(())

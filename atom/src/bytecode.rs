@@ -6,8 +6,10 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 use crate::{
     gc::Gc,
     lexer::Span,
-    runtime::{error::RuntimeError, value::IntoAtom},
-    Value,
+    runtime::{
+        error::RuntimeError,
+        value::{IntoAtom, Value},
+    },
 };
 
 #[derive(FromPrimitive, IntoPrimitive)]

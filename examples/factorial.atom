@@ -1,3 +1,5 @@
+import std;
+
 fn factorial(n, acc) {
     if n == 1 {
         return acc;
@@ -6,4 +8,4 @@ fn factorial(n, acc) {
     factorial(n - 1, n * acc)
 }
 
-println(factorial(15, 1));
+std.println(factorial(15, 1));

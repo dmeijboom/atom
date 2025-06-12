@@ -4,11 +4,15 @@ mod tests {
     use std::{fs, sync::mpsc::Sender};
 
     use atom::{
-        ast::Stmt, runtime::Runtime, Compiler, Error, Ffi, Gc, Lexer, Package, Parser, Value, Vm,
-        VmError,
+        ast::Stmt,
+        compiler::{Compiler, Package},
+        error::Error,
+        gc::Gc,
+        lexer::Lexer,
+        parser::Parser,
+        runtime::{value::Value, Runtime},
+        vm::{Error as VmError, Ffi, Vm},
     };
-
-    const PRELUDE_SOURCE: &str = include_str!("../../std/prelude.atom");
 
     pub struct TestRuntime<'gc, F: Ffi<'gc>> {
         fallback: F,
@@ -54,7 +58,7 @@ mod tests {
     }
 
     pub fn compile(name: &str) -> Result<Package, Error> {
-        let mut program = _parse(&[PRELUDE_SOURCE, "\nextern fn ret(value);"].concat())?;
+        let mut program = _parse("\nextern fn ret(value);")?;
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
         program.extend(_parse(&source)?);
         let compiler = Compiler::default();

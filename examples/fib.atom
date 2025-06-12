@@ -1,3 +1,5 @@
+import std;
+
 fn fib(n) {
     if n < 2 {
         return n;
@@ -6,4 +8,4 @@ fn fib(n) {
     fib(n - 1) + fib(n - 2)
 }
 
-println(fib(30));
+std.println(fib(30));
