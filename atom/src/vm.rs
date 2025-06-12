@@ -16,7 +16,7 @@ use crate::{
         error::{Call, ErrorKind, RuntimeError},
         function::{Fn, Method},
         str::Str,
-        value::{self, IntoAtom, Type, Value},
+        value::{IntoAtom, Type, Value},
     },
     stack::Stack,
     utils,
@@ -681,17 +681,6 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn push_int(&mut self, gc: &mut Gc<'gc>, i: i64) -> Result<(), Error> {
-        if i.unsigned_abs() > value::INT_MASK {
-            let handle = gc.alloc(i)?;
-            self.stack.push(handle.into());
-        } else {
-            self.stack.push(Value::new_smallint(i));
-        }
-
-        Ok(())
-    }
-
     fn eq_op(&mut self) -> Result<bool, Error> {
         let (lhs, rhs) = self.stack.operands();
 
@@ -729,7 +718,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     fn bitwise_and(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         let (lhs, rhs) = self.stack.operands();
         if lhs.is_int() && rhs.is_int() {
-            self.push_int(gc, lhs.int() & rhs.int())
+            self.stack.push((lhs.int() & rhs.int()).into_atom(gc)?);
+            Ok(())
         } else {
             Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()))
         }
@@ -738,7 +728,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     fn bitwise_or(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         let (lhs, rhs) = self.stack.operands();
         if lhs.is_int() && rhs.is_int() {
-            self.push_int(gc, lhs.int() | rhs.int())
+            self.stack.push((lhs.int() | rhs.int()).into_atom(gc)?);
+            Ok(())
         } else {
             Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()))
         }
@@ -769,7 +760,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let (lhs, rhs) = self.stack.operands();
 
         if lhs.is_int() && rhs.is_int() {
-            self.push_int(gc, lhs.int() ^ rhs.int())
+            self.stack.push((lhs.int() ^ rhs.int()).into_atom(gc)?);
+            Ok(())
         } else if matches!(lhs.ty(), Type::Array | Type::Str) && lhs.ty() == rhs.ty() {
             self.concat(gc, lhs, rhs)
         } else {
