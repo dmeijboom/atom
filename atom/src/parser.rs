@@ -517,7 +517,16 @@ impl Parser {
             return Ok(StmtKind::ExternFn(name, args, is_public).at(span));
         }
 
-        let body = self.block()?;
+        let body = if self.accept(&TokenKind::Punct("=>")) {
+            let span = self.span();
+            let expr = self.expr(Prec::Assign)?;
+            self.semi()?;
+
+            vec![StmtKind::Return(expr).at(span)]
+        } else {
+            self.block()?
+        };
+
         Ok(StmtKind::Fn(name, args, body, is_public).at(span))
     }
 

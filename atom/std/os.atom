@@ -1,4 +1,4 @@
-pub extern fn isDarwin();
+pub extern fn is_darwin();
 pub extern fn syscall4(arg1, arg2, arg3, arg4);
 
 class Darwin {
@@ -15,7 +15,7 @@ class Linux {
     }
 }
 
-if isDarwin() {
+if is_darwin() {
     self.platform = Darwin();
 } else {
     self.platform = Linux();

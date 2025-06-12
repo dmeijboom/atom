@@ -27,11 +27,33 @@ module.exports = grammar({
       ),
 
     function_declaration: ($) =>
-      seq(
-        "fn",
-        field("name", $.identifier),
-        field("parameters", $.parameter_list),
-        field("body", $.block),
+      choice(
+        // Arrow function: fn name() => expr;
+        seq(
+          "fn",
+          field("name", $.identifier),
+          field("parameters", $.parameter_list),
+          "=>",
+          field("body", $._expression),
+          ";"
+        ),
+        // Expression block function: fn name() { expr };
+        seq(
+          "fn",
+          field("name", $.identifier),
+          field("parameters", $.parameter_list),
+          "{",
+          field("body", $._expression),
+          "}",
+          ";"
+        ),
+        // Regular block function: fn name() { statements }
+        seq(
+          "fn",
+          field("name", $.identifier),
+          field("parameters", $.parameter_list),
+          field("body", $.block),
+        )
       ),
 
     class_declaration: ($) =>

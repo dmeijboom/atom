@@ -1,13 +1,14 @@
+use std::ops::Deref;
+
 use crate::{
     error::IntoSpanned,
-    gc::{Gc, Handle},
+    gc::Gc,
     lexer::Span,
     vm::{self, FatalErrorKind, Ffi},
 };
 
 use atom_macros::atom_fn;
 use error::RuntimeError;
-use str::Str;
 use value::{IntoAtom as _, Type, Value};
 
 pub mod array;
@@ -36,13 +37,13 @@ macro_rules! match_fn {
 pub struct Runtime {}
 
 impl Runtime {
-    #[atom_fn("isDarwin")]
+    #[atom_fn("is_darwin")]
     fn is_darwin() -> Result<bool, RuntimeError> {
         Ok(cfg!(target_os = "macos"))
     }
 
-    #[atom_fn("typeOf")]
-    fn type_of(value: Value) -> Result<String, RuntimeError> {
+    #[atom_fn("typeof")]
+    fn typeof_(value: Value) -> Result<String, RuntimeError> {
         Ok(value.ty().name().to_string())
     }
 
@@ -83,59 +84,27 @@ impl Runtime {
         })
     }
 
-    #[atom_fn("Array.pop")]
-    fn array_pop<'gc>(mut a: Vec<Value<'gc>>) -> Result<Value<'gc>, RuntimeError> {
-        Ok(a.pop().unwrap_or(Value::NIL))
+    #[atom_fn("data_ptr")]
+    fn data_ptr(value: Value) -> Result<i64, RuntimeError> {
+        Ok(match value.ty() {
+            Type::Array => value.array().deref().addr().unwrap_or(0) as i64,
+            Type::Str => value.str().0.addr().unwrap_or(0) as i64,
+            _ => unreachable!(),
+        })
     }
 
-    #[atom_fn("Array.push")]
-    fn array_push<'gc>(mut a: Vec<Value<'gc>>, item: Value<'gc>) -> Result<(), RuntimeError> {
-        a.push(item);
-        Ok(())
+    #[atom_fn("ptr")]
+    fn ptr(value: Value) -> Result<usize, RuntimeError> {
+        Ok(value.addr())
     }
 
-    #[atom_fn("Array.len")]
-    fn array_len<'gc>(a: Vec<Value<'gc>>) -> Result<usize, RuntimeError> {
-        Ok(a.len())
-    }
-
-    #[atom_fn("Array.cap")]
-    fn array_cap<'gc>(a: Vec<Value<'gc>>) -> Result<usize, RuntimeError> {
-        Ok(a.capacity())
-    }
-
-    #[atom_fn("Array.concat")]
-    fn array_concat<'gc>(
-        lhs: Vec<Value<'gc>>,
-        rhs: Vec<Value<'gc>>,
-    ) -> Result<Vec<Value<'gc>>, RuntimeError> {
-        Ok([lhs, rhs].concat())
-    }
-
-    #[atom_fn("Str.len")]
-    fn str_len(s: String) -> Result<usize, RuntimeError> {
-        Ok(s.len())
-    }
-
-    #[atom_fn("Str.concat")]
-    fn str_concat(lhs: String, rhs: String) -> Result<String, RuntimeError> {
-        Ok([lhs, rhs].concat())
-    }
-
-    #[atom_fn("Str.upper")]
-    fn str_upper(s: String) -> Result<String, RuntimeError> {
-        Ok(s.to_uppercase())
-    }
-
-    #[atom_fn("Str.lower")]
-    fn str_lower(s: String) -> Result<String, RuntimeError> {
-        Ok(s.to_lowercase())
-    }
-
-    #[atom_fn("Str.cptr")]
-    fn str_cptr(s: Handle<Str>) -> Result<i64, RuntimeError> {
-        // @TODO: what to do with an empty string?
-        Ok(s.0.addr().unwrap_or(0) as i64)
+    #[atom_fn("read_usize")]
+    fn read_usize(addr: usize, offset: usize) -> Result<usize, RuntimeError> {
+        unsafe {
+            let ptr = addr as *mut u8;
+            let ptr = ptr.byte_add(offset) as *const usize;
+            Ok(std::ptr::read(ptr))
+        }
     }
 }
 
@@ -146,27 +115,21 @@ impl<'gc> Ffi<'gc> for Runtime {
         gc: &mut Gc<'gc>,
         args: Vec<Value<'gc>>,
     ) -> Result<Value<'gc>, vm::Error> {
-        let handler = match_fn!(
-            name,
-            [
-                repr,
-                type_of,
-                syscall4,
-                is_darwin,
-                array_pop,
-                array_push,
-                array_len,
-                array_cap,
-                array_concat,
-                str_len,
-                str_upper,
-                str_lower,
-                str_concat,
-                str_cptr
-            ]
-        );
+        match name {
+            "array_push" => {
+                let mut array = args[0].array();
+                array.push(gc, args[1])?;
+                Ok(Value::NIL)
+            }
+            _ => {
+                let handler = match_fn!(
+                    name,
+                    [repr, typeof_, ptr, read_usize, data_ptr, is_darwin, syscall4]
+                );
 
-        Ok((handler)(gc, args)?)
+                Ok((handler)(gc, args)?)
+            }
+        }
     }
 }
 

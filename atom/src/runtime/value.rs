@@ -189,9 +189,12 @@ impl<'gc> Value<'gc> {
         self == Value::TRUE
     }
 
+    pub fn addr(&self) -> usize {
+        (self.bits & INT_MASK) as usize
+    }
+
     fn into_handle<T: Trace>(self) -> Handle<'gc, T> {
-        let addr = self.bits & INT_MASK;
-        Handle::from_addr(addr as usize).unwrap()
+        Handle::from_addr(self.addr()).unwrap()
     }
 
     pub fn class(self) -> Handle<'gc, Class<'gc>> {

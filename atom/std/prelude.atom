@@ -1,31 +1,29 @@
 import os;
 
 pub extern fn repr(value);
-pub extern fn typeOf(value);
+pub extern fn typeof(value);
+extern fn ptr(value);
+extern fn read_usize(ptr, offset);
+extern fn array_push(array, elem);
+extern fn data_ptr(arrayLike);
 
-pub class Array {
-    extern fn push(self, item);
-    extern fn pop(self);
-    extern fn concat(self, other);
-    extern fn len(self);
-    extern fn cap(self);
+class Array {
+    fn push(self, elem) => array_push(self, elem);
+    fn len(self) => read_usize(ptr(self), 0);
+    fn cap(self) => read_usize(ptr(self), 8);
 }
 
-pub class Str {
-    extern fn len(self);
-    extern fn upper(self);
-    extern fn lower(self);
-    extern fn concat(self, other);
-    extern fn cptr(self);
+class Str {
+    fn len(self) => read_usize(ptr(self), 0);
 }
 
-pub class Package {
+class Package {
 }
 
 pub fn println(val) {
     let line;
 
-    if typeOf(val) == "Str" {
+    if typeof(val) == "Str" {
         line = val;
     } else {
         line = repr(val);
@@ -33,5 +31,5 @@ pub fn println(val) {
 
     line = line ^ "\n";
 
-    os.syscall4(os.platform.SYS_WRITE, os.STDOUT, line.cptr(), line.len());
+    os.syscall4(os.platform.SYS_WRITE, os.STDOUT, data_ptr(line), line.len());
 }

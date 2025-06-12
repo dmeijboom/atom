@@ -26,19 +26,20 @@ impl<'gc, 'a, T: Trace> Iterator for Iter<'gc, 'a, T> {
     }
 }
 
+#[repr(C)]
 pub struct Array<'gc, T: Trace> {
-    data: MaybeUninit<Handle<'gc, T>>,
     pub len: usize,
     pub cap: usize,
+    data: MaybeUninit<Handle<'gc, T>>,
     _marker: PhantomData<[T]>,
 }
 
 impl<'gc, T: Trace> Default for Array<'gc, T> {
     fn default() -> Self {
         Self {
-            data: MaybeUninit::uninit(),
             len: 0,
             cap: 0,
+            data: MaybeUninit::uninit(),
             _marker: PhantomData,
         }
     }
@@ -151,16 +152,6 @@ impl<'gc, T: Trace> Array<'gc, T> {
             let handle = gc.track(NonNull::new_unchecked(ptr), layout);
             Array::from_raw_parts(handle, len, len)
         }
-    }
-
-    pub fn concat(&self, gc: &mut Gc<'gc>, other: &Array<'gc, T>) -> Self
-    where
-        T: Copy,
-    {
-        Self::from_vec(
-            gc,
-            self.iter().chain(other.iter()).copied().collect::<Vec<_>>(),
-        )
     }
 
     pub fn push(&mut self, gc: &mut Gc<'gc>, item: T) -> Result<(), RuntimeError>

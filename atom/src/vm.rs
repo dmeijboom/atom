@@ -348,9 +348,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             }
             .at(self.frame.span())
         })?;
-        let method = Method::new(object.into(), func);
+
+        let method = Method::new(Handle::clone(&object).into(), func);
         let handle = gc.alloc(method)?;
 
+        object
+            .attrs
+            .insert(member.to_string().into(), Handle::clone(&handle).into());
         self.stack.push(handle.into());
 
         Ok(())
@@ -740,17 +744,34 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         }
     }
 
+    fn concat(&mut self, gc: &mut Gc<'gc>, lhs: Value<'gc>, rhs: Value<'gc>) -> Result<(), Error> {
+        let value = match lhs.ty() {
+            Type::Array => {
+                let lhs = lhs.array();
+                let rhs = rhs.array();
+
+                [lhs.as_slice(), rhs.as_slice()].concat().into_atom(gc)
+            }
+            Type::Str => {
+                let lhs = lhs.str();
+                let rhs = rhs.str();
+
+                [lhs.as_str(), rhs.as_str()].concat().into_atom(gc)
+            }
+            _ => unreachable!(),
+        }?;
+
+        self.stack.push(value);
+        Ok(())
+    }
+
     fn bitwise_xor(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         let (lhs, rhs) = self.stack.operands();
 
         if lhs.is_int() && rhs.is_int() {
             self.push_int(gc, lhs.int() ^ rhs.int())
         } else if matches!(lhs.ty(), Type::Array | Type::Str) && lhs.ty() == rhs.ty() {
-            self.stack.push(rhs);
-            self.load_field(gc, lhs, "concat")?;
-            self.call(gc, 1)?;
-
-            Ok(())
+            self.concat(gc, lhs, rhs)
         } else {
             Err(self.unsupported("^", lhs.ty(), rhs.ty()))
         }
