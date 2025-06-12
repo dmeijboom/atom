@@ -22,13 +22,15 @@ lazy_static! {
             ("/", TokenType::Binary((BinaryOp::Div, Prec::Mul))),
             ("+", TokenType::Binary((BinaryOp::Add, Prec::Add))),
             ("-", TokenType::Binary((BinaryOp::Sub, Prec::Add))),
-            ("<=", TokenType::Binary((BinaryOp::Lte, Prec::Relative))),
-            (">=", TokenType::Binary((BinaryOp::Gte, Prec::Relative))),
-            ("<", TokenType::Binary((BinaryOp::Lt, Prec::Relative))),
-            (">", TokenType::Binary((BinaryOp::Gt, Prec::Relative))),
+            ("<=", TokenType::Binary((BinaryOp::Lte, Prec::Relational))),
+            (">=", TokenType::Binary((BinaryOp::Gte, Prec::Relational))),
+            ("<", TokenType::Binary((BinaryOp::Lt, Prec::Relational))),
+            (">", TokenType::Binary((BinaryOp::Gt, Prec::Relational))),
             ("==", TokenType::Binary((BinaryOp::Eq, Prec::Equal))),
             ("!=", TokenType::Binary((BinaryOp::Ne, Prec::Equal))),
             ("&", TokenType::Binary((BinaryOp::BitAnd, Prec::BitwiseAnd))),
+            ("<<", TokenType::Binary((BinaryOp::ShiftLeft, Prec::Shift))),
+            (">>", TokenType::Binary((BinaryOp::ShiftRight, Prec::Shift))),
             ("^", TokenType::Binary((BinaryOp::Xor, Prec::BitwiseXor))),
             ("|", TokenType::Binary((BinaryOp::BitOr, Prec::BitwiseOr))),
             ("&&", TokenType::Binary((BinaryOp::And, Prec::LogicalAnd))),
@@ -75,7 +77,8 @@ enum Prec {
     BitwiseXor,
     BitwiseAnd,
     Equal,
-    Relative,
+    Relational,
+    Shift,
     Add,
     Mul,
     Prefix,
@@ -102,11 +105,12 @@ impl TryFrom<u8> for Prec {
             5 => Ok(Prec::BitwiseXor),
             6 => Ok(Prec::BitwiseAnd),
             7 => Ok(Prec::Equal),
-            8 => Ok(Prec::Relative),
-            9 => Ok(Prec::Add),
-            10 => Ok(Prec::Mul),
-            11 => Ok(Prec::Prefix),
-            12 => Ok(Prec::Postfix),
+            8 => Ok(Prec::Relational),
+            9 => Ok(Prec::Shift),
+            10 => Ok(Prec::Add),
+            11 => Ok(Prec::Mul),
+            12 => Ok(Prec::Prefix),
+            13 => Ok(Prec::Postfix),
             _ => Err("invalid precedence"),
         }
     }
@@ -439,7 +443,7 @@ impl Parser {
         loop {
             path.push(self.ident()?);
 
-            if !self.accept(&TokenKind::Punct(",")) {
+            if !self.accept(&TokenKind::Punct("/")) {
                 break;
             }
         }

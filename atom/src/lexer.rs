@@ -249,6 +249,8 @@ impl<'a> Lexer<'a> {
                     ('<', Some('=')) => TokenKind::Punct("<=").at(span),
                     ('>', Some('=')) => TokenKind::Punct(">=").at(span),
                     ('=', Some('>')) => TokenKind::Punct("=>").at(span),
+                    ('<', Some('<')) => TokenKind::Punct("<<").at(span),
+                    ('>', Some('>')) => TokenKind::Punct(">>").at(span),
                     ('+', Some('=')) => TokenKind::Punct("+=").at(span),
                     ('-', Some('=')) => TokenKind::Punct("-=").at(span),
                     ('*', Some('=')) => TokenKind::Punct("*=").at(span),

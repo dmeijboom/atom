@@ -415,6 +415,8 @@ impl Compiler {
                     ast::BinaryOp::And => return self.logical(expr.span, *rhs, false),
                     ast::BinaryOp::BitOr => Bytecode::new(Op::BitwiseOr).at(expr.span),
                     ast::BinaryOp::BitAnd => Bytecode::new(Op::BitwiseAnd).at(expr.span),
+                    ast::BinaryOp::ShiftLeft => Bytecode::new(Op::ShiftLeft).at(expr.span),
+                    ast::BinaryOp::ShiftRight => Bytecode::new(Op::ShiftRight).at(expr.span),
                     ast::BinaryOp::Xor => Bytecode::new(Op::BitwiseXor).at(expr.span),
                 };
 

@@ -70,6 +70,26 @@ pub fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Package, crat
     Ok(compiler.compile(program)?)
 }
 
+macro_rules! impl_bitwise {
+    ($(($name:ident: $op:tt)),+) => {
+        impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
+            $(
+                fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+                    let (lhs, rhs) = self.stack.operands();
+                    let value = if lhs.is_int() && rhs.is_int() {
+                        (lhs.int() $op rhs.int()).into_atom(gc)?
+                    } else {
+                        return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()));
+                    };
+
+                    self.stack.push(value);
+                    Ok(())
+                }
+            )+
+        }
+    };
+}
+
 macro_rules! impl_binary {
     ($(($name:ident: $op:tt)),+) => {
         impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
@@ -657,26 +677,6 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn bitwise_and(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-        let (lhs, rhs) = self.stack.operands();
-        if lhs.is_int() && rhs.is_int() {
-            self.stack.push((lhs.int() & rhs.int()).into_atom(gc)?);
-            Ok(())
-        } else {
-            Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()))
-        }
-    }
-
-    fn bitwise_or(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-        let (lhs, rhs) = self.stack.operands();
-        if lhs.is_int() && rhs.is_int() {
-            self.stack.push((lhs.int() | rhs.int()).into_atom(gc)?);
-            Ok(())
-        } else {
-            Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()))
-        }
-    }
-
     fn concat(&mut self, gc: &mut Gc<'gc>, lhs: Value<'gc>, rhs: Value<'gc>) -> Result<(), Error> {
         let value = match lhs.ty() {
             Type::Array => {
@@ -698,7 +698,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn bitwise_xor(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+    fn bit_xor(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         let (lhs, rhs) = self.stack.operands();
 
         if lhs.is_int() && rhs.is_int() {
@@ -753,9 +753,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::Lte => self.lte(gc)?,
                 Op::Gt => self.gt(gc)?,
                 Op::Gte => self.gte(gc)?,
-                Op::BitwiseAnd => self.bitwise_and(gc)?,
-                Op::BitwiseOr => self.bitwise_or(gc)?,
-                Op::BitwiseXor => self.bitwise_xor(gc)?,
+                Op::BitwiseAnd => self.bit_and(gc)?,
+                Op::BitwiseOr => self.bit_or(gc)?,
+                Op::BitwiseXor => self.bit_xor(gc)?,
+                Op::ShiftLeft => self.shift_left(gc)?,
+                Op::ShiftRight => self.shift_right(gc)?,
                 Op::LoadConst => self.load_const(bc.code),
                 Op::LoadMember => self.load_member(gc, bc.code)?,
                 Op::StoreMember => self.store_member(bc.code)?,
@@ -860,4 +862,11 @@ impl_binary!(
     (mul: *),
     (div: /),
     (rem: %)
+);
+
+impl_bitwise!(
+    (bit_and: &),
+    (bit_or: |),
+    (shift_left: <<),
+    (shift_right: >>)
 );

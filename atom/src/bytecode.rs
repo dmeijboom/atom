@@ -32,6 +32,8 @@ pub enum Op {
     BitwiseOr,
     BitwiseAnd,
     BitwiseXor,
+    ShiftLeft,
+    ShiftRight,
     LoadConst,
     Store,
     Load,
