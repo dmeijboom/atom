@@ -5,11 +5,10 @@ use crate::{
     vm::{self, FatalErrorKind, Ffi},
 };
 
-use array::Array;
 use atom_macros::atom_fn;
-use error::{ErrorKind, RuntimeError};
+use error::RuntimeError;
 use str::Str;
-use value::{TryIntoValue as _, Type, Value};
+use value::{IntoAtom as _, Type, Value};
 
 pub mod array;
 pub mod class;
@@ -38,40 +37,22 @@ pub struct Runtime {}
 
 impl Runtime {
     #[atom_fn("isDarwin")]
-    fn is_darwin(_gc: &mut Gc) -> Result<bool, RuntimeError> {
+    fn is_darwin() -> Result<bool, RuntimeError> {
         Ok(cfg!(target_os = "macos"))
     }
 
     #[atom_fn("typeOf")]
-    fn type_of(_gc: &mut Gc, value: Value) -> Result<String, RuntimeError> {
+    fn type_of(value: Value) -> Result<String, RuntimeError> {
         Ok(value.ty().name().to_string())
     }
 
     #[atom_fn("syscall4")]
-    fn syscall4(
-        _gc: &mut Gc,
-        arg1: Value,
-        arg2: Value,
-        arg3: Value,
-        arg4: Value,
-    ) -> Result<i64, RuntimeError> {
-        unsafe { Ok(libc::syscall(arg1.int() as i32, arg2.int(), arg3.int(), arg4.int()) as i64) }
-    }
-
-    #[atom_fn("println")]
-    fn println(_gc: &mut Gc, arg: Value) -> Result<(), RuntimeError> {
-        match arg.ty() {
-            Type::Str => {
-                println!("{}", arg.str().as_str());
-            }
-            _ => println!("{}", Self::repr(_gc, arg)?),
-        }
-
-        Ok(())
+    fn syscall4(arg1: i32, arg2: i64, arg3: i64, arg4: i64) -> Result<i64, RuntimeError> {
+        unsafe { Ok(libc::syscall(arg1, arg2, arg3, arg4) as i64) }
     }
 
     #[atom_fn("repr")]
-    pub fn repr(_atom: &mut Gc, value: Value) -> Result<String, RuntimeError> {
+    pub fn repr(value: Value) -> Result<String, RuntimeError> {
         Ok(match value.ty() {
             Type::Array => {
                 let array = value.array();
@@ -82,7 +63,7 @@ impl Runtime {
                         s.push_str(", ");
                     }
 
-                    s.push_str(&Self::repr(_atom, item)?);
+                    s.push_str(&Self::repr(item)?);
                 }
 
                 s.push(']');
@@ -103,81 +84,58 @@ impl Runtime {
     }
 
     #[atom_fn("Array.pop")]
-    fn array_pop<'gc>(
-        _gc: &mut Gc<'gc>,
-        mut this: Handle<'gc, Array<'gc, Value<'gc>>>,
-    ) -> Result<Value<'gc>, RuntimeError> {
-        this.pop().map_or_else(
-            move || Err(ErrorKind::IndexOutOfBounds(0).at(Span::default())),
-            Ok,
-        )
+    fn array_pop<'gc>(mut a: Vec<Value<'gc>>) -> Result<Value<'gc>, RuntimeError> {
+        Ok(a.pop().unwrap_or(Value::NIL))
     }
 
     #[atom_fn("Array.push")]
-    fn array_push<'gc>(
-        gc: &mut Gc<'gc>,
-        mut this: Handle<'gc, Array<'gc, Value<'gc>>>,
-        item: Value<'gc>,
-    ) -> Result<(), RuntimeError> {
-        this.push(gc, item)?;
+    fn array_push<'gc>(mut a: Vec<Value<'gc>>, item: Value<'gc>) -> Result<(), RuntimeError> {
+        a.push(item);
         Ok(())
     }
 
     #[atom_fn("Array.len")]
-    fn array_len<'gc>(
-        _gc: &mut Gc<'gc>,
-        this: Handle<'gc, Array<'gc, Value>>,
-    ) -> Result<usize, RuntimeError> {
-        Ok(this.len)
+    fn array_len<'gc>(a: Vec<Value<'gc>>) -> Result<usize, RuntimeError> {
+        Ok(a.len())
     }
 
     #[atom_fn("Array.cap")]
-    fn array_cap<'gc>(
-        _gc: &mut Gc<'gc>,
-        this: Handle<'gc, Array<'gc, Value<'gc>>>,
-    ) -> Result<usize, RuntimeError> {
-        Ok(this.cap)
+    fn array_cap<'gc>(a: Vec<Value<'gc>>) -> Result<usize, RuntimeError> {
+        Ok(a.capacity())
     }
 
     #[atom_fn("Array.concat")]
     fn array_concat<'gc>(
-        gc: &mut Gc<'gc>,
-        this: Handle<'gc, Array<'gc, Value<'gc>>>,
-        other: Value<'gc>,
-    ) -> Result<Handle<'gc, Array<'gc, Value<'gc>>>, RuntimeError> {
-        let array = this.concat(gc, &other.array());
-        gc.alloc(array)
+        lhs: Vec<Value<'gc>>,
+        rhs: Vec<Value<'gc>>,
+    ) -> Result<Vec<Value<'gc>>, RuntimeError> {
+        Ok([lhs, rhs].concat())
     }
 
     #[atom_fn("Str.len")]
-    fn str_len(_gc: &mut Gc, this: Handle<Str>) -> Result<usize, RuntimeError> {
-        Ok(this.0.len())
+    fn str_len(s: String) -> Result<usize, RuntimeError> {
+        Ok(s.len())
     }
 
     #[atom_fn("Str.concat")]
-    fn str_concat<'gc>(
-        gc: &mut Gc<'gc>,
-        this: Handle<'gc, Str>,
-        other: Value<'gc>,
-    ) -> Result<Value<'gc>, RuntimeError> {
-        let array = this.0.concat(gc, &other.str().0);
-        gc.alloc(Str(array)).map(Value::from)
+    fn str_concat(lhs: String, rhs: String) -> Result<String, RuntimeError> {
+        Ok([lhs, rhs].concat())
     }
 
     #[atom_fn("Str.upper")]
-    fn str_upper(_gc: &mut Gc, this: Handle<Str>) -> Result<String, RuntimeError> {
-        Ok(this.as_str().to_uppercase())
+    fn str_upper(s: String) -> Result<String, RuntimeError> {
+        Ok(s.to_uppercase())
     }
 
     #[atom_fn("Str.lower")]
-    fn str_lower(_gc: &mut Gc, this: Handle<Str>) -> Result<String, RuntimeError> {
-        Ok(this.as_str().to_lowercase())
+    fn str_lower(s: String) -> Result<String, RuntimeError> {
+        Ok(s.to_lowercase())
     }
 
     #[atom_fn("Str.cptr")]
-    fn str_cptr(_gc: &mut Gc, this: Handle<Str>) -> Result<i64, RuntimeError> {
+    fn str_cptr(s: Handle<Str>) -> Result<i64, RuntimeError> {
         // @TODO: what to do with an empty string?
-        Ok(this.0.addr().unwrap_or(0) as i64)
+        Ok(s.0.addr().unwrap_or(0) as i64)
     }
 }
 
@@ -191,7 +149,6 @@ impl<'gc> Ffi<'gc> for Runtime {
         let handler = match_fn!(
             name,
             [
-                println,
                 repr,
                 type_of,
                 syscall4,
@@ -215,16 +172,18 @@ impl<'gc> Ffi<'gc> for Runtime {
 
 #[cfg(test)]
 mod tests {
+    use crate::runtime::array::Array;
+
     use super::*;
 
     #[test]
     fn array_push() {
         let mut gc = Gc::default();
         let array: Array<Value> = Array::default();
+        let mut handle = gc.alloc(array).unwrap();
 
-        assert_eq!(array.len(), 0);
+        assert_eq!(handle.len(), 0);
 
-        let handle = gc.alloc(array).unwrap();
         let expected = [
             (1, 1),
             (2, 2),
@@ -238,8 +197,8 @@ mod tests {
         ];
 
         for (i, (len, cap)) in expected.into_iter().enumerate() {
-            Runtime::array_push(&mut gc, handle.clone(), (10 * i).try_into().unwrap())
-                .expect("Array.push failed");
+            let item = (10 * i).into_atom(&mut gc).unwrap();
+            handle.push(&mut gc, item).expect("Array.push failed");
 
             assert_eq!(handle.len() as i64, len);
             assert_eq!(handle.cap as i64, cap);

@@ -1,6 +1,6 @@
 use atom::{
     runtime::{
-        value::{TryIntoValue, Type},
+        value::{IntoAtom, Type},
         Runtime,
     },
     Gc, Value,
@@ -44,18 +44,18 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
 #[test_case("array_index", 200i64; "array index")]
 #[test_case("array_slice", vec![200i64, 300i64]; "array slice")]
 #[test_case("array_elem_assign", vec![100i64, 400i64, 300i64]; "array assign element")]
-fn runtime(name: &str, expected: impl for<'gc> TryIntoValue<'gc>) {
+fn runtime(name: &str, expected: impl for<'gc> IntoAtom<'gc>) {
     let mut gc = Gc::default();
     let actual = common::run(&mut gc, &format!("runtime/{name}.atom"));
     let actual = actual
         .expect("runtime error")
         .expect("return value not found");
-    let expected = expected.try_into_val(&mut gc).unwrap();
+    let expected = expected.into_atom(&mut gc).unwrap();
 
     assert!(
         equals(&actual, &expected),
         "expected: {}, got: {}",
-        Runtime::repr(&mut gc, expected).unwrap(),
-        Runtime::repr(&mut gc, actual).unwrap(),
+        Runtime::repr(expected).unwrap(),
+        Runtime::repr(actual).unwrap(),
     );
 }

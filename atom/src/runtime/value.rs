@@ -3,6 +3,8 @@ use std::{
     marker::PhantomData,
 };
 
+use num_enum::{FromPrimitive, IntoPrimitive};
+
 use crate::gc::{Gc, Handle, Trace};
 
 use super::{
@@ -14,7 +16,7 @@ use super::{
 };
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 pub enum Tag {
     SmallInt,
     Int,
@@ -25,13 +27,14 @@ pub enum Tag {
     Str,
     True,
     False,
+    #[default]
     Nil,
     Class,
     Object,
 }
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, FromPrimitive, IntoPrimitive)]
 pub enum Type {
     Int,
     Float,
@@ -40,6 +43,7 @@ pub enum Type {
     Fn,
     Method,
     Str,
+    #[default]
     Nil,
     Class,
     Object,
@@ -98,29 +102,15 @@ impl<'gc> Value<'gc> {
         (self.bits & TAG_MASK) >> 48 == Tag::Object as u64
     }
 
-    pub const fn tag(&self) -> Tag {
+    pub fn tag(&self) -> Tag {
         if self.is_float() {
             return Tag::Float;
         }
 
-        match (self.bits & TAG_MASK) >> 48 {
-            t if t == Tag::SmallInt as u64 => Tag::SmallInt,
-            t if t == Tag::Int as u64 => Tag::Int,
-            t if t == Tag::Float as u64 => Tag::Float,
-            t if t == Tag::True as u64 => Tag::True,
-            t if t == Tag::False as u64 => Tag::False,
-            t if t == Tag::Array as u64 => Tag::Array,
-            t if t == Tag::Fn as u64 => Tag::Fn,
-            t if t == Tag::Method as u64 => Tag::Method,
-            t if t == Tag::Str as u64 => Tag::Str,
-            t if t == Tag::Nil as u64 => Tag::Nil,
-            t if t == Tag::Class as u64 => Tag::Class,
-            t if t == Tag::Object as u64 => Tag::Object,
-            _ => unreachable!(),
-        }
+        ((self.bits & TAG_MASK) >> 48).into()
     }
 
-    pub const fn ty(&self) -> Type {
+    pub fn ty(&self) -> Type {
         match self.tag() {
             Tag::SmallInt | Tag::Int => Type::Int,
             Tag::Float => Type::Float,
@@ -149,6 +139,13 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub const fn new_float(value: f64) -> Self {
+        Self {
+            bits: value.to_bits(),
+            _phantom: PhantomData,
+        }
+    }
+
     pub const fn new_smallint(value: i64) -> Self {
         Self::new(
             Tag::SmallInt,
@@ -158,6 +155,14 @@ impl<'gc> Value<'gc> {
                 value as u64
             },
         )
+    }
+
+    pub const fn new_bool(value: bool) -> Self {
+        if value {
+            Self::TRUE
+        } else {
+            Self::FALSE
+        }
     }
 
     pub fn int(self) -> i64 {
@@ -184,6 +189,11 @@ impl<'gc> Value<'gc> {
         self == Value::TRUE
     }
 
+    fn into_handle<T: Trace>(self) -> Handle<'gc, T> {
+        let addr = self.bits & INT_MASK;
+        Handle::from_addr(addr as usize).unwrap()
+    }
+
     pub fn class(self) -> Handle<'gc, Class<'gc>> {
         self.into_handle()
     }
@@ -194,11 +204,6 @@ impl<'gc> Value<'gc> {
 
     pub fn method(self) -> Handle<'gc, Method<'gc>> {
         self.into_handle()
-    }
-
-    fn into_handle<T: Trace>(self) -> Handle<'gc, T> {
-        let addr = self.bits & INT_MASK;
-        Handle::from_addr(addr as usize).unwrap()
     }
 
     pub fn object(self) -> Handle<'gc, Object<'gc>> {
@@ -261,161 +266,162 @@ impl<'gc> Display for Value<'gc> {
     }
 }
 
+macro_rules! impl_from {
+    ($($fn:ident => $ty:ty),+) => {
+        $(impl<'gc> From<Value<'gc>> for $ty {
+            fn from(value: Value<'gc>) -> Self {
+                value.$fn() as $ty
+            }
+        })+
+    };
+}
+
+macro_rules! impl_from_handle {
+    ($($tag:ident => $ty:ty),+) => {
+        $(impl<'gc> From<Handle<'gc, $ty>> for Value<'gc> {
+            fn from(handle: Handle<'gc, $ty>) -> Self {
+                let addr = unsafe { handle.as_ptr() as u64 };
+                Value::new(Tag::$tag, addr)
+            }
+        })+
+    };
+}
+
+impl_from_handle!(
+    Int => i64,
+    Class => Class<'gc>,
+    Fn => Fn,
+    Method => Method<'gc>,
+    Object => Object<'gc>,
+    Str => Str<'gc>,
+    Array => Array<'gc, Value<'gc>>
+);
+
+impl_from!(
+    int => i8,
+    int => i16,
+    int => i32,
+    int => i64,
+    int => isize,
+    int => u8,
+    int => u16,
+    int => u32,
+    int => u64,
+    int => usize,
+    float => f32,
+    float => f64,
+    bool => bool,
+    str => Handle<'gc, Str<'gc>>
+);
+
+impl<'gc> From<Value<'gc>> for () {
+    fn from(_value: Value<'gc>) -> Self {}
+}
+
+impl<'gc> From<Value<'gc>> for Vec<Value<'gc>> {
+    fn from(value: Value<'gc>) -> Self {
+        value.array().iter().cloned().collect::<Vec<_>>()
+    }
+}
+
+impl<'gc> From<Value<'gc>> for String {
+    fn from(value: Value<'gc>) -> Self {
+        value.str().to_string()
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 #[error("integer overflow")]
 pub struct IntOverflowError;
 
-impl<'gc> TryFrom<i64> for Value<'gc> {
-    type Error = IntOverflowError;
+macro_rules! impl_into_atom {
+    ($($fn:ident: $lty:ty => $rty:ty),+) => {
+        $(
+            impl From<$rty> for Value<'_> {
+                fn from(value: $rty) -> Self {
+                    Value::$fn(value as $lty)
+                }
+            }
 
-    fn try_from(value: i64) -> Result<Self, Self::Error> {
-        if value.unsigned_abs() > INT_MASK {
-            return Err(IntOverflowError);
+            impl<'gc> IntoAtom<'gc> for $rty {
+                fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+                    Ok(self.into())
+                }
+            }
+        )+
+    };
+}
+
+impl_into_atom!(
+    new_smallint: i64 => i8,
+    new_smallint: i64 => i16,
+    new_smallint: i64 => i32,
+    new_smallint: i64 => u8,
+    new_smallint: i64 => u16,
+    new_smallint: i64 => u32,
+    new_float: f64 => f32,
+    new_float: f64 => f64,
+    new_bool: bool => bool
+);
+
+pub trait IntoAtom<'gc> {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError>;
+}
+
+impl<'gc> IntoAtom<'gc> for i64 {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        if self.unsigned_abs() > INT_MASK {
+            let handle = gc.alloc(self)?;
+            return Ok(handle.into());
         }
 
-        Ok(Self::new_smallint(value))
+        Ok(Value::new_smallint(self))
     }
 }
 
-impl<'gc> From<f64> for Value<'gc> {
-    fn from(value: f64) -> Self {
-        Self {
-            bits: value.to_bits(),
-            _phantom: PhantomData,
-        }
+impl<'gc> IntoAtom<'gc> for () {
+    fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        Ok(Value::NIL)
     }
 }
 
-impl<'gc> From<bool> for Value<'gc> {
-    fn from(value: bool) -> Self {
-        if value {
-            Self::TRUE
-        } else {
-            Self::FALSE
-        }
+impl<'gc> IntoAtom<'gc> for isize {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        (self as i64).into_atom(gc)
     }
 }
 
-impl<'gc> TryFrom<usize> for Value<'gc> {
-    type Error = IntOverflowError;
-
-    fn try_from(value: usize) -> Result<Self, Self::Error> {
-        (value as i64).try_into()
+impl<'gc> IntoAtom<'gc> for usize {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        (self as i64).into_atom(gc)
     }
 }
 
-impl<'gc> From<Handle<'gc, Object<'gc>>> for Value<'gc> {
-    fn from(object: Handle<'gc, Object>) -> Self {
-        Self::new(Tag::Object, object.addr() as u64)
-    }
-}
-
-impl<'gc> From<Handle<'gc, Class<'gc>>> for Value<'gc> {
-    fn from(handle: Handle<'gc, Class<'gc>>) -> Self {
-        Self::new(Tag::Class, handle.addr() as u64)
-    }
-}
-
-impl<'gc> From<Handle<'gc, i64>> for Value<'gc> {
-    fn from(handle: Handle<'gc, i64>) -> Self {
-        Self::new(Tag::Int, handle.addr() as u64)
-    }
-}
-
-impl<'gc> From<Handle<'gc, Str<'gc>>> for Value<'gc> {
-    fn from(handle: Handle<'gc, Str<'gc>>) -> Self {
-        Self::new(Tag::Str, handle.addr() as u64)
-    }
-}
-
-impl<'gc> From<Handle<'gc, Array<'gc, Value<'gc>>>> for Value<'gc> {
-    fn from(handle: Handle<'gc, Array<'gc, Value<'gc>>>) -> Self {
-        Self::new(Tag::Array, handle.addr() as u64)
-    }
-}
-
-impl<'gc> From<Handle<'gc, Fn>> for Value<'gc> {
-    fn from(handle: Handle<'gc, Fn>) -> Self {
-        Self::new(Tag::Fn, handle.addr() as u64)
-    }
-}
-
-impl<'gc> From<Handle<'gc, Method<'gc>>> for Value<'gc> {
-    fn from(handle: Handle<'gc, Method<'gc>>) -> Self {
-        Self::new(Tag::Method, handle.addr() as u64)
-    }
-}
-
-impl<'gc> From<()> for Value<'gc> {
-    fn from(_: ()) -> Self {
-        Value::NIL
-    }
-}
-
-impl<'gc> From<Value<'gc>> for Handle<'gc, Str<'gc>> {
-    fn from(value: Value<'gc>) -> Self {
-        value.str()
-    }
-}
-
-impl<'gc> From<Value<'gc>> for Handle<'gc, Object<'gc>> {
-    fn from(value: Value<'gc>) -> Self {
-        value.object()
-    }
-}
-
-impl<'gc> From<Value<'gc>> for Handle<'gc, Array<'gc, Value<'gc>>> {
-    fn from(value: Value<'gc>) -> Self {
-        value.array()
-    }
-}
-
-pub trait TryIntoValue<'gc> {
-    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError>;
-}
-
-impl<'gc, T: TryIntoValue<'gc>> TryIntoValue<'gc> for Vec<T> {
-    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        let data = self
-            .into_iter()
-            .map(|value| value.try_into_val(gc))
-            .collect::<Result<Vec<_>, _>>()?;
-        let array = Array::from_vec(gc, data);
-        let handle = gc.alloc(array)?;
+impl<'gc> IntoAtom<'gc> for String {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        let str = Str::from_string(gc, self);
+        let handle = gc.alloc(str)?;
 
         Ok(handle.into())
     }
 }
 
-impl<'gc, T: Into<Value<'gc>>> TryIntoValue<'gc> for T {
-    fn try_into_val(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        Ok(self.into())
+impl<'gc> IntoAtom<'gc> for Value<'gc> {
+    fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        Ok(self)
     }
 }
 
-impl<'gc> TryIntoValue<'gc> for String {
-    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        let bytes = self.into_bytes();
-        let array = Array::from_vec(gc, bytes);
-        Ok(gc.alloc(Str(array))?.into())
-    }
-}
+impl<'gc, T: IntoAtom<'gc>> IntoAtom<'gc> for Vec<T> {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        let data = self
+            .into_iter()
+            .map(|value| value.into_atom(gc))
+            .collect::<Result<Vec<_>, _>>()?;
+        let array = Array::from_vec(gc, data);
+        let handle = gc.alloc(array)?;
 
-impl<'gc> TryIntoValue<'gc> for usize {
-    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        (self as i64).try_into_val(gc)
-    }
-}
-
-impl<'gc> TryIntoValue<'gc> for i64 {
-    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        match Value::try_from(self) {
-            Ok(value) => Ok(value),
-            Err(IntOverflowError) => {
-                let handle = gc.alloc(self)?;
-                Ok(handle.into())
-            }
-        }
+        Ok(handle.into())
     }
 }
 
@@ -441,8 +447,10 @@ mod tests {
 
     #[test]
     fn test_small_int() {
+        let mut gc = Gc::default();
+
         for i in -1000000..1000000 {
-            let value = Value::try_from(i).unwrap();
+            let value = i.into_atom(&mut gc).unwrap();
             assert_eq!(value.int(), i);
         }
     }
@@ -452,7 +460,7 @@ mod tests {
         let mut gc = Gc::default();
 
         for i in i64::MAX - 1000..i64::MAX {
-            let value = i.try_into_val(&mut gc).unwrap();
+            let value = i.into_atom(&mut gc).unwrap();
             assert_eq!(value.int(), i);
         }
     }

@@ -26,9 +26,11 @@ fn parse_arg(arg: &FnArg) -> (Ident, syn::Type) {
 pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
     let export_as: LitStr = syn::parse_macro_input!(attr);
     let f: ItemFn = syn::parse_macro_input!(item);
-    let inputs = || f.sig.inputs.iter().skip(1);
-    let arg_names = inputs().map(parse_arg_name).collect::<Vec<_>>();
-    let args = inputs()
+    let arg_names = f.sig.inputs.iter().map(parse_arg_name).collect::<Vec<_>>();
+    let args = f
+        .sig
+        .inputs
+        .iter()
         .map(parse_arg)
         .enumerate()
         .map(|(i, (name, ty))| {
@@ -50,8 +52,8 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         fn #export_fn<'gc>(gc: &mut crate::gc::Gc<'gc>, args: Vec<crate::runtime::value::Value<'gc>>) -> Result<crate::runtime::value::Value<'gc>, crate::runtime::error::RuntimeError> {
             #(#args)*
-            let return_value = Self::#name(gc, #(#arg_names),*)?;
-            return_value.try_into_val(gc)
+            let return_value = Self::#name(#(#arg_names),*)?;
+            return_value.into_atom(gc)
         }
     }
     .into()

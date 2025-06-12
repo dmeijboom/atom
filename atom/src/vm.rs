@@ -16,7 +16,7 @@ use crate::{
         error::{Call, ErrorKind, RuntimeError},
         function::{Fn, Method},
         str::Str,
-        value::{self, TryIntoValue, Type, Value},
+        value::{self, IntoAtom, Type, Value},
     },
     stack::Stack,
     utils,
@@ -127,9 +127,9 @@ macro_rules! impl_binary {
                 fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
                     let (lhs, rhs) = self.stack.operands();
                     let value = if lhs.is_int() && rhs.is_int() {
-                        (lhs.int() $op rhs.int()).try_into_val(gc)?
+                        (lhs.int() $op rhs.int()).into_atom(gc)?
                     } else if lhs.is_float() && rhs.is_float() {
-                        (lhs.float() $op rhs.float()).try_into_val(gc)?
+                        (lhs.float() $op rhs.float()).into_atom(gc)?
                     } else {
                         return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()));
                     };
@@ -183,7 +183,7 @@ fn root_frame<'gc>(
     let func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
     let consts = mem::take(&mut package.consts)
         .into_iter()
-        .map(|c| c.try_into_val(gc))
+        .map(|c| c.into_atom(gc))
         .collect::<Result<Vec<_>, _>>()?;
 
     let instance = Instance::new(id, package, consts);
@@ -652,7 +652,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let mut object = Object::new(class);
         object
             .attrs
-            .insert(Cow::Borrowed("instance"), instance_id.try_into_val(gc)?);
+            .insert(Cow::Borrowed("instance"), instance_id.into_atom(gc)?);
 
         let handle = gc.alloc(object)?;
 

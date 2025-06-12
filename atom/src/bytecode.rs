@@ -6,7 +6,7 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 use crate::{
     gc::Gc,
     lexer::Span,
-    runtime::{error::RuntimeError, str::Str, value::TryIntoValue},
+    runtime::{error::RuntimeError, value::IntoAtom},
     Value,
 };
 
@@ -180,17 +180,14 @@ pub enum Const {
 
 impl Eq for Const {}
 
-impl<'gc> TryIntoValue<'gc> for Const {
-    fn try_into_val(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+impl<'gc> IntoAtom<'gc> for Const {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(match self {
             Const::Nil => Value::NIL,
-            Const::Int(n) => n.try_into_val(gc)?,
+            Const::Int(n) => n.into_atom(gc)?,
             Const::Float(n) => Value::from(n),
             Const::Bool(b) => Value::from(b),
-            Const::Str(s) => {
-                let str = Str::from_string(gc, s);
-                Value::from(gc.alloc(str)?)
-            }
+            Const::Str(s) => s.into_atom(gc)?,
         })
     }
 }
