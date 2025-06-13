@@ -65,6 +65,13 @@ pub enum Literal {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct MatchArm {
+    pub pat: Expr,
+    pub expr: Expr,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum ExprKind {
     Ident(String),
     Array(Vec<Expr>),
@@ -76,6 +83,7 @@ pub enum ExprKind {
     Range(Option<Box<Expr>>, Option<Box<Expr>>),
     Binary(Box<Expr>, BinaryOp, Box<Expr>),
     Assign(Option<AssignOp>, Box<Expr>, Box<Expr>),
+    Match(Box<Expr>, Vec<MatchArm>, Option<Box<Expr>>),
 }
 
 impl ExprKind {
@@ -97,13 +105,13 @@ impl Expr {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
 pub type Path = Vec<String>;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FnArg {
     pub name: String,
@@ -116,7 +124,7 @@ impl FnArg {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum StmtKind {
     Break,
@@ -128,9 +136,19 @@ pub enum StmtKind {
     For(Expr, Vec<Stmt>),
     Class(String, Vec<Stmt>, bool),
     Let(String, Option<Expr>),
+    ForCond {
+        init: Box<Stmt>,
+        cond: Expr,
+        step: Expr,
+        body: Vec<Stmt>,
+    },
     ExternFn(String, Vec<FnArg>, bool),
-    Fn(String, Vec<FnArg>, Vec<Stmt>, bool),
-    ForCond(Box<Stmt>, Expr, Expr, Vec<Stmt>),
+    Fn {
+        name: String,
+        args: Vec<FnArg>,
+        body: Vec<Stmt>,
+        public: bool,
+    },
 }
 
 impl StmtKind {
@@ -139,7 +157,7 @@ impl StmtKind {
     }
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Stmt {
     pub kind: StmtKind,

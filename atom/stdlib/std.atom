@@ -1,4 +1,4 @@
-import os;
+import std/os;
 
 pub extern fn repr(value);
 pub extern fn typeof(value);
@@ -7,13 +7,13 @@ extern fn read_usize(ptr, offset);
 extern fn array_push(array, elem);
 extern fn data_ptr(arrayLike);
 
-class Array {
+pub class Array {
     fn push(self, elem) => array_push(self, elem);
     fn len(self) => read_usize(ptr(self), 0);
     fn cap(self) => read_usize(ptr(self), 8);
 }
 
-class Str {
+pub class Str {
     fn len(self) => read_usize(ptr(self), 0);
 }
 

@@ -8,7 +8,8 @@ use lazy_static::lazy_static;
 
 use crate::{
     ast::{
-        AssignOp, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, Path, Stmt, StmtKind, UnaryOp,
+        AssignOp, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Path, Stmt, StmtKind,
+        UnaryOp,
     },
     error::{IntoSpanned, SpannedError},
     lexer::{Span, Token, TokenKind},
@@ -191,7 +192,7 @@ impl Parser {
 
         if !self.test_keyword(keyword) {
             return Err(ErrorKind::UnexpectedToken {
-                expected: Cow::Borrowed("fn"),
+                expected: keyword.to_string().into(),
                 actual: token.to_string(),
             }
             .at(self.span()));
@@ -307,6 +308,37 @@ impl Parser {
         Ok(ExprKind::Range(lhs, rhs).at(span))
     }
 
+    fn match_expr(&mut self) -> Result<ExprKind, ParseError> {
+        let expr = self.expr(Prec::default())?;
+        self.expect(TokenKind::Punct("{"))?;
+
+        let mut arms = vec![];
+        let mut alt = None;
+
+        loop {
+            if self.accept_keyword("else") {
+                self.expect(TokenKind::Punct("=>"))?;
+                let expr = self.expr(Prec::default())?;
+                alt = Some(Box::new(expr));
+                break;
+            }
+
+            let pat = self.expr(Prec::default())?;
+            self.expect(TokenKind::Punct("=>"))?;
+            let expr = self.expr(Prec::default())?;
+
+            arms.push(MatchArm { pat, expr });
+
+            if !self.accept(&TokenKind::Punct(",")) {
+                break;
+            }
+        }
+
+        self.expect(TokenKind::Punct("}"))?;
+
+        Ok(ExprKind::Match(Box::new(expr), arms, alt))
+    }
+
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
@@ -316,6 +348,7 @@ impl Parser {
                 TokenKind::BoolLit(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
                 TokenKind::StringLit(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
                 TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
+                TokenKind::Keyword(w) if w == "match" => Ok(self.match_expr()?.at(token.span)),
                 TokenKind::Punct("[") => Ok(self.array()?.at(token.span)),
                 TokenKind::Punct("(") => {
                     let lhs = self.expr(Prec::default())?;
@@ -509,7 +542,7 @@ impl Parser {
 
     fn fn_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
-        let is_public = self.accept_keyword("pub");
+        let public = self.accept_keyword("pub");
         let is_extern = self.accept_keyword("extern");
         self.expect_keyword("fn")?;
         let name = self.ident()?;
@@ -518,7 +551,7 @@ impl Parser {
 
         if is_extern {
             self.semi()?;
-            return Ok(StmtKind::ExternFn(name, args, is_public).at(span));
+            return Ok(StmtKind::ExternFn(name, args, public).at(span));
         }
 
         let body = if self.accept(&TokenKind::Punct("=>")) {
@@ -531,7 +564,13 @@ impl Parser {
             self.block()?
         };
 
-        Ok(StmtKind::Fn(name, args, body, is_public).at(span))
+        Ok(StmtKind::Fn {
+            name,
+            args,
+            body,
+            public,
+        }
+        .at(span))
     }
 
     fn if_stmt(&mut self) -> Result<Stmt, ParseError> {
@@ -564,15 +603,22 @@ impl Parser {
         Ok(StmtKind::If(*if_stmt).at(span))
     }
 
-    fn for_cond_stmt(&mut self, span: Span, pre: Stmt) -> Result<Stmt, ParseError> {
-        let expr = self.expr(Prec::Range)?;
+    fn for_cond_stmt(&mut self, span: Span, init: Stmt) -> Result<Stmt, ParseError> {
+        let cond = self.expr(Prec::Range)?;
         self.semi()?;
-        let post = self.expr(Prec::Assign)?;
+        let step = self.expr(Prec::Assign)?;
         self.loop_counter += 1;
         let body = self.block()?;
         self.loop_counter -= 1;
+        let init = Box::new(init);
 
-        Ok(StmtKind::ForCond(Box::new(pre), expr, post, body).at(span))
+        Ok(StmtKind::ForCond {
+            init,
+            cond,
+            step,
+            body,
+        }
+        .at(span))
     }
 
     fn class_stmt(&mut self) -> Result<Stmt, ParseError> {

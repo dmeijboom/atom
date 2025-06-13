@@ -5,6 +5,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use linear_map::LinearMap;
 use wyhash2::WyHash;
 
 use crate::{
@@ -121,8 +122,21 @@ pub trait Ffi<'gc> {
     ) -> Result<Value<'gc>, Error>;
 }
 
+#[derive(Default)]
+struct Std<'gc> {
+    instance: usize,
+    builtins: LinearMap<Cow<'static, str>, Handle<'gc, Class<'gc>>>,
+}
+
+impl<'gc> Trace for Std<'gc> {
+    fn trace(&self, gc: &mut Gc<'_>) {
+        self.builtins.values().for_each(|handle| gc.mark(handle));
+    }
+}
+
 pub struct Vm<'gc, F: Ffi<'gc>, const S: usize> {
     ffi: F,
+    std: Std<'gc>,
     frame: Frame<'gc>,
     search_path: PathBuf,
     stack: Stack<Value<'gc>, S>,
@@ -163,6 +177,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             ffi,
             frame,
             search_path,
+            std: Std::default(),
             packages: HashMap::default(),
             instances: vec![instance],
             call_stack: vec![],
@@ -212,14 +227,30 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn load_member(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let object = self.stack.pop();
+        let recv = self.stack.pop();
 
-        if object.is_object() {
-            self.load_attr(gc, object, idx as usize)
-        } else {
-            let member = self.instances[self.frame.instance].consts[idx as usize].str();
-            self.load_field(gc, object, member.as_str())
+        if recv.is_object() {
+            return self.load_attr(gc, recv, idx as usize);
         }
+
+        let member = self.instances[self.frame.instance].consts[idx as usize].str();
+
+        if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
+            if let Some(func) = class.get_method(gc, member.as_str())? {
+                let method = Method::new(recv, func);
+                let handle = gc.alloc(method)?;
+
+                self.stack.push(handle.into());
+                return Ok(());
+            }
+        }
+
+        Err(ErrorKind::UnknownField {
+            ty: recv.ty(),
+            field: member.to_string(),
+        }
+        .at(self.frame.span())
+        .into())
     }
 
     fn store_member(&mut self, member: u32) -> Result<(), Error> {
@@ -310,32 +341,6 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         self.stack.push(handle.into());
 
         Ok(())
-    }
-
-    fn load_field(
-        &mut self,
-        gc: &mut Gc<'gc>,
-        object: Value<'gc>,
-        member: &str,
-    ) -> Result<(), Error> {
-        let instance = &mut self.instances[self.frame.instance];
-
-        if let Some(mut class) = instance.get_class_by_name(gc, object.ty().name())? {
-            if let Some(func) = class.get_method(gc, member)? {
-                let method = Method::new(object, func);
-                let handle = gc.alloc(method)?;
-
-                self.stack.push(handle.into());
-                return Ok(());
-            }
-        }
-
-        Err(ErrorKind::UnknownField {
-            ty: object.ty(),
-            field: member.to_string(),
-        }
-        .at(self.frame.span())
-        .into())
     }
 
     fn load_class(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
@@ -597,19 +602,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         self.call_stack.push(mem::replace(&mut self.frame, frame));
     }
 
-    fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance].consts[idx as usize].str();
-
-        if let Some(handle) = self.packages.get(name.as_str()) {
-            self.stack.push(Handle::clone(handle).into());
-            return Ok(());
-        }
-
+    fn import_path(&mut self, gc: &mut Gc<'gc>, name: &str) -> Result<usize, Error> {
         let id = self.instances.len();
 
         // Parse and compile module
-        let module =
-            compile(self.make_path(name.as_str()), true).map_err(|e| Error::Import(Box::new(e)))?;
+        let module = compile(self.make_path(name), true).map_err(|e| Error::Import(Box::new(e)))?;
 
         // Initialize instance and frame
         let (mut instance, frame) = instance_with_frame(id, gc, module)?;
@@ -632,6 +629,19 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         // Activate the frame
         self.set_frame(frame);
         self.gc_tick(gc);
+
+        Ok(id)
+    }
+
+    fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
+        let name = self.instances[self.frame.instance].consts[idx as usize].str();
+
+        if let Some(handle) = self.packages.get(name.as_str()) {
+            self.stack.push(Handle::clone(handle).into());
+            return Ok(());
+        }
+
+        self.import_path(gc, name.as_str())?;
 
         Ok(())
     }
@@ -825,30 +835,57 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         mem::take(&mut self.profiler)
     }
 
-    pub fn run(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-        let mut start = || {
-            #[cfg(feature = "profiler")]
-            self.profiler.enter();
+    fn bootstrap(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+        self.std.instance = self.import_path(gc, "std")?;
 
-            loop {
-                self.eval(gc)?;
+        let user_frame = self.call_stack.remove(0);
 
-                match self.call_stack.pop() {
-                    Some(frame) => {
-                        if !self.frame.returned && !self.frame.global {
-                            self.stack.push(Value::NIL);
-                        }
+        self.eval_loop(gc)?;
+        self.set_frame(user_frame);
+        self.call_stack.clear();
 
-                        self.frame = frame;
+        let instance = &mut self.instances[self.std.instance];
+        let classes = instance
+            .package()
+            .classes
+            .iter()
+            .enumerate()
+            .filter_map(|(id, c)| if c.public { Some(id) } else { None })
+            .collect::<Vec<_>>();
+
+        for id in classes {
+            let class = instance.get_class(gc, id)?;
+            self.std.builtins.insert(class.name.clone(), class);
+        }
+
+        Ok(())
+    }
+
+    fn eval_loop(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+        loop {
+            self.eval(gc)?;
+
+            match self.call_stack.pop() {
+                Some(frame) => {
+                    if !self.frame.returned && !self.frame.global {
+                        self.stack.push(Value::NIL);
                     }
-                    None => break,
+
+                    self.frame = frame;
                 }
+                None => break,
             }
+        }
 
-            Ok(())
-        };
+        Ok(())
+    }
 
-        start().map_err(|e| self.add_trace(e))
+    pub fn run(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+        #[cfg(feature = "profiler")]
+        self.profiler.enter();
+        self.bootstrap(gc)
+            .and_then(|_| self.eval_loop(gc))
+            .map_err(|e| self.add_trace(e))
     }
 }
 

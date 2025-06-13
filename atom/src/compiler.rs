@@ -8,7 +8,7 @@ use bytes::{Bytes, BytesMut};
 use wyhash2::WyHash;
 
 use crate::{
-    ast::{self, Expr, ExprKind, FnArg, IfStmt, Literal, Stmt, StmtKind},
+    ast::{self, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Stmt, StmtKind},
     bytecode::{Bytecode, Const, Op, Serializable, Spanned},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
@@ -199,7 +199,7 @@ impl Compiler {
         offset
     }
 
-    fn set_pos(&mut self, offset: usize, new_offset: usize) {
+    fn set_offset(&mut self, offset: usize, new_offset: usize) {
         let orig = Spanned::<Bytecode>::deserialize(&mut &self.body[offset..offset + 8]);
         let (code1, _) = orig.code2();
         let mut buff = &mut self.body[offset..];
@@ -219,6 +219,22 @@ impl Compiler {
 
     fn remove_tail(&mut self) {
         self.body.truncate(self.body.len() - 8);
+    }
+
+    fn push_hidden_var(&mut self, span: Span, init: bool) -> Result<usize, CompileError> {
+        let id = self.vars_seq;
+        let name = format!("__{}", self.vars_seq);
+
+        self.vars_seq += 1;
+
+        if let Some(scope) = self.scope.front_mut() {
+            let mut var = Var::with_init(span, id, init);
+            var.used = true; // Hidden vars are always used
+
+            scope.vars.insert(name, var);
+        }
+
+        Ok(id)
     }
 
     fn push_var(&mut self, span: Span, name: String, init: bool) -> Result<usize, CompileError> {
@@ -295,7 +311,7 @@ impl Compiler {
         });
 
         self.expr(rhs)?;
-        self.set_pos(offset, self.offset());
+        self.set_offset(offset, self.offset());
 
         Ok(())
     }
@@ -459,10 +475,53 @@ impl Compiler {
                 },
             )
             .at(expr.span),
+            ExprKind::Match(expr, arms, alt) => {
+                self.match_expr(*expr, arms, alt)?;
+                return Ok(());
+            }
             ExprKind::Range(_, _) => unreachable!(),
         };
 
         self.push_bytecode(code);
+        Ok(())
+    }
+
+    fn match_expr(
+        &mut self,
+        expr: Expr,
+        arms: Vec<MatchArm>,
+        alt: Option<Box<Expr>>,
+    ) -> Result<(), CompileError> {
+        let span = expr.span;
+        let id = self.push_hidden_var(expr.span, true)?;
+
+        self.expr(expr)?;
+        self.push_bytecode(Bytecode::with_code(Op::Store, id as u32).at(span));
+
+        let mut offsets = vec![];
+
+        for arm in arms {
+            let span = arm.pat.span;
+
+            self.push_bytecode(Bytecode::with_code(Op::Load, id as u32).at(span));
+            self.expr(arm.pat)?;
+            self.push_bytecode(Bytecode::new(Op::Eq).at(span));
+            let offset = self.push_bytecode(Bytecode::with_code(Op::JumpIfFalse, 0).at(span));
+            self.expr(arm.expr)?;
+            offsets.push(self.push_bytecode(Bytecode::with_code(Op::Jump, 0).at(span)));
+            self.set_offset(offset, self.offset());
+        }
+
+        if let Some(expr) = alt {
+            self.expr(*expr)?;
+        }
+
+        let end_offset = self.offset();
+
+        for offset in offsets {
+            self.set_offset(offset, end_offset);
+        }
+
         Ok(())
     }
 
@@ -531,8 +590,8 @@ impl Compiler {
     fn handle_markers(&mut self, begin: usize, end: usize) {
         while let Some(marker) = self.markers.pop() {
             match marker {
-                Marker::Begin(idx) => self.set_pos(idx, begin),
-                Marker::End(idx) => self.set_pos(idx, end),
+                Marker::Begin(idx) => self.set_offset(idx, begin),
+                Marker::End(idx) => self.set_offset(idx, end),
             }
         }
     }
@@ -604,9 +663,12 @@ impl Compiler {
             let span = method.span;
 
             match method.kind {
-                StmtKind::Fn(name, args, stmts, public) => {
-                    self.method(span, &mut funcs, name, args, stmts, public)?
-                }
+                StmtKind::Fn {
+                    name,
+                    args,
+                    body,
+                    public,
+                } => self.method(span, &mut funcs, name, args, body, public)?,
                 StmtKind::ExternFn(name, args, public) => {
                     if funcs.contains_key(&name) {
                         return Err(ErrorKind::DuplicateMethod(name).at(span));
@@ -634,7 +696,7 @@ impl Compiler {
         let offset = self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(body)?;
         self.push_bytecode(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
-        self.set_pos(offset, self.offset());
+        self.set_offset(offset, self.offset());
         self.handle_markers(begin, self.offset());
 
         Ok(())
@@ -656,7 +718,7 @@ impl Compiler {
         let post_idx = self.offset();
         self.expr(post)?;
         self.push_bytecode(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
-        self.set_pos(offset, self.offset());
+        self.set_offset(offset, self.offset());
         self.handle_markers(post_idx, self.offset());
 
         Ok(())
@@ -678,15 +740,15 @@ impl Compiler {
                 let end_stmt_offset = self.push_bytecode(Bytecode::new(Op::Jump).at(span));
 
                 if let Some(offset) = end_block_offset {
-                    self.set_pos(offset, self.offset());
+                    self.set_offset(offset, self.offset());
                 }
 
                 self.if_stmt(*alt)?;
-                self.set_pos(end_stmt_offset, self.offset());
+                self.set_offset(end_stmt_offset, self.offset());
             }
             None => {
                 if let Some(idx) = end_block_offset {
-                    self.set_pos(idx, self.offset());
+                    self.set_offset(idx, self.offset());
                 }
             }
         }
@@ -759,13 +821,19 @@ impl Compiler {
             StmtKind::ExternFn(name, args, public) => {
                 self.extern_fn_stmt(stmt.span, name, args, public)?
             }
-            StmtKind::Fn(name, args, stmts, public) => {
-                self.fn_stmt(stmt.span, name, args, stmts, public)?
-            }
+            StmtKind::Fn {
+                name,
+                args,
+                body,
+                public,
+            } => self.fn_stmt(stmt.span, name, args, body, public)?,
             StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
-            StmtKind::ForCond(pre, expr, post, body) => {
-                self.for_cond_stmt(stmt.span, *pre, expr, post, body)?
-            }
+            StmtKind::ForCond {
+                init,
+                cond,
+                step,
+                body,
+            } => self.for_cond_stmt(stmt.span, *init, cond, step, body)?,
         }
 
         Ok(())
@@ -895,7 +963,7 @@ mod tests {
         let offset = compiler.push_bytecode(code.clone());
 
         compiler.push_bytecode(Bytecode::new(Op::Lt).at(Span::default()));
-        compiler.set_pos(offset, 800);
+        compiler.set_offset(offset, 800);
 
         let code = Spanned::<Bytecode>::deserialize(&mut &compiler.body[..8]);
         assert_eq!(Op::Load, code.op);

@@ -78,6 +78,7 @@ fn is_keyword(s: &str) -> bool {
             | "let"
             | "fn"
             | "return"
+            | "match"
             | "new"
             | "class"
             | "import"

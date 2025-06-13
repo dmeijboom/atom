@@ -71,8 +71,8 @@ impl Fn {
 }
 
 pub struct Method<'gc> {
-    pub func: Handle<'gc, Fn>,
     pub recv: Value<'gc>,
+    pub func: Handle<'gc, Fn>,
 }
 
 impl<'gc> Method<'gc> {

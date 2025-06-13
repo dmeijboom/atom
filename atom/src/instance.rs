@@ -125,6 +125,10 @@ impl<'gc> Instance<'gc> {
         }
     }
 
+    pub fn package(&self) -> &Package {
+        &self.package
+    }
+
     pub fn get_class_by_name(
         &mut self,
         gc: &mut Gc<'gc>,
