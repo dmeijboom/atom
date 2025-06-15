@@ -4,6 +4,7 @@ use std::{
 };
 
 use num_enum::{FromPrimitive, IntoPrimitive};
+use rug::Integer;
 
 use crate::gc::{Gc, Handle, Trace};
 
@@ -12,6 +13,7 @@ use super::{
     class::{Class, Object},
     error::RuntimeError,
     function::{Fn, Method},
+    int::Int,
     str::Str,
 };
 
@@ -19,7 +21,7 @@ use super::{
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 pub enum Tag {
     SmallInt,
-    Int,
+    BigInt,
     Float,
     Array,
     Fn,
@@ -72,6 +74,53 @@ impl Display for Type {
     }
 }
 
+// In theory, we can store any handle in a value, but we only allow a limited set of types
+trait ValueAlloc {
+    fn tag() -> Tag;
+}
+
+impl ValueAlloc for Integer {
+    fn tag() -> Tag {
+        Tag::BigInt
+    }
+}
+
+impl ValueAlloc for Str<'_> {
+    fn tag() -> Tag {
+        Tag::Str
+    }
+}
+
+impl ValueAlloc for Class<'_> {
+    fn tag() -> Tag {
+        Tag::Class
+    }
+}
+
+impl ValueAlloc for Object<'_> {
+    fn tag() -> Tag {
+        Tag::Object
+    }
+}
+
+impl ValueAlloc for Fn {
+    fn tag() -> Tag {
+        Tag::Fn
+    }
+}
+
+impl ValueAlloc for Method<'_> {
+    fn tag() -> Tag {
+        Tag::Method
+    }
+}
+
+impl ValueAlloc for Array<'_, Value<'_>> {
+    fn tag() -> Tag {
+        Tag::Array
+    }
+}
+
 const SIGN_BIT: u64 = 1 << 63;
 const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;
@@ -95,7 +144,7 @@ impl<'gc> Value<'gc> {
 
     pub const fn is_int(&self) -> bool {
         let tag = (self.bits & TAG_MASK) >> 48;
-        tag == Tag::SmallInt as u64 || tag == Tag::Int as u64
+        tag == Tag::SmallInt as u64 || tag == Tag::BigInt as u64
     }
 
     pub const fn is_object(&self) -> bool {
@@ -112,7 +161,7 @@ impl<'gc> Value<'gc> {
 
     pub fn ty(&self) -> Type {
         match self.tag() {
-            Tag::SmallInt | Tag::Int => Type::Int,
+            Tag::SmallInt | Tag::BigInt => Type::Int,
             Tag::Float => Type::Float,
             Tag::Array => Type::Array,
             Tag::Fn => Type::Fn,
@@ -165,18 +214,18 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn int(self) -> i64 {
+    pub fn int(self) -> Int<'gc> {
         match self.tag() {
             Tag::SmallInt => {
                 let bits = self.bits & INT_MASK;
 
                 if self.bits & SIGN_BIT != 0 {
-                    return -(bits as i64);
+                    return Int::Small(-(bits as i64));
                 }
 
-                bits as i64
+                Int::Small(bits as i64)
             }
-            Tag::Int => *self.into_handle(),
+            Tag::BigInt => Int::Big(self.into_handle()),
             _ => unreachable!(),
         }
     }
@@ -193,8 +242,8 @@ impl<'gc> Value<'gc> {
         (self.bits & INT_MASK) as usize
     }
 
-    fn into_handle<T: Trace>(self) -> Handle<'gc, T> {
-        Handle::from_addr(self.addr()).unwrap()
+    fn into_handle<T: Trace + ValueAlloc>(self) -> Handle<'gc, T> {
+        Handle::from_addr(self.addr()).expect("invalid handle")
     }
 
     pub fn class(self) -> Handle<'gc, Class<'gc>> {
@@ -227,7 +276,7 @@ impl<'gc> Trace for Value<'gc> {
         match self.tag() {
             Tag::Array => gc.mark(&self.array()),
             Tag::Str => gc.mark(&self.str()),
-            Tag::Int => gc.mark(&self.into_handle::<i64>()),
+            Tag::BigInt => gc.mark(&self.into_handle::<Integer>()),
             Tag::Object => gc.mark(&self.object()),
             Tag::Fn => gc.mark(&self.func()),
             Tag::Method => gc.mark(&self.method()),
@@ -269,6 +318,19 @@ impl<'gc> Display for Value<'gc> {
     }
 }
 
+macro_rules! impl_from_int_small {
+    ($($ty:ty),+) => {
+        $(impl<'gc> From<Value<'gc>> for $ty {
+            fn from(value: Value<'gc>) -> Self {
+                match value.int() {
+                    Int::Small(i) => i as $ty,
+                    _ => unreachable!(),
+                }
+            }
+        })+
+    };
+}
+
 macro_rules! impl_from {
     ($($fn:ident => $ty:ty),+) => {
         $(impl<'gc> From<Value<'gc>> for $ty {
@@ -279,43 +341,27 @@ macro_rules! impl_from {
     };
 }
 
-macro_rules! impl_from_handle {
-    ($($tag:ident => $ty:ty),+) => {
-        $(impl<'gc> From<Handle<'gc, $ty>> for Value<'gc> {
-            fn from(handle: Handle<'gc, $ty>) -> Self {
-                let addr = unsafe { handle.as_ptr() as u64 };
-                Value::new(Tag::$tag, addr)
-            }
-        })+
-    };
+impl<'gc, T: Trace + ValueAlloc> From<Handle<'gc, T>> for Value<'gc> {
+    fn from(handle: Handle<'gc, T>) -> Self {
+        let addr = unsafe { handle.as_ptr() as u64 };
+        Value::new(T::tag(), addr)
+    }
 }
 
-impl_from_handle!(
-    Int => i64,
-    Class => Class<'gc>,
-    Fn => Fn,
-    Method => Method<'gc>,
-    Object => Object<'gc>,
-    Str => Str<'gc>,
-    Array => Array<'gc, Value<'gc>>
-);
+impl_from_int_small!(i8, i16, i32, i64, u8, u16, u32);
 
 impl_from!(
-    int => i8,
-    int => i16,
-    int => i32,
-    int => i64,
-    int => isize,
-    int => u8,
-    int => u16,
-    int => u32,
-    int => u64,
-    int => usize,
     float => f32,
     float => f64,
     bool => bool,
     str => Handle<'gc, Str<'gc>>
 );
+
+impl<'gc> From<Value<'gc>> for usize {
+    fn from(value: Value<'gc>) -> Self {
+        value.int().to_usize()
+    }
+}
 
 impl<'gc> From<Value<'gc>> for () {
     fn from(_value: Value<'gc>) -> Self {}
@@ -332,10 +378,6 @@ impl<'gc> From<Value<'gc>> for String {
         value.str().to_string()
     }
 }
-
-#[derive(Debug, thiserror::Error)]
-#[error("integer overflow")]
-pub struct IntOverflowError;
 
 macro_rules! impl_into_atom {
     ($($fn:ident: $lty:ty => $rty:ty),+) => {
@@ -371,10 +413,26 @@ pub trait IntoAtom<'gc> {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError>;
 }
 
+impl<'gc> IntoAtom<'gc> for Int<'gc> {
+    fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        match self {
+            Int::Small(i) => Ok(Value::new_smallint(i)),
+            Int::Big(handle) => Ok(Value::new(Tag::BigInt, handle.addr() as u64)),
+        }
+    }
+}
+
+impl<'gc> IntoAtom<'gc> for Integer {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        let handle = gc.alloc(self)?;
+        Ok(handle.into())
+    }
+}
+
 impl<'gc> IntoAtom<'gc> for i64 {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         if self.unsigned_abs() > INT_MASK {
-            let handle = gc.alloc(self)?;
+            let handle = gc.alloc(Integer::from(self))?;
             return Ok(handle.into());
         }
 
@@ -382,21 +440,20 @@ impl<'gc> IntoAtom<'gc> for i64 {
     }
 }
 
+impl<'gc> IntoAtom<'gc> for usize {
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        if (self as u64) > INT_MASK {
+            let handle = gc.alloc(Integer::from(self))?;
+            return Ok(handle.into());
+        }
+
+        Ok(Value::new_smallint(self as i64))
+    }
+}
+
 impl<'gc> IntoAtom<'gc> for () {
     fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(Value::NIL)
-    }
-}
-
-impl<'gc> IntoAtom<'gc> for isize {
-    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        (self as i64).into_atom(gc)
-    }
-}
-
-impl<'gc> IntoAtom<'gc> for usize {
-    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        (self as i64).into_atom(gc)
     }
 }
 
@@ -437,7 +494,7 @@ mod tests {
     #[test]
     fn test_tags() {
         assert_eq!(Value::new_primitive(Tag::SmallInt).ty(), Type::Int);
-        assert_eq!(Value::new_primitive(Tag::Int).ty(), Type::Int);
+        assert_eq!(Value::new_primitive(Tag::BigInt).ty(), Type::Int);
         assert_eq!(Value::new_primitive(Tag::Array).ty(), Type::Array);
         assert_eq!(Value::new_primitive(Tag::Fn).ty(), Type::Fn);
         assert_eq!(Value::new_primitive(Tag::Str).ty(), Type::Str);
@@ -454,17 +511,18 @@ mod tests {
 
         for i in -1000000..1000000 {
             let value = i.into_atom(&mut gc).unwrap();
-            assert_eq!(value.int(), i);
+            assert_eq!(value.int().to_i64(), i);
         }
     }
 
     #[test]
     fn test_big_int() {
         let mut gc = Gc::default();
+        gc.disable();
 
         for i in i64::MAX - 1000..i64::MAX {
             let value = i.into_atom(&mut gc).unwrap();
-            assert_eq!(value.int(), i);
+            assert_eq!(value.int().to_i64(), i);
         }
     }
 

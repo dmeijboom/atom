@@ -2,6 +2,7 @@ use std::{fmt::Display, ops::Deref};
 
 use bytes::{Buf, BufMut};
 use num_enum::{FromPrimitive, IntoPrimitive};
+use rug::Integer;
 
 use crate::{
     gc::Gc,
@@ -177,6 +178,7 @@ impl Display for Bytecode {
 pub enum Const {
     Nil,
     Int(i64),
+    BigInt(Integer),
     Float(f64),
     Bool(bool),
     Str(String),
@@ -188,7 +190,8 @@ impl<'gc> IntoAtom<'gc> for Const {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(match self {
             Const::Nil => Value::NIL,
-            Const::Int(n) => n.into_atom(gc)?,
+            Const::Int(i) => i.into_atom(gc)?,
+            Const::BigInt(i) => i.into_atom(gc)?,
             Const::Float(n) => Value::from(n),
             Const::Bool(b) => Value::from(b),
             Const::Str(s) => s.into_atom(gc)?,

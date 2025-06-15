@@ -470,6 +470,7 @@ impl Compiler {
                     Literal::Nil => self.push_const(Const::Nil),
                     Literal::Bool(b) => self.push_const(Const::Bool(b)),
                     Literal::Int(i) => self.push_const(Const::Int(i)),
+                    Literal::BigInt(i) => self.push_const(Const::BigInt(i)),
                     Literal::Float(f) => self.push_const(Const::Float(f)),
                     Literal::String(s) => self.push_const(Const::Str(s)),
                 },

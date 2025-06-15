@@ -342,11 +342,12 @@ impl Parser {
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
-                TokenKind::NilLit => Ok(ExprKind::Literal(Literal::Nil).at(token.span)),
-                TokenKind::IntLit(i) => Ok(ExprKind::Literal(Literal::Int(i)).at(token.span)),
-                TokenKind::FloatLit(f) => Ok(ExprKind::Literal(Literal::Float(f)).at(token.span)),
-                TokenKind::BoolLit(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
-                TokenKind::StringLit(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
+                TokenKind::Nil => Ok(ExprKind::Literal(Literal::Nil).at(token.span)),
+                TokenKind::Int(i) => Ok(ExprKind::Literal(Literal::Int(i)).at(token.span)),
+                TokenKind::BigInt(i) => Ok(ExprKind::Literal(Literal::BigInt(i)).at(token.span)),
+                TokenKind::Float(f) => Ok(ExprKind::Literal(Literal::Float(f)).at(token.span)),
+                TokenKind::Bool(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
+                TokenKind::String(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
                 TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
                 TokenKind::Keyword(w) if w == "match" => Ok(self.match_expr()?.at(token.span)),
                 TokenKind::Punct("[") => Ok(self.array()?.at(token.span)),

@@ -1,3 +1,4 @@
+use rug::Integer;
 use serde::Serialize;
 
 use crate::lexer::Span;
@@ -59,6 +60,7 @@ pub enum Literal {
     Nil,
     Bool(bool),
     Int(i64),
+    BigInt(Integer),
     Float(f64),
     String(String),
 }

@@ -29,6 +29,7 @@ libc = "0.2.172"
 num_enum = "0.7.3"
 linear-map = "1.2.0"
 libmimalloc-sys = { version = "0.1.42", features = ["extended"] }
+rug = { version = "1.27.0", default-features = false, features = ["integer", "serde", "std"] }
 
 [dev-dependencies]
 ron = "0.10.1"

@@ -1,8 +1,9 @@
 use std::{
     fmt::Display,
-    num::{ParseFloatError, ParseIntError},
+    num::{IntErrorKind, ParseFloatError, ParseIntError},
 };
 
+use rug::{Complete, Integer};
 use serde::Serialize;
 
 use crate::error::{IntoSpanned, SpannedError};
@@ -35,11 +36,12 @@ pub enum TokenKind {
     Ident(String),
     Keyword(String),
     Punct(&'static str),
-    NilLit,
-    BoolLit(bool),
-    IntLit(i64),
-    FloatLit(f64),
-    StringLit(String),
+    Nil,
+    Bool(bool),
+    Int(i64),
+    BigInt(Integer),
+    Float(f64),
+    String(String),
 }
 
 impl TokenKind {
@@ -54,12 +56,13 @@ impl Display for TokenKind {
             Self::Ident(name) => write!(f, "{name}"),
             Self::Keyword(name) => write!(f, "{name}"),
             Self::Punct(punct) => write!(f, "{punct}"),
-            Self::NilLit => write!(f, "nil"),
-            Self::BoolLit(true) => write!(f, "true"),
-            Self::BoolLit(false) => write!(f, "false"),
-            Self::IntLit(value) => write!(f, "{}", value),
-            Self::FloatLit(value) => write!(f, "{}", value),
-            Self::StringLit(value) => write!(f, "\"{value}\""),
+            Self::Nil => write!(f, "nil"),
+            Self::Bool(true) => write!(f, "true"),
+            Self::Bool(false) => write!(f, "false"),
+            Self::Int(value) => write!(f, "{}", value),
+            Self::BigInt(value) => write!(f, "{}", value),
+            Self::Float(value) => write!(f, "{}", value),
+            Self::String(value) => write!(f, "\"{value}\""),
         }
     }
 }
@@ -94,6 +97,8 @@ pub enum ErrorKind {
     ParseFloat(#[from] ParseFloatError),
     #[error("failed to parse int: {0}")]
     ParseInt(#[from] ParseIntError),
+    #[error("failed to parse bigint: {0}")]
+    ParseBigInt(#[from] rug::integer::ParseIntegerError),
     #[error("invalid escape sequence at: {0}")]
     InvalidEscapeSequence(char),
     #[error("unexpected EOF")]
@@ -160,9 +165,9 @@ impl<'a> Lexer<'a> {
         }
 
         match term.as_str() {
-            "nil" => TokenKind::NilLit,
-            "true" => TokenKind::BoolLit(true),
-            "false" => TokenKind::BoolLit(false),
+            "nil" => TokenKind::Nil,
+            "true" => TokenKind::Bool(true),
+            "false" => TokenKind::Bool(false),
             name if is_keyword(name) => TokenKind::Keyword(term),
             _ => TokenKind::Ident(term),
         }
@@ -194,10 +199,19 @@ impl<'a> Lexer<'a> {
 
         if dot {
             let f = num.parse().map_err(|e| ErrorKind::ParseFloat(e).at(span))?;
-            Ok(TokenKind::FloatLit(f).at(span))
+            Ok(TokenKind::Float(f).at(span))
         } else {
-            let i = num.parse().map_err(|e| ErrorKind::ParseInt(e).at(span))?;
-            Ok(TokenKind::IntLit(i).at(span))
+            match num.parse() {
+                Ok(i) => Ok(TokenKind::Int(i).at(span)),
+                Err(e) => match e.kind() {
+                    IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
+                        let integer =
+                            Integer::parse(&num).map_err(|e| ErrorKind::ParseBigInt(e).at(span))?;
+                        Ok(TokenKind::BigInt(integer.complete()).at(span))
+                    }
+                    _ => Err(ErrorKind::ParseInt(e).at(span)),
+                },
+            }
         }
     }
 
@@ -222,7 +236,7 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        Ok(TokenKind::StringLit(s).at(span))
+        Ok(TokenKind::String(s).at(span))
     }
 
     pub fn lex(&mut self) -> Result<Vec<Token>, TokenError> {

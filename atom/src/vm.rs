@@ -30,8 +30,8 @@ use crate::{
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {
-    match elem.int() {
-        n if n < 0 => (len as i64 + n) as usize,
+    match elem.int().to_i64() {
+        n if n < 0 => len + n as usize,
         n => n as usize,
     }
 }
@@ -275,7 +275,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         member: Handle<'gc, Str<'gc>>,
     ) -> Result<(), Error> {
         let instance_id = object.attrs["instance"].int();
-        let instance = &mut self.instances[instance_id as usize];
+        let instance = &mut self.instances[instance_id.to_usize()];
 
         if let Some(handle) = instance.get_fn_by_name(gc, member.as_str())? {
             if handle.public {

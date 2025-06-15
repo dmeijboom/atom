@@ -1,4 +1,4 @@
-use atom::gc::Gc;
+use atom::{gc::Gc, runtime::int::Int};
 use test_case::test_case;
 
 mod common;
@@ -16,7 +16,9 @@ fn int(name: &str, expected: Result<i64, &'static str>) {
         return_value
             .map(|r| r.map(|value| value.int()))
             .map_err(|e| e.to_string()),
-        expected.map(Some).map_err(ToOwned::to_owned)
+        expected
+            .map(|i| Some(Int::from(i)))
+            .map_err(ToOwned::to_owned)
     );
 }
 

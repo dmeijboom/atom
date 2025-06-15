@@ -15,6 +15,7 @@ pub mod array;
 pub mod class;
 pub mod error;
 pub mod function;
+pub mod int;
 pub mod str;
 pub mod value;
 
@@ -169,7 +170,7 @@ mod tests {
 
         for (i, item) in handle.iter().copied().enumerate() {
             assert_eq!(Type::Int, item.ty());
-            assert_eq!(10 * i, item.int() as usize);
+            assert_eq!(10 * i, item.int().to_usize());
         }
     }
 }

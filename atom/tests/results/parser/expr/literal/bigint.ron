@@ -1,0 +1,16 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: literal(bigInt(Integer(
+                radix: 16,
+                value: "b782dace9d8fffff",
+            ))),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

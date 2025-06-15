@@ -7,6 +7,7 @@ mod common;
 
 #[test_case("literal/bool"; "bool literal")]
 #[test_case("literal/int"; "int literal")]
+#[test_case("literal/bigint"; "bigint literal")]
 #[test_case("literal/float"; "float literal")]
 #[test_case("literal/nil"; "nil literal")]
 #[test_case("literal/string"; "string literal")]
