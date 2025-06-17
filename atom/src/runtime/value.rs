@@ -220,10 +220,10 @@ impl<'gc> Value<'gc> {
                 let bits = self.bits & INT_MASK;
 
                 if self.bits & SIGN_BIT != 0 {
-                    return Int::Small(-(bits as i64));
+                    return Int::Inline(-(bits as i64));
                 }
 
-                Int::Small(bits as i64)
+                Int::Inline(bits as i64)
             }
             Tag::BigInt => Int::Big(self.into_handle()),
             _ => unreachable!(),
@@ -323,7 +323,7 @@ macro_rules! impl_from_int_small {
         $(impl<'gc> From<Value<'gc>> for $ty {
             fn from(value: Value<'gc>) -> Self {
                 match value.int() {
-                    Int::Small(i) => i as $ty,
+                    Int::Inline(i) => i as $ty,
                     _ => unreachable!(),
                 }
             }
@@ -416,7 +416,7 @@ pub trait IntoAtom<'gc> {
 impl<'gc> IntoAtom<'gc> for Int<'gc> {
     fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         match self {
-            Int::Small(i) => Ok(Value::new_smallint(i)),
+            Int::Inline(i) => Ok(Value::new_smallint(i)),
             Int::Big(handle) => Ok(Value::new(Tag::BigInt, handle.addr() as u64)),
         }
     }

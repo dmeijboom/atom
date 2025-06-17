@@ -203,6 +203,12 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             .into()
     }
 
+    fn index_out_of_bounds(&self, idx: usize) -> Error {
+        ErrorKind::IndexOutOfBounds(idx)
+            .at(self.frame.span())
+            .into()
+    }
+
     fn gc_tick(&mut self, gc: &mut Gc) {
         if !gc.ready() {
             return;
@@ -355,14 +361,18 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn return_arg(&mut self, idx: u32) -> Result<(), Error> {
-        self.load_arg(idx);
+    fn return_local(&mut self, idx: u32) -> Result<(), Error> {
+        self.load_local(idx);
         self.ret();
         Ok(())
     }
 
-    fn load_arg(&mut self, idx: u32) {
+    fn load_local(&mut self, idx: u32) {
         self.stack.push(self.frame.locals[idx as usize]);
+    }
+
+    fn store_local(&mut self, idx: u32) {
+        self.frame.locals[idx as usize] = self.stack.pop();
     }
 
     fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
@@ -536,60 +546,111 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         }
 
         let array = self.stack.pop();
-        self.check_type(array.ty(), Type::Array)?;
 
-        let array = array.array();
-        let from = from.map(|v| array_idx(v, array.len())).unwrap_or(0);
-        let to = to.map(|v| array_idx(v, array.len())).unwrap_or(array.len());
-
-        if to > array.len() || to < from {
-            return Err(ErrorKind::IndexOutOfBounds(to).at(self.frame.span()).into());
+        match array.ty() {
+            Type::Array => {
+                let array = array.array();
+                let new_array = gc.alloc(self.slice_array(&array, from, to)?)?;
+                self.stack.push(new_array.into());
+            }
+            Type::Str => {
+                let array = array.str();
+                let new_array = self.slice_array(&array.0, from, to)?;
+                let new_str = gc.alloc(Str(new_array))?;
+                self.stack.push(new_str.into());
+            }
+            ty => self.check_type(ty, Type::Array)?,
         }
 
-        let new_array = gc.alloc(array.slice(from, to))?;
-
-        self.stack.push(new_array.into());
         self.gc_tick(gc);
 
         Ok(())
     }
 
-    fn prepare_elem(&mut self) -> Result<(Handle<'gc, Array<'gc, Value<'gc>>>, usize), Error> {
-        let elem = self.stack.pop();
-        let array = self.stack.pop();
+    fn slice_array<T: Trace>(
+        &mut self,
+        array: &Array<'gc, T>,
+        from: Option<Value<'gc>>,
+        to: Option<Value<'gc>>,
+    ) -> Result<Array<'gc, T>, Error> {
+        let from = from.map(|v| array_idx(v, array.len())).unwrap_or(0);
+        let mut to = to.map(|v| array_idx(v, array.len())).unwrap_or(array.len());
 
-        self.check_type(elem.ty(), Type::Int)?;
-        self.check_type(array.ty(), Type::Array)?;
+        if from > array.len() {
+            return Ok(Array::default());
+        }
 
-        let handle = array.array();
-        let idx = array_idx(elem, handle.len());
+        if to > array.len() {
+            to = array.len();
+        }
 
-        Ok((handle, idx))
+        Ok(array.slice(from, to))
     }
 
     fn store_elem(&mut self) -> Result<(), Error> {
         let value = self.stack.pop();
-        let (mut array, n) = self.prepare_elem()?;
+        let elem = self.stack.pop();
+        let array = self.stack.pop();
 
-        match array.get_mut(n) {
-            Some(elem) => {
+        self.check_type(elem.ty(), Type::Int)?;
+
+        match array.ty() {
+            Type::Array => {
+                let mut array = array.array();
+                let idx = array_idx(elem, array.len());
+                let elem = array
+                    .get_mut(idx)
+                    .ok_or_else(|| self.index_out_of_bounds(idx))?;
+
                 *elem = value;
-                Ok(())
             }
-            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.frame.span()).into()),
+            Type::Str => {
+                self.check_type(value.ty(), Type::Int)?;
+
+                let array = &mut array.str().0;
+                let idx = array_idx(elem, array.len());
+                let elem = array
+                    .get_mut(idx)
+                    .ok_or_else(|| self.index_out_of_bounds(idx))?;
+
+                *elem = value.int().to_usize() as u8;
+            }
+            _ => self.check_type(array.ty(), Type::Array)?,
         }
+
+        Ok(())
     }
 
     fn load_elem(&mut self) -> Result<(), Error> {
-        let (array, n) = self.prepare_elem()?;
+        let elem = self.stack.pop();
+        let array = self.stack.pop();
 
-        match array.get(n).copied() {
-            Some(elem) => {
-                self.stack.push(elem);
-                Ok(())
+        self.check_type(elem.ty(), Type::Int)?;
+
+        let elem = match array.ty() {
+            Type::Array => {
+                let handle = array.array();
+                let idx = array_idx(elem, handle.len());
+                handle
+                    .get(idx)
+                    .copied()
+                    .ok_or_else(|| self.index_out_of_bounds(idx))?
             }
-            None => Err(ErrorKind::IndexOutOfBounds(n).at(self.frame.span()).into()),
-        }
+            Type::Str => {
+                let handle = &array.str().0;
+                let idx = array_idx(elem, handle.len());
+                handle
+                    .get(idx)
+                    .copied()
+                    .map(Value::from)
+                    .ok_or_else(|| self.index_out_of_bounds(idx))?
+            }
+            _ => return self.check_type(array.ty(), Type::Array),
+        };
+
+        self.stack.push(elem);
+
+        Ok(())
     }
 
     fn make_path(&self, name: &str) -> PathBuf {
@@ -663,7 +724,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let ty = lhs.ty();
 
         if ty != rhs.ty() {
-            return Err(self.unsupported_rhs(lhs, rhs, "=="));
+            return Ok(false);
         }
 
         Ok(match ty {
@@ -775,10 +836,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::LoadClass => self.load_class(gc, bc.code)?,
                 Op::Store => self.store(bc.code)?,
                 Op::Load => self.load(bc.code),
-                Op::LoadArg => self.load_arg(bc.code),
+                Op::LoadLocal => self.load_local(bc.code),
+                Op::StoreLocal => self.store_local(bc.code),
                 Op::Discard => self.discard(),
                 Op::Return => self.ret(),
-                Op::ReturnArg => self.return_arg(bc.code)?,
+                Op::ReturnLocal => self.return_local(bc.code)?,
                 Op::Call => self.call(gc, bc.code)?,
                 Op::CallFn => self.call_fn(gc, bc.code2())?,
                 Op::CallExtern => self.call_extern(gc, bc.code)?,
@@ -806,7 +868,12 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     fn add_trace(&mut self, e: Error) -> Error {
         match e {
             Error::Runtime(mut e) => {
-                let call_stack = mem::take(&mut self.call_stack);
+                let mut call_stack = mem::take(&mut self.call_stack);
+                call_stack.push(Frame::new(
+                    self.frame.offset,
+                    Handle::clone(&self.frame.handle),
+                ));
+
                 let mut stack_trace = call_stack
                     .into_iter()
                     .map(|frame| {

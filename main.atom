@@ -1,7 +1,7 @@
 import std;
+import std/map;
 
-let array = [1, 2, 3];
+let x = map.Map();
+x.set("key1", "value1");
 
-array = array[:-1];
-
-std.println(array);
+std.println(x.get("key1"));

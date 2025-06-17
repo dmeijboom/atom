@@ -84,6 +84,15 @@ impl Var {
         var.init = init;
         var
     }
+
+    fn set_used(&mut self, name: &str) -> Result<(), CompileError> {
+        if !self.init {
+            return Err(ErrorKind::NameUninitialized(name.to_string()).at(self.span));
+        }
+
+        self.used = true;
+        Ok(())
+    }
 }
 
 #[derive(Default)]
@@ -116,7 +125,7 @@ enum Marker {
 fn check_unused(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
     if let Some((name, var)) = vars
         .iter()
-        .filter(|(name, _)| name.as_str() != "self")
+        .filter(|(name, _)| name.as_str() != "self" && !name.starts_with("_"))
         .find(|(_, var)| !var.used)
     {
         return Err(ErrorKind::NameUnused(name.to_string()).at(var.span));
@@ -125,13 +134,12 @@ fn check_unused(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError>
     Ok(())
 }
 
-fn set_used(name: &str, var: &mut Var) -> Result<(), CompileError> {
-    if !var.init {
-        return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
-    }
-
-    var.used = true;
-    Ok(())
+#[derive(Clone, Copy)]
+enum Symbol {
+    Local(u32),
+    Var(u32),
+    Class(u32),
+    Fn(u32),
 }
 
 pub struct Compiler {
@@ -297,11 +305,10 @@ impl Compiler {
         None
     }
 
-    fn load_var(&mut self, span: Span, name: &str) -> Result<&mut Var, CompileError> {
+    fn load_var(&mut self, name: &str) -> Option<&mut Var> {
         self.scope
             .iter_mut()
             .find_map(|scope| scope.vars.get_mut(name))
-            .ok_or_else(|| ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
     fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), CompileError> {
@@ -324,27 +331,69 @@ impl Compiler {
         Ok(())
     }
 
-    // Load a name based in the following order: local > var > class > func
-    fn load_name(&mut self, span: Span, name: String) -> Result<Spanned<Bytecode>, CompileError> {
-        match self.load_local(&name) {
-            Some(var) => {
-                set_used(&name, var)?;
-                Ok(Bytecode::with_code(Op::LoadArg, var.id as u32).at(span))
-            }
-            None => match self.load_var(span, &name) {
-                Ok(var) => {
-                    set_used(&name, var)?;
-                    Ok(Bytecode::with_code(Op::Load, var.id as u32).at(span))
+    fn set_init(&mut self, sym: Symbol) {
+        match sym {
+            Symbol::Local(id) => {
+                if let Some(locals) = self.locals.front_mut() {
+                    if let Some(var) = locals.values_mut().find(|local| local.id == id as usize) {
+                        var.init = true;
+                    }
                 }
-                Err(e) => match self.classes.iter().position(|c| c.name == name) {
-                    Some(idx) => Ok(Bytecode::with_code(Op::LoadClass, idx as u32).at(span)),
+            }
+            Symbol::Var(id) => {
+                if let Some(var) = self
+                    .scope
+                    .iter_mut()
+                    .find_map(|scope| scope.vars.values_mut().find(|var| var.id == id as usize))
+                {
+                    var.init = true;
+                }
+            }
+            Symbol::Class(_) | Symbol::Fn(_) => {}
+        }
+    }
+
+    // Load a symbol based on the following order: local > var > class > func
+    fn load_symbol(
+        &mut self,
+        span: Span,
+        name: &str,
+        check_init: bool,
+    ) -> Result<Symbol, CompileError> {
+        match self.load_local(name) {
+            Some(local) => {
+                if check_init {
+                    local.set_used(name)?;
+                }
+
+                Ok(Symbol::Local(local.id as u32))
+            }
+            None => match self.load_var(name) {
+                Some(var) => {
+                    if check_init {
+                        var.set_used(name)?;
+                    }
+
+                    Ok(Symbol::Var(var.id as u32))
+                }
+                None => match self.classes.iter().position(|c| c.name == name) {
+                    Some(idx) => Ok(Symbol::Class(idx as u32)),
                     None => match self.funcs.iter().position(|f| f.name == name) {
-                        Some(idx) => Ok(Bytecode::with_code(Op::LoadFn, idx as u32).at(span)),
-                        None => Err(e),
+                        Some(idx) => Ok(Symbol::Fn(idx as u32)),
+                        None => Err(ErrorKind::UnknownName(name.to_string()).at(span)),
                     },
                 },
             },
         }
+    }
+
+    fn load_name(&mut self, span: Span, name: &str) -> Result<Spanned<Bytecode>, CompileError> {
+        Ok(match self.load_symbol(span, name, true)? {
+            Symbol::Local(id) => Bytecode::with_code(Op::LoadLocal, id).at(span),
+            Symbol::Var(id) => Bytecode::with_code(Op::Load, id).at(span),
+            Symbol::Class(id) => Bytecode::with_code(Op::LoadClass, id).at(span),
+            Symbol::Fn(id) => Bytecode::with_code(Op::LoadFn, id).at(span),
+        })
     }
 
     fn assign(
@@ -360,11 +409,17 @@ impl Compiler {
 
         Ok(match lhs.kind {
             ExprKind::Ident(name) => {
-                let var = self.load_var(rhs.span, &name)?;
-                var.init = true;
-                let idx = var.id;
+                let sym = self.load_symbol(span, &name, false)?;
+                let bc = match sym {
+                    Symbol::Local(id) => Bytecode::with_code(Op::StoreLocal, id).at(span),
+                    Symbol::Var(id) => Bytecode::with_code(Op::Store, id).at(span),
+                    _ => return Err(ErrorKind::UnknownName(name).at(span)),
+                };
+
                 self.expr(rhs)?;
-                Bytecode::with_code(Op::Store, idx as u32).at(span)
+                self.set_init(sym);
+
+                bc
             }
             ExprKind::Member(object, member) => {
                 self.expr(*object)?;
@@ -462,7 +517,7 @@ impl Compiler {
                 }
                 .at(span)
             }
-            ExprKind::Ident(name) => self.load_name(expr.span, name)?,
+            ExprKind::Ident(name) => self.load_name(expr.span, &name)?,
             ExprKind::Call(callee, args) => self.call(expr.span, *callee, args)?,
             ExprKind::Literal(lit) => Bytecode::with_code(
                 Op::LoadConst,
@@ -578,7 +633,7 @@ impl Compiler {
         let mut body = self.compile_fn_body(Scope::new(), args, stmts)?;
 
         if name == "init" {
-            Bytecode::with_code(Op::ReturnArg, 0).serialize(&mut body);
+            Bytecode::with_code(Op::ReturnLocal, 0).serialize(&mut body);
         }
 
         if let Some(method) = methods.get_mut(&name) {
@@ -797,10 +852,10 @@ impl Compiler {
                 self.expr(expr)?;
 
                 match self.tail() {
-                    Some(opcode) if self.optimize && opcode.op == Op::LoadArg => {
+                    Some(opcode) if self.optimize && opcode.op == Op::LoadLocal => {
                         self.remove_tail();
                         self.push_bytecode(
-                            Bytecode::with_code(Op::ReturnArg, opcode.code).at(stmt.span),
+                            Bytecode::with_code(Op::ReturnLocal, opcode.code).at(stmt.span),
                         );
                     }
                     _ => {
@@ -982,7 +1037,7 @@ mod tests {
         let expected = compiler
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
-        let actual = compiler.load_var(Span::default(), "n").unwrap();
+        let actual = compiler.load_var("n").unwrap();
 
         assert_eq!(expected, actual.id);
         assert_ne!(top, actual.id);

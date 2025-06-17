@@ -42,7 +42,7 @@ pub enum Op {
     LoadClass,
     Discard,
     Return,
-    ReturnArg,
+    ReturnLocal,
     Jump,
     JumpIfFalse,
     PushJumpIfFalse,
@@ -58,7 +58,8 @@ pub enum Op {
     StoreElement,
     LoadMember,
     StoreMember,
-    LoadArg,
+    LoadLocal,
+    StoreLocal,
     Import,
 }
 
@@ -167,8 +168,8 @@ impl Display for Bytecode {
             | Op::TailCall
             | Op::LoadElement
             | Op::LoadMember
-            | Op::LoadArg
-            | Op::ReturnArg => write!(f, "{:?} {}", self.op, self.code),
+            | Op::LoadLocal
+            | Op::ReturnLocal => write!(f, "{:?} {}", self.op, self.code),
             _ => write!(f, "{:?}", self.op),
         }
     }
@@ -209,8 +210,8 @@ mod tests {
         assert_eq!(opcode.op, Op::Eq);
         assert_eq!(opcode.code, 0);
 
-        let opcode = Bytecode::with_code(Op::LoadArg, 2394);
-        assert_eq!(opcode.op, Op::LoadArg);
+        let opcode = Bytecode::with_code(Op::LoadLocal, 2394);
+        assert_eq!(opcode.op, Op::LoadLocal);
         assert_eq!(opcode.code, 2394);
     }
 

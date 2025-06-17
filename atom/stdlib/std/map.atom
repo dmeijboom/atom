@@ -1,0 +1,141 @@
+let P0 = 11562461410679940143;
+let P1 = 16646288086500911323;
+let P2 = 10285213230658275043;
+let P3 = 6384245875588680899;
+let P4 = 2129725606500045391;
+let _P5 = 16952864883938283877;
+
+fn trunc32(n) => n & 4294967295;
+fn trunc64(n) => n & 18446744073709551615;
+
+fn wymum(a, b) {
+    let r = a * b;
+    trunc64((r >> 64) ^ r)
+}
+
+fn read64(data) {
+    for let i = data.len(); i < 8; i += 1 {
+        data.push(0);
+    }
+
+    data[7] << 56
+        | data[6] << 48
+        | data[5] << 40
+        | data[4] << 32
+        | data[3] << 24
+        | data[2] << 16
+        | data[1] << 8
+        | data[0]
+}
+
+fn read32(data) {
+    for let i = data.len(); i < 4; i += 1 {
+        data.push(0);
+    }
+
+    data[3] << 24
+        | data[2] << 16
+        | data[1] << 8
+        | data[0]
+}
+
+fn read64_swapped(data) {
+    (read32(data) << 32) | read32(data[4:])
+}
+
+pub fn read_rest(data) {
+    match data.len() {
+        1 => data[0],
+        2 => (data[1] << 8) | data[0],
+        3 => (data[1] << 16) | (data[0] << 8) | data[2],
+        4 => read32(data),
+        5 => (read32(data) << 8) | data[4],
+        6 => read32(data) << 16 | (data[5] << 8) | data[4],
+        7 => (read32(data) << 24)
+            | (data[5] << 16)
+            | (data[4] << 8)
+            | data[6],
+        8 => read64_swapped(data),
+        else => nil
+    }
+}
+
+fn wyhash_core(bytes, seed) {
+    let total_chunks = bytes.len() / 32;
+
+    for let i = 0; i < total_chunks; i += 1 {
+        let start = i * 32;
+        let chunk = bytes[start:start + 32];
+
+        seed = wymum(
+            seed ^ P0,
+            wymum(read64(chunk) ^ P1,
+            read64(chunk[8:]) ^ P2) ^ wymum(read64(chunk[16:]) ^ P3,
+            read64(chunk[24:]) ^ P4)
+        );
+    }
+
+    seed = seed ^ P0;
+
+    let rest = bytes.len() & 31;
+
+    if rest != 0 {
+        let start = (bytes.len() / 32) * 32;
+        seed = match ((bytes.len() - 1) & 31) / 8 {
+            0 => wymum(seed, read_rest(bytes[start:]) ^ P1),
+            1 => wymum(read64_swapped(bytes[start:]) ^ seed, read_rest(bytes[start + 8:]) ^ P2),
+            2 => wymum(read64_swapped(bytes[start:]) ^ seed, read64_swapped(bytes[start + 8:]) ^ P2) ^
+                wymum(seed, read_rest(bytes[start + 16:]) ^ P3),
+            3 => wymum(read64_swapped(bytes[start:]) ^ seed, read64_swapped(bytes[start + 8:]) ^ P2) ^
+                wymum(read64_swapped(bytes[start + 16:]) ^ seed, read_rest(bytes[start + 24:]) ^ P4),
+            else => nil
+        };
+    }
+
+    seed
+}
+
+pub class Entry {
+    fn init(self, key, value) {
+        self.key = key;
+        self.value = value;
+    }
+}
+
+pub class Map {
+    fn init(self) {
+        self.buckets = [nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+                        nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
+                        nil, nil, nil, nil, nil];
+    }
+
+    fn set(self, key, value) {
+        let hash = wyhash_core(key, 1);
+        let idx = hash % self.buckets.len();
+        let bucket = self.buckets[idx];
+
+        if bucket == nil {
+            self.buckets[idx] = [Entry(key, value)];
+        } else {
+            bucket.push(Entry(key, value));
+        }
+    }
+
+    fn get(self, key) {
+        let hash = wyhash_core(key, 1);
+        let idx = hash % self.buckets.len();
+        let bucket = self.buckets[idx];
+
+        if bucket == nil {
+            return nil;
+        }
+
+        for let i = 0; i < bucket.len(); i += 1 {
+            if bucket[i].key == key {
+                return bucket[i].value;
+            }
+        }
+
+        return nil;
+    }
+}

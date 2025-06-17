@@ -1,0 +1,6 @@
+fn simple(a) {
+    a = a + 27;
+    a
+}
+
+ret(simple(3));
