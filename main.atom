@@ -1,7 +1,3 @@
 import std;
-import std/map;
 
-let x = map.Map();
-x.set("key1", "value1");
-
-std.println(x.get("key1"));
+std.println(170141183460469231731687303715884105730);

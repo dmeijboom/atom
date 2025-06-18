@@ -3,10 +3,12 @@ use std::{
     num::{IntErrorKind, ParseFloatError, ParseIntError},
 };
 
-use rug::{Complete, Integer};
 use serde::Serialize;
 
-use crate::error::{IntoSpanned, SpannedError};
+use crate::{
+    error::{IntoSpanned, SpannedError},
+    runtime::int::{self, Int},
+};
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
 pub struct Span {
@@ -39,7 +41,7 @@ pub enum TokenKind {
     Nil,
     Bool(bool),
     Int(i64),
-    BigInt(Integer),
+    BigInt(Int),
     Float(f64),
     String(String),
 }
@@ -98,7 +100,7 @@ pub enum ErrorKind {
     #[error("failed to parse int: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("failed to parse bigint: {0}")]
-    ParseBigInt(#[from] rug::integer::ParseIntegerError),
+    ParseBigInt(#[from] int::ParseIntError),
     #[error("invalid escape sequence at: {0}")]
     InvalidEscapeSequence(char),
     #[error("unexpected EOF")]
@@ -206,8 +208,8 @@ impl<'a> Lexer<'a> {
                 Err(e) => match e.kind() {
                     IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
                         let integer =
-                            Integer::parse(&num).map_err(|e| ErrorKind::ParseBigInt(e).at(span))?;
-                        Ok(TokenKind::BigInt(integer.complete()).at(span))
+                            Int::parse(&num).map_err(|e| ErrorKind::ParseBigInt(e).at(span))?;
+                        Ok(TokenKind::BigInt(integer).at(span))
                     }
                     _ => Err(ErrorKind::ParseInt(e).at(span)),
                 },

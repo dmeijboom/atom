@@ -23,6 +23,7 @@ use crate::{
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
         function::{Fn, Method},
+        int::Int,
         str::Str,
         value::{IntoAtom, Type, Value},
     },
@@ -674,7 +675,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         // Setup package class
         let class = gc.alloc(Class::new("Package", self.frame.instance))?;
-        let object = Object::with_attr(gc, class, vec![("instance", id)])?;
+        let object = Object::with_attr(gc, class, vec![("instance", Int::from(id))])?;
         let handle = gc.alloc(object)?;
 
         // Insert the package object as the first variable (which is `self`)

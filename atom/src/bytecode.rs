@@ -2,13 +2,13 @@ use std::{fmt::Display, ops::Deref};
 
 use bytes::{Buf, BufMut};
 use num_enum::{FromPrimitive, IntoPrimitive};
-use rug::Integer;
 
 use crate::{
     gc::Gc,
     lexer::Span,
     runtime::{
         error::RuntimeError,
+        int::Int,
         value::{IntoAtom, Value},
     },
 };
@@ -179,7 +179,7 @@ impl Display for Bytecode {
 pub enum Const {
     Nil,
     Int(i64),
-    BigInt(Integer),
+    BigInt(Int),
     Float(f64),
     Bool(bool),
     Str(String),
