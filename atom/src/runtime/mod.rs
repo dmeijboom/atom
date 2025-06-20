@@ -34,6 +34,37 @@ macro_rules! match_fn {
     };
 }
 
+fn _repr(value: &Value) -> String {
+    match value.ty() {
+        Type::Array => {
+            let array = value.array();
+            let mut s = String::from("[");
+
+            for (i, item) in array.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(", ");
+                }
+
+                s.push_str(&_repr(item));
+            }
+
+            s.push(']');
+            s
+        }
+        Type::Str => {
+            format!("\"{}\"", value.str().as_str())
+        }
+        Type::Int => format!("{}", *value.int()),
+        Type::Float => format!("{}", value.float()),
+        Type::Bool => format!("{}", value.bool()),
+        Type::Fn => format!("{}(..)", value.func().name),
+        Type::Method => format!(".{}(..)", value.func().name),
+        Type::Class => value.class().name.to_string(),
+        Type::Object => format!("{}{{..}}", value.object().class.name),
+        Type::Nil => "<nil>".to_string(),
+    }
+}
+
 #[derive(Default)]
 pub struct Runtime {}
 
@@ -55,34 +86,7 @@ impl Runtime {
 
     #[atom_fn("repr")]
     pub fn repr(value: Value) -> Result<String, RuntimeError> {
-        Ok(match value.ty() {
-            Type::Array => {
-                let array = value.array();
-                let mut s = String::from("[");
-
-                for (i, item) in array.iter().copied().enumerate() {
-                    if i > 0 {
-                        s.push_str(", ");
-                    }
-
-                    s.push_str(&Self::repr(item)?);
-                }
-
-                s.push(']');
-                s
-            }
-            Type::Str => {
-                format!("\"{}\"", value.str().as_str())
-            }
-            Type::Int => format!("{}", value.int()),
-            Type::Float => format!("{}", value.float()),
-            Type::Bool => format!("{}", value.bool()),
-            Type::Fn => format!("{}(..)", value.func().name),
-            Type::Method => format!(".{}(..)", value.func().name),
-            Type::Class => value.class().name.to_string(),
-            Type::Object => format!("{}{{..}}", value.object().class.name),
-            Type::Nil => "<nil>".to_string(),
-        })
+        Ok(_repr(&value))
     }
 
     #[atom_fn("data_ptr")]
@@ -96,7 +100,7 @@ impl Runtime {
 
     #[atom_fn("ptr")]
     fn ptr(value: Value) -> Result<usize, RuntimeError> {
-        Ok(value.addr())
+        Ok(value.as_raw_ptr() as usize)
     }
 
     #[atom_fn("read_usize")]
@@ -119,8 +123,8 @@ impl<'gc> Ffi<'gc> for Runtime {
         match name {
             "array_push" => {
                 let mut array = args[0].array();
-                array.push(gc, args[1])?;
-                Ok(Value::NIL)
+                array.push(gc, Value::clone(&args[1]))?;
+                Ok(Value::default())
             }
             _ => {
                 let handler = match_fn!(
@@ -168,9 +172,9 @@ mod tests {
             assert_eq!(handle.cap as i64, cap);
         }
 
-        for (i, item) in handle.iter().copied().enumerate() {
+        for (i, item) in handle.iter().enumerate() {
             assert_eq!(Type::Int, item.ty());
-            assert_eq!(10 * i, item.int().to_usize());
+            assert_eq!(10 * i, item.int().as_usize());
         }
     }
 }

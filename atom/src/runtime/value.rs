@@ -1,11 +1,16 @@
 use std::{
     fmt::{Debug, Display},
     marker::PhantomData,
+    mem::ManuallyDrop,
+    ops::Deref,
 };
 
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::gc::{Gc, Handle, Trace};
+use crate::gc::{
+    pool::{PoolObject, PoolObjectRef},
+    Gc, Handle, Trace,
+};
 
 use super::{
     array::Array,
@@ -78,12 +83,6 @@ trait ValueAlloc {
     fn tag() -> Tag;
 }
 
-impl ValueAlloc for Int {
-    fn tag() -> Tag {
-        Tag::BigInt
-    }
-}
-
 impl ValueAlloc for Str<'_> {
     fn tag() -> Tag {
         Tag::Str
@@ -125,29 +124,52 @@ const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;
 pub const INT_MASK: u64 = 0xffff_ffff_ffff;
 
-#[derive(Clone, Copy)]
+pub struct Primitive(u64);
+
+macro_rules! primitive {
+    ($($name:ident: $tag:expr),+) => {
+        impl Primitive {
+            $(pub const $name: Primitive = Primitive(($tag as u64) << 48 | SIG_NAN);)+
+        }
+    };
+}
+
+primitive!(
+    FALSE: Tag::False,
+    TRUE: Tag::True,
+    NAN: Tag::Float,
+    NIL: Tag::Nil
+);
+
 pub struct Value<'gc> {
     bits: u64,
     _phantom: PhantomData<&'gc ()>,
 }
 
 impl<'gc> Value<'gc> {
-    pub const FALSE: Self = Self::new_primitive(Tag::False);
-    pub const TRUE: Self = Self::new_primitive(Tag::True);
-    const NAN: Self = Self::new_primitive(Tag::Float);
-    pub const NIL: Self = Self::new_primitive(Tag::Nil);
-
-    pub const fn is_float(&self) -> bool {
-        self.bits == Self::NAN.bits || (self.bits & SIG_NAN) != SIG_NAN
+    #[inline(always)]
+    const fn new(tag: Tag, value: u64) -> Self {
+        Self {
+            bits: (tag as u64) << 48 | SIG_NAN | value,
+            _phantom: PhantomData,
+        }
     }
 
-    pub const fn is_int(&self) -> bool {
-        let tag = (self.bits & TAG_MASK) >> 48;
-        tag == Tag::SmallInt as u64 || tag == Tag::BigInt as u64
+    #[inline(always)]
+    fn from_ptr(tag: Tag, ptr: *mut u8) -> Self {
+        Self::new(tag, ptr as u64)
     }
 
-    pub const fn is_object(&self) -> bool {
-        (self.bits & TAG_MASK) >> 48 == Tag::Object as u64
+    pub fn is_float(&self) -> bool {
+        self == Primitive::NAN || (self.bits & SIG_NAN) != SIG_NAN
+    }
+
+    pub fn is_int(&self) -> bool {
+        matches!(self.tag(), Tag::SmallInt | Tag::BigInt)
+    }
+
+    pub fn is_object(&self) -> bool {
+        matches!(self.tag(), Tag::Object)
     }
 
     pub fn tag(&self) -> Tag {
@@ -173,74 +195,90 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    const fn new_primitive(tag: Tag) -> Self {
-        Self {
-            bits: (tag as u64) << 48 | SIG_NAN,
-            _phantom: PhantomData,
-        }
-    }
-
-    const fn new(tag: Tag, value: u64) -> Self {
-        Self {
-            bits: (tag as u64) << 48 | SIG_NAN | value,
-            _phantom: PhantomData,
-        }
-    }
-
-    pub fn int(self) -> Int {
+    pub fn int(&self) -> PoolObjectRef<Int> {
         match self.tag() {
             Tag::SmallInt => {
                 let bits = self.bits & INT_MASK;
 
                 if self.bits & SIGN_BIT != 0 {
-                    return Int::from(-(bits as i64));
+                    return PoolObjectRef::Inline(Int::from(-(bits as i64)));
                 }
 
-                Int::from(bits as i64)
+                PoolObjectRef::Inline(Int::from(bits as i64))
             }
-            Tag::BigInt => *self.into_handle(),
+            Tag::BigInt => {
+                PoolObjectRef::Rc(ManuallyDrop::new(PoolObject::from_raw(self.as_ptr())))
+            }
             _ => unreachable!(),
         }
     }
 
-    pub fn float(self) -> f64 {
+    pub fn float(&self) -> f64 {
         f64::from_bits(self.bits)
     }
 
-    pub fn bool(self) -> bool {
-        self == Value::TRUE
+    pub fn bool(&self) -> bool {
+        self == Primitive::TRUE
     }
 
-    pub fn addr(&self) -> usize {
-        (self.bits & INT_MASK) as usize
+    pub fn as_ptr<T>(&self) -> *mut T {
+        (self.bits & INT_MASK) as _
     }
 
-    fn into_handle<T: Trace + ValueAlloc>(self) -> Handle<'gc, T> {
-        Handle::from_addr(self.addr()).expect("invalid handle")
+    pub fn as_raw_ptr(&self) -> *mut u8 {
+        (self.bits & INT_MASK) as _
     }
 
-    pub fn class(self) -> Handle<'gc, Class<'gc>> {
-        self.into_handle()
+    fn as_handle<T: Trace + ValueAlloc>(&self) -> Handle<'gc, T> {
+        Handle::from_ptr(self.as_ptr::<T>())
     }
 
-    pub fn func(self) -> Handle<'gc, Fn> {
-        self.into_handle()
+    pub fn class(&self) -> Handle<'gc, Class<'gc>> {
+        self.as_handle()
     }
 
-    pub fn method(self) -> Handle<'gc, Method<'gc>> {
-        self.into_handle()
+    pub fn func(&self) -> Handle<'gc, Fn> {
+        self.as_handle()
     }
 
-    pub fn object(self) -> Handle<'gc, Object<'gc>> {
-        self.into_handle()
+    pub fn method(&self) -> Handle<'gc, Method<'gc>> {
+        self.as_handle()
     }
 
-    pub fn str(self) -> Handle<'gc, Str<'gc>> {
-        self.into_handle()
+    pub fn object(&self) -> Handle<'gc, Object<'gc>> {
+        self.as_handle()
     }
 
-    pub fn array(self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
-        self.into_handle()
+    pub fn str(&self) -> Handle<'gc, Str<'gc>> {
+        self.as_handle()
+    }
+
+    pub fn array(&self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
+        self.as_handle()
+    }
+}
+
+impl PartialEq<Primitive> for &Value<'_> {
+    fn eq(&self, other: &Primitive) -> bool {
+        self.bits == other.0
+    }
+}
+
+impl<'gc> Clone for Value<'gc> {
+    #[inline(always)]
+    fn clone(&self) -> Self {
+        match self.tag() {
+            Tag::BigInt => {
+                let object: PoolObject<Int> = PoolObject::from_raw(self.as_ptr());
+                object.inc_ref_count();
+
+                Value::from_ptr(Tag::BigInt, object.into_raw())
+            }
+            _ => Value {
+                bits: self.bits,
+                _phantom: PhantomData,
+            },
+        }
     }
 }
 
@@ -249,32 +287,50 @@ impl<'gc> Trace for Value<'gc> {
         match self.tag() {
             Tag::Array => gc.mark(&self.array()),
             Tag::Str => gc.mark(&self.str()),
-            Tag::BigInt => gc.mark(&self.into_handle::<Int>()),
             Tag::Object => gc.mark(&self.object()),
             Tag::Fn => gc.mark(&self.func()),
             Tag::Method => gc.mark(&self.method()),
             Tag::Class => gc.mark(&self.class()),
-            Tag::SmallInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
+            Tag::SmallInt | Tag::BigInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
         }
     }
 }
 
 impl<'gc> PartialEq for Value<'gc> {
     fn eq(&self, other: &Self) -> bool {
-        self.bits == other.bits
+        if self.bits == other.bits {
+            return true;
+        }
+
+        match (self.ty(), other.ty()) {
+            (Type::Int, Type::Int) => self.int().deref() == other.int().deref(),
+            (Type::Str, Type::Str) => self.str().as_str() == other.str().as_str(),
+            _ => false,
+        }
     }
 }
 
 impl<'gc> Default for Value<'gc> {
     fn default() -> Self {
-        Self::NIL
+        Primitive::NIL.into()
+    }
+}
+
+impl<'gc> Drop for Value<'gc> {
+    fn drop(&mut self) {
+        // Decrease the reference count
+        if self.tag() == Tag::BigInt {
+            let _: PoolObject<Int> = PoolObject::from_raw(self.as_ptr());
+        }
+
+        // Other types are either stack allocated or rely on the GC to manage their memory
     }
 }
 
 impl<'gc> Display for Value<'gc> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.ty() {
-            Type::Int => write!(f, "{}", self.int()),
+            Type::Int => write!(f, "{}", *self.int()),
             Type::Float => write!(f, "{}", self.float()),
             Type::Bool => write!(f, "{}", self.bool()),
             Type::Array => write!(
@@ -291,21 +347,30 @@ impl<'gc> Display for Value<'gc> {
     }
 }
 
+impl<'gc> From<Primitive> for Value<'gc> {
+    fn from(primitive: Primitive) -> Self {
+        Self {
+            bits: primitive.0,
+            _phantom: PhantomData,
+        }
+    }
+}
+
 impl<'gc> From<Value<'gc>> for i32 {
     fn from(value: Value<'gc>) -> Self {
-        value.int().to_i64() as i32
+        value.int().as_i64() as i32
     }
 }
 
 impl<'gc> From<Value<'gc>> for i64 {
     fn from(value: Value<'gc>) -> Self {
-        value.int().to_i64()
+        value.int().as_i64()
     }
 }
 
 impl<'gc> From<Value<'gc>> for usize {
     fn from(value: Value<'gc>) -> Self {
-        value.int().to_usize()
+        value.int().as_usize()
     }
 }
 
@@ -337,17 +402,17 @@ impl_from_small_int!(i8, i16, i32, u8, u16, u32);
 impl From<bool> for Value<'_> {
     fn from(value: bool) -> Self {
         if value {
-            Self::TRUE
+            Primitive::TRUE
         } else {
-            Self::FALSE
+            Primitive::FALSE
         }
+        .into()
     }
 }
 
 impl<'gc, T: Trace + ValueAlloc> From<Handle<'gc, T>> for Value<'gc> {
     fn from(handle: Handle<'gc, T>) -> Self {
-        let addr = unsafe { handle.as_ptr() as u64 };
-        Value::new(T::tag(), addr)
+        Value::from_ptr(T::tag(), handle.as_ptr().cast())
     }
 }
 
@@ -364,28 +429,36 @@ where
     }
 }
 
+impl<'gc> IntoAtom<'gc> for PoolObject<Int> {
+    fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        let addr = self.into_raw() as u64;
+        Ok(Value::new(Tag::BigInt, addr))
+    }
+}
+
 impl<'gc> IntoAtom<'gc> for Int {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        if self.fits_in_i64() {
-            let i = self.to_i64();
-            let abs = i.unsigned_abs();
+        if self.is_small() {
+            let (signed, abs) = self.as_unsigned_abs();
 
             if abs <= INT_MASK {
                 return Ok(Value::new(
                     Tag::SmallInt,
-                    if i < 0 { SIGN_BIT | abs } else { i as u64 },
+                    if signed { SIGN_BIT | abs } else { abs },
                 ));
             }
         }
-        
-        let handle = gc.alloc(self)?;
-        Ok(Value::new(Tag::BigInt, handle.addr() as u64))
+
+        let mut object = gc.int_pool().acquire();
+
+        object.replace_with(self);
+        object.into_atom(gc)
     }
 }
 
 impl<'gc> IntoAtom<'gc> for () {
     fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        Ok(Value::NIL)
+        Ok(Value::default())
     }
 }
 
@@ -403,7 +476,7 @@ impl<'gc> IntoAtom<'gc> for usize {
 
 impl<'gc> IntoAtom<'gc> for String {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        let str = Str::from_string(gc, self);
+        let str = Str::copy_from_str(gc, &self)?;
         let handle = gc.alloc(str)?;
 
         Ok(handle.into())
@@ -416,7 +489,7 @@ impl<'gc, T: IntoAtom<'gc>> IntoAtom<'gc> for Vec<T> {
             .into_iter()
             .map(|value| value.into_atom(gc))
             .collect::<Result<Vec<_>, _>>()?;
-        let array = Array::from_vec(gc, data);
+        let array = Array::copy_from_slice(gc, &data)?;
         let handle = gc.alloc(array)?;
 
         Ok(handle.into())
@@ -430,38 +503,63 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_tags() {
-        assert_eq!(Value::new_primitive(Tag::SmallInt).ty(), Type::Int);
-        assert_eq!(Value::new_primitive(Tag::BigInt).ty(), Type::Int);
-        assert_eq!(Value::new_primitive(Tag::Array).ty(), Type::Array);
-        assert_eq!(Value::new_primitive(Tag::Fn).ty(), Type::Fn);
-        assert_eq!(Value::new_primitive(Tag::Str).ty(), Type::Str);
-        assert_eq!(Value::new_primitive(Tag::True).ty(), Type::Bool);
-        assert_eq!(Value::new_primitive(Tag::False).ty(), Type::Bool);
-        assert_eq!(Value::new_primitive(Tag::Nil).ty(), Type::Nil);
-        assert_eq!(Value::new_primitive(Tag::Class).ty(), Type::Class);
-        assert_eq!(Value::new_primitive(Tag::Object).ty(), Type::Object);
+    fn test_primitives() {
+        assert_eq!(Value::from(Primitive::FALSE).ty(), Type::Bool);
+        assert_eq!(Value::from(Primitive::TRUE).ty(), Type::Bool);
+        assert_eq!(Value::from(Primitive::NAN).ty(), Type::Float);
+        assert_eq!(Value::from(Primitive::NIL).ty(), Type::Nil);
     }
 
     #[test]
+    fn test_tags() {
+        assert_eq!(Value::new(Tag::SmallInt, 0).ty(), Type::Int);
+        assert_eq!(Value::new(Tag::Array, 0).ty(), Type::Array);
+        assert_eq!(Value::new(Tag::Fn, 0).ty(), Type::Fn);
+        assert_eq!(Value::new(Tag::Str, 0).ty(), Type::Str);
+        assert_eq!(Value::new(Tag::True, 0).ty(), Type::Bool);
+        assert_eq!(Value::new(Tag::False, 0).ty(), Type::Bool);
+        assert_eq!(Value::new(Tag::Nil, 0).ty(), Type::Nil);
+        assert_eq!(Value::new(Tag::Class, 0).ty(), Type::Class);
+        assert_eq!(Value::new(Tag::Object, 0).ty(), Type::Object);
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)] // Works on miri, but takes too long
     fn test_small_int() {
         let mut gc = Gc::default();
 
         for i in -1000000..1000000 {
             let value = i.into_atom(&mut gc).unwrap();
-            assert_eq!(value.int().to_i64(), i);
+            assert_eq!(value.int().as_i64(), i);
         }
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_big_int() {
         let mut gc = Gc::default();
-        gc.disable();
 
         for i in i64::MAX - 1000..i64::MAX {
             let value = i.into_atom(&mut gc).unwrap();
-            assert_eq!(value.int().to_i64(), i);
+            assert_eq!(value.int().as_i64(), i);
         }
+    }
+
+    #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_big_int_refcount() {
+        let mut gc = Gc::default();
+
+        let int = Int::parse("9223372036854775808").unwrap();
+        let value = int.into_atom(&mut gc).unwrap();
+        let copy = PoolObject::clone(value.int().as_object_ref().unwrap());
+
+        assert_eq!(2, copy.ref_count());
+        assert!(!value.int().is_small());
+
+        drop(value);
+
+        assert_eq!(1, copy.ref_count());
     }
 
     #[test]
@@ -486,10 +584,11 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_string() {
         let mut gc = Gc::default();
 
-        let str = Str::from_string(&mut gc, "hello".to_string());
+        let str = Str::copy_from_str(&mut gc, "hello").unwrap();
         let handle = gc.alloc(str).unwrap();
         let value = Value::from(handle);
 

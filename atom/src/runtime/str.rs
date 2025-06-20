@@ -4,6 +4,7 @@ use std::hash::Hash;
 use crate::gc::{Gc, Trace};
 
 use super::array::Array;
+use super::error::RuntimeError;
 
 pub struct Str<'gc>(pub Array<'gc, u8>);
 
@@ -12,8 +13,8 @@ impl<'gc> Str<'gc> {
         self.as_ref()
     }
 
-    pub fn from_string(gc: &mut Gc<'gc>, s: String) -> Self {
-        Self(Array::from_vec(gc, s.into_bytes()))
+    pub fn copy_from_str(gc: &mut Gc<'gc>, s: &str) -> Result<Self, RuntimeError> {
+        Ok(Self(Array::copy_from_slice(gc, s.as_bytes())?))
     }
 
     pub unsafe fn as_static_str(&self) -> &'static str {

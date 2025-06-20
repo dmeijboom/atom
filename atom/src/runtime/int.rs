@@ -3,7 +3,6 @@ use std::{
     ffi::{c_char, CStr, CString},
     fmt::Display,
     mem::MaybeUninit,
-    ops::{Add, BitAnd, BitOr, BitXor, Div, Mul, Rem, Shl, Shr, Sub},
     ptr::{self, NonNull},
     str::FromStr,
 };
@@ -24,11 +23,13 @@ pub enum ParseIntError {
     InvalidFormat,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct Int {
-    limbs: [MaybeUninit<limb_t>; 1],
-    inline: bool,
-    inner: mpz_t,
+#[derive(Debug, Clone)]
+pub enum Int {
+    Small {
+        size: i32,
+        limbs: [MaybeUninit<limb_t>; 1],
+    },
+    Big(mpz_t),
 }
 
 impl Trace for Int {
@@ -36,55 +37,78 @@ impl Trace for Int {
 }
 
 impl Int {
-    pub fn new() -> Self {
-        let inner = unsafe {
-            let mut z = MaybeUninit::uninit();
-            gmp::mpz_init(z.as_mut_ptr());
-            z.assume_init()
-        };
-
-        Self {
-            inline: false,
-            limbs: [MaybeUninit::uninit()],
-            inner,
-        }
-    }
-
-    pub fn to_usize(self) -> usize {
+    pub fn as_usize(&self) -> usize {
         unsafe { mpz_get_ui(&self.get()) as usize }
     }
 
-    pub fn to_i64(self) -> i64 {
-        unsafe { mpz_get_si(&self.get()) }
+    pub fn as_i64(&self) -> i64 {
+        match self {
+            Int::Small { size, limbs } => {
+                let abs: u64 = unsafe { limbs[0].assume_init() };
+
+                match size.cmp(&0) {
+                    Ordering::Less if abs - 1 == i64::MAX as u64 => i64::MIN,
+                    Ordering::Less => -(abs as i64),
+                    Ordering::Equal => 0,
+                    Ordering::Greater => abs as i64,
+                }
+            }
+            Int::Big(mpz_t) => unsafe { mpz_get_si(mpz_t) },
+        }
     }
 
     pub fn fits_in_i64(&self) -> bool {
         unsafe { mpz_fits_slong_p(&self.get()) != 0 }
     }
 
+    pub fn as_unsigned_abs(&self) -> (bool, u64) {
+        match self {
+            Int::Small { size, limbs } => (*size < 0, unsafe { limbs[0].assume_init() }),
+            Int::Big(mpz_t) => (mpz_t.size < 0, unsafe { mpz_get_ui(mpz_t) }),
+        }
+    }
+
     pub fn is_small(&self) -> bool {
-        self.inline
+        matches!(self, Int::Small { .. })
+    }
+
+    pub fn replace_with(&mut self, other: Self) {
+        if let Int::Big(mpz_t) = self {
+            unsafe {
+                gmp::mpz_clear(mpz_t);
+            }
+        }
+
+        *self = other;
     }
 
     fn get(&self) -> mpz_t {
-        if self.inline {
-            return mpz_t {
-                alloc: self.inner.alloc,
-                size: self.inner.size,
-                d: NonNull::from(&self.limbs[..]).cast(),
-            };
+        match self {
+            Int::Small { size, limbs } => mpz_t {
+                alloc: 1,
+                size: *size,
+                d: NonNull::from(&limbs[0]).cast(),
+            },
+            Int::Big(mpz_t) => *mpz_t,
         }
+    }
 
-        self.inner
+    fn get_mut(&mut self) -> &mut mpz_t {
+        match self {
+            Int::Small { .. } => unreachable!(),
+            Int::Big(mpz_t) => mpz_t,
+        }
     }
 
     pub fn parse(s: &str) -> Result<Self, ParseIntError> {
-        let mut int = Int::new();
+        let mut int = Int::default();
         let cstr = CString::from_str(s).map_err(|_| ParseIntError::InvalidNullByte)?;
 
         unsafe {
-            if mpz_set_str(&mut int.inner, cstr.into_raw(), 10) == -1 {
-                return Err(ParseIntError::InvalidFormat);
+            if let Int::Big(mpz_t) = &mut int {
+                if mpz_set_str(mpz_t, cstr.into_raw(), 10) == -1 {
+                    return Err(ParseIntError::InvalidFormat);
+                }
             }
         }
 
@@ -133,15 +157,13 @@ impl Display for Int {
 
 impl Default for Int {
     fn default() -> Self {
-        Self {
-            inline: true,
-            limbs: [MaybeUninit::uninit()],
-            inner: mpz_t {
-                alloc: 1,
-                size: 0,
-                d: NonNull::dangling(),
-            },
-        }
+        let mpz_t = unsafe {
+            let mut z = MaybeUninit::uninit();
+            gmp::mpz_init(z.as_mut_ptr());
+            z.assume_init()
+        };
+
+        Self::Big(mpz_t)
     }
 }
 
@@ -151,9 +173,9 @@ impl From<usize> for Int {
             return Int::from(value as i64);
         }
 
-        let mut int = Int::new();
+        let mut int = Int::default();
         unsafe {
-            mpz_set_ui(&mut int.inner, value as u64);
+            mpz_set_ui(int.get_mut(), value as u64);
         }
 
         int
@@ -161,20 +183,14 @@ impl From<usize> for Int {
 }
 
 impl From<i64> for Int {
+    #[inline]
     fn from(value: i64) -> Self {
-        if value == 0 {
-            return Self::default();
-        }
-
-        let limb = MaybeUninit::new(value.unsigned_abs() as limb_t);
-
-        Self {
-            inline: true,
-            limbs: [limb],
-            inner: mpz_t {
-                alloc: 1,
-                size: if value < 0 { -1 } else { 1 },
-                d: NonNull::dangling(),
+        Self::Small {
+            limbs: [MaybeUninit::new(value.unsigned_abs() as limb_t)],
+            size: match value.cmp(&0) {
+                Ordering::Less => -1,
+                Ordering::Equal => 0,
+                Ordering::Greater => 1,
             },
         }
     }
@@ -191,55 +207,51 @@ macro_rules! impl_from_small {
 }
 
 macro_rules! impl_op {
-    ($($name:ident $fn:ident $mpz_fn:ident $op:tt),+) => {
-        $(impl<'gc> $name for Int {
-            type Output = Int;
-
-            fn $fn(self, rhs: Self) -> Self::Output {
-                let mut result = Int::new();
-                unsafe {
-                    gmp::$mpz_fn(&mut result.inner, &self.get(), &rhs.get());
+    ($($fn:ident $mpz_fn:ident),+) => {
+        impl Int {
+            $(
+                #[inline]
+                pub fn $fn(&self, rhs: &Self, result: &mut Int) {
+                    unsafe {
+                        gmp::$mpz_fn(result.get_mut(), &self.get(), &rhs.get());
+                    }
                 }
-
-                result
-            }
-        })+
+            )+
+        }
     };
 }
 
 macro_rules! impl_shift_op {
-    ($($name:ident $fn:ident $mpz_fn:ident $op:tt),+) => {
-        $(impl<'gc> $name for Int {
-            type Output = Int;
-
-            fn $fn(self, rhs: Self) -> Self::Output {
-                let mut result = Int::new();
-                unsafe {
-                    gmp::$mpz_fn(&mut result.inner, &self.get(), rhs.to_usize() as u64);
+    ($($fn:ident $mpz_fn:ident),+) => {
+        impl Int {
+            $(
+                #[inline]
+                pub fn $fn(&self, rhs: &Self, result: &mut Int) {
+                    unsafe {
+                        gmp::$mpz_fn(result.get_mut(), &self.get(), rhs.as_usize() as u64);
+                    }
                 }
-
-                result
-            }
-        })+
+            )+
+        }
     };
 }
 
 impl_from_small!(i8, i16, i32, u8, u16, u32);
 
 impl_op!(
-    Add add mpz_add +,
-    Sub sub mpz_sub -,
-    Mul mul mpz_mul *,
-    Div div mpz_tdiv_q /,
-    Rem rem mpz_mod %,
-    BitAnd bitand mpz_and &,
-    BitOr bitor mpz_ior |,
-    BitXor bitxor mpz_xor ^
+    add_into mpz_add,
+    sub_into mpz_sub,
+    mul_into mpz_mul,
+    div_into mpz_tdiv_q,
+    rem_into mpz_mod,
+    bitand_into mpz_and,
+    bitor_into mpz_ior,
+    bitxor_into mpz_xor
 );
 
 impl_shift_op!(
-    Shl shl mpz_mul_2exp <<,
-    Shr shr mpz_tdiv_q_2exp >>
+    shl_into mpz_mul_2exp,
+    shr_into mpz_tdiv_q_2exp
 );
 
 #[cfg(test)]
@@ -247,11 +259,33 @@ mod tests {
     use super::*;
 
     #[test]
+    #[cfg_attr(miri, ignore)]
+    fn test_partial_eq() {
+        let a = Int::from(10);
+        let b = Int::from(5);
+        let c = Int::from(5);
+        let mut r = Int::default();
+
+        b.add_into(&c, &mut r);
+
+        assert_eq!(a, r);
+        assert_eq!(b, c);
+    }
+
+    #[test]
+    fn test_unsigned_abs_small() {
+        let i = Int::from(-10000);
+
+        assert!(i.is_small());
+        assert_eq!((true, 10000), i.as_unsigned_abs());
+    }
+
+    #[test]
     fn test_from_i64_negative() {
         let u = Int::from(-114748364i64);
 
         assert!(u.is_small());
-        assert_eq!(-114748364i64, u.to_i64());
+        assert_eq!(-114748364i64, u.as_i64());
     }
 
     #[test]
@@ -259,7 +293,7 @@ mod tests {
         let u = Int::from(2147483648i64);
 
         assert!(u.is_small());
-        assert_eq!(2147483648i64, u.to_i64());
+        assert_eq!(2147483648i64, u.as_i64());
     }
 
     #[test]
@@ -267,18 +301,20 @@ mod tests {
         let u = Int::from(10i32);
 
         assert!(u.is_small());
-        assert_eq!(10, u.to_i64());
+        assert_eq!(10, u.as_i64());
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_from_usize() {
         let u = Int::from(9223372036854775808usize);
 
         assert!(!u.is_small());
-        assert_eq!(9223372036854775808usize, u.to_usize());
+        assert_eq!(9223372036854775808usize, u.as_usize());
     }
 
     #[test]
+    #[cfg_attr(miri, ignore)]
     fn test_parse() {
         let s = "9223372036854775810";
         let int = Int::parse(s).expect("failed to parse int");

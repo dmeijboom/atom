@@ -28,8 +28,8 @@ mod tests {
         ) -> Result<Value<'gc>, VmError> {
             if name == "ret" {
                 gc.disable();
-                let _ = self.sender.send(args[0]);
-                Ok(Value::NIL)
+                let _ = self.sender.send(Value::clone(&args[0]));
+                Ok(Value::default())
             } else {
                 self.fallback.call(name, gc, args)
             }

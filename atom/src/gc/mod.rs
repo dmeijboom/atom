@@ -1,19 +1,20 @@
-use std::{
-    alloc::Layout,
-    ffi::c_void,
-    fmt::Debug,
-    hash::Hash,
-    marker::PhantomData,
-    ops::{Deref, DerefMut},
-    ptr::NonNull,
-};
+use std::{alloc::Layout, marker::PhantomData, ptr::NonNull};
 
-use libmimalloc_sys::{mi_free, mi_malloc_aligned, mi_zalloc_aligned};
+mod allocator;
+mod handle;
+pub mod pool;
+
+pub use handle::{DynHandle, Handle};
+use pool::Pool;
+
 use nohash_hasher::IntMap;
 
 use crate::{
     lexer::Span,
-    runtime::error::{ErrorKind, RuntimeError},
+    runtime::{
+        error::{ErrorKind, RuntimeError},
+        int::Int,
+    },
 };
 
 macro_rules! impl_trace {
@@ -35,98 +36,6 @@ impl<T: Trace> Trace for Vec<T> {
         for item in self.iter() {
             item.trace(gc);
         }
-    }
-}
-
-pub trait DynHandle {
-    fn as_ptr(&self) -> *mut u8;
-    fn trace(&self, gc: &mut Gc);
-}
-
-#[derive(Copy)]
-pub struct Handle<'gc, T: ?Sized + Trace> {
-    ptr: NonNull<T>,
-    _phantom: PhantomData<&'gc T>,
-}
-
-impl<'gc, T: Trace + Hash> Hash for Handle<'gc, T> {
-    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.deref().hash(state);
-    }
-}
-
-impl<'gc, T: ?Sized + Trace> Handle<'gc, T> {
-    pub fn new(ptr: NonNull<T>) -> Self {
-        Self {
-            ptr,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'gc, T: Trace + PartialEq> PartialEq for Handle<'gc, T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.deref() == other.deref()
-    }
-}
-
-impl<'gc, T: Trace + Eq> Eq for Handle<'gc, T> {}
-
-impl<'gc, T: Trace + Debug> Debug for Handle<'gc, T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        self.deref().fmt(f)
-    }
-}
-
-impl<'gc, T: Trace> Clone for Handle<'gc, T> {
-    fn clone(&self) -> Self {
-        Self {
-            ptr: self.ptr,
-            _phantom: PhantomData,
-        }
-    }
-}
-
-impl<'gc, T: Trace> Handle<'gc, T> {
-    pub fn addr(&self) -> usize {
-        self.ptr.as_ptr() as usize
-    }
-
-    pub fn from_addr(addr: usize) -> Option<Self> {
-        NonNull::new(addr as *mut T).map(|ptr| Handle {
-            ptr,
-            _phantom: PhantomData,
-        })
-    }
-
-    pub unsafe fn as_ptr(&self) -> *mut T {
-        self.ptr.as_ptr()
-    }
-}
-
-impl<'gc, T: Trace> Deref for Handle<'gc, T> {
-    type Target = T;
-
-    fn deref(&self) -> &'gc T {
-        unsafe { self.ptr.as_ref() }
-    }
-}
-
-impl<'gc, T: Trace> DerefMut for Handle<'gc, T> {
-    fn deref_mut(&mut self) -> &mut T {
-        unsafe { self.ptr.as_mut() }
-    }
-}
-
-impl<'gc, T: Trace> DynHandle for Handle<'gc, T> {
-    fn trace(&self, gc: &mut Gc) {
-        unsafe {
-            self.ptr.as_ref().trace(gc);
-        }
-    }
-
-    fn as_ptr(&self) -> *mut u8 {
-        self.ptr.as_ptr().cast()
     }
 }
 
@@ -159,10 +68,7 @@ impl Generation {
             }
 
             self.allocated -= root.size;
-
-            unsafe {
-                mi_free(root.ptr as *mut c_void);
-            }
+            unsafe { allocator::dealloc(root.ptr) };
 
             false
         });
@@ -188,13 +94,33 @@ pub struct Gc<'gc> {
     gen0: Generation,
     gen1: Generation,
     gen2: Generation,
+    int_pool: Pool<Int>,
     marked: IntMap<usize, ()>,
     _phantom: PhantomData<&'gc ()>,
+}
+
+impl<'gc> Drop for Gc<'gc> {
+    fn drop(&mut self) {
+        if self.disabled {
+            return;
+        }
+
+        let noop = IntMap::default();
+
+        self.gen0.sweep(&noop);
+        self.gen1.sweep(&noop);
+        self.gen2.sweep(&noop);
+    }
 }
 
 impl<'gc> Gc<'gc> {
     pub fn ready(&self) -> bool {
         self.ready
+    }
+
+    #[inline]
+    pub fn int_pool(&mut self) -> &mut Pool<Int> {
+        &mut self.int_pool
     }
 
     #[allow(dead_code)]
@@ -210,11 +136,9 @@ impl<'gc> Gc<'gc> {
     pub fn track<T: Trace>(&mut self, ptr: NonNull<T>, layout: Layout) -> Handle<'gc, T> {
         let handle = Handle::new(ptr);
 
-        unsafe {
-            self.gen0
-                .roots
-                .push(Root::new(handle.as_ptr() as *mut u8, layout.size()));
-        }
+        self.gen0
+            .roots
+            .push(Root::new(handle.as_ptr().cast(), layout.size()));
 
         self.gen0.allocated += layout.size();
         self.ready = self.gen0.allocated >= GEN0_TRESHOLD;
@@ -227,10 +151,10 @@ impl<'gc> Gc<'gc> {
         let layout = Layout::new::<T>();
 
         unsafe {
-            let ptr = mi_malloc_aligned(layout.size(), layout.align()).cast::<T>();
-            ptr.write(data);
-
-            Ok(self.track(NonNull::new_unchecked(ptr), layout))
+            Ok(self.track(
+                NonNull::new_unchecked(allocator::alloc(layout, data)),
+                layout,
+            ))
         }
     }
 
@@ -238,10 +162,7 @@ impl<'gc> Gc<'gc> {
         let layout = Layout::array::<T>(cap)
             .map_err(|_| ErrorKind::InvalidMemoryLayout.at(Span::default()))?;
 
-        unsafe {
-            let ptr = mi_zalloc_aligned(layout.size(), layout.align()) as *mut T;
-            Ok(self.track(NonNull::new_unchecked(ptr), layout))
-        }
+        unsafe { Ok(self.track(NonNull::new_unchecked(allocator::zalloc(layout)), layout)) }
     }
 
     pub fn mark(&mut self, handle: &impl DynHandle) {

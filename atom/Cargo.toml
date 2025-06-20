@@ -6,7 +6,7 @@ edition = "2021"
 [features]
 profiler = []
 default = ["mimalloc"]
-mimalloc = ["dep:mimalloc"]
+mimalloc = ["dep:mimalloc", "dep:libmimalloc-sys"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
 [dependencies]
@@ -29,7 +29,9 @@ libc = "0.2.172"
 num_enum = "0.7.3"
 linear-map = "1.2.0"
 gmp-mpfr-sys = { version = "~1.6.5", default-features = false }
-libmimalloc-sys = { version = "0.1.42", features = ["extended"] }
+libmimalloc-sys = { version = "0.1.42", features = [
+    "extended",
+], optional = true }
 
 [dev-dependencies]
 ron = "0.10.1"

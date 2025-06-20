@@ -1,20 +1,20 @@
-use std::slice::Iter;
+use std::{array, mem, slice::Iter};
 
-pub struct Stack<T: Copy + Default, const N: usize> {
+pub struct Stack<T: Clone + Default, const N: usize> {
     data: [T; N],
     sp: usize,
 }
 
-impl<T: Copy + Default, const N: usize> Default for Stack<T, N> {
+impl<T: Clone + Default, const N: usize> Default for Stack<T, N> {
     fn default() -> Self {
         Self {
-            data: [T::default(); N],
+            data: array::from_fn(|_| T::default()),
             sp: 0,
         }
     }
 }
 
-impl<T: Copy + Default, const N: usize> Stack<T, N> {
+impl<T: Clone + Default, const N: usize> Stack<T, N> {
     pub fn slice_to_end(&mut self, n: usize) -> &mut [T] {
         let slice = &mut self.data[self.sp - n..self.sp];
         self.sp -= n;
@@ -22,8 +22,8 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
     }
 
     pub fn operands(&mut self) -> (T, T) {
-        let rhs = self.data[self.sp - 1];
-        let lhs = self.data[self.sp - 2];
+        let rhs = mem::take(&mut self.data[self.sp - 1]);
+        let lhs = mem::take(&mut self.data[self.sp - 2]);
 
         self.sp -= 2;
 
@@ -32,7 +32,7 @@ impl<T: Copy + Default, const N: usize> Stack<T, N> {
 
     pub fn pop(&mut self) -> T {
         self.sp -= 1;
-        self.data[self.sp]
+        mem::take(&mut self.data[self.sp])
     }
 
     pub fn push(&mut self, item: T) {

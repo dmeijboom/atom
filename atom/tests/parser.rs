@@ -51,6 +51,7 @@ mod common;
 #[test_case("range/from"; "range from")]
 #[test_case("range/to"; "range to")]
 #[test_case("range/full"; "full range")]
+#[cfg_attr(miri, ignore)]
 fn expr(name: &str) {
     let config = PrettyConfig::default().struct_names(true);
     let actual = common::parse(&format!("parser/expr/{name}.atom")).unwrap();

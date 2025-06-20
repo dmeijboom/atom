@@ -1,4 +1,4 @@
-use std::{alloc::Layout, marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
+use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
 use crate::{
     gc::{Gc, Handle, Trace},
@@ -23,6 +23,12 @@ impl<'gc, 'a, T: Trace> Iterator for Iter<'gc, 'a, T> {
         self.array.get(self.idx).inspect(|_| {
             self.idx += 1;
         })
+    }
+}
+
+unsafe fn copy_from_slice<T: Clone>(ptr: *mut T, slice: &[T]) {
+    for (i, item) in slice.iter().cloned().enumerate() {
+        ptr.add(i).write(item);
     }
 }
 
@@ -138,25 +144,26 @@ impl<'gc, T: Trace> Array<'gc, T> {
         }
     }
 
-    pub fn from_vec(gc: &mut Gc<'gc>, data: Vec<T>) -> Self {
-        if data.is_empty() {
-            return Array::default();
+    pub fn copy_from_slice(gc: &mut Gc<'gc>, slice: &[T]) -> Result<Self, RuntimeError>
+    where
+        T: Clone,
+    {
+        if slice.is_empty() {
+            return Ok(Array::default());
         }
 
-        let layout = Layout::array::<T>(data.len()).unwrap();
-        let slice = data.into_boxed_slice();
-        let len = slice.len();
+        let handle: Handle<T> = gc.alloc_array(slice.len())?;
+        let raw = handle.as_ptr();
 
         unsafe {
-            let ptr = Box::into_raw(slice) as *mut T;
-            let handle = gc.track(NonNull::new_unchecked(ptr), layout);
-            Array::from_raw_parts(handle, len, len)
+            copy_from_slice(raw, slice);
+            Ok(Self::from_raw_parts(handle, slice.len(), slice.len()))
         }
     }
 
     pub fn push(&mut self, gc: &mut Gc<'gc>, item: T) -> Result<(), RuntimeError>
     where
-        T: Copy,
+        T: Clone,
     {
         let (len, cap) = (self.len, self.cap);
 
@@ -170,13 +177,10 @@ impl<'gc, T: Trace> Array<'gc, T> {
                 self.len += 1;
             } else {
                 let handle: Handle<T> = gc.alloc_array(cap * 2)?;
-                let ptr = handle.as_ptr();
+                let raw = handle.as_ptr();
 
-                for (i, item) in self.iter().copied().enumerate() {
-                    ptr.add(i).write(item);
-                }
-
-                ptr.add(len).write(item);
+                copy_from_slice(raw, self.as_slice());
+                raw.add(len).write(item);
 
                 let new_array = Array::from_raw_parts(handle, len + 1, cap * 2);
                 *self = new_array;
@@ -216,7 +220,7 @@ mod tests {
     #[test]
     fn array_push_slice() {
         let mut gc = Gc::default();
-        let mut array = Array::from_vec(&mut gc, vec![1, 2, 3, 4, 5, 6]);
+        let mut array = Array::copy_from_slice(&mut gc, &[1, 2, 3, 4, 5, 6]).unwrap();
 
         assert_eq!(array.as_slice(), &[1, 2, 3, 4, 5, 6]);
 
@@ -226,7 +230,7 @@ mod tests {
         assert_eq!(slice.len(), 2);
         assert_eq!(slice.cap, 4);
 
-        array.push(&mut gc, 7).expect("Array.push failed");
+        array.push(&mut gc, 7).unwrap();
 
         assert_eq!(array.as_slice(), &[1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(slice.as_slice(), &[3, 4]);
@@ -239,14 +243,14 @@ mod tests {
         assert_eq!(empty.as_slice(), &[]);
 
         let mut gc = Gc::default();
-        let array = Array::from_vec(&mut gc, vec![1, 2, 3]);
+        let array = Array::copy_from_slice(&mut gc, &[1, 2, 3]).unwrap();
         assert_eq!(array.as_slice(), &[1, 2, 3]);
     }
 
     #[test]
     fn array_iter() {
         let mut gc = Gc::default();
-        let array = Array::from_vec(&mut gc, vec![1, 2, 3, 4, 5, 6]);
+        let array = Array::copy_from_slice(&mut gc, &[1, 2, 3, 4, 5, 6]).unwrap();
         let items = array.iter().copied().map(|item| item).collect::<Vec<_>>();
         assert_eq!(items, &[1, 2, 3, 4, 5, 6]);
     }

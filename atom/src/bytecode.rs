@@ -190,7 +190,7 @@ impl Eq for Const {}
 impl<'gc> IntoAtom<'gc> for Const {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(match self {
-            Const::Nil => Value::NIL,
+            Const::Nil => Value::default(),
             Const::Int(i) => i.into_atom(gc)?,
             Const::BigInt(i) => i.into_atom(gc)?,
             Const::Float(n) => Value::from(n),

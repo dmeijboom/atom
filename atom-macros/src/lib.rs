@@ -31,11 +31,11 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
         .sig
         .inputs
         .iter()
+        .rev()
         .map(parse_arg)
-        .enumerate()
-        .map(|(i, (name, ty))| {
+        .map(|(name, ty)| {
             syn::parse_quote! {
-                let mut #name: #ty = args[#i].into();
+                let mut #name: #ty = args.pop().unwrap_or(crate::runtime::value::Value::default()).into();
             }
         })
         .collect::<Vec<Stmt>>();
@@ -50,7 +50,7 @@ pub fn atom_fn(attr: TokenStream, item: TokenStream) -> TokenStream {
 
         #f
 
-        fn #export_fn<'gc>(gc: &mut crate::gc::Gc<'gc>, args: Vec<crate::runtime::value::Value<'gc>>) -> Result<crate::runtime::value::Value<'gc>, crate::runtime::error::RuntimeError> {
+        fn #export_fn<'gc>(gc: &mut crate::gc::Gc<'gc>, mut args: Vec<crate::runtime::value::Value<'gc>>) -> Result<crate::runtime::value::Value<'gc>, crate::runtime::error::RuntimeError> {
             #(#args)*
             let return_value = Self::#name(#(#arg_names),*)?;
             return_value.into_atom(gc)

@@ -19,7 +19,7 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
     }
 
     match lhs.ty() {
-        Type::Int => lhs.int() == rhs.int(),
+        Type::Int => *lhs.int() == *rhs.int(),
         Type::Float => lhs.float() == rhs.float(),
         Type::Str => lhs.str() == rhs.str(),
         Type::Bool => lhs.bool() == rhs.bool(),
@@ -46,6 +46,7 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
 #[test_case("array_slice", vec![200i64, 300i64]; "array slice")]
 #[test_case("array_slice_bounds", Vec::<i64>::default(); "array slice out of bounds")]
 #[test_case("array_elem_assign", vec![100i64, 400i64, 300i64]; "array assign element")]
+#[cfg_attr(miri, ignore)]
 fn runtime(name: &str, expected: impl for<'gc> IntoAtom<'gc>) {
     let mut gc = Gc::default();
     let actual = common::run(&mut gc, &format!("runtime/{name}.atom"));

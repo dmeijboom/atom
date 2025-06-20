@@ -4,6 +4,7 @@ mod common;
 
 #[test_case("unknown_var", Err("CompileError: unknown name 'x'"); "unknown variable")]
 #[test_case("unused_var", Err("CompileError: name 'name' is not used"); "unused variable")]
+#[cfg_attr(miri, ignore)]
 fn compile(name: &str, expected: Result<(), &'static str>) {
     let filename = format!("compiler/{name}.atom");
     let result = common::compile(&filename);
