@@ -73,30 +73,6 @@ pub fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Package, crat
     Ok(compiler.compile(program)?)
 }
 
-macro_rules! impl_bitwise {
-    ($(($name:ident: $fn:ident $op:tt)),+) => {
-        impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
-            $(
-                fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-                    let (lhs, rhs) = self.stack.operands();
-
-                    self.stack.push(match (lhs.tag(), rhs.tag()) {
-                        (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
-                        (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
-                            let mut result = gc.int_pool().acquire();
-                            lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
-                            result.into_atom(gc)?
-                        },
-                        _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
-                    });
-
-                    Ok(())
-                }
-            )+
-        }
-    };
-}
-
 macro_rules! impl_op {
     ($(($name:ident: $op:tt)),+) => {
         impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
@@ -119,26 +95,34 @@ macro_rules! impl_op {
 }
 
 macro_rules! impl_binary {
+    (final $fn:ident: $op:tt $($float:pat)?) => {
+        fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+            let (lhs, rhs) = self.stack.operands();
+
+            self.stack.push(match (lhs.tag(), rhs.tag()) {
+                (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
+                (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
+                    let mut result = gc.int_pool().acquire();
+                    lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
+                    result.into_atom(gc)?
+                },
+                $($float => (lhs.as_float() $op rhs.as_float()).into_atom(gc)?,)?
+                _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
+            });
+
+            Ok(())
+        }
+    };
+
+    ($fn:ident: &) => { impl_binary!(final $fn: &); };
+    ($fn:ident: |) => { impl_binary!(final $fn: |); };
+    ($fn:ident: <<) => { impl_binary!(final $fn: <<); };
+    ($fn:ident: >>) => { impl_binary!(final $fn: >>); };
+    ($fn:ident: $op:tt) => { impl_binary!(final $fn: $op (Tag::Float, Tag::Float)); };
+
     ($(($fn:ident: $op:tt)),+) => {
         impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
-            $(
-                fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-                    let (lhs, rhs) = self.stack.operands();
-
-                    self.stack.push(match (lhs.tag(), rhs.tag()) {
-                        (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
-                        (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
-                            let mut result = gc.int_pool().acquire();
-                            lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
-                            result.into_atom(gc)?
-                        },
-                        (Tag::Float, Tag::Float) => (lhs.as_float() $op rhs.as_float()).into_atom(gc)?,
-                        _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
-                    });
-
-                    Ok(())
-                }
-            )+
+            $(impl_binary!($fn: $op);)+
         }
     };
 }
@@ -865,11 +849,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::Lte => self.lte(gc)?,
                 Op::Gt => self.gt(gc)?,
                 Op::Gte => self.gte(gc)?,
-                Op::BitwiseAnd => self.bit_and(gc)?,
-                Op::BitwiseOr => self.bit_or(gc)?,
+                Op::BitwiseAnd => self.bitand(gc)?,
+                Op::BitwiseOr => self.bitor(gc)?,
                 Op::BitwiseXor => self.bit_xor(gc)?,
-                Op::ShiftLeft => self.shift_left(gc)?,
-                Op::ShiftRight => self.shift_right(gc)?,
+                Op::ShiftLeft => self.shl(gc)?,
+                Op::ShiftRight => self.shr(gc)?,
                 Op::LoadConst => self.load_const(bc.code),
                 Op::LoadMember => self.load_member(gc, bc.code)?,
                 Op::StoreMember => self.store_member(bc.code)?,
@@ -1009,12 +993,9 @@ impl_binary!(
     (sub: -),
     (mul: *),
     (div: /),
-    (rem: %)
-);
-
-impl_bitwise!(
-    (bit_and: bitand &),
-    (bit_or: bitor |),
-    (shift_left: shl <<),
-    (shift_right: shr >>)
+    (rem: %),
+    (bitand: &),
+    (bitor: |),
+    (shl: <<),
+    (shr: >>)
 );

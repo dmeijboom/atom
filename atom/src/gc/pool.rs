@@ -18,17 +18,14 @@ impl<T> RefCount<T> {
         Self { inner, count: 1 }
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn inc_ref_count(&mut self) {
         self.count += 1;
     }
 
-    #[inline]
+    #[inline(always)]
     pub fn dec_ref_count(&mut self) {
-        if self.count == 0 {
-            panic!("decrementing reference count below zero");
-        }
-
+        debug_assert!(self.count > 0, "decrementing reference count below zero");
         self.count -= 1;
     }
 
