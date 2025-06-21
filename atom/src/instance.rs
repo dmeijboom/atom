@@ -157,7 +157,7 @@ impl<'gc> Instance<'gc> {
                     .methods
                     .remove("init")
                     .map(|mut init| {
-                        init.inline.instance = self.id;
+                        init.context.instance = self.id;
                         gc.alloc(init)
                     })
                     .transpose()?,
@@ -189,7 +189,7 @@ impl<'gc> Instance<'gc> {
     pub fn get_fn(&mut self, gc: &mut Gc<'gc>, idx: usize) -> Result<Handle<'gc, Fn>, Error> {
         self.cache.functions.get_or_insert(idx, || {
             let mut func = self.package.functions[idx].clone();
-            func.inline.instance = self.id;
+            func.context.instance = self.id;
             let handle = gc.alloc(func)?;
             Ok(handle)
         })

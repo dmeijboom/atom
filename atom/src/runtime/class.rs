@@ -79,7 +79,7 @@ impl<'gc> Class<'gc> {
             None => match self.methods.get(name) {
                 Some(func) => {
                     let mut handle = gc.alloc(func.clone())?;
-                    handle.inline.instance = self.inline.instance;
+                    handle.context.instance = self.inline.instance;
 
                     self.inline
                         .methods

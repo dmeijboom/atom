@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     collections::HashMap,
     fs, mem,
-    ops::Deref,
+    ops::*,
     path::{Path, PathBuf},
 };
 
@@ -17,7 +17,7 @@ use crate::{
     frame::Frame,
     gc::{Gc, Handle, Trace},
     instance::Instance,
-    lexer::Lexer,
+    lexer::{Lexer, Span},
     parser::{self},
     runtime::{
         array::Array,
@@ -74,17 +74,17 @@ pub fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Package, crat
 }
 
 macro_rules! impl_op {
-    ($(($name:ident: $op:tt)),+) => {
+    ($(($fn:ident: $op:tt)),+) => {
         impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
-            $(fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+            $(fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
                 let (lhs, rhs) = self.stack.operands();
 
                 self.stack.push(match (lhs.tag(), rhs.tag()) {
-                    (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
+                    (Tag::Int, Tag::Int) => lhs.as_int().$fn(&rhs.as_int()).into_atom(gc)?,
                     (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
-                        (*lhs.as_bigint() $op *rhs.as_bigint()).into_atom(gc)?
+                        lhs.as_bigint().$fn(&rhs.as_bigint()).into_atom(gc)?
                     },
-                    (Tag::Float, Tag::Float) => (lhs.as_float() $op rhs.as_float()).into_atom(gc)?,
+                    (Tag::Float, Tag::Float) => lhs.as_float().$fn(&rhs.as_float()).into_atom(gc)?,
                     _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
                 });
 
@@ -100,13 +100,13 @@ macro_rules! impl_binary {
             let (lhs, rhs) = self.stack.operands();
 
             self.stack.push(match (lhs.tag(), rhs.tag()) {
-                (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
+                (Tag::Int, Tag::Int) => lhs.as_int().$fn(rhs.as_int()).into_atom(gc)?,
                 (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
                     let mut result = gc.int_pool().acquire();
                     lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
                     result.into_atom(gc)?
                 },
-                $($float => (lhs.as_float() $op rhs.as_float()).into_atom(gc)?,)?
+                $($float => lhs.as_float().$fn(rhs.as_float()).into_atom(gc)?,)?
                 _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
             });
 
@@ -166,14 +166,16 @@ fn instance_with_frame<'gc>(
     gc: &mut Gc<'gc>,
     mut package: Package,
 ) -> Result<(Instance<'gc>, Frame<'gc>), Error> {
-    let func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
+    let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
     let consts = mem::take(&mut package.consts)
         .into_iter()
         .map(|c| c.into_atom(gc))
         .collect::<Result<Vec<_>, _>>()?;
 
     let instance = Instance::new(id, package, consts);
-    let frame = Frame::with_global(id, func, id);
+    func.context.instance = id;
+
+    let frame = Frame::new(func);
 
     Ok((instance, frame))
 }
@@ -254,7 +256,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             return self.load_attr(gc, recv, idx as usize);
         }
 
-        let member = self.instances[self.frame.instance].consts[idx as usize].as_str();
+        let member = self.instances[self.frame.instance()].consts[idx as usize].as_str();
 
         if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
             if let Some(func) = class.get_method(gc, member.as_str())? {
@@ -275,7 +277,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn store_member(&mut self, member: u32) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance].consts[member as usize].as_str();
+        let member = self.instances[self.frame.instance()].consts[member as usize].as_str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
@@ -295,8 +297,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         object: Handle<'gc, Object<'gc>>,
         member: Handle<'gc, Str<'gc>>,
     ) -> Result<(), Error> {
-        let instance_id = object.attrs["instance"].as_bigint();
-        let instance = &mut self.instances[instance_id.as_usize()];
+        let instance_id = object.attrs["instance"].as_int();
+        let instance = &mut self.instances[instance_id as usize];
 
         if let Some(handle) = instance.get_fn_by_name(gc, member.as_str())? {
             if handle.public {
@@ -326,7 +328,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         object: Value<'gc>,
         member: usize,
     ) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance].consts[member].as_str();
+        let member = self.instances[self.frame.instance()].consts[member].as_str();
         let object = object.as_object();
 
         match object.attrs.get(member.as_str()).cloned() {
@@ -365,13 +367,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn load_class(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let class = self.instances[self.frame.instance].get_class(gc, idx as usize)?;
+        let class = self.instances[self.frame.instance()].get_class(gc, idx as usize)?;
         self.stack.push(class.into());
         Ok(())
     }
 
     fn load_fn(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance].get_fn(gc, idx as usize)?;
+        let f = self.instances[self.frame.instance()].get_fn(gc, idx as usize)?;
         self.stack.push(f.into());
         Ok(())
     }
@@ -450,7 +452,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn call_extern(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance].consts[idx as usize].as_str();
+        let name = self.instances[self.frame.instance()].consts[idx as usize].as_str();
         let args = mem::take(&mut self.frame.locals);
         let return_value = self.ffi.call(name.as_ref(), gc, args)?;
 
@@ -462,7 +464,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn call_fn(&mut self, gc: &mut Gc<'gc>, (fn_idx, arg_count): (u16, u16)) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance].get_fn(gc, fn_idx as usize)?;
+        let f = self.instances[self.frame.instance()].get_fn(gc, fn_idx as usize)?;
         self.fn_call(gc, f, arg_count as u32)
     }
 
@@ -493,10 +495,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             .into());
         }
 
-        let frame = Frame::new(self.frame.offset, Handle::clone(&method.func));
+        let frame = Frame::new(Handle::clone(&method.func));
         self.call_stack.push(mem::replace(&mut self.frame, frame));
         let locals = self.stack.slice_to_end(arg_count as usize);
-        self.frame.locals = [&[Value::clone(&method.recv)], &*locals].concat();
+        self.frame.locals = [&[Value::clone(&method.recv)], locals].concat();
         self.gc_tick(gc);
 
         Ok(())
@@ -513,7 +515,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             .into());
         }
 
-        self.set_frame(Frame::new(self.frame.offset, func));
+        self.set_frame(Frame::new(func));
         self.frame.locals = self.stack.slice_to_end(arg_count as usize).to_vec();
         self.gc_tick(gc);
 
@@ -689,7 +691,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let (mut instance, frame) = instance_with_frame(id, gc, module)?;
 
         // Setup package class
-        let class = gc.alloc(Class::new("Package", self.frame.instance))?;
+        let class = gc.alloc(Class::new("Package", self.frame.instance()))?;
         let object = Object::with_attr(gc, class, vec![("instance", BigInt::from(id))])?;
         let handle = gc.alloc(object)?;
 
@@ -711,7 +713,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance].consts[idx as usize].as_str();
+        let name = self.instances[self.frame.instance()].consts[idx as usize].as_str();
 
         if let Some(handle) = self.packages.get(name.as_str()) {
             self.stack.push(Handle::clone(handle).into());
@@ -807,19 +809,19 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
     fn store(&mut self, idx: u32) -> Result<(), Error> {
         let var = self.stack.pop();
-        self.instances[self.frame.instance].vars.insert(idx, var);
+        self.instances[self.frame.instance()].vars.insert(idx, var);
         Ok(())
     }
 
     fn load(&mut self, idx: u32) {
         self.stack.push(Value::clone(
-            &self.instances[self.frame.instance].vars[&idx],
+            &self.instances[self.frame.instance()].vars[&idx],
         ));
     }
 
     fn load_const(&mut self, idx: u32) {
         self.stack.push(Value::clone(
-            &self.instances[self.frame.instance].consts[idx as usize],
+            &self.instances[self.frame.instance()].consts[idx as usize],
         ));
     }
 
@@ -846,9 +848,9 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::Eq => self.eq()?,
                 Op::Ne => self.ne()?,
                 Op::Lt => self.lt(gc)?,
-                Op::Lte => self.lte(gc)?,
+                Op::Lte => self.le(gc)?,
                 Op::Gt => self.gt(gc)?,
-                Op::Gte => self.gte(gc)?,
+                Op::Gte => self.ge(gc)?,
                 Op::BitwiseAnd => self.bitand(gc)?,
                 Op::BitwiseOr => self.bitor(gc)?,
                 Op::BitwiseXor => self.bit_xor(gc)?,
@@ -893,23 +895,14 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     fn add_trace(&mut self, e: Error) -> Error {
         match e {
             Error::Runtime(mut e) => {
-                let mut call_stack = mem::take(&mut self.call_stack);
-                call_stack.push(Frame::new(
-                    self.frame.offset,
-                    Handle::clone(&self.frame.handle),
-                ));
-
-                let mut stack_trace = call_stack
-                    .into_iter()
-                    .map(|frame| {
-                        Call::new(
-                            frame.span_at(frame.call_site),
-                            if frame.global {
-                                None
-                            } else {
-                                Some(frame.handle.name.clone())
-                            },
-                        )
+                let mut stack_trace = self
+                    .call_stack
+                    .iter()
+                    .chain(&[Frame::new(Handle::clone(&self.frame.handle))])
+                    .enumerate()
+                    .map(|(i, frame)| match self.call_stack.get(i - 1) {
+                        Some(caller) => Call::new(caller.span(), Some(frame.handle.name.clone())),
+                        None => Call::new(Span::default(), None),
                     })
                     .collect::<Vec<_>>();
 
@@ -932,7 +925,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         let user_frame = self.call_stack.remove(0);
 
-        self.eval_loop(gc)?;
+        self.dispatch(gc)?;
         self.set_frame(user_frame);
         self.call_stack.clear();
 
@@ -953,13 +946,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn eval_loop(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+    fn dispatch(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         loop {
             self.eval(gc)?;
 
             match self.call_stack.pop() {
                 Some(frame) => {
-                    if !self.frame.returned && !self.frame.global {
+                    if !self.frame.returned && !self.call_stack.is_empty() {
                         self.stack.push(Value::default());
                     }
 
@@ -976,16 +969,16 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         #[cfg(feature = "profiler")]
         self.profiler.enter();
         self.bootstrap(gc)
-            .and_then(|_| self.eval_loop(gc))
+            .and_then(|_| self.dispatch(gc))
             .map_err(|e| self.add_trace(e))
     }
 }
 
 impl_op!(
     (lt: <),
-    (lte: <=),
+    (le: <=),
     (gt: >),
-    (gte: >=)
+    (ge: >=)
 );
 
 impl_binary!(

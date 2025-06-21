@@ -180,7 +180,8 @@ impl<'gc> Value<'gc> {
 
     pub fn ty(&self) -> Type {
         match self.tag() {
-            Tag::Int | Tag::BigInt => Type::Int,
+            Tag::Int => Type::Int,
+            Tag::BigInt => Type::BigInt,
             Tag::Float => Type::Float,
             Tag::Array => Type::Array,
             Tag::Fn => Type::Fn,
@@ -449,13 +450,15 @@ impl<'gc> IntoAtom<'gc> for PoolObject<BigInt> {
 impl<'gc> IntoAtom<'gc> for BigInt {
     #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        let (signed, abs) = self.as_unsigned_abs();
+        if self.is_small() {
+            let (signed, abs) = self.as_unsigned_abs();
 
-        if abs <= INT_MASK {
-            return Ok(Value::new(
-                Tag::Int,
-                if signed { SIGN_BIT | abs } else { abs },
-            ));
+            if abs <= INT_MASK {
+                return Ok(Value::new(
+                    Tag::Int,
+                    if signed { SIGN_BIT | abs } else { abs },
+                ));
+            }
         }
 
         let mut object = gc.int_pool().acquire();

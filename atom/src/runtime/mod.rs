@@ -55,7 +55,7 @@ fn _repr(value: &Value) -> String {
             format!("\"{}\"", value.as_str().as_str())
         }
         Type::Int => format!("{}", value.as_int()),
-        Type::BigInt => format!("{}", *value.as_bigint()),
+        Type::BigInt => format!("{}", value.as_bigint().deref()),
         Type::Float => format!("{}", value.as_float()),
         Type::Bool => format!("{}", value.bool()),
         Type::Fn => format!("{}(..)", value.as_fn().name),

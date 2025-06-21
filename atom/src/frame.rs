@@ -8,12 +8,9 @@ use crate::{
 };
 
 pub struct Frame<'gc> {
-    pub call_site: usize,
     pub offset: usize,
-    pub locals: Vec<Value<'gc>>,
-    pub instance: usize,
     pub returned: bool,
-    pub global: bool,
+    pub locals: Vec<Value<'gc>>,
     pub handle: Handle<'gc, Fn>,
 }
 
@@ -25,45 +22,22 @@ impl<'gc> Trace for Frame<'gc> {
 }
 
 impl<'gc> Frame<'gc> {
-    pub fn new(call_site: usize, handle: Handle<'gc, Fn>) -> Self {
+    pub fn new(handle: Handle<'gc, Fn>) -> Self {
         Self {
-            call_site,
             offset: 0,
             locals: vec![],
-            instance: handle.inline.instance,
             returned: false,
             handle,
-            global: false,
         }
     }
 
-    pub fn with_global(call_site: usize, handle: Handle<'gc, Fn>, instance: usize) -> Self {
-        Self {
-            call_site,
-            offset: 0,
-            locals: vec![],
-            instance,
-            returned: false,
-            handle,
-            global: true,
-        }
+    pub fn instance(&self) -> usize {
+        self.handle.context.instance
     }
 
     /// Get the span given the assumption that we're already at the next bytecode
     pub fn span(&self) -> Span {
-        self.span_at(self.offset - 3)
-    }
-
-    pub fn span_at(&self, offset: usize) -> Span {
-        if offset >= self.handle.body.len() {
-            return self.span_at(self.handle.body.len() - 3);
-        }
-
-        let mut tail = &self.handle.body[if offset == 0 {
-            5..8
-        } else {
-            offset..offset + 3
-        }];
+        let mut tail = &self.handle.body[self.offset - 3..self.offset];
         Span {
             offset: tail.get_uint(3) as u32,
         }

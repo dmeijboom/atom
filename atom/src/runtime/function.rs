@@ -41,13 +41,13 @@ impl FnBuilder {
             arg_count: self.arg_count,
             public: self.public,
             body: self.body,
-            inline: Inline::default(),
+            context: Context::default(),
         }
     }
 }
 
 #[derive(Debug, Default, Clone)]
-pub struct Inline {
+pub struct Context {
     pub instance: usize,
 }
 
@@ -57,7 +57,7 @@ pub struct Fn {
     pub body: Bytes,
     pub public: bool,
     pub arg_count: u32,
-    pub inline: Inline,
+    pub context: Context,
 }
 
 impl Trace for Fn {
