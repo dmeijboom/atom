@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{lexer::Span, runtime::int::Int};
+use crate::{lexer::Span, runtime::bigint::BigInt};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,7 +59,7 @@ pub enum Literal {
     Nil,
     Bool(bool),
     Int(i64),
-    BigInt(Int),
+    BigInt(BigInt),
     Float(f64),
     String(String),
 }

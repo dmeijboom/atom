@@ -7,8 +7,8 @@ use crate::{
     gc::Gc,
     lexer::Span,
     runtime::{
+        bigint::BigInt,
         error::RuntimeError,
-        int::Int,
         value::{IntoAtom, Value},
     },
 };
@@ -179,7 +179,7 @@ impl Display for Bytecode {
 pub enum Const {
     Nil,
     Int(i64),
-    BigInt(Int),
+    BigInt(BigInt),
     Float(f64),
     Bool(bool),
     Str(String),

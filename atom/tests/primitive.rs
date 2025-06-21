@@ -15,7 +15,7 @@ fn int(name: &str, expected: Result<i64, &'static str>) {
 
     assert_eq!(
         return_value
-            .map(|r| r.map(|value| value.int().as_i64()))
+            .map(|r| r.map(|value| value.as_bigint().as_i64()))
             .map_err(|e| e.to_string()),
         expected.map(Some).map_err(ToOwned::to_owned)
     );
@@ -32,7 +32,7 @@ fn float(name: &str, expected: Result<f64, &'static str>) {
 
     assert_eq!(
         return_value
-            .map(|r| r.map(|r| r.float()))
+            .map(|r| r.map(|r| r.as_float()))
             .map_err(|e| e.to_string()),
         expected.map(Some).map_err(ToOwned::to_owned)
     );

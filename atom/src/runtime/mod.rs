@@ -12,10 +12,10 @@ use error::RuntimeError;
 use value::{IntoAtom as _, Type, Value};
 
 pub mod array;
+pub mod bigint;
 pub mod class;
 pub mod error;
 pub mod function;
-pub mod int;
 pub mod str;
 pub mod value;
 
@@ -37,7 +37,7 @@ macro_rules! match_fn {
 fn _repr(value: &Value) -> String {
     match value.ty() {
         Type::Array => {
-            let array = value.array();
+            let array = value.as_array();
             let mut s = String::from("[");
 
             for (i, item) in array.iter().enumerate() {
@@ -52,15 +52,16 @@ fn _repr(value: &Value) -> String {
             s
         }
         Type::Str => {
-            format!("\"{}\"", value.str().as_str())
+            format!("\"{}\"", value.as_str().as_str())
         }
-        Type::Int => format!("{}", *value.int()),
-        Type::Float => format!("{}", value.float()),
+        Type::Int => format!("{}", value.as_int()),
+        Type::BigInt => format!("{}", *value.as_bigint()),
+        Type::Float => format!("{}", value.as_float()),
         Type::Bool => format!("{}", value.bool()),
-        Type::Fn => format!("{}(..)", value.func().name),
-        Type::Method => format!(".{}(..)", value.func().name),
-        Type::Class => value.class().name.to_string(),
-        Type::Object => format!("{}{{..}}", value.object().class.name),
+        Type::Fn => format!("{}(..)", value.as_fn().name),
+        Type::Method => format!(".{}(..)", value.as_fn().name),
+        Type::Class => value.as_class().name.to_string(),
+        Type::Object => format!("{}{{..}}", value.as_object().class.name),
         Type::Nil => "<nil>".to_string(),
     }
 }
@@ -92,8 +93,8 @@ impl Runtime {
     #[atom_fn("data_ptr")]
     fn data_ptr(value: Value) -> Result<i64, RuntimeError> {
         Ok(match value.ty() {
-            Type::Array => value.array().deref().addr().unwrap_or(0) as i64,
-            Type::Str => value.str().0.addr().unwrap_or(0) as i64,
+            Type::Array => value.as_array().deref().addr().unwrap_or(0) as i64,
+            Type::Str => value.as_str().0.addr().unwrap_or(0) as i64,
             _ => unreachable!(),
         })
     }
@@ -122,7 +123,7 @@ impl<'gc> Ffi<'gc> for Runtime {
     ) -> Result<Value<'gc>, vm::Error> {
         match name {
             "array_push" => {
-                let mut array = args[0].array();
+                let mut array = args[0].as_array();
                 array.push(gc, Value::clone(&args[1]))?;
                 Ok(Value::default())
             }
@@ -174,7 +175,7 @@ mod tests {
 
         for (i, item) in handle.iter().enumerate() {
             assert_eq!(Type::Int, item.ty());
-            assert_eq!(10 * i, item.int().as_usize());
+            assert_eq!(10 * i, item.as_bigint().as_usize());
         }
     }
 }

@@ -12,8 +12,8 @@ use nohash_hasher::IntMap;
 use crate::{
     lexer::Span,
     runtime::{
+        bigint::BigInt,
         error::{ErrorKind, RuntimeError},
-        int::Int,
     },
 };
 
@@ -94,7 +94,7 @@ pub struct Gc<'gc> {
     gen0: Generation,
     gen1: Generation,
     gen2: Generation,
-    int_pool: Pool<Int>,
+    int_pool: Pool<BigInt>,
     marked: IntMap<usize, ()>,
     _phantom: PhantomData<&'gc ()>,
 }
@@ -119,7 +119,7 @@ impl<'gc> Gc<'gc> {
     }
 
     #[inline]
-    pub fn int_pool(&mut self) -> &mut Pool<Int> {
+    pub fn int_pool(&mut self) -> &mut Pool<BigInt> {
         &mut self.int_pool
     }
 

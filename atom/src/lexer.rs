@@ -7,7 +7,7 @@ use serde::Serialize;
 
 use crate::{
     error::{IntoSpanned, SpannedError},
-    runtime::int::{self, Int},
+    runtime::bigint::{self, BigInt},
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
@@ -41,7 +41,7 @@ pub enum TokenKind {
     Nil,
     Bool(bool),
     Int(i64),
-    BigInt(Int),
+    BigInt(BigInt),
     Float(f64),
     String(String),
 }
@@ -100,7 +100,7 @@ pub enum ErrorKind {
     #[error("failed to parse int: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("failed to parse bigint: {0}")]
-    ParseBigInt(#[from] int::ParseIntError),
+    ParseBigInt(#[from] bigint::ParseIntError),
     #[error("invalid escape sequence at: {0}")]
     InvalidEscapeSequence(char),
     #[error("unexpected EOF")]
@@ -208,7 +208,7 @@ impl<'a> Lexer<'a> {
                 Err(e) => match e.kind() {
                     IntErrorKind::PosOverflow | IntErrorKind::NegOverflow => {
                         let integer =
-                            Int::parse(&num).map_err(|e| ErrorKind::ParseBigInt(e).at(span))?;
+                            BigInt::parse(&num).map_err(|e| ErrorKind::ParseBigInt(e).at(span))?;
                         Ok(TokenKind::BigInt(integer).at(span))
                     }
                     _ => Err(ErrorKind::ParseInt(e).at(span)),

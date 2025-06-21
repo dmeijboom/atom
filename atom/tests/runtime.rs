@@ -19,14 +19,14 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
     }
 
     match lhs.ty() {
-        Type::Int => *lhs.int() == *rhs.int(),
-        Type::Float => lhs.float() == rhs.float(),
-        Type::Str => lhs.str() == rhs.str(),
+        Type::Int => *lhs.as_bigint() == *rhs.as_bigint(),
+        Type::Float => lhs.as_float() == rhs.as_float(),
+        Type::Str => lhs.as_str() == rhs.as_str(),
         Type::Bool => lhs.bool() == rhs.bool(),
         Type::Array => lhs
-            .array()
+            .as_array()
             .iter()
-            .zip(rhs.array().iter())
+            .zip(rhs.as_array().iter())
             .all(|(l, r)| equals(l, r)),
         _ => false,
     }

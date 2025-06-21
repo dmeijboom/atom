@@ -17,6 +17,25 @@ impl<T> RefCount<T> {
     fn new(inner: T) -> Self {
         Self { inner, count: 1 }
     }
+
+    #[inline]
+    pub fn inc_ref_count(&mut self) {
+        self.count += 1;
+    }
+
+    #[inline]
+    pub fn dec_ref_count(&mut self) {
+        if self.count == 0 {
+            panic!("decrementing reference count below zero");
+        }
+
+        self.count -= 1;
+    }
+
+    #[inline]
+    pub fn ref_count(&self) -> usize {
+        self.count
+    }
 }
 
 pub enum PoolObjectRef<T> {
@@ -45,40 +64,33 @@ impl<T> Deref for PoolObjectRef<T> {
 }
 
 pub struct PoolObject<T> {
-    ptr: NonNull<RefCount<T>>,
+    inner: NonNull<RefCount<T>>,
     _phantom: PhantomData<RefCount<T>>,
 }
 
 impl<T> PoolObject<T> {
-    pub fn new(ptr: NonNull<RefCount<T>>) -> Self {
+    pub fn new(inner: NonNull<RefCount<T>>) -> Self {
         Self {
-            ptr,
+            inner,
             _phantom: PhantomData,
         }
     }
 
     pub fn into_raw(self) -> *mut u8 {
-        ManuallyDrop::new(self).ptr.as_ptr().cast()
+        ManuallyDrop::new(self).inner.as_ptr().cast()
     }
 
     pub fn from_raw(ptr: *mut u8) -> Self {
         NonNull::new(ptr)
             .map(|ptr| Self {
-                ptr: ptr.cast(),
+                inner: ptr.cast(),
                 _phantom: PhantomData,
             })
             .expect("invalid ptr")
     }
 
     pub fn ref_count(&self) -> usize {
-        unsafe { self.ptr.as_ref().count }
-    }
-
-    pub fn inc_ref_count(&self) {
-        unsafe {
-            let rc = &mut *self.ptr.as_ptr();
-            rc.count += 1;
-        }
+        unsafe { self.inner.as_ref().ref_count() }
     }
 }
 
@@ -86,13 +98,13 @@ impl<T> Deref for PoolObject<T> {
     type Target = T;
 
     fn deref(&self) -> &Self::Target {
-        unsafe { &self.ptr.as_ref().inner }
+        unsafe { &self.inner.as_ref().inner }
     }
 }
 
 impl<T> DerefMut for PoolObject<T> {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        unsafe { &mut self.ptr.as_mut().inner }
+        unsafe { &mut self.inner.as_mut().inner }
     }
 }
 
@@ -102,10 +114,11 @@ impl<T> Trace for PoolObject<T> {
 
 impl<T> Clone for PoolObject<T> {
     fn clone(&self) -> Self {
-        self.inc_ref_count();
+        let rc = unsafe { &mut *self.inner.as_ptr() };
+        rc.inc_ref_count();
 
         Self {
-            ptr: self.ptr,
+            inner: self.inner,
             _phantom: PhantomData,
         }
     }
@@ -114,13 +127,7 @@ impl<T> Clone for PoolObject<T> {
 impl<T> Drop for PoolObject<T> {
     fn drop(&mut self) {
         unsafe {
-            let rc = self.ptr.as_mut();
-
-            if rc.count == 0 {
-                panic!("dropping an object with zero reference count");
-            }
-
-            rc.count -= 1;
+            self.inner.as_mut().dec_ref_count();
         }
     }
 }

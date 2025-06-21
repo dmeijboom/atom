@@ -8,23 +8,23 @@ use std::{
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::gc::{
-    pool::{PoolObject, PoolObjectRef},
+    pool::{PoolObject, PoolObjectRef, RefCount},
     Gc, Handle, Trace,
 };
 
 use super::{
     array::Array,
+    bigint::BigInt,
     class::{Class, Object},
     error::RuntimeError,
     function::{Fn, Method},
-    int::Int,
     str::Str,
 };
 
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq, FromPrimitive, IntoPrimitive)]
 pub enum Tag {
-    SmallInt,
+    Int,
     BigInt,
     Float,
     Array,
@@ -43,6 +43,7 @@ pub enum Tag {
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, FromPrimitive, IntoPrimitive)]
 pub enum Type {
     Int,
+    BigInt,
     Float,
     Bool,
     Array,
@@ -59,6 +60,7 @@ impl Type {
     pub fn name(&self) -> &str {
         match self {
             Type::Int => "Int",
+            Type::BigInt => "BigInt",
             Type::Float => "Float",
             Type::Bool => "Bool",
             Type::Array => "Array",
@@ -79,41 +81,41 @@ impl Display for Type {
 }
 
 // In theory, we can store any handle in a value, but we only allow a limited set of types
-trait ValueAlloc {
+trait ValueHandle {
     fn tag() -> Tag;
 }
 
-impl ValueAlloc for Str<'_> {
+impl ValueHandle for Str<'_> {
     fn tag() -> Tag {
         Tag::Str
     }
 }
 
-impl ValueAlloc for Class<'_> {
+impl ValueHandle for Class<'_> {
     fn tag() -> Tag {
         Tag::Class
     }
 }
 
-impl ValueAlloc for Object<'_> {
+impl ValueHandle for Object<'_> {
     fn tag() -> Tag {
         Tag::Object
     }
 }
 
-impl ValueAlloc for Fn {
+impl ValueHandle for Fn {
     fn tag() -> Tag {
         Tag::Fn
     }
 }
 
-impl ValueAlloc for Method<'_> {
+impl ValueHandle for Method<'_> {
     fn tag() -> Tag {
         Tag::Method
     }
 }
 
-impl ValueAlloc for Array<'_, Value<'_>> {
+impl ValueHandle for Array<'_, Value<'_>> {
     fn tag() -> Tag {
         Tag::Array
     }
@@ -160,12 +162,8 @@ impl<'gc> Value<'gc> {
         Self::new(tag, ptr as u64)
     }
 
-    pub fn is_float(&self) -> bool {
-        self == Primitive::NAN || (self.bits & SIG_NAN) != SIG_NAN
-    }
-
-    pub fn is_int(&self) -> bool {
-        matches!(self.tag(), Tag::SmallInt | Tag::BigInt)
+    pub const fn is_float(&self) -> bool {
+        self.bits == Primitive::NAN.0 || (self.bits & SIG_NAN) != SIG_NAN
     }
 
     pub fn is_object(&self) -> bool {
@@ -182,7 +180,7 @@ impl<'gc> Value<'gc> {
 
     pub fn ty(&self) -> Type {
         match self.tag() {
-            Tag::SmallInt | Tag::BigInt => Type::Int,
+            Tag::Int | Tag::BigInt => Type::Int,
             Tag::Float => Type::Float,
             Tag::Array => Type::Array,
             Tag::Fn => Type::Fn,
@@ -195,17 +193,19 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn int(&self) -> PoolObjectRef<Int> {
+    pub const fn as_int(&self) -> i64 {
+        let bits = self.bits & INT_MASK;
+
+        if self.bits & SIGN_BIT != 0 {
+            return -(bits as i64);
+        }
+
+        bits as i64
+    }
+
+    pub fn as_bigint(&self) -> PoolObjectRef<BigInt> {
         match self.tag() {
-            Tag::SmallInt => {
-                let bits = self.bits & INT_MASK;
-
-                if self.bits & SIGN_BIT != 0 {
-                    return PoolObjectRef::Inline(Int::from(-(bits as i64)));
-                }
-
-                PoolObjectRef::Inline(Int::from(bits as i64))
-            }
+            Tag::Int => PoolObjectRef::Inline(BigInt::from(self.as_int())),
             Tag::BigInt => {
                 PoolObjectRef::Rc(ManuallyDrop::new(PoolObject::from_raw(self.as_ptr())))
             }
@@ -213,7 +213,7 @@ impl<'gc> Value<'gc> {
         }
     }
 
-    pub fn float(&self) -> f64 {
+    pub fn as_float(&self) -> f64 {
         f64::from_bits(self.bits)
     }
 
@@ -229,31 +229,31 @@ impl<'gc> Value<'gc> {
         (self.bits & INT_MASK) as _
     }
 
-    fn as_handle<T: Trace + ValueAlloc>(&self) -> Handle<'gc, T> {
+    fn as_handle<T: Trace + ValueHandle>(&self) -> Handle<'gc, T> {
         Handle::from_ptr(self.as_ptr::<T>())
     }
 
-    pub fn class(&self) -> Handle<'gc, Class<'gc>> {
+    pub fn as_class(&self) -> Handle<'gc, Class<'gc>> {
         self.as_handle()
     }
 
-    pub fn func(&self) -> Handle<'gc, Fn> {
+    pub fn as_fn(&self) -> Handle<'gc, Fn> {
         self.as_handle()
     }
 
-    pub fn method(&self) -> Handle<'gc, Method<'gc>> {
+    pub fn as_method(&self) -> Handle<'gc, Method<'gc>> {
         self.as_handle()
     }
 
-    pub fn object(&self) -> Handle<'gc, Object<'gc>> {
+    pub fn as_object(&self) -> Handle<'gc, Object<'gc>> {
         self.as_handle()
     }
 
-    pub fn str(&self) -> Handle<'gc, Str<'gc>> {
+    pub fn as_str(&self) -> Handle<'gc, Str<'gc>> {
         self.as_handle()
     }
 
-    pub fn array(&self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
+    pub fn as_array(&self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
         self.as_handle()
     }
 }
@@ -267,17 +267,14 @@ impl PartialEq<Primitive> for &Value<'_> {
 impl<'gc> Clone for Value<'gc> {
     #[inline(always)]
     fn clone(&self) -> Self {
-        match self.tag() {
-            Tag::BigInt => {
-                let object: PoolObject<Int> = PoolObject::from_raw(self.as_ptr());
-                object.inc_ref_count();
+        if self.tag() == Tag::BigInt {
+            let rc: &mut RefCount<BigInt> = unsafe { &mut *self.as_ptr() };
+            rc.inc_ref_count();
+        }
 
-                Value::from_ptr(Tag::BigInt, object.into_raw())
-            }
-            _ => Value {
-                bits: self.bits,
-                _phantom: PhantomData,
-            },
+        Value {
+            bits: self.bits,
+            _phantom: PhantomData,
         }
     }
 }
@@ -285,13 +282,13 @@ impl<'gc> Clone for Value<'gc> {
 impl<'gc> Trace for Value<'gc> {
     fn trace(&self, gc: &mut Gc) {
         match self.tag() {
-            Tag::Array => gc.mark(&self.array()),
-            Tag::Str => gc.mark(&self.str()),
-            Tag::Object => gc.mark(&self.object()),
-            Tag::Fn => gc.mark(&self.func()),
-            Tag::Method => gc.mark(&self.method()),
-            Tag::Class => gc.mark(&self.class()),
-            Tag::SmallInt | Tag::BigInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
+            Tag::Array => gc.mark(&self.as_array()),
+            Tag::Str => gc.mark(&self.as_str()),
+            Tag::Object => gc.mark(&self.as_object()),
+            Tag::Fn => gc.mark(&self.as_fn()),
+            Tag::Method => gc.mark(&self.as_method()),
+            Tag::Class => gc.mark(&self.as_class()),
+            Tag::Int | Tag::BigInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
         }
     }
 }
@@ -302,9 +299,9 @@ impl<'gc> PartialEq for Value<'gc> {
             return true;
         }
 
-        match (self.ty(), other.ty()) {
-            (Type::Int, Type::Int) => self.int().deref() == other.int().deref(),
-            (Type::Str, Type::Str) => self.str().as_str() == other.str().as_str(),
+        match (self.tag(), other.tag()) {
+            (Tag::BigInt, Tag::BigInt) => self.as_bigint().deref() == other.as_bigint().deref(),
+            (Tag::Str, Tag::Str) => self.as_str().as_str() == other.as_str().as_str(),
             _ => false,
         }
     }
@@ -320,7 +317,8 @@ impl<'gc> Drop for Value<'gc> {
     fn drop(&mut self) {
         // Decrease the reference count
         if self.tag() == Tag::BigInt {
-            let _: PoolObject<Int> = PoolObject::from_raw(self.as_ptr());
+            let rc: &mut RefCount<BigInt> = unsafe { &mut *self.as_ptr() };
+            rc.dec_ref_count();
         }
 
         // Other types are either stack allocated or rely on the GC to manage their memory
@@ -330,13 +328,13 @@ impl<'gc> Drop for Value<'gc> {
 impl<'gc> Display for Value<'gc> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.ty() {
-            Type::Int => write!(f, "{}", *self.int()),
-            Type::Float => write!(f, "{}", self.float()),
+            Type::Int => write!(f, "{}", *self.as_bigint()),
+            Type::Float => write!(f, "{}", self.as_float()),
             Type::Bool => write!(f, "{}", self.bool()),
             Type::Array => write!(
                 f,
                 "[{}]",
-                self.array()
+                self.as_array()
                     .iter()
                     .map(|v| v.to_string())
                     .collect::<Vec<_>>()
@@ -358,19 +356,31 @@ impl<'gc> From<Primitive> for Value<'gc> {
 
 impl<'gc> From<Value<'gc>> for i32 {
     fn from(value: Value<'gc>) -> Self {
-        value.int().as_i64() as i32
+        match value.tag() {
+            Tag::Int => value.as_int() as i32,
+            Tag::BigInt => value.as_bigint().as_i64() as i32,
+            _ => unreachable!(),
+        }
     }
 }
 
 impl<'gc> From<Value<'gc>> for i64 {
     fn from(value: Value<'gc>) -> Self {
-        value.int().as_i64()
+        match value.tag() {
+            Tag::Int => value.as_int(),
+            Tag::BigInt => value.as_bigint().as_i64(),
+            _ => unreachable!(),
+        }
     }
 }
 
 impl<'gc> From<Value<'gc>> for usize {
     fn from(value: Value<'gc>) -> Self {
-        value.int().as_usize()
+        match value.tag() {
+            Tag::Int => value.as_int() as usize,
+            Tag::BigInt => value.as_bigint().as_usize(),
+            _ => unreachable!(),
+        }
     }
 }
 
@@ -389,7 +399,7 @@ macro_rules! impl_from_small_int {
             fn from(value: $ty) -> Self {
                 let i = value as i64;
                 Value::new(
-                    Tag::SmallInt,
+                    Tag::Int,
                     if i < 0 { SIGN_BIT | i.unsigned_abs() } else { i as u64 },
                 )
             }
@@ -410,7 +420,7 @@ impl From<bool> for Value<'_> {
     }
 }
 
-impl<'gc, T: Trace + ValueAlloc> From<Handle<'gc, T>> for Value<'gc> {
+impl<'gc, T: Trace + ValueHandle> From<Handle<'gc, T>> for Value<'gc> {
     fn from(handle: Handle<'gc, T>) -> Self {
         Value::from_ptr(T::tag(), handle.as_ptr().cast())
     }
@@ -429,24 +439,23 @@ where
     }
 }
 
-impl<'gc> IntoAtom<'gc> for PoolObject<Int> {
+impl<'gc> IntoAtom<'gc> for PoolObject<BigInt> {
     fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         let addr = self.into_raw() as u64;
         Ok(Value::new(Tag::BigInt, addr))
     }
 }
 
-impl<'gc> IntoAtom<'gc> for Int {
+impl<'gc> IntoAtom<'gc> for BigInt {
+    #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        if self.is_small() {
-            let (signed, abs) = self.as_unsigned_abs();
+        let (signed, abs) = self.as_unsigned_abs();
 
-            if abs <= INT_MASK {
-                return Ok(Value::new(
-                    Tag::SmallInt,
-                    if signed { SIGN_BIT | abs } else { abs },
-                ));
-            }
+        if abs <= INT_MASK {
+            return Ok(Value::new(
+                Tag::Int,
+                if signed { SIGN_BIT | abs } else { abs },
+            ));
         }
 
         let mut object = gc.int_pool().acquire();
@@ -464,13 +473,13 @@ impl<'gc> IntoAtom<'gc> for () {
 
 impl<'gc> IntoAtom<'gc> for i64 {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        Int::from(self).into_atom(gc)
+        BigInt::from(self).into_atom(gc)
     }
 }
 
 impl<'gc> IntoAtom<'gc> for usize {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        Int::from(self).into_atom(gc)
+        BigInt::from(self).into_atom(gc)
     }
 }
 
@@ -512,7 +521,7 @@ mod tests {
 
     #[test]
     fn test_tags() {
-        assert_eq!(Value::new(Tag::SmallInt, 0).ty(), Type::Int);
+        assert_eq!(Value::new(Tag::Int, 0).ty(), Type::Int);
         assert_eq!(Value::new(Tag::Array, 0).ty(), Type::Array);
         assert_eq!(Value::new(Tag::Fn, 0).ty(), Type::Fn);
         assert_eq!(Value::new(Tag::Str, 0).ty(), Type::Str);
@@ -530,7 +539,7 @@ mod tests {
 
         for i in -1000000..1000000 {
             let value = i.into_atom(&mut gc).unwrap();
-            assert_eq!(value.int().as_i64(), i);
+            assert_eq!(value.as_bigint().as_i64(), i);
         }
     }
 
@@ -541,7 +550,7 @@ mod tests {
 
         for i in i64::MAX - 1000..i64::MAX {
             let value = i.into_atom(&mut gc).unwrap();
-            assert_eq!(value.int().as_i64(), i);
+            assert_eq!(value.as_bigint().as_i64(), i);
         }
     }
 
@@ -550,12 +559,12 @@ mod tests {
     fn test_big_int_refcount() {
         let mut gc = Gc::default();
 
-        let int = Int::parse("9223372036854775808").unwrap();
+        let int = BigInt::parse("9223372036854775808").unwrap();
         let value = int.into_atom(&mut gc).unwrap();
-        let copy = PoolObject::clone(value.int().as_object_ref().unwrap());
+        let copy = PoolObject::clone(value.as_bigint().as_object_ref().unwrap());
 
         assert_eq!(2, copy.ref_count());
-        assert!(!value.int().is_small());
+        assert!(!value.as_bigint().is_small());
 
         drop(value);
 
@@ -568,7 +577,7 @@ mod tests {
 
         while i < 10000.0 {
             let value = Value::from(i);
-            assert_eq!(value.float(), i);
+            assert_eq!(value.as_float(), i);
 
             i += 0.1;
         }
@@ -594,7 +603,7 @@ mod tests {
 
         assert_eq!(value.ty(), Type::Str);
 
-        let str = value.str();
+        let str = value.as_str();
         assert_eq!(str.as_str(), "hello");
     }
 }

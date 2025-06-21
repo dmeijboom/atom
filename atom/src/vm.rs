@@ -21,18 +21,18 @@ use crate::{
     parser::{self},
     runtime::{
         array::Array,
+        bigint::BigInt,
         class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
         function::{Fn, Method},
-        int::Int,
         str::Str,
-        value::{IntoAtom, Primitive, Type, Value},
+        value::{IntoAtom, Primitive, Tag, Type, Value},
     },
     stack::Stack,
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {
-    match elem.int().as_i64() {
+    match elem.as_bigint().as_i64() {
         n if n < 0 => len + n as usize,
         n => n as usize,
     }
@@ -79,15 +79,17 @@ macro_rules! impl_bitwise {
             $(
                 fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
                     let (lhs, rhs) = self.stack.operands();
-                    let value = if lhs.is_int() && rhs.is_int() {
-                        let mut result = gc.int_pool().acquire();
-                        lhs.int().deref().$fn(&rhs.int(), &mut result);
-                        result.into_atom(gc)?
-                    } else {
-                        return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()));
-                    };
 
-                    self.stack.push(value);
+                    self.stack.push(match (lhs.tag(), rhs.tag()) {
+                        (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
+                        (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
+                            let mut result = gc.int_pool().acquire();
+                            lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
+                            result.into_atom(gc)?
+                        },
+                        _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
+                    });
+
                     Ok(())
                 }
             )+
@@ -100,15 +102,16 @@ macro_rules! impl_op {
         impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             $(fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
                 let (lhs, rhs) = self.stack.operands();
-                let value = if lhs.is_int() && rhs.is_int() {
-                    (*lhs.int() $op *rhs.int()).into_atom(gc)?
-                } else if lhs.is_float() && rhs.is_float() {
-                    (lhs.float() $op rhs.float()).into_atom(gc)?
-                } else {
-                    return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()));
-                };
 
-                self.stack.push(value);
+                self.stack.push(match (lhs.tag(), rhs.tag()) {
+                    (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
+                    (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
+                        (*lhs.as_bigint() $op *rhs.as_bigint()).into_atom(gc)?
+                    },
+                    (Tag::Float, Tag::Float) => (lhs.as_float() $op rhs.as_float()).into_atom(gc)?,
+                    _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
+                });
+
                 Ok(())
             })+
         }
@@ -116,22 +119,23 @@ macro_rules! impl_op {
 }
 
 macro_rules! impl_binary {
-    ($(($name:ident: $fn:ident $op:tt)),+) => {
+    ($(($fn:ident: $op:tt)),+) => {
         impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             $(
-                fn $name(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+                fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
                     let (lhs, rhs) = self.stack.operands();
-                    let value = if lhs.is_int() && rhs.is_int() {
-                        let mut result = gc.int_pool().acquire();
-                        lhs.int().$fn(&rhs.int(), &mut result);
-                        result.into_atom(gc)?
-                    } else if lhs.is_float() && rhs.is_float() {
-                        (lhs.float() $op rhs.float()).into_atom(gc)?
-                    } else {
-                        return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty()));
-                    };
 
-                    self.stack.push(value);
+                    self.stack.push(match (lhs.tag(), rhs.tag()) {
+                        (Tag::Int, Tag::Int) => (lhs.as_int() $op rhs.as_int()).into_atom(gc)?,
+                        (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
+                            let mut result = gc.int_pool().acquire();
+                            lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
+                            result.into_atom(gc)?
+                        },
+                        (Tag::Float, Tag::Float) => (lhs.as_float() $op rhs.as_float()).into_atom(gc)?,
+                        _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
+                    });
+
                     Ok(())
                 }
             )+
@@ -266,7 +270,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             return self.load_attr(gc, recv, idx as usize);
         }
 
-        let member = self.instances[self.frame.instance].consts[idx as usize].str();
+        let member = self.instances[self.frame.instance].consts[idx as usize].as_str();
 
         if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
             if let Some(func) = class.get_method(gc, member.as_str())? {
@@ -287,13 +291,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn store_member(&mut self, member: u32) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance].consts[member as usize].str();
+        let member = self.instances[self.frame.instance].consts[member as usize].as_str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
         self.check_type(object.ty(), Type::Object)?;
 
-        let mut object = object.object();
+        let mut object = object.as_object();
         let member = unsafe { member.as_static_str() };
 
         object.attrs.insert(Cow::Borrowed(member), value);
@@ -307,7 +311,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         object: Handle<'gc, Object<'gc>>,
         member: Handle<'gc, Str<'gc>>,
     ) -> Result<(), Error> {
-        let instance_id = object.attrs["instance"].int();
+        let instance_id = object.attrs["instance"].as_bigint();
         let instance = &mut self.instances[instance_id.as_usize()];
 
         if let Some(handle) = instance.get_fn_by_name(gc, member.as_str())? {
@@ -338,8 +342,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         object: Value<'gc>,
         member: usize,
     ) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance].consts[member].str();
-        let object = object.object();
+        let member = self.instances[self.frame.instance].consts[member].as_str();
+        let object = object.as_object();
 
         match object.attrs.get(member.as_str()).cloned() {
             Some(value) => {
@@ -462,7 +466,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn call_extern(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance].consts[idx as usize].str();
+        let name = self.instances[self.frame.instance].consts[idx as usize].as_str();
         let args = mem::take(&mut self.frame.locals);
         let return_value = self.ffi.call(name.as_ref(), gc, args)?;
 
@@ -482,9 +486,9 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let callee = self.stack.pop();
 
         match callee.ty() {
-            Type::Fn => self.fn_call(gc, callee.func(), arg_count),
-            Type::Method => self.method_call(gc, callee.method(), arg_count),
-            Type::Class => self.init_class(gc, callee.class(), arg_count),
+            Type::Fn => self.fn_call(gc, callee.as_fn(), arg_count),
+            Type::Method => self.method_call(gc, callee.as_method(), arg_count),
+            Type::Class => self.init_class(gc, callee.as_class(), arg_count),
             ty => Err(ErrorKind::NotCallable(ty).at(self.frame.span()).into()),
         }
     }
@@ -577,12 +581,12 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         match array.ty() {
             Type::Array => {
-                let array = array.array();
+                let array = array.as_array();
                 let new_array = gc.alloc(self.slice_array(&array, from, to)?)?;
                 self.stack.push(new_array.into());
             }
             Type::Str => {
-                let array = array.str();
+                let array = array.as_str();
                 let new_array = self.slice_array(&array.0, from, to)?;
                 let new_str = gc.alloc(Str(new_array))?;
                 self.stack.push(new_str.into());
@@ -624,7 +628,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         match array.ty() {
             Type::Array => {
-                let mut array = array.array();
+                let mut array = array.as_array();
                 let idx = array_idx(elem, array.len());
                 let elem = array
                     .get_mut(idx)
@@ -635,13 +639,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             Type::Str => {
                 self.check_type(value.ty(), Type::Int)?;
 
-                let array = &mut array.str().0;
+                let array = &mut array.as_str().0;
                 let idx = array_idx(elem, array.len());
                 let elem = array
                     .get_mut(idx)
                     .ok_or_else(|| self.index_out_of_bounds(idx))?;
 
-                *elem = value.int().as_usize() as u8;
+                *elem = value.as_bigint().as_usize() as u8;
             }
             _ => self.check_type(array.ty(), Type::Array)?,
         }
@@ -657,7 +661,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         let elem = match array.ty() {
             Type::Array => {
-                let handle = array.array();
+                let handle = array.as_array();
                 let idx = array_idx(elem, handle.len());
                 handle
                     .get(idx)
@@ -665,7 +669,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                     .ok_or_else(|| self.index_out_of_bounds(idx))?
             }
             Type::Str => {
-                let handle = &array.str().0;
+                let handle = &array.as_str().0;
                 let idx = array_idx(elem, handle.len());
                 handle
                     .get(idx)
@@ -702,7 +706,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         // Setup package class
         let class = gc.alloc(Class::new("Package", self.frame.instance))?;
-        let object = Object::with_attr(gc, class, vec![("instance", Int::from(id))])?;
+        let object = Object::with_attr(gc, class, vec![("instance", BigInt::from(id))])?;
         let handle = gc.alloc(object)?;
 
         // Insert the package object as the first variable (which is `self`)
@@ -723,7 +727,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance].consts[idx as usize].str();
+        let name = self.instances[self.frame.instance].consts[idx as usize].as_str();
 
         if let Some(handle) = self.packages.get(name.as_str()) {
             self.stack.push(Handle::clone(handle).into());
@@ -756,9 +760,9 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         }
 
         Ok(match ty {
-            Type::Int => *lhs.int() == *rhs.int(),
-            Type::Float => lhs.float() == rhs.float(),
-            Type::Str => lhs.str() == rhs.str(),
+            Type::Int => *lhs.as_bigint() == *rhs.as_bigint(),
+            Type::Float => lhs.as_float() == rhs.as_float(),
+            Type::Str => lhs.as_str() == rhs.as_str(),
             Type::Bool => lhs.bool() == rhs.bool(),
             _ => return Err(self.unsupported_rhs(lhs, rhs, "==")),
         })
@@ -779,14 +783,14 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     fn concat(&mut self, gc: &mut Gc<'gc>, lhs: Value<'gc>, rhs: Value<'gc>) -> Result<(), Error> {
         let value = match lhs.ty() {
             Type::Array => {
-                let lhs = lhs.array();
-                let rhs = rhs.array();
+                let lhs = lhs.as_array();
+                let rhs = rhs.as_array();
 
                 [lhs.as_slice(), rhs.as_slice()].concat().into_atom(gc)
             }
             Type::Str => {
-                let lhs = lhs.str();
-                let rhs = rhs.str();
+                let lhs = lhs.as_str();
+                let rhs = rhs.as_str();
 
                 [lhs.as_str(), rhs.as_str()].concat().into_atom(gc)
             }
@@ -799,17 +803,22 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
     fn bit_xor(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         let (lhs, rhs) = self.stack.operands();
+        let value = match (lhs.tag(), rhs.tag()) {
+            (Tag::Int, Tag::Int) => (lhs.as_int() ^ rhs.as_int()).into_atom(gc)?,
+            (Tag::BigInt, Tag::BigInt) | (Tag::BigInt, Tag::Int) | (Tag::Int, Tag::BigInt) => {
+                let mut result = gc.int_pool().acquire();
+                lhs.as_bigint()
+                    .deref()
+                    .bitxor(&rhs.as_bigint(), &mut result);
 
-        if lhs.is_int() && rhs.is_int() {
-            let mut result = gc.int_pool().acquire();
-            lhs.int().deref().bitxor_into(&rhs.int(), &mut result);
-            self.stack.push(result.into_atom(gc)?);
-            Ok(())
-        } else if matches!(lhs.ty(), Type::Array | Type::Str) && lhs.ty() == rhs.ty() {
-            self.concat(gc, lhs, rhs)
-        } else {
-            Err(self.unsupported("^", lhs.ty(), rhs.ty()))
-        }
+                result.into_atom(gc)?
+            }
+            (Tag::Array, Tag::Array) | (Tag::Str, Tag::Str) => return self.concat(gc, lhs, rhs),
+            _ => return Err(self.unsupported("^", lhs.ty(), rhs.ty())),
+        };
+
+        self.stack.push(value);
+        Ok(())
     }
 
     fn store(&mut self, idx: u32) -> Result<(), Error> {
@@ -996,16 +1005,16 @@ impl_op!(
 );
 
 impl_binary!(
-    (add: add_into +),
-    (sub: sub_into -),
-    (mul: mul_into *),
-    (div: div_into /),
-    (rem: rem_into %)
+    (add: +),
+    (sub: -),
+    (mul: *),
+    (div: /),
+    (rem: %)
 );
 
 impl_bitwise!(
-    (bit_and: bitand_into &),
-    (bit_or: bitor_into |),
-    (shift_left: shl_into <<),
-    (shift_right: shr_into >>)
+    (bit_and: bitand &),
+    (bit_or: bitor |),
+    (shift_left: shl <<),
+    (shift_right: shr >>)
 );

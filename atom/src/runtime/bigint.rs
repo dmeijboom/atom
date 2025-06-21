@@ -24,7 +24,7 @@ pub enum ParseIntError {
 }
 
 #[derive(Debug, Clone)]
-pub enum Int {
+pub enum BigInt {
     Small {
         size: i32,
         limbs: [MaybeUninit<limb_t>; 1],
@@ -32,18 +32,18 @@ pub enum Int {
     Big(mpz_t),
 }
 
-impl Trace for Int {
+impl Trace for BigInt {
     fn trace(&self, _gc: &mut Gc<'_>) {}
 }
 
-impl Int {
+impl BigInt {
     pub fn as_usize(&self) -> usize {
         unsafe { mpz_get_ui(&self.get()) as usize }
     }
 
     pub fn as_i64(&self) -> i64 {
         match self {
-            Int::Small { size, limbs } => {
+            BigInt::Small { size, limbs } => {
                 let abs: u64 = unsafe { limbs[0].assume_init() };
 
                 match size.cmp(&0) {
@@ -53,7 +53,7 @@ impl Int {
                     Ordering::Greater => abs as i64,
                 }
             }
-            Int::Big(mpz_t) => unsafe { mpz_get_si(mpz_t) },
+            BigInt::Big(mpz_t) => unsafe { mpz_get_si(mpz_t) },
         }
     }
 
@@ -63,17 +63,17 @@ impl Int {
 
     pub fn as_unsigned_abs(&self) -> (bool, u64) {
         match self {
-            Int::Small { size, limbs } => (*size < 0, unsafe { limbs[0].assume_init() }),
-            Int::Big(mpz_t) => (mpz_t.size < 0, unsafe { mpz_get_ui(mpz_t) }),
+            BigInt::Small { size, limbs } => (*size < 0, unsafe { limbs[0].assume_init() }),
+            BigInt::Big(mpz_t) => (mpz_t.size < 0, unsafe { mpz_get_ui(mpz_t) }),
         }
     }
 
     pub fn is_small(&self) -> bool {
-        matches!(self, Int::Small { .. })
+        matches!(self, BigInt::Small { .. })
     }
 
     pub fn replace_with(&mut self, other: Self) {
-        if let Int::Big(mpz_t) = self {
+        if let BigInt::Big(mpz_t) = self {
             unsafe {
                 gmp::mpz_clear(mpz_t);
             }
@@ -84,28 +84,28 @@ impl Int {
 
     fn get(&self) -> mpz_t {
         match self {
-            Int::Small { size, limbs } => mpz_t {
+            BigInt::Small { size, limbs } => mpz_t {
                 alloc: 1,
                 size: *size,
                 d: NonNull::from(&limbs[0]).cast(),
             },
-            Int::Big(mpz_t) => *mpz_t,
+            BigInt::Big(mpz_t) => *mpz_t,
         }
     }
 
     fn get_mut(&mut self) -> &mut mpz_t {
         match self {
-            Int::Small { .. } => unreachable!(),
-            Int::Big(mpz_t) => mpz_t,
+            BigInt::Small { .. } => unreachable!(),
+            BigInt::Big(mpz_t) => mpz_t,
         }
     }
 
     pub fn parse(s: &str) -> Result<Self, ParseIntError> {
-        let mut int = Int::default();
+        let mut int = BigInt::default();
         let cstr = CString::from_str(s).map_err(|_| ParseIntError::InvalidNullByte)?;
 
         unsafe {
-            if let Int::Big(mpz_t) = &mut int {
+            if let BigInt::Big(mpz_t) = &mut int {
                 if mpz_set_str(mpz_t, cstr.into_raw(), 10) == -1 {
                     return Err(ParseIntError::InvalidFormat);
                 }
@@ -116,7 +116,7 @@ impl Int {
     }
 }
 
-impl Serialize for Int {
+impl Serialize for BigInt {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
@@ -125,7 +125,7 @@ impl Serialize for Int {
     }
 }
 
-impl PartialOrd for Int {
+impl PartialOrd for BigInt {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         let result = unsafe { mpz_cmp(&self.get(), &other.get()) };
 
@@ -139,13 +139,13 @@ impl PartialOrd for Int {
     }
 }
 
-impl PartialEq for Int {
+impl PartialEq for BigInt {
     fn eq(&self, other: &Self) -> bool {
         unsafe { mpz_cmp(&self.get(), &other.get()) == 0 }
     }
 }
 
-impl Display for Int {
+impl Display for BigInt {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let c = unsafe { mpz_get_str(ptr::null::<c_char>().cast_mut(), 10, &self.get()) };
         let cstr = unsafe { CStr::from_ptr(c) };
@@ -155,7 +155,7 @@ impl Display for Int {
     }
 }
 
-impl Default for Int {
+impl Default for BigInt {
     fn default() -> Self {
         let mpz_t = unsafe {
             let mut z = MaybeUninit::uninit();
@@ -167,13 +167,13 @@ impl Default for Int {
     }
 }
 
-impl From<usize> for Int {
+impl From<usize> for BigInt {
     fn from(value: usize) -> Self {
         if value < i64::MAX as usize {
-            return Int::from(value as i64);
+            return BigInt::from(value as i64);
         }
 
-        let mut int = Int::default();
+        let mut int = BigInt::default();
         unsafe {
             mpz_set_ui(int.get_mut(), value as u64);
         }
@@ -182,7 +182,7 @@ impl From<usize> for Int {
     }
 }
 
-impl From<i64> for Int {
+impl From<i64> for BigInt {
     #[inline]
     fn from(value: i64) -> Self {
         Self::Small {
@@ -198,7 +198,7 @@ impl From<i64> for Int {
 
 macro_rules! impl_from_small {
     ($($ty:ty),+) => {
-        $(impl From<$ty> for Int {
+        $(impl From<$ty> for BigInt {
             fn from(value: $ty) -> Self {
                 Self::from(value as i64)
             }
@@ -208,10 +208,10 @@ macro_rules! impl_from_small {
 
 macro_rules! impl_op {
     ($($fn:ident $mpz_fn:ident),+) => {
-        impl Int {
+        impl BigInt {
             $(
                 #[inline]
-                pub fn $fn(&self, rhs: &Self, result: &mut Int) {
+                pub fn $fn(&self, rhs: &Self, result: &mut BigInt) {
                     unsafe {
                         gmp::$mpz_fn(result.get_mut(), &self.get(), &rhs.get());
                     }
@@ -223,10 +223,10 @@ macro_rules! impl_op {
 
 macro_rules! impl_shift_op {
     ($($fn:ident $mpz_fn:ident),+) => {
-        impl Int {
+        impl BigInt {
             $(
                 #[inline]
-                pub fn $fn(&self, rhs: &Self, result: &mut Int) {
+                pub fn $fn(&self, rhs: &Self, result: &mut BigInt) {
                     unsafe {
                         gmp::$mpz_fn(result.get_mut(), &self.get(), rhs.as_usize() as u64);
                     }
@@ -239,19 +239,19 @@ macro_rules! impl_shift_op {
 impl_from_small!(i8, i16, i32, u8, u16, u32);
 
 impl_op!(
-    add_into mpz_add,
-    sub_into mpz_sub,
-    mul_into mpz_mul,
-    div_into mpz_tdiv_q,
-    rem_into mpz_mod,
-    bitand_into mpz_and,
-    bitor_into mpz_ior,
-    bitxor_into mpz_xor
+    add mpz_add,
+    sub mpz_sub,
+    mul mpz_mul,
+    div mpz_tdiv_q,
+    rem mpz_mod,
+    bitand mpz_and,
+    bitor mpz_ior,
+    bitxor mpz_xor
 );
 
 impl_shift_op!(
-    shl_into mpz_mul_2exp,
-    shr_into mpz_tdiv_q_2exp
+    shl mpz_mul_2exp,
+    shr mpz_tdiv_q_2exp
 );
 
 #[cfg(test)]
@@ -261,12 +261,12 @@ mod tests {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_partial_eq() {
-        let a = Int::from(10);
-        let b = Int::from(5);
-        let c = Int::from(5);
-        let mut r = Int::default();
+        let a = BigInt::from(10);
+        let b = BigInt::from(5);
+        let c = BigInt::from(5);
+        let mut r = BigInt::default();
 
-        b.add_into(&c, &mut r);
+        b.add(&c, &mut r);
 
         assert_eq!(a, r);
         assert_eq!(b, c);
@@ -274,7 +274,7 @@ mod tests {
 
     #[test]
     fn test_unsigned_abs_small() {
-        let i = Int::from(-10000);
+        let i = BigInt::from(-10000);
 
         assert!(i.is_small());
         assert_eq!((true, 10000), i.as_unsigned_abs());
@@ -282,7 +282,7 @@ mod tests {
 
     #[test]
     fn test_from_i64_negative() {
-        let u = Int::from(-114748364i64);
+        let u = BigInt::from(-114748364i64);
 
         assert!(u.is_small());
         assert_eq!(-114748364i64, u.as_i64());
@@ -290,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_from_i64() {
-        let u = Int::from(2147483648i64);
+        let u = BigInt::from(2147483648i64);
 
         assert!(u.is_small());
         assert_eq!(2147483648i64, u.as_i64());
@@ -298,7 +298,7 @@ mod tests {
 
     #[test]
     fn test_from_i32() {
-        let u = Int::from(10i32);
+        let u = BigInt::from(10i32);
 
         assert!(u.is_small());
         assert_eq!(10, u.as_i64());
@@ -307,7 +307,7 @@ mod tests {
     #[test]
     #[cfg_attr(miri, ignore)]
     fn test_from_usize() {
-        let u = Int::from(9223372036854775808usize);
+        let u = BigInt::from(9223372036854775808usize);
 
         assert!(!u.is_small());
         assert_eq!(9223372036854775808usize, u.as_usize());
@@ -317,7 +317,7 @@ mod tests {
     #[cfg_attr(miri, ignore)]
     fn test_parse() {
         let s = "9223372036854775810";
-        let int = Int::parse(s).expect("failed to parse int");
+        let int = BigInt::parse(s).expect("failed to parse int");
 
         assert!(!int.is_small());
         assert_eq!(s.to_string(), int.to_string());
