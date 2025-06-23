@@ -1,9 +1,11 @@
 use std::borrow::Cow;
 
 use linear_map::LinearMap;
-use nohash_hasher::IntMap;
 
-use crate::gc::{Gc, Handle, Trace};
+use crate::{
+    collections::IntMap,
+    gc::{Gc, Handle, Trace},
+};
 
 use super::{
     error::RuntimeError,

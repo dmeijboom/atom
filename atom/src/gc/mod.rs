@@ -7,9 +7,8 @@ pub mod pool;
 pub use handle::{DynHandle, Handle};
 use pool::Pool;
 
-use nohash_hasher::IntMap;
-
 use crate::{
+    collections::IntSet,
     lexer::Span,
     runtime::{
         bigint::BigInt,
@@ -61,9 +60,9 @@ struct Generation {
 }
 
 impl Generation {
-    fn sweep(&mut self, marked: &IntMap<usize, ()>) {
+    fn sweep(&mut self, marked: &IntSet<usize>) {
         self.roots.retain(|root| {
-            if marked.contains_key(&(root.ptr as usize)) {
+            if marked.contains(&(root.ptr as usize)) {
                 return true;
             }
 
@@ -95,7 +94,7 @@ pub struct Gc<'gc> {
     gen1: Generation,
     gen2: Generation,
     int_pool: Pool<BigInt>,
-    marked: IntMap<usize, ()>,
+    marked: IntSet<usize>,
     _phantom: PhantomData<&'gc ()>,
 }
 
@@ -105,7 +104,7 @@ impl<'gc> Drop for Gc<'gc> {
             return;
         }
 
-        let noop = IntMap::default();
+        let noop = IntSet::default();
 
         self.gen0.sweep(&noop);
         self.gen1.sweep(&noop);
@@ -166,7 +165,7 @@ impl<'gc> Gc<'gc> {
     }
 
     pub fn mark(&mut self, handle: &impl DynHandle) {
-        self.marked.insert(handle.as_ptr() as usize, ());
+        self.marked.insert(handle.as_ptr() as usize);
         handle.trace(self);
     }
 

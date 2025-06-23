@@ -15,6 +15,7 @@ use vm::Vm;
 
 mod ast;
 mod bytecode;
+mod collections;
 mod compiler;
 mod error;
 mod frame;
@@ -25,7 +26,6 @@ mod parser;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod runtime;
-mod stack;
 mod vm;
 
 #[cfg(feature = "mimalloc")]
@@ -104,7 +104,7 @@ fn print_atoms(ctx: &Context) {
         println!("  {n}: {name}");
     }
 
-    println!("");
+    println!();
 }
 
 fn print_module(package: &Package) {

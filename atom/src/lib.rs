@@ -10,5 +10,5 @@ pub mod parser;
 #[cfg(feature = "profiler")]
 mod profiler;
 pub mod runtime;
-pub mod stack;
+pub mod collections;
 pub mod vm;

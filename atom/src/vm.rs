@@ -12,6 +12,7 @@ use wyhash2::WyHash;
 use crate::{
     ast::Stmt,
     bytecode::Op,
+    collections::Stack,
     compiler::{Compiler, Context, Package},
     error::SpannedError,
     frame::Frame,
@@ -28,7 +29,6 @@ use crate::{
         str::Str,
         value::{self, IntoAtom, Tag, Type, Value},
     },
-    stack::Stack,
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {

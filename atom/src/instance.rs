@@ -1,9 +1,9 @@
 use std::collections::HashMap;
 
 use linear_map::LinearMap;
-use nohash_hasher::IntMap;
 use wyhash2::WyHash;
 
+use crate::collections::IntMap;
 use crate::compiler::Package;
 use crate::gc::{DynHandle, Gc, Handle, Trace};
 use crate::runtime::class::Inline;
