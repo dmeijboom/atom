@@ -122,6 +122,7 @@ pub const INT_MASK: u64 = 0xffff_ffff_ffff;
 pub const FALSE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN) as u32;
 pub const TRUE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 1) as u32;
 pub const NIL: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 2) as u32;
+pub const INSTANCE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 3) as u32;
 
 const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;

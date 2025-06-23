@@ -1,6 +1,7 @@
 use std::borrow::Cow;
 
 use linear_map::LinearMap;
+use nohash_hasher::IntMap;
 
 use crate::gc::{Gc, Handle, Trace};
 
@@ -94,7 +95,7 @@ impl<'gc> Class<'gc> {
 
 pub struct Object<'gc> {
     pub class: Handle<'gc, Class<'gc>>,
-    pub attrs: LinearMap<Cow<'static, str>, Value<'gc>>,
+    pub attrs: IntMap<u32, Value<'gc>>,
 }
 
 impl<'gc> Trace for Object<'gc> {
@@ -111,27 +112,26 @@ impl<'gc> Object<'gc> {
     pub fn new(class: Handle<'gc, Class<'gc>>) -> Self {
         Self {
             class,
-            attrs: LinearMap::default(),
+            attrs: IntMap::default(),
         }
     }
 
-    pub fn with_attr<K, V>(
+    pub fn with_attr<T>(
         gc: &mut Gc<'gc>,
         class: Handle<'gc, Class<'gc>>,
-        attrs: Vec<(K, V)>,
+        attrs: Vec<(u32, T)>,
     ) -> Result<Self, RuntimeError>
     where
-        K: Into<Cow<'static, str>>,
-        V: IntoAtom<'gc>,
+        T: IntoAtom<'gc>,
     {
         let attrs = attrs
             .into_iter()
-            .map(|(k, v)| Ok((k.into(), v.into_atom(gc)?)))
+            .map(|(k, v)| Ok((k, v.into_atom(gc)?)))
             .collect::<Result<Vec<_>, _>>()?;
 
         Ok(Self {
             class,
-            attrs: LinearMap::from_iter(attrs),
+            attrs: IntMap::from_iter(attrs),
         })
     }
 }

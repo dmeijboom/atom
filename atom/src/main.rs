@@ -97,6 +97,16 @@ fn print_func(f: &Fn, indent: usize) {
     }
 }
 
+fn print_atoms(ctx: &Context) {
+    println!("atoms:");
+
+    for (n, name) in ctx.iter_atoms().enumerate() {
+        println!("  {n}: {name}");
+    }
+
+    println!("");
+}
+
 fn print_module(package: &Package) {
     for class in package.classes.iter() {
         println!("class {}:", class.name);
@@ -179,6 +189,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let module = vm::compile(source, &mut ctx, !no_optimize)?;
 
             if verbose {
+                print_atoms(&ctx);
                 print_module(&module);
             }
         }

@@ -149,20 +149,33 @@ pub struct Context {
 impl Default for Context {
     fn default() -> Self {
         Self {
-            atoms: vec!["false".to_string(), "true".to_string(), "nil".to_string()],
+            atoms: vec![
+                "false".to_string(),
+                "true".to_string(),
+                "nil".to_string(),
+                "instance".to_string(),
+            ],
         }
     }
 }
 
 impl Context {
-    pub fn push_atom(&mut self, name: String) -> usize {
+    pub fn iter_atoms(&self) -> impl Iterator<Item = &str> {
+        self.atoms.iter().map(String::as_str)
+    }
+
+    pub fn get_atom(&self, n: u32) -> &str {
+        &self.atoms[n as usize]
+    }
+
+    pub fn push_atom(&mut self, name: String) -> u32 {
         if let Some(id) = self.atoms.iter().position(|atom| atom == &name) {
-            return id;
+            return id as u32;
         }
 
-        let seq = self.atoms.len();
+        let id = self.atoms.len();
         self.atoms.push(name);
-        seq
+        id as u32
     }
 }
 
@@ -456,7 +469,7 @@ impl Compiler {
             ExprKind::Member(object, member) => {
                 self.expr(ctx, *object)?;
                 self.expr(ctx, rhs)?;
-                let idx = self.push_const(Const::Str(member));
+                let idx = ctx.push_atom(member);
                 Bytecode::with_code(Op::StoreMember, idx).at(span)
             }
             ExprKind::CompMember(object, index) => {
@@ -534,7 +547,7 @@ impl Compiler {
             }
             ExprKind::Member(object, member) => {
                 self.expr(ctx, *object)?;
-                let idx = self.push_const(Const::Str(member));
+                let idx = ctx.push_atom(member);
                 Bytecode::with_code(Op::LoadMember, idx).at(expr.span)
             }
             ExprKind::CompMember(object, elem) => {
@@ -553,7 +566,7 @@ impl Compiler {
             ExprKind::Ident(name) => self.load_name(expr.span, &name)?,
             ExprKind::Call(callee, args) => self.call(ctx, expr.span, *callee, args)?,
             ExprKind::Literal(Literal::Atom(name)) => {
-                Bytecode::with_code(Op::LoadAtom, ctx.push_atom(name) as u32).at(expr.span)
+                Bytecode::with_code(Op::LoadAtom, ctx.push_atom(name)).at(expr.span)
             }
             ExprKind::Literal(lit) => Bytecode::with_code(
                 Op::LoadConst,

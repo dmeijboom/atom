@@ -265,13 +265,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let recv = self.stack.pop();
 
         if recv.is_object() {
-            return self.load_attr(gc, recv, idx as usize);
+            return self.load_attr(gc, recv, idx);
         }
 
-        let member = self.instances[self.frame.instance()].consts[idx as usize].as_str();
+        let member = self.compile_context.get_atom(idx);
 
         if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
-            if let Some(func) = class.get_method(gc, member.as_str())? {
+            if let Some(func) = class.get_method(gc, member)? {
                 let method = Method::new(recv, func);
                 let handle = gc.alloc(method)?;
 
@@ -289,16 +289,15 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn store_member(&mut self, member: u32) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance()].consts[member as usize].as_str();
         let value = self.stack.pop();
         let object = self.stack.pop();
 
-        self.assert_type(object.ty(), Type::Object)?;
+        if !object.is_object() {
+            self.assert_type(object.ty(), Type::Object)?;
+        }
 
         let mut object = object.as_object();
-        let member = unsafe { member.as_static_str() };
-
-        object.attrs.insert(Cow::Borrowed(member), value);
+        object.attrs.insert(member, value);
 
         Ok(())
     }
@@ -307,19 +306,20 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         &mut self,
         gc: &mut Gc<'gc>,
         object: Handle<'gc, Object<'gc>>,
-        member: Handle<'gc, Str<'gc>>,
+        member: u32,
     ) -> Result<(), Error> {
-        let instance_id = object.attrs["instance"].as_int();
+        let member = self.compile_context.get_atom(member);
+        let instance_id = object.attrs[&value::INSTANCE].as_int();
         let instance = &mut self.instances[instance_id as usize];
 
-        if let Some(handle) = instance.get_fn_by_name(gc, member.as_str())? {
+        if let Some(handle) = instance.get_fn_by_name(gc, member)? {
             if handle.public {
                 self.stack.push(handle.into());
                 return Ok(());
             }
         }
 
-        if let Some(handle) = instance.get_class_by_name(gc, member.as_str())? {
+        if let Some(handle) = instance.get_class_by_name(gc, member)? {
             if handle.public {
                 self.stack.push(handle.into());
                 return Ok(());
@@ -338,31 +338,33 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         &mut self,
         gc: &mut Gc<'gc>,
         object: Value<'gc>,
-        member: usize,
+        member: u32,
     ) -> Result<(), Error> {
-        let member = self.instances[self.frame.instance()].consts[member].as_str();
         let object = object.as_object();
 
-        match object.attrs.get(member.as_str()).cloned() {
-            Some(value) => {
-                self.stack.push(value);
-                Ok(())
-            }
-            None if object.class.name == "Package" => self.load_export(gc, object, member),
-            None => self.load_method(gc, object, member.as_str()),
+        if let Some(value) = object.attrs.get(&member).cloned() {
+            self.stack.push(value);
+            return Ok(());
         }
+
+        if object.class.name == "Package" {
+            return self.load_export(gc, object, member);
+        }
+
+        self.load_method(gc, object, member)
     }
 
     fn load_method(
         &mut self,
         gc: &mut Gc<'gc>,
         mut object: Handle<'gc, Object<'gc>>,
-        member: &str,
+        member: u32,
     ) -> Result<(), Error> {
-        let func = object.class.get_method(gc, member)?.ok_or_else(|| {
+        let member_name = self.compile_context.get_atom(member);
+        let func = object.class.get_method(gc, member_name)?.ok_or_else(|| {
             ErrorKind::UnknownAttr {
                 class_name: object.class.name.clone(),
-                attribute: member.to_string(),
+                attribute: member_name.to_string(),
             }
             .at(self.frame.span())
         })?;
@@ -370,9 +372,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let method = Method::new(Handle::clone(&object).into(), func);
         let handle = gc.alloc(method)?;
 
-        object
-            .attrs
-            .insert(member.to_string().into(), Handle::clone(&handle).into());
+        object.attrs.insert(member, Handle::clone(&handle).into());
         self.stack.push(handle.into());
 
         Ok(())
@@ -509,7 +509,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let frame = Frame::new(Handle::clone(&method.func));
         self.call_stack.push(mem::replace(&mut self.frame, frame));
         let locals = self.stack.slice_to_end(arg_count as usize);
-        self.frame.locals = [&[Value::clone(&method.recv)], locals].concat();
+
+        self.frame.locals = Vec::with_capacity(locals.len() + 1);
+        self.frame.locals.push(Value::clone(&method.recv));
+        self.frame.locals.extend_from_slice(locals);
         self.gc_tick(gc);
 
         Ok(())
@@ -704,7 +707,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         // Setup package class
         let class = gc.alloc(Class::new("Package", self.frame.instance()))?;
-        let object = Object::with_attr(gc, class, vec![("instance", BigInt::from(id))])?;
+        let object = Object::with_attr(gc, class, vec![(value::INSTANCE, BigInt::from(id))])?;
         let handle = gc.alloc(object)?;
 
         // Insert the package object as the first variable (which is `self`)
@@ -922,9 +925,14 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                     .iter()
                     .chain(&[Frame::new(Handle::clone(&self.frame.handle))])
                     .enumerate()
-                    .map(|(i, frame)| match self.call_stack.get(i - 1) {
-                        Some(caller) => Call::new(caller.span(), Some(frame.handle.name.clone())),
-                        None => Call::new(Span::default(), None),
+                    .map(|(i, frame)| {
+                        if i > 0 {
+                            if let Some(caller) = self.call_stack.get(i - 1) {
+                                return Call::new(caller.span(), Some(frame.handle.name.clone()));
+                            }
+                        }
+
+                        Call::new(Span::default(), None)
                     })
                     .collect::<Vec<_>>();
 
