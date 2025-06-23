@@ -121,9 +121,11 @@ impl ValueHandle for Array<'_, Value<'_>> {
     }
 }
 
-const SIGN_BIT: u64 = 1 << 63;
+pub const SIGN_BIT: u64 = 1 << 63;
 const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;
+const INT_TAG: u64 = Tag::Int as u64;
+const OBJECT_TAG: u64 = Tag::Object as u64;
 pub const INT_MASK: u64 = 0xffff_ffff_ffff;
 
 pub struct Primitive(u64);
@@ -143,6 +145,13 @@ primitive!(
     NIL: Tag::Nil
 );
 
+impl PartialEq<Primitive> for &Value<'_> {
+    #[inline]
+    fn eq(&self, other: &Primitive) -> bool {
+        self.bits == other.0
+    }
+}
+
 pub struct Value<'gc> {
     bits: u64,
     _phantom: PhantomData<&'gc ()>,
@@ -150,11 +159,23 @@ pub struct Value<'gc> {
 
 impl<'gc> Value<'gc> {
     #[inline(always)]
-    const fn new(tag: Tag, value: u64) -> Self {
+    pub const fn new(tag: Tag, value: u64) -> Self {
         Self {
             bits: (tag as u64) << 48 | SIG_NAN | value,
             _phantom: PhantomData,
         }
+    }
+
+    #[inline]
+    pub fn new_int(i: i64) -> Self {
+        Self::new(
+            Tag::Int,
+            if i < 0 {
+                SIGN_BIT | i.unsigned_abs()
+            } else {
+                i as u64
+            },
+        )
     }
 
     #[inline(always)]
@@ -167,7 +188,11 @@ impl<'gc> Value<'gc> {
     }
 
     pub fn is_object(&self) -> bool {
-        matches!(self.tag(), Tag::Object)
+        ((self.bits & TAG_MASK) >> 48) == OBJECT_TAG
+    }
+
+    pub fn is_int(&self) -> bool {
+        ((self.bits & TAG_MASK) >> 48) == INT_TAG
     }
 
     pub fn tag(&self) -> Tag {
@@ -256,12 +281,6 @@ impl<'gc> Value<'gc> {
 
     pub fn as_array(&self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
         self.as_handle()
-    }
-}
-
-impl PartialEq<Primitive> for &Value<'_> {
-    fn eq(&self, other: &Primitive) -> bool {
-        self.bits == other.0
     }
 }
 
@@ -398,11 +417,7 @@ macro_rules! impl_from_small_int {
     ($($ty:ty),+) => {
         $(impl From<$ty> for Value<'_> {
             fn from(value: $ty) -> Self {
-                let i = value as i64;
-                Value::new(
-                    Tag::Int,
-                    if i < 0 { SIGN_BIT | i.unsigned_abs() } else { i as u64 },
-                )
+                Value::new_int(value as i64)
             }
         })+
     };
@@ -435,12 +450,14 @@ impl<'gc, T> IntoAtom<'gc> for T
 where
     Value<'gc>: From<T>,
 {
+    #[inline]
     fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(self.into())
     }
 }
 
 impl<'gc> IntoAtom<'gc> for PoolObject<BigInt> {
+    #[inline]
     fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         let addr = self.into_raw() as u64;
         Ok(Value::new(Tag::BigInt, addr))
@@ -475,18 +492,25 @@ impl<'gc> IntoAtom<'gc> for () {
 }
 
 impl<'gc> IntoAtom<'gc> for i64 {
+    #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        if self.unsigned_abs() <= INT_MASK {
+            return Ok(Value::new_int(self));
+        }
+
         BigInt::from(self).into_atom(gc)
     }
 }
 
 impl<'gc> IntoAtom<'gc> for usize {
+    #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         BigInt::from(self).into_atom(gc)
     }
 }
 
 impl<'gc> IntoAtom<'gc> for String {
+    #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         let str = Str::copy_from_str(gc, &self)?;
         let handle = gc.alloc(str)?;

@@ -14,13 +14,13 @@ pub struct Report {
 
 pub struct VmProfiler {
     start_time: Instant,
-    counters: [usize; 40],
+    counters: [usize; 43],
 }
 
 impl Default for VmProfiler {
     fn default() -> Self {
         Self {
-            counters: [0; 40],
+            counters: [0; 43],
             start_time: Instant::now(),
         }
     }
@@ -41,7 +41,7 @@ impl VmProfiler {
         let mut records = vec![];
         let exec_time = Instant::now().duration_since(self.start_time);
 
-        for i in 0..40 {
+        for i in 0..43 {
             if self.counters[i] == 0 {
                 continue;
             }

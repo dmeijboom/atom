@@ -168,6 +168,7 @@ impl Default for BigInt {
 }
 
 impl From<usize> for BigInt {
+    #[inline]
     fn from(value: usize) -> Self {
         if value < i64::MAX as usize {
             return BigInt::from(value as i64);

@@ -99,8 +99,12 @@ macro_rules! impl_binary {
         fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
             let (lhs, rhs) = self.stack.operands();
 
+            if lhs.is_int() && rhs.is_int() {
+                self.stack.push(lhs.as_int().$fn(rhs.as_int()).into_atom(gc)?);
+                return Ok(());
+            }
+
             self.stack.push(match (lhs.tag(), rhs.tag()) {
-                (Tag::Int, Tag::Int) => lhs.as_int().$fn(rhs.as_int()).into_atom(gc)?,
                 (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
                     let mut result = gc.int_pool().acquire();
                     lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
@@ -245,7 +249,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         gc.sweep();
     }
 
-    fn goto(&mut self, pos: u32) {
+    #[inline]
+    fn jump(&mut self, pos: u32) {
         self.frame.offset = pos as usize * 8;
     }
 
@@ -281,7 +286,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let value = self.stack.pop();
         let object = self.stack.pop();
 
-        self.check_type(object.ty(), Type::Object)?;
+        self.assert_type(object.ty(), Type::Object)?;
 
         let mut object = object.as_object();
         let member = unsafe { member.as_static_str() };
@@ -393,7 +398,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         self.frame.locals[idx as usize] = self.stack.pop();
     }
 
-    fn check_type(&self, left: Type, right: Type) -> Result<(), Error> {
+    fn assert_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if left != right {
             return Err(ErrorKind::TypeMismatch { left, right }
                 .at(self.frame.span())
@@ -407,23 +412,32 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let value = self.stack.pop();
 
         if &value == Primitive::FALSE {
-            self.goto(idx);
+            self.jump(idx);
             return Ok(());
         }
 
-        self.check_type(value.ty(), Type::Bool)
-    }
-
-    fn jump_cond(&mut self, idx: u32, cond: bool) -> Result<(), Error> {
-        let value = self.stack.pop();
-        self.check_type(value.ty(), Type::Bool)?;
-
-        if value.bool() == cond {
-            self.stack.push(cond.into());
-            self.goto(idx);
+        if &value != Primitive::TRUE {
+            return Err(ErrorKind::TypeMismatch {
+                left: value.ty(),
+                right: Type::Bool,
+            }
+            .at(self.frame.span())
+            .into());
         }
 
         Ok(())
+    }
+
+    fn jump_cond(&mut self, idx: u32, cond: Primitive) -> Result<(), Error> {
+        let value = self.stack.pop();
+
+        if &value == cond {
+            self.stack.push(cond.into());
+            self.jump(idx);
+            return Ok(());
+        }
+
+        self.assert_type(value.ty(), Type::Bool)
     }
 
     fn init_class(
@@ -556,11 +570,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         };
 
         if let Some(from) = from.as_ref() {
-            self.check_type(from.ty(), Type::Int)?;
+            self.assert_type(from.ty(), Type::Int)?;
         }
 
         if let Some(to) = to.as_ref() {
-            self.check_type(to.ty(), Type::Int)?;
+            self.assert_type(to.ty(), Type::Int)?;
         }
 
         let array = self.stack.pop();
@@ -577,7 +591,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 let new_str = gc.alloc(Str(new_array))?;
                 self.stack.push(new_str.into());
             }
-            ty => self.check_type(ty, Type::Array)?,
+            ty => self.assert_type(ty, Type::Array)?,
         }
 
         self.gc_tick(gc);
@@ -610,7 +624,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
-        self.check_type(elem.ty(), Type::Int)?;
+        self.assert_type(elem.ty(), Type::Int)?;
 
         match array.ty() {
             Type::Array => {
@@ -623,7 +637,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 *elem = value;
             }
             Type::Str => {
-                self.check_type(value.ty(), Type::Int)?;
+                self.assert_type(value.ty(), Type::Int)?;
 
                 let array = &mut array.as_str().0;
                 let idx = array_idx(elem, array.len());
@@ -633,7 +647,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
                 *elem = value.as_bigint().as_usize() as u8;
             }
-            _ => self.check_type(array.ty(), Type::Array)?,
+            _ => self.assert_type(array.ty(), Type::Array)?,
         }
 
         Ok(())
@@ -643,7 +657,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
-        self.check_type(elem.ty(), Type::Int)?;
+        self.assert_type(elem.ty(), Type::Int)?;
 
         let elem = match array.ty() {
             Type::Array => {
@@ -663,7 +677,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                     .map(Value::from)
                     .ok_or_else(|| self.index_out_of_bounds(idx))?
             }
-            _ => return self.check_type(array.ty(), Type::Array),
+            _ => return self.assert_type(array.ty(), Type::Array),
         };
 
         self.stack.push(elem);
@@ -727,7 +741,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
     fn not(&mut self) -> Result<(), Error> {
         let value = self.stack.pop();
-        self.check_type(value.ty(), Type::Bool)?;
+        self.assert_type(value.ty(), Type::Bool)?;
         self.stack.push((!value.bool()).into());
         Ok(())
     }
@@ -872,10 +886,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::CallFn => self.call_fn(gc, bc.code2())?,
                 Op::CallExtern => self.call_extern(gc, bc.code)?,
                 Op::TailCall => self.tail_call(gc, bc.code)?,
-                Op::Jump => self.goto(bc.code),
+                Op::Jump => self.jump(bc.code),
                 Op::JumpIfFalse => self.jump_if_false(bc.code)?,
-                Op::PushJumpIfTrue => self.jump_cond(bc.code, true)?,
-                Op::PushJumpIfFalse => self.jump_cond(bc.code, false)?,
+                Op::PushJumpIfTrue => self.jump_cond(bc.code, Primitive::TRUE)?,
+                Op::PushJumpIfFalse => self.jump_cond(bc.code, Primitive::FALSE)?,
                 Op::MakeArray => self.make_array(gc, bc.code)?,
                 Op::MakeSlice => self.make_slice(gc, bc.code)?,
                 Op::LoadElement => self.load_elem()?,
