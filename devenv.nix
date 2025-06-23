@@ -7,6 +7,8 @@
 {
   packages = with pkgs; [
     nixd
+    hyperfine
+    samply
   ];
 
   languages = {

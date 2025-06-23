@@ -56,11 +56,10 @@ pub enum BinaryOp {
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Literal {
-    Nil,
-    Bool(bool),
     Int(i64),
     BigInt(BigInt),
     Float(f64),
+    Atom(String),
     String(String),
 }
 

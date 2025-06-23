@@ -1,7 +1,7 @@
 [
     Stmt(
         kind: expr(Expr(
-            kind: literal(nil),
+            kind: literal(atom("nil")),
             span: Span(
                 offset: 0,
             ),

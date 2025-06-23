@@ -31,10 +31,8 @@ pub enum Tag {
     Fn,
     Method,
     Str,
-    True,
-    False,
     #[default]
-    Nil,
+    Atom,
     Class,
     Object,
 }
@@ -45,13 +43,12 @@ pub enum Type {
     Int,
     BigInt,
     Float,
-    Bool,
     Array,
     Fn,
     Method,
     Str,
     #[default]
-    Nil,
+    Atom,
     Class,
     Object,
 }
@@ -62,12 +59,11 @@ impl Type {
             Type::Int => "Int",
             Type::BigInt => "BigInt",
             Type::Float => "Float",
-            Type::Bool => "Bool",
             Type::Array => "Array",
             Type::Fn => "Fn",
             Type::Method => "Method",
             Type::Str => "Str",
-            Type::Nil => "Nil",
+            Type::Atom => "Atom",
             Type::Class => "Class",
             Type::Object => "Object",
         }
@@ -122,35 +118,14 @@ impl ValueHandle for Array<'_, Value<'_>> {
 }
 
 pub const SIGN_BIT: u64 = 1 << 63;
+pub const INT_MASK: u64 = 0xffff_ffff_ffff;
+pub const FALSE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN) as u32;
+pub const TRUE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 1) as u32;
+pub const NIL: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 2) as u32;
+
 const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;
-const INT_TAG: u64 = Tag::Int as u64;
-const OBJECT_TAG: u64 = Tag::Object as u64;
-pub const INT_MASK: u64 = 0xffff_ffff_ffff;
-
-pub struct Primitive(u64);
-
-macro_rules! primitive {
-    ($($name:ident: $tag:expr),+) => {
-        impl Primitive {
-            $(pub const $name: Primitive = Primitive(($tag as u64) << 48 | SIG_NAN);)+
-        }
-    };
-}
-
-primitive!(
-    FALSE: Tag::False,
-    TRUE: Tag::True,
-    NAN: Tag::Float,
-    NIL: Tag::Nil
-);
-
-impl PartialEq<Primitive> for &Value<'_> {
-    #[inline]
-    fn eq(&self, other: &Primitive) -> bool {
-        self.bits == other.0
-    }
-}
+const NAN: u64 = (Tag::Float as u64) << 48 | SIG_NAN;
 
 pub struct Value<'gc> {
     bits: u64,
@@ -184,15 +159,15 @@ impl<'gc> Value<'gc> {
     }
 
     pub const fn is_float(&self) -> bool {
-        self.bits == Primitive::NAN.0 || (self.bits & SIG_NAN) != SIG_NAN
+        self.bits == NAN || (self.bits & SIG_NAN) != SIG_NAN
     }
 
     pub fn is_object(&self) -> bool {
-        ((self.bits & TAG_MASK) >> 48) == OBJECT_TAG
+        ((self.bits & TAG_MASK) >> 48) == Tag::Object as u64
     }
 
     pub fn is_int(&self) -> bool {
-        ((self.bits & TAG_MASK) >> 48) == INT_TAG
+        ((self.bits & TAG_MASK) >> 48) == Tag::Int as u64
     }
 
     pub fn tag(&self) -> Tag {
@@ -212,8 +187,7 @@ impl<'gc> Value<'gc> {
             Tag::Fn => Type::Fn,
             Tag::Method => Type::Method,
             Tag::Str => Type::Str,
-            Tag::True | Tag::False => Type::Bool,
-            Tag::Nil => Type::Nil,
+            Tag::Atom => Type::Atom,
             Tag::Class => Type::Class,
             Tag::Object => Type::Object,
         }
@@ -239,12 +213,9 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    #[inline]
     pub fn as_float(&self) -> f64 {
         f64::from_bits(self.bits)
-    }
-
-    pub fn bool(&self) -> bool {
-        self == Primitive::TRUE
     }
 
     pub fn as_ptr<T>(&self) -> *mut T {
@@ -255,32 +226,44 @@ impl<'gc> Value<'gc> {
         (self.bits & INT_MASK) as _
     }
 
+    #[inline]
     fn as_handle<T: Trace + ValueHandle>(&self) -> Handle<'gc, T> {
         Handle::from_ptr(self.as_ptr::<T>())
     }
 
+    #[inline]
     pub fn as_class(&self) -> Handle<'gc, Class<'gc>> {
         self.as_handle()
     }
 
+    #[inline]
     pub fn as_fn(&self) -> Handle<'gc, Fn> {
         self.as_handle()
     }
 
+    #[inline]
     pub fn as_method(&self) -> Handle<'gc, Method<'gc>> {
         self.as_handle()
     }
 
+    #[inline]
     pub fn as_object(&self) -> Handle<'gc, Object<'gc>> {
         self.as_handle()
     }
 
+    #[inline]
     pub fn as_str(&self) -> Handle<'gc, Str<'gc>> {
         self.as_handle()
     }
 
+    #[inline]
     pub fn as_array(&self) -> Handle<'gc, Array<'gc, Value<'gc>>> {
         self.as_handle()
+    }
+
+    #[inline]
+    pub fn as_atom(&self) -> u32 {
+        (self.bits & INT_MASK) as u32
     }
 }
 
@@ -308,7 +291,7 @@ impl<'gc> Trace for Value<'gc> {
             Tag::Fn => gc.mark(&self.as_fn()),
             Tag::Method => gc.mark(&self.as_method()),
             Tag::Class => gc.mark(&self.as_class()),
-            Tag::Int | Tag::BigInt | Tag::Float | Tag::True | Tag::False | Tag::Nil => {}
+            Tag::Int | Tag::BigInt | Tag::Float | Tag::Atom => {}
         }
     }
 }
@@ -329,7 +312,7 @@ impl<'gc> PartialEq for Value<'gc> {
 
 impl<'gc> Default for Value<'gc> {
     fn default() -> Self {
-        Primitive::NIL.into()
+        Value::new(Tag::Atom, NIL as u64)
     }
 }
 
@@ -350,7 +333,6 @@ impl<'gc> Display for Value<'gc> {
         match self.ty() {
             Type::Int => write!(f, "{}", *self.as_bigint()),
             Type::Float => write!(f, "{}", self.as_float()),
-            Type::Bool => write!(f, "{}", self.bool()),
             Type::Array => write!(
                 f,
                 "[{}]",
@@ -361,15 +343,6 @@ impl<'gc> Display for Value<'gc> {
                     .join(", ")
             ),
             ty => write!(f, "{ty}"),
-        }
-    }
-}
-
-impl<'gc> From<Primitive> for Value<'gc> {
-    fn from(primitive: Primitive) -> Self {
-        Self {
-            bits: primitive.0,
-            _phantom: PhantomData,
         }
     }
 }
@@ -427,12 +400,7 @@ impl_from_small_int!(i8, i16, i32, u8, u16, u32);
 
 impl From<bool> for Value<'_> {
     fn from(value: bool) -> Self {
-        if value {
-            Primitive::TRUE
-        } else {
-            Primitive::FALSE
-        }
-        .into()
+        if value { TRUE } else { FALSE }.into()
     }
 }
 
@@ -539,22 +507,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_primitives() {
-        assert_eq!(Value::from(Primitive::FALSE).ty(), Type::Bool);
-        assert_eq!(Value::from(Primitive::TRUE).ty(), Type::Bool);
-        assert_eq!(Value::from(Primitive::NAN).ty(), Type::Float);
-        assert_eq!(Value::from(Primitive::NIL).ty(), Type::Nil);
-    }
-
-    #[test]
     fn test_tags() {
         assert_eq!(Value::new(Tag::Int, 0).ty(), Type::Int);
         assert_eq!(Value::new(Tag::Array, 0).ty(), Type::Array);
         assert_eq!(Value::new(Tag::Fn, 0).ty(), Type::Fn);
         assert_eq!(Value::new(Tag::Str, 0).ty(), Type::Str);
-        assert_eq!(Value::new(Tag::True, 0).ty(), Type::Bool);
-        assert_eq!(Value::new(Tag::False, 0).ty(), Type::Bool);
-        assert_eq!(Value::new(Tag::Nil, 0).ty(), Type::Nil);
+        assert_eq!(Value::new(Tag::Atom, 0).ty(), Type::Atom);
         assert_eq!(Value::new(Tag::Class, 0).ty(), Type::Class);
         assert_eq!(Value::new(Tag::Object, 0).ty(), Type::Object);
     }
@@ -613,10 +571,10 @@ mod tests {
     #[test]
     fn test_bool() {
         let value = Value::from(true);
-        assert_eq!(value.bool(), true);
+        assert_eq!(value.as_atom(), TRUE);
 
         let value = Value::from(false);
-        assert_eq!(value.bool(), false);
+        assert_eq!(value.as_atom(), FALSE);
     }
 
     #[test]

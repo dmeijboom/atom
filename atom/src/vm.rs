@@ -12,7 +12,7 @@ use wyhash2::WyHash;
 use crate::{
     ast::Stmt,
     bytecode::Op,
-    compiler::{Compiler, Package},
+    compiler::{Compiler, Context, Package},
     error::SpannedError,
     frame::Frame,
     gc::{Gc, Handle, Trace},
@@ -26,7 +26,7 @@ use crate::{
         error::{Call, ErrorKind, RuntimeError},
         function::{Fn, Method},
         str::Str,
-        value::{IntoAtom, Primitive, Tag, Type, Value},
+        value::{self, IntoAtom, Tag, Type, Value},
     },
     stack::Stack,
 };
@@ -65,12 +65,16 @@ fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
     Ok(parser.parse()?)
 }
 
-pub fn compile(source: impl AsRef<Path>, optimize: bool) -> Result<Package, crate::error::Error> {
+pub fn compile(
+    source: impl AsRef<Path>,
+    ctx: &mut Context,
+    optimize: bool,
+) -> Result<Package, crate::error::Error> {
     let source = fs::read_to_string(source)?;
     let program = parse(&source)?;
     let compiler = Compiler::default().with_optimize(optimize);
 
-    Ok(compiler.compile(program)?)
+    Ok(compiler.compile(ctx, program)?)
 }
 
 macro_rules! impl_op {
@@ -157,6 +161,7 @@ pub struct Vm<'gc, F: Ffi<'gc>, const S: usize> {
     std: Std<'gc>,
     frame: Frame<'gc>,
     search_path: PathBuf,
+    compile_context: Context,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
     instances: Vec<Instance<'gc>>,
@@ -187,6 +192,7 @@ fn instance_with_frame<'gc>(
 impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     pub fn new(
         gc: &mut Gc<'gc>,
+        compile_context: Context,
         search_path: PathBuf,
         package: Package,
         ffi: F,
@@ -197,6 +203,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             ffi,
             frame,
             search_path,
+            compile_context,
             std: Std::default(),
             packages: HashMap::default(),
             instances: vec![instance],
@@ -411,33 +418,23 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     fn jump_if_false(&mut self, idx: u32) -> Result<(), Error> {
         let value = self.stack.pop();
 
-        if &value == Primitive::FALSE {
+        if value.as_atom() == value::FALSE {
             self.jump(idx);
             return Ok(());
-        }
-
-        if &value != Primitive::TRUE {
-            return Err(ErrorKind::TypeMismatch {
-                left: value.ty(),
-                right: Type::Bool,
-            }
-            .at(self.frame.span())
-            .into());
         }
 
         Ok(())
     }
 
-    fn jump_cond(&mut self, idx: u32, cond: Primitive) -> Result<(), Error> {
+    fn jump_cond(&mut self, idx: u32, cond: u32) -> Result<(), Error> {
         let value = self.stack.pop();
 
-        if &value == cond {
+        if value.as_atom() == cond {
             self.stack.push(cond.into());
             self.jump(idx);
-            return Ok(());
         }
 
-        self.assert_type(value.ty(), Type::Bool)
+        Ok(())
     }
 
     fn init_class(
@@ -699,7 +696,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let id = self.instances.len();
 
         // Parse and compile module
-        let module = compile(self.make_path(name), true).map_err(|e| Error::Import(Box::new(e)))?;
+        let module = compile(self.make_path(name), &mut self.compile_context, true)
+            .map_err(|e| Error::Import(Box::new(e)))?;
 
         // Initialize instance and frame
         let (mut instance, frame) = instance_with_frame(id, gc, module)?;
@@ -741,8 +739,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
     fn not(&mut self) -> Result<(), Error> {
         let value = self.stack.pop();
-        self.assert_type(value.ty(), Type::Bool)?;
-        self.stack.push((!value.bool()).into());
+
+        self.stack.push(if value.as_atom() == value::TRUE {
+            Value::new(Tag::Atom, value::FALSE as u64)
+        } else {
+            Value::new(Tag::Atom, value::TRUE as u64)
+        });
+
         Ok(())
     }
 
@@ -763,7 +766,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             Type::Int => *lhs.as_bigint() == *rhs.as_bigint(),
             Type::Float => lhs.as_float() == rhs.as_float(),
             Type::Str => lhs.as_str() == rhs.as_str(),
-            Type::Bool => lhs.bool() == rhs.bool(),
+            Type::Atom => lhs.as_atom() == rhs.as_atom(),
             _ => return Err(self.unsupported_rhs(lhs, rhs, "==")),
         })
     }
@@ -833,6 +836,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         ));
     }
 
+    fn load_atom(&mut self, idx: u32) {
+        self.stack.push(Value::new(Tag::Atom, idx as u64));
+    }
+
     fn load_const(&mut self, idx: u32) {
         self.stack.push(Value::clone(
             &self.instances[self.frame.instance()].consts[idx as usize],
@@ -871,6 +878,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::ShiftLeft => self.shl(gc)?,
                 Op::ShiftRight => self.shr(gc)?,
                 Op::LoadConst => self.load_const(bc.code),
+                Op::LoadAtom => self.load_atom(bc.code),
                 Op::LoadMember => self.load_member(gc, bc.code)?,
                 Op::StoreMember => self.store_member(bc.code)?,
                 Op::LoadFn => self.load_fn(gc, bc.code)?,
@@ -888,8 +896,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::TailCall => self.tail_call(gc, bc.code)?,
                 Op::Jump => self.jump(bc.code),
                 Op::JumpIfFalse => self.jump_if_false(bc.code)?,
-                Op::PushJumpIfTrue => self.jump_cond(bc.code, Primitive::TRUE)?,
-                Op::PushJumpIfFalse => self.jump_cond(bc.code, Primitive::FALSE)?,
+                Op::PushJumpIfTrue => self.jump_cond(bc.code, value::TRUE)?,
+                Op::PushJumpIfFalse => self.jump_cond(bc.code, value::FALSE)?,
                 Op::MakeArray => self.make_array(gc, bc.code)?,
                 Op::MakeSlice => self.make_slice(gc, bc.code)?,
                 Op::LoadElement => self.load_elem()?,

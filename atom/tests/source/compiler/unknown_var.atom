@@ -1,6 +1,6 @@
 import std;
 
-if true {
+if :true {
     let x = 4;
     std.println(x);
 } else {

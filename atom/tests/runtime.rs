@@ -1,4 +1,5 @@
 use atom::{
+    compiler::Context,
     gc::Gc,
     runtime::{
         value::{IntoAtom, Type, Value},
@@ -22,7 +23,7 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
         Type::Int => *lhs.as_bigint() == *rhs.as_bigint(),
         Type::Float => lhs.as_float() == rhs.as_float(),
         Type::Str => lhs.as_str() == rhs.as_str(),
-        Type::Bool => lhs.bool() == rhs.bool(),
+        Type::Atom => lhs.as_atom() == rhs.as_atom(),
         Type::Array => lhs
             .as_array()
             .iter()
@@ -49,7 +50,8 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
 #[cfg_attr(miri, ignore)]
 fn runtime(name: &str, expected: impl for<'gc> IntoAtom<'gc>) {
     let mut gc = Gc::default();
-    let actual = common::run(&mut gc, &format!("runtime/{name}.atom"));
+    let ctx = Context::default();
+    let actual = common::run(&mut gc, ctx, &format!("runtime/{name}.atom"));
     let actual = actual
         .expect("runtime error")
         .expect("return value not found");

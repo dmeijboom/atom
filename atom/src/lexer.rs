@@ -38,8 +38,7 @@ pub enum TokenKind {
     Ident(String),
     Keyword(String),
     Punct(&'static str),
-    Nil,
-    Bool(bool),
+    Atom(String),
     Int(i64),
     BigInt(BigInt),
     Float(f64),
@@ -58,9 +57,7 @@ impl Display for TokenKind {
             Self::Ident(name) => write!(f, "{name}"),
             Self::Keyword(name) => write!(f, "{name}"),
             Self::Punct(punct) => write!(f, "{punct}"),
-            Self::Nil => write!(f, "nil"),
-            Self::Bool(true) => write!(f, "true"),
-            Self::Bool(false) => write!(f, "false"),
+            Self::Atom(name) => write!(f, ":{name}"),
             Self::Int(value) => write!(f, "{}", value),
             Self::BigInt(value) => write!(f, "{}", value),
             Self::Float(value) => write!(f, "{}", value),
@@ -153,8 +150,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    fn term(&mut self) -> Token {
-        let span = self.span();
+    fn term(&mut self) -> String {
         let mut term = String::new();
 
         while let Some(c) = self.cur() {
@@ -166,12 +162,23 @@ impl<'a> Lexer<'a> {
             term.push(c);
         }
 
-        match term.as_str() {
-            "nil" => TokenKind::Nil,
-            "true" => TokenKind::Bool(true),
-            "false" => TokenKind::Bool(false),
-            name if is_keyword(name) => TokenKind::Keyword(term),
-            _ => TokenKind::Ident(term),
+        term
+    }
+
+    fn atom(&mut self) -> Token {
+        let span = self.span();
+        self.advance();
+        TokenKind::Atom(self.term()).at(span)
+    }
+
+    fn ident_or_keyword(&mut self) -> Token {
+        let span = self.span();
+        let term = self.term();
+
+        if is_keyword(&term) {
+            TokenKind::Keyword(term)
+        } else {
+            TokenKind::Ident(term)
         }
         .at(span)
     }
@@ -248,8 +255,10 @@ impl<'a> Lexer<'a> {
             let span = self.span();
             let next = self.peek();
 
-            if matches!(cur, '_' | 'a'..='z' | 'A'..='Z') {
-                tokens.push(self.term());
+            if cur == ':' && matches!(next, Some('a'..='z' | 'A'..='Z')) {
+                tokens.push(self.atom());
+            } else if matches!(cur, '_' | 'a'..='z' | 'A'..='Z') {
+                tokens.push(self.ident_or_keyword());
             } else if cur.is_ascii_digit()
                 || (matches!(cur, '.' | '-') && matches!(next, Some(c) if c.is_ascii_digit()))
             {

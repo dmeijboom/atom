@@ -1,7 +1,7 @@
 [
     Stmt(
         kind: expr(Expr(
-            kind: literal(bool(true)),
+            kind: literal(atom("true")),
             span: Span(
                 offset: 0,
             ),
@@ -12,13 +12,13 @@
     ),
     Stmt(
         kind: expr(Expr(
-            kind: literal(bool(false)),
+            kind: literal(atom("false")),
             span: Span(
-                offset: 5,
+                offset: 6,
             ),
         )),
         span: Span(
-            offset: 5,
+            offset: 6,
         ),
     ),
 ]

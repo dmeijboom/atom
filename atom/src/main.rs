@@ -2,7 +2,7 @@ use std::{path::PathBuf, process::exit};
 
 use argh::FromArgs;
 use bytecode::{Bytecode, Serializable, Spanned};
-use compiler::Package;
+use compiler::{Context, Package};
 use error::Error;
 use gc::Gc;
 #[cfg(feature = "mimalloc")]
@@ -143,9 +143,10 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             source,
             no_optimize,
         }) => {
-            let module = vm::compile(source, !no_optimize)?;
+            let mut ctx = Context::default();
+            let module = vm::compile(source, &mut ctx, !no_optimize)?;
             let mut gc = Gc::default();
-            let mut vm = AtomVm::new(&mut gc, "atom".into(), module, Runtime::default())?;
+            let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module, Runtime::default())?;
 
             vm.run(&mut gc)?;
             gc.sweep();
@@ -174,7 +175,8 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             verbose,
             no_optimize,
         }) => {
-            let module = vm::compile(source, !no_optimize)?;
+            let mut ctx = Context::default();
+            let module = vm::compile(source, &mut ctx, !no_optimize)?;
 
             if verbose {
                 print_module(&module);

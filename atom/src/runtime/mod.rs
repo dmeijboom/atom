@@ -57,12 +57,16 @@ fn _repr(value: &Value) -> String {
         Type::Int => format!("{}", value.as_int()),
         Type::BigInt => format!("{}", value.as_bigint().deref()),
         Type::Float => format!("{}", value.as_float()),
-        Type::Bool => format!("{}", value.bool()),
+        Type::Atom => match value.as_atom() {
+            0 => ":false".to_string(),
+            1 => ":true".to_string(),
+            2 => ":nil".to_string(),
+            idx => format!("<:{idx}>"),
+        },
         Type::Fn => format!("{}(..)", value.as_fn().name),
         Type::Method => format!(".{}(..)", value.as_fn().name),
         Type::Class => value.as_class().name.to_string(),
         Type::Object => format!("{}{{..}}", value.as_object().class.name),
-        Type::Nil => "<nil>".to_string(),
     }
 }
 

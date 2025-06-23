@@ -342,11 +342,10 @@ impl Parser {
     fn primary(&mut self) -> Result<Expr, ParseError> {
         match self.next() {
             Some(token) => match token.kind {
-                TokenKind::Nil => Ok(ExprKind::Literal(Literal::Nil).at(token.span)),
                 TokenKind::Int(i) => Ok(ExprKind::Literal(Literal::Int(i)).at(token.span)),
                 TokenKind::BigInt(i) => Ok(ExprKind::Literal(Literal::BigInt(i)).at(token.span)),
                 TokenKind::Float(f) => Ok(ExprKind::Literal(Literal::Float(f)).at(token.span)),
-                TokenKind::Bool(b) => Ok(ExprKind::Literal(Literal::Bool(b)).at(token.span)),
+                TokenKind::Atom(s) => Ok(ExprKind::Literal(Literal::Atom(s)).at(token.span)),
                 TokenKind::String(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
                 TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
                 TokenKind::Keyword(w) if w == "match" => Ok(self.match_expr()?.at(token.span)),

@@ -40,6 +40,7 @@ pub enum Op {
     Load,
     LoadFn,
     LoadClass,
+    LoadAtom,
     Discard,
     Return,
     ReturnLocal,
@@ -157,6 +158,7 @@ impl Display for Bytecode {
             | Op::LoadFn
             | Op::LoadClass
             | Op::LoadConst
+            | Op::LoadAtom
             | Op::Jump
             | Op::JumpIfFalse
             | Op::PushJumpIfFalse
@@ -177,11 +179,9 @@ impl Display for Bytecode {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Const {
-    Nil,
     Int(i64),
     BigInt(BigInt),
     Float(f64),
-    Bool(bool),
     Str(String),
 }
 
@@ -190,11 +190,9 @@ impl Eq for Const {}
 impl<'gc> IntoAtom<'gc> for Const {
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
         Ok(match self {
-            Const::Nil => Value::default(),
             Const::Int(i) => i.into_atom(gc)?,
             Const::BigInt(i) => i.into_atom(gc)?,
             Const::Float(n) => Value::from(n),
-            Const::Bool(b) => Value::from(b),
             Const::Str(s) => s.into_atom(gc)?,
         })
     }

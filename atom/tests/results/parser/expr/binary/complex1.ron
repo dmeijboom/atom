@@ -3,23 +3,23 @@
         kind: expr(Expr(
             kind: binary(Expr(
                 kind: binary(Expr(
-                    kind: literal(bool(true)),
+                    kind: literal(atom("true")),
                     span: Span(
                         offset: 0,
                     ),
                 ), and, Expr(
-                    kind: literal(bool(false)),
+                    kind: literal(atom("false")),
                     span: Span(
-                        offset: 8,
+                        offset: 9,
                     ),
                 )),
                 span: Span(
                     offset: 0,
                 ),
             ), or, Expr(
-                kind: literal(bool(true)),
+                kind: literal(atom("true")),
                 span: Span(
-                    offset: 17,
+                    offset: 19,
                 ),
             )),
             span: Span(

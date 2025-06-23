@@ -56,7 +56,7 @@ pub fn read_rest(data) {
             | (data[4] << 8)
             | data[6],
         8 => read64_swapped(data),
-        else => nil
+        else => :nil
     }
 }
 
@@ -88,7 +88,7 @@ fn wyhash_core(bytes, seed) {
                 wymum(seed, read_rest(bytes[start + 16:]) ^ P3),
             3 => wymum(read64_swapped(bytes[start:]) ^ seed, read64_swapped(bytes[start + 8:]) ^ P2) ^
                 wymum(read64_swapped(bytes[start + 16:]) ^ seed, read_rest(bytes[start + 24:]) ^ P4),
-            else => nil
+            else => :nil
         };
     }
 
@@ -104,9 +104,9 @@ pub class Entry {
 
 pub class Map {
     fn init(self) {
-        self.buckets = [nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-                        nil, nil, nil, nil, nil, nil, nil, nil, nil, nil,
-                        nil, nil, nil, nil, nil];
+        self.buckets = [:nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil,
+                        :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil,
+                        :nil, :nil, :nil, :nil, :nil];
     }
 
     fn set(self, key, value) {
@@ -114,7 +114,7 @@ pub class Map {
         let idx = hash % self.buckets.len();
         let bucket = self.buckets[idx];
 
-        if bucket == nil {
+        if bucket == :nil {
             self.buckets[idx] = [Entry(key, value)];
         } else {
             bucket.push(Entry(key, value));
@@ -126,8 +126,8 @@ pub class Map {
         let idx = hash % self.buckets.len();
         let bucket = self.buckets[idx];
 
-        if bucket == nil {
-            return nil;
+        if bucket == :nil {
+            return :nil;
         }
 
         for let i = 0; i < bucket.len(); i += 1 {
@@ -136,6 +136,6 @@ pub class Map {
             }
         }
 
-        return nil;
+        return :nil;
     }
 }

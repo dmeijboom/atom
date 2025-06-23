@@ -1,4 +1,4 @@
-use atom::gc::Gc;
+use atom::{compiler::Context, gc::Gc};
 use test_case::test_case;
 
 mod common;
@@ -11,7 +11,8 @@ mod common;
 #[cfg_attr(miri, ignore)]
 fn int(name: &str, expected: Result<i64, &'static str>) {
     let mut gc = Gc::default();
-    let return_value = common::run(&mut gc, &format!("primitive/int/{name}.atom"));
+    let ctx = Context::default();
+    let return_value = common::run(&mut gc, ctx, &format!("primitive/int/{name}.atom"));
 
     assert_eq!(
         return_value
@@ -28,7 +29,8 @@ fn int(name: &str, expected: Result<i64, &'static str>) {
 #[cfg_attr(miri, ignore)]
 fn float(name: &str, expected: Result<f64, &'static str>) {
     let mut gc = Gc::default();
-    let return_value = common::run(&mut gc, &format!("primitive/float/{name}.atom"));
+    let ctx = Context::default();
+    let return_value = common::run(&mut gc, ctx, &format!("primitive/float/{name}.atom"));
 
     assert_eq!(
         return_value

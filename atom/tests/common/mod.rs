@@ -5,7 +5,7 @@ mod tests {
 
     use atom::{
         ast::Stmt,
-        compiler::{Compiler, Package},
+        compiler::{Compiler, Context, Package},
         error::Error,
         gc::Gc,
         lexer::Lexer,
@@ -57,22 +57,26 @@ mod tests {
         Ok(program)
     }
 
-    pub fn compile(name: &str) -> Result<Package, Error> {
+    pub fn compile(ctx: &mut Context, name: &str) -> Result<Package, Error> {
         let mut program = _parse("\nextern fn ret(value);")?;
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
         program.extend(_parse(&source)?);
         let compiler = Compiler::default();
 
-        Ok(compiler.compile(program)?)
+        Ok(compiler.compile(ctx, program)?)
     }
 
     pub type TestVm<'gc> = Vm<'gc, TestRuntime<'gc, Runtime>, 1000>;
 
-    pub fn run<'gc>(gc: &mut Gc<'gc>, name: &str) -> Result<Option<Value<'gc>>, Error> {
-        let module = compile(name)?;
+    pub fn run<'gc>(
+        gc: &mut Gc<'gc>,
+        mut ctx: Context,
+        name: &str,
+    ) -> Result<Option<Value<'gc>>, Error> {
+        let module = compile(&mut ctx, name)?;
         let (sender, recv) = std::sync::mpsc::channel();
         let runtime = TestRuntime::new(Runtime::default(), sender);
-        let mut vm = TestVm::new(gc, "".into(), module, runtime)?;
+        let mut vm = TestVm::new(gc, ctx, "".into(), module, runtime)?;
 
         vm.run(gc)?;
 

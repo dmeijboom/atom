@@ -142,6 +142,30 @@ enum Symbol {
     Fn(u32),
 }
 
+pub struct Context {
+    atoms: Vec<String>,
+}
+
+impl Default for Context {
+    fn default() -> Self {
+        Self {
+            atoms: vec!["false".to_string(), "true".to_string(), "nil".to_string()],
+        }
+    }
+}
+
+impl Context {
+    pub fn push_atom(&mut self, name: String) -> usize {
+        if let Some(id) = self.atoms.iter().position(|atom| atom == &name) {
+            return id;
+        }
+
+        let seq = self.atoms.len();
+        self.atoms.push(name);
+        seq
+    }
+}
+
 pub struct Compiler {
     optimize: bool,
     vars_seq: usize,
@@ -278,13 +302,14 @@ impl Compiler {
 
     fn call(
         &mut self,
+        ctx: &mut Context,
         span: Span,
         callee: Expr,
         args: Vec<Expr>,
     ) -> Result<Spanned<Bytecode>, CompileError> {
         let arg_count = args.len();
-        self.expr_list(args)?;
-        self.expr(callee)?;
+        self.expr_list(ctx, args)?;
+        self.expr(ctx, callee)?;
 
         match self.tail() {
             Some(bc) if self.optimize && bc.op == Op::LoadFn => {
@@ -311,21 +336,27 @@ impl Compiler {
             .find_map(|scope| scope.vars.get_mut(name))
     }
 
-    fn logical(&mut self, span: Span, rhs: Expr, cond: bool) -> Result<(), CompileError> {
+    fn logical(
+        &mut self,
+        ctx: &mut Context,
+        span: Span,
+        rhs: Expr,
+        cond: bool,
+    ) -> Result<(), CompileError> {
         let offset = self.push_bytecode(match cond {
             true => Bytecode::new(Op::PushJumpIfTrue).at(span),
             false => Bytecode::new(Op::PushJumpIfFalse).at(span),
         });
 
-        self.expr(rhs)?;
+        self.expr(ctx, rhs)?;
         self.set_offset(offset, self.offset());
 
         Ok(())
     }
 
-    fn expr_list(&mut self, exprs: Vec<Expr>) -> Result<(), CompileError> {
+    fn expr_list(&mut self, ctx: &mut Context, exprs: Vec<Expr>) -> Result<(), CompileError> {
         for expr in exprs {
-            self.expr(expr)?;
+            self.expr(ctx, expr)?;
         }
 
         Ok(())
@@ -398,6 +429,7 @@ impl Compiler {
 
     fn assign(
         &mut self,
+        ctx: &mut Context,
         span: Span,
         op: Option<ast::AssignOp>,
         lhs: Expr,
@@ -416,21 +448,21 @@ impl Compiler {
                     _ => return Err(ErrorKind::UnknownName(name).at(span)),
                 };
 
-                self.expr(rhs)?;
+                self.expr(ctx, rhs)?;
                 self.set_init(sym);
 
                 bc
             }
             ExprKind::Member(object, member) => {
-                self.expr(*object)?;
-                self.expr(rhs)?;
+                self.expr(ctx, *object)?;
+                self.expr(ctx, rhs)?;
                 let idx = self.push_const(Const::Str(member));
                 Bytecode::with_code(Op::StoreMember, idx).at(span)
             }
             ExprKind::CompMember(object, index) => {
-                self.expr(*object)?;
-                self.expr(*index)?;
-                self.expr(rhs)?;
+                self.expr(ctx, *object)?;
+                self.expr(ctx, *index)?;
+                self.expr(ctx, rhs)?;
                 Bytecode::new(Op::StoreElement).at(span)
             }
             _ => unimplemented!(),
@@ -439,6 +471,7 @@ impl Compiler {
 
     fn slice(
         &mut self,
+        ctx: &mut Context,
         begin: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
     ) -> Result<Bytecode, CompileError> {
@@ -446,29 +479,29 @@ impl Compiler {
 
         if let Some(begin) = begin {
             code += 1;
-            self.expr(*begin)?;
+            self.expr(ctx, *begin)?;
         }
 
         if let Some(end) = end {
             code += 2;
-            self.expr(*end)?;
+            self.expr(ctx, *end)?;
         }
 
         Ok(Bytecode::with_code(Op::MakeSlice, code))
     }
 
-    fn expr(&mut self, expr: Expr) -> Result<(), CompileError> {
+    fn expr(&mut self, ctx: &mut Context, expr: Expr) -> Result<(), CompileError> {
         let code = match expr.kind {
             ExprKind::Unary(op, unary_expr) => match op {
                 ast::UnaryOp::Not => {
                     let span = expr.span;
-                    self.expr(*unary_expr)?;
+                    self.expr(ctx, *unary_expr)?;
                     Bytecode::new(Op::UnaryNot).at(span)
                 }
             },
-            ExprKind::Assign(op, lhs, rhs) => self.assign(expr.span, op, *lhs, *rhs)?,
+            ExprKind::Assign(op, lhs, rhs) => self.assign(ctx, expr.span, op, *lhs, *rhs)?,
             ExprKind::Binary(lhs, op, rhs) => {
-                self.expr(*lhs)?;
+                self.expr(ctx, *lhs)?;
 
                 let code = match op {
                     ast::BinaryOp::Add => Bytecode::new(Op::Add).at(expr.span),
@@ -482,8 +515,8 @@ impl Compiler {
                     ast::BinaryOp::Gte => Bytecode::new(Op::Gte).at(expr.span),
                     ast::BinaryOp::Lt => Bytecode::new(Op::Lt).at(expr.span),
                     ast::BinaryOp::Lte => Bytecode::new(Op::Lte).at(expr.span),
-                    ast::BinaryOp::Or => return self.logical(expr.span, *rhs, true),
-                    ast::BinaryOp::And => return self.logical(expr.span, *rhs, false),
+                    ast::BinaryOp::Or => return self.logical(ctx, expr.span, *rhs, true),
+                    ast::BinaryOp::And => return self.logical(ctx, expr.span, *rhs, false),
                     ast::BinaryOp::BitOr => Bytecode::new(Op::BitwiseOr).at(expr.span),
                     ast::BinaryOp::BitAnd => Bytecode::new(Op::BitwiseAnd).at(expr.span),
                     ast::BinaryOp::ShiftLeft => Bytecode::new(Op::ShiftLeft).at(expr.span),
@@ -491,48 +524,50 @@ impl Compiler {
                     ast::BinaryOp::Xor => Bytecode::new(Op::BitwiseXor).at(expr.span),
                 };
 
-                self.expr(*rhs)?;
+                self.expr(ctx, *rhs)?;
                 code
             }
             ExprKind::Array(items) => {
                 let len = items.len();
-                self.expr_list(items)?;
+                self.expr_list(ctx, items)?;
                 Bytecode::with_code(Op::MakeArray, len as u32).at(expr.span)
             }
             ExprKind::Member(object, member) => {
-                self.expr(*object)?;
+                self.expr(ctx, *object)?;
                 let idx = self.push_const(Const::Str(member));
                 Bytecode::with_code(Op::LoadMember, idx).at(expr.span)
             }
             ExprKind::CompMember(object, elem) => {
-                self.expr(*object)?;
+                self.expr(ctx, *object)?;
                 let span = elem.span;
 
                 match elem.kind {
-                    ExprKind::Range(begin, end) => self.slice(begin, end)?,
+                    ExprKind::Range(begin, end) => self.slice(ctx, begin, end)?,
                     elem => {
-                        self.expr(elem.at(span))?;
+                        self.expr(ctx, elem.at(span))?;
                         Bytecode::new(Op::LoadElement)
                     }
                 }
                 .at(span)
             }
             ExprKind::Ident(name) => self.load_name(expr.span, &name)?,
-            ExprKind::Call(callee, args) => self.call(expr.span, *callee, args)?,
+            ExprKind::Call(callee, args) => self.call(ctx, expr.span, *callee, args)?,
+            ExprKind::Literal(Literal::Atom(name)) => {
+                Bytecode::with_code(Op::LoadAtom, ctx.push_atom(name) as u32).at(expr.span)
+            }
             ExprKind::Literal(lit) => Bytecode::with_code(
                 Op::LoadConst,
                 match lit {
-                    Literal::Nil => self.push_const(Const::Nil),
-                    Literal::Bool(b) => self.push_const(Const::Bool(b)),
                     Literal::Int(i) => self.push_const(Const::Int(i)),
                     Literal::BigInt(i) => self.push_const(Const::BigInt(i)),
                     Literal::Float(f) => self.push_const(Const::Float(f)),
                     Literal::String(s) => self.push_const(Const::Str(s)),
+                    _ => unreachable!(),
                 },
             )
             .at(expr.span),
             ExprKind::Match(expr, arms, alt) => {
-                self.match_expr(*expr, arms, alt)?;
+                self.match_expr(ctx, *expr, arms, alt)?;
                 return Ok(());
             }
             ExprKind::Range(_, _) => unreachable!(),
@@ -544,6 +579,7 @@ impl Compiler {
 
     fn match_expr(
         &mut self,
+        ctx: &mut Context,
         expr: Expr,
         arms: Vec<MatchArm>,
         alt: Option<Box<Expr>>,
@@ -551,7 +587,7 @@ impl Compiler {
         let span = expr.span;
         let id = self.push_hidden_var(expr.span, true)?;
 
-        self.expr(expr)?;
+        self.expr(ctx, expr)?;
         self.push_bytecode(Bytecode::with_code(Op::Store, id as u32).at(span));
 
         let mut offsets = vec![];
@@ -560,16 +596,16 @@ impl Compiler {
             let span = arm.pat.span;
 
             self.push_bytecode(Bytecode::with_code(Op::Load, id as u32).at(span));
-            self.expr(arm.pat)?;
+            self.expr(ctx, arm.pat)?;
             self.push_bytecode(Bytecode::new(Op::Eq).at(span));
             let offset = self.push_bytecode(Bytecode::with_code(Op::JumpIfFalse, 0).at(span));
-            self.expr(arm.expr)?;
+            self.expr(ctx, arm.expr)?;
             offsets.push(self.push_bytecode(Bytecode::with_code(Op::Jump, 0).at(span)));
             self.set_offset(offset, self.offset());
         }
 
         if let Some(expr) = alt {
-            self.expr(*expr)?;
+            self.expr(ctx, *expr)?;
         }
 
         let end_offset = self.offset();
@@ -583,6 +619,7 @@ impl Compiler {
 
     fn compile_fn_body(
         &mut self,
+        ctx: &mut Context,
         scope: Scope,
         args: Vec<FnArg>,
         stmts: Vec<Stmt>,
@@ -597,7 +634,7 @@ impl Compiler {
         self.locals.push_front(locals);
 
         let previous = mem::take(&mut self.body);
-        self.compile_body(stmts)?;
+        self.compile_body(ctx, stmts)?;
         let scope = self.pop_scope()?;
 
         if let Some(locals) = self.locals.pop_front() {
@@ -610,6 +647,7 @@ impl Compiler {
 
     fn method(
         &mut self,
+        ctx: &mut Context,
         span: Span,
         methods: &mut HashMap<String, Fn, WyHash>,
         name: String,
@@ -630,7 +668,7 @@ impl Compiler {
                 .build(),
         );
 
-        let mut body = self.compile_fn_body(Scope::new(), args, stmts)?;
+        let mut body = self.compile_fn_body(ctx, Scope::new(), args, stmts)?;
 
         if name == "init" {
             Bytecode::with_code(Op::ReturnLocal, 0).serialize(&mut body);
@@ -671,6 +709,7 @@ impl Compiler {
 
     fn fn_stmt(
         &mut self,
+        ctx: &mut Context,
         span: Span,
         name: String,
         args: Vec<FnArg>,
@@ -690,7 +729,7 @@ impl Compiler {
                 .build(),
         );
 
-        let body = self.compile_fn_body(Scope::with_fn(idx), args, stmts)?;
+        let body = self.compile_fn_body(ctx, Scope::with_fn(idx), args, stmts)?;
         self.funcs[idx].body = body.freeze();
 
         Ok(())
@@ -698,6 +737,7 @@ impl Compiler {
 
     fn class_stmt(
         &mut self,
+        ctx: &mut Context,
         span: Span,
         class_name: String,
         methods: Vec<Stmt>,
@@ -724,15 +764,16 @@ impl Compiler {
                     args,
                     body,
                     public,
-                } => self.method(span, &mut funcs, name, args, body, public)?,
+                } => self.method(ctx, span, &mut funcs, name, args, body, public)?,
                 StmtKind::ExternFn(name, args, public) => {
                     if funcs.contains_key(&name) {
                         return Err(ErrorKind::DuplicateMethod(name).at(span));
                     }
 
-                    let func =
-                        self.call_extern(span, format!("{class_name}.{name}"), args.len(), public)?;
-                    funcs.insert(name, func);
+                    funcs.insert(
+                        name.clone(),
+                        self.call_extern(span, name, args.len(), public)?,
+                    );
                 }
                 _ => unreachable!(),
             };
@@ -746,11 +787,17 @@ impl Compiler {
         Ok(())
     }
 
-    fn for_stmt(&mut self, span: Span, expr: Expr, body: Vec<Stmt>) -> Result<(), CompileError> {
+    fn for_stmt(
+        &mut self,
+        ctx: &mut Context,
+        span: Span,
+        expr: Expr,
+        body: Vec<Stmt>,
+    ) -> Result<(), CompileError> {
         let begin = self.offset();
-        self.expr(expr)?;
+        self.expr(ctx, expr)?;
         let offset = self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span));
-        self.compile_scoped_body(body)?;
+        self.compile_scoped_body(ctx, body)?;
         self.push_bytecode(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(begin, self.offset());
@@ -760,19 +807,20 @@ impl Compiler {
 
     fn for_cond_stmt(
         &mut self,
+        ctx: &mut Context,
         span: Span,
         pre: Stmt,
         expr: Expr,
         post: Expr,
         body: Vec<Stmt>,
     ) -> Result<(), CompileError> {
-        self.stmt(pre)?;
+        self.stmt(ctx, pre)?;
         let begin = self.offset();
-        self.expr(expr)?;
+        self.expr(ctx, expr)?;
         let offset = self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span));
-        self.compile_scoped_body(body)?;
+        self.compile_scoped_body(ctx, body)?;
         let post_idx = self.offset();
-        self.expr(post)?;
+        self.expr(ctx, post)?;
         self.push_bytecode(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(post_idx, self.offset());
@@ -780,16 +828,20 @@ impl Compiler {
         Ok(())
     }
 
-    fn if_stmt(&mut self, IfStmt(expr, stmts, alt): IfStmt) -> Result<(), CompileError> {
+    fn if_stmt(
+        &mut self,
+        ctx: &mut Context,
+        IfStmt(expr, stmts, alt): IfStmt,
+    ) -> Result<(), CompileError> {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
         let end_block_offset = if let Some(expr) = expr {
-            self.expr(expr)?;
+            self.expr(ctx, expr)?;
             Some(self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span)))
         } else {
             None
         };
 
-        self.compile_scoped_body(stmts)?;
+        self.compile_scoped_body(ctx, stmts)?;
 
         match alt {
             Some(alt) => {
@@ -799,7 +851,7 @@ impl Compiler {
                     self.set_offset(offset, self.offset());
                 }
 
-                self.if_stmt(*alt)?;
+                self.if_stmt(ctx, *alt)?;
                 self.set_offset(end_stmt_offset, self.offset());
             }
             None => {
@@ -812,7 +864,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn stmt(&mut self, stmt: Stmt) -> Result<(), CompileError> {
+    fn stmt(&mut self, ctx: &mut Context, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
             StmtKind::Import(path) => {
                 let name = path.join("/");
@@ -830,11 +882,11 @@ impl Compiler {
                     self.push_var(stmt.span, path.last().cloned().unwrap_or_default(), true)?;
                 self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
             }
-            StmtKind::If(if_stmt) => self.if_stmt(if_stmt)?,
+            StmtKind::If(if_stmt) => self.if_stmt(ctx, if_stmt)?,
             StmtKind::Let(name, expr) => {
                 if let Some(expr) = expr {
                     let idx = self.push_var(expr.span, name, true)?;
-                    self.expr(expr)?;
+                    self.expr(ctx, expr)?;
                     self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
                 } else {
                     self.push_var(stmt.span, name, false)?;
@@ -842,14 +894,14 @@ impl Compiler {
             }
             StmtKind::Expr(expr) => {
                 let assignment = expr.is_assign();
-                self.expr(expr)?;
+                self.expr(ctx, expr)?;
 
                 if !assignment {
                     self.push_bytecode(Bytecode::new(Op::Discard).at(stmt.span));
                 }
             }
             StmtKind::Return(expr) => {
-                self.expr(expr)?;
+                self.expr(ctx, expr)?;
 
                 match self.tail() {
                     Some(opcode) if self.optimize && opcode.op == Op::LoadLocal => {
@@ -872,7 +924,7 @@ impl Compiler {
                 self.markers.push(Marker::Begin(offset));
             }
             StmtKind::Class(name, methods, public) => {
-                self.class_stmt(stmt.span, name, methods, public)?
+                self.class_stmt(ctx, stmt.span, name, methods, public)?
             }
             StmtKind::ExternFn(name, args, public) => {
                 self.extern_fn_stmt(stmt.span, name, args, public)?
@@ -882,30 +934,34 @@ impl Compiler {
                 args,
                 body,
                 public,
-            } => self.fn_stmt(stmt.span, name, args, body, public)?,
-            StmtKind::For(expr, body) => self.for_stmt(stmt.span, expr, body)?,
+            } => self.fn_stmt(ctx, stmt.span, name, args, body, public)?,
+            StmtKind::For(expr, body) => self.for_stmt(ctx, stmt.span, expr, body)?,
             StmtKind::ForCond {
                 init,
                 cond,
                 step,
                 body,
-            } => self.for_cond_stmt(stmt.span, *init, cond, step, body)?,
+            } => self.for_cond_stmt(ctx, stmt.span, *init, cond, step, body)?,
         }
 
         Ok(())
     }
 
-    fn compile_body(&mut self, stmts: Vec<Stmt>) -> Result<(), CompileError> {
+    fn compile_body(&mut self, ctx: &mut Context, stmts: Vec<Stmt>) -> Result<(), CompileError> {
         for stmt in stmts {
-            self.stmt(stmt)?;
+            self.stmt(ctx, stmt)?;
         }
 
         Ok(())
     }
 
-    fn compile_scoped_body(&mut self, stmts: Vec<Stmt>) -> Result<(), CompileError> {
+    fn compile_scoped_body(
+        &mut self,
+        ctx: &mut Context,
+        stmts: Vec<Stmt>,
+    ) -> Result<(), CompileError> {
         self.scope.push_front(Scope::new());
-        self.compile_body(stmts)?;
+        self.compile_body(ctx, stmts)?;
         self.pop_scope()?;
 
         Ok(())
@@ -975,10 +1031,10 @@ impl Compiler {
         Ok(body)
     }
 
-    pub fn compile(mut self, stmts: Vec<Stmt>) -> Result<Package, CompileError> {
+    pub fn compile(mut self, ctx: &mut Context, stmts: Vec<Stmt>) -> Result<Package, CompileError> {
         // In the root scope, `self` refers to the current package
         self.push_var(Span::default(), "self".to_string(), true)?;
-        self.compile_scoped_body(stmts)?;
+        self.compile_scoped_body(ctx, stmts)?;
         self.pop_scope()?;
 
         Ok(Package {
@@ -1045,6 +1101,7 @@ mod tests {
 
     #[test]
     fn test_assign() {
+        let mut ctx = Context::default();
         let mut compiler = Compiler::default();
         let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
 
@@ -1053,13 +1110,13 @@ mod tests {
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
         let code = compiler
-            .assign(Span::default(), None, ident("n"), expr.clone())
+            .assign(&mut ctx, Span::default(), None, ident("n"), expr.clone())
             .unwrap();
 
         assert_eq!(Op::Store, code.op);
         assert_eq!(idx, code.code as usize);
 
-        let result = compiler.assign(Span::default(), None, ident("y"), expr);
+        let result = compiler.assign(&mut ctx, Span::default(), None, ident("y"), expr);
         assert!(result.is_err());
     }
 }
