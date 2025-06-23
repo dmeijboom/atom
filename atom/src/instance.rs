@@ -54,14 +54,13 @@ impl<T: Clone> LazyCache<T> {
         idx: usize,
         f: impl FnOnce() -> Result<T, E>,
     ) -> Result<T, E> {
-        match self.get(idx) {
-            Some(value) => Ok(value),
-            None => {
-                let value = f()?;
-                self.values[idx] = Some(value.clone());
-                Ok(value)
-            }
+        if let Some(value) = self.get(idx) {
+            return Ok(value);
         }
+
+        let value = f()?;
+        self.values[idx] = Some(value.clone());
+        Ok(value)
     }
 }
 

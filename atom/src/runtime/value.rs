@@ -1,16 +1,12 @@
 use std::{
     fmt::{Debug, Display},
     marker::PhantomData,
-    mem::ManuallyDrop,
     ops::Deref,
 };
 
 use num_enum::{FromPrimitive, IntoPrimitive};
 
-use crate::gc::{
-    pool::{PoolObject, PoolObjectRef, RefCount},
-    Gc, Handle, Trace,
-};
+use crate::gc::{Gc, Handle, Trace};
 
 use super::{
     array::Array,
@@ -105,6 +101,12 @@ impl ValueHandle for Fn {
     }
 }
 
+impl ValueHandle for BigInt {
+    fn tag() -> Tag {
+        Tag::BigInt
+    }
+}
+
 impl ValueHandle for Method<'_> {
     fn tag() -> Tag {
         Tag::Method
@@ -128,6 +130,7 @@ const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;
 const NAN: u64 = (Tag::Float as u64) << 48 | SIG_NAN;
 
+#[derive(Clone)]
 pub struct Value<'gc> {
     bits: u64,
     _phantom: PhantomData<&'gc ()>,
@@ -204,12 +207,10 @@ impl<'gc> Value<'gc> {
         bits as i64
     }
 
-    pub fn as_bigint(&self) -> PoolObjectRef<BigInt> {
+    pub fn as_bigint(&self) -> BigInt {
         match self.tag() {
-            Tag::Int => PoolObjectRef::Inline(BigInt::from(self.as_int())),
-            Tag::BigInt => {
-                PoolObjectRef::Rc(ManuallyDrop::new(PoolObject::from_raw(self.as_ptr())))
-            }
+            Tag::Int => BigInt::from(self.as_int()),
+            Tag::BigInt => self.as_handle::<BigInt>().deref().clone(),
             _ => unreachable!(),
         }
     }
@@ -268,21 +269,6 @@ impl<'gc> Value<'gc> {
     }
 }
 
-impl<'gc> Clone for Value<'gc> {
-    #[inline(always)]
-    fn clone(&self) -> Self {
-        if self.tag() == Tag::BigInt {
-            let rc: &mut RefCount<BigInt> = unsafe { &mut *self.as_ptr() };
-            rc.inc_ref_count();
-        }
-
-        Value {
-            bits: self.bits,
-            _phantom: PhantomData,
-        }
-    }
-}
-
 impl<'gc> Trace for Value<'gc> {
     fn trace(&self, gc: &mut Gc) {
         match self.tag() {
@@ -304,7 +290,7 @@ impl<'gc> PartialEq for Value<'gc> {
         }
 
         match (self.tag(), other.tag()) {
-            (Tag::BigInt, Tag::BigInt) => self.as_bigint().deref() == other.as_bigint().deref(),
+            (Tag::BigInt, Tag::BigInt) => self.as_bigint() == other.as_bigint(),
             (Tag::Str, Tag::Str) => self.as_str().as_str() == other.as_str().as_str(),
             _ => false,
         }
@@ -317,22 +303,10 @@ impl<'gc> Default for Value<'gc> {
     }
 }
 
-impl<'gc> Drop for Value<'gc> {
-    fn drop(&mut self) {
-        // Decrease the reference count
-        if self.tag() == Tag::BigInt {
-            let rc: &mut RefCount<BigInt> = unsafe { &mut *self.as_ptr() };
-            rc.dec_ref_count();
-        }
-
-        // Other types are either stack allocated or rely on the GC to manage their memory
-    }
-}
-
 impl<'gc> Display for Value<'gc> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.ty() {
-            Type::Int => write!(f, "{}", *self.as_bigint()),
+            Type::Int => write!(f, "{}", self.as_bigint()),
             Type::Float => write!(f, "{}", self.as_float()),
             Type::Array => write!(
                 f,
@@ -425,14 +399,6 @@ where
     }
 }
 
-impl<'gc> IntoAtom<'gc> for PoolObject<BigInt> {
-    #[inline]
-    fn into_atom(self, _gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
-        let addr = self.into_raw() as u64;
-        Ok(Value::new(Tag::BigInt, addr))
-    }
-}
-
 impl<'gc> IntoAtom<'gc> for BigInt {
     #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
@@ -447,10 +413,7 @@ impl<'gc> IntoAtom<'gc> for BigInt {
             }
         }
 
-        let mut object = gc.int_pool().acquire();
-
-        object.replace_with(self);
-        object.into_atom(gc)
+        gc.alloc(self)?.into_atom(gc)
     }
 }
 
@@ -538,23 +501,6 @@ mod tests {
             let value = i.into_atom(&mut gc).unwrap();
             assert_eq!(value.as_bigint().as_i64(), i);
         }
-    }
-
-    #[test]
-    #[cfg_attr(miri, ignore)]
-    fn test_big_int_refcount() {
-        let mut gc = Gc::default();
-
-        let int = BigInt::parse("9223372036854775808").unwrap();
-        let value = int.into_atom(&mut gc).unwrap();
-        let copy = PoolObject::clone(value.as_bigint().as_object_ref().unwrap());
-
-        assert_eq!(2, copy.ref_count());
-        assert!(!value.as_bigint().is_small());
-
-        drop(value);
-
-        assert_eq!(1, copy.ref_count());
     }
 
     #[test]

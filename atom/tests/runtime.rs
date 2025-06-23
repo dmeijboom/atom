@@ -20,7 +20,7 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
     }
 
     match lhs.ty() {
-        Type::Int => *lhs.as_bigint() == *rhs.as_bigint(),
+        Type::Int => lhs.as_bigint() == rhs.as_bigint(),
         Type::Float => lhs.as_float() == rhs.as_float(),
         Type::Str => lhs.as_str() == rhs.as_str(),
         Type::Atom => lhs.as_atom() == rhs.as_atom(),

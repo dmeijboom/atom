@@ -126,14 +126,12 @@ impl<'gc> Object<'gc> {
     where
         T: IntoAtom<'gc>,
     {
-        let attrs = attrs
-            .into_iter()
-            .map(|(k, v)| Ok((k, v.into_atom(gc)?)))
-            .collect::<Result<Vec<_>, _>>()?;
-
         Ok(Self {
             class,
-            attrs: IntMap::from_iter(attrs),
+            attrs: attrs
+                .into_iter()
+                .map(|(k, v)| Ok((k, v.into_atom(gc)?)))
+                .collect::<Result<IntMap<_, _>, _>>()?,
         })
     }
 }

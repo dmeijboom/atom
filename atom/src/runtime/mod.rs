@@ -55,7 +55,7 @@ fn _repr(value: &Value) -> String {
             format!("\"{}\"", value.as_str().as_str())
         }
         Type::Int => format!("{}", value.as_int()),
-        Type::BigInt => format!("{}", value.as_bigint().deref()),
+        Type::BigInt => format!("{}", value.as_bigint()),
         Type::Float => format!("{}", value.as_float()),
         Type::Atom => match value.as_atom() {
             0 => ":false".to_string(),

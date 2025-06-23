@@ -110,10 +110,8 @@ macro_rules! impl_binary {
 
             self.stack.push(match (lhs.tag(), rhs.tag()) {
                 (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
-                    let mut result = gc.int_pool().acquire();
-                    lhs.as_bigint().deref().$fn(&rhs.as_bigint(), &mut result);
-                    result.into_atom(gc)?
-                },
+                    lhs.as_bigint().$fn(&rhs.as_bigint()).into_atom(gc)?
+                }
                 $($float => lhs.as_float().$fn(rhs.as_float()).into_atom(gc)?,)?
                 _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
             });
@@ -474,8 +472,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn call_fn(&mut self, gc: &mut Gc<'gc>, (fn_idx, arg_count): (u16, u16)) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance()].get_fn(gc, fn_idx as usize)?;
+    fn call_fn(&mut self, gc: &mut Gc<'gc>, (idx, arg_count): (u16, u16)) -> Result<(), Error> {
+        let f = self.instances[self.frame.instance()].get_fn(gc, idx as usize)?;
         self.fn_call(gc, f, arg_count as u32)
     }
 
@@ -766,7 +764,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         }
 
         Ok(match ty {
-            Type::Int => *lhs.as_bigint() == *rhs.as_bigint(),
+            Type::Int => lhs.as_bigint() == rhs.as_bigint(),
             Type::Float => lhs.as_float() == rhs.as_float(),
             Type::Str => lhs.as_str() == rhs.as_str(),
             Type::Atom => lhs.as_atom() == rhs.as_atom(),
@@ -812,12 +810,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let value = match (lhs.tag(), rhs.tag()) {
             (Tag::Int, Tag::Int) => (lhs.as_int() ^ rhs.as_int()).into_atom(gc)?,
             (Tag::BigInt, Tag::BigInt) | (Tag::BigInt, Tag::Int) | (Tag::Int, Tag::BigInt) => {
-                let mut result = gc.int_pool().acquire();
-                lhs.as_bigint()
-                    .deref()
-                    .bitxor(&rhs.as_bigint(), &mut result);
-
-                result.into_atom(gc)?
+                lhs.as_bigint().bitxor(&rhs.as_bigint()).into_atom(gc)?
             }
             (Tag::Array, Tag::Array) | (Tag::Str, Tag::Str) => return self.concat(gc, lhs, rhs),
             _ => return Err(self.unsupported("^", lhs.ty(), rhs.ty())),

@@ -212,10 +212,14 @@ macro_rules! impl_op {
         impl BigInt {
             $(
                 #[inline]
-                pub fn $fn(&self, rhs: &Self, result: &mut BigInt) {
+                pub fn $fn(&self, rhs: &Self) -> Self {
+                    let mut result = Self::default();
+
                     unsafe {
                         gmp::$mpz_fn(result.get_mut(), &self.get(), &rhs.get());
                     }
+
+                    result
                 }
             )+
         }
@@ -227,10 +231,14 @@ macro_rules! impl_shift_op {
         impl BigInt {
             $(
                 #[inline]
-                pub fn $fn(&self, rhs: &Self, result: &mut BigInt) {
+                pub fn $fn(&self, rhs: &Self) -> Self {
+                    let mut result = Self::default();
+
                     unsafe {
                         gmp::$mpz_fn(result.get_mut(), &self.get(), rhs.as_usize() as u64);
                     }
+
+                    result
                 }
             )+
         }
@@ -265,11 +273,8 @@ mod tests {
         let a = BigInt::from(10);
         let b = BigInt::from(5);
         let c = BigInt::from(5);
-        let mut r = BigInt::default();
 
-        b.add(&c, &mut r);
-
-        assert_eq!(a, r);
+        assert_eq!(a, b.add(&c));
         assert_eq!(b, c);
     }
 

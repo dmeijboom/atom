@@ -2,18 +2,13 @@ use std::{alloc::Layout, marker::PhantomData, ptr::NonNull};
 
 mod allocator;
 mod handle;
-pub mod pool;
 
 pub use handle::{DynHandle, Handle};
-use pool::Pool;
 
 use crate::{
     collections::IntSet,
     lexer::Span,
-    runtime::{
-        bigint::BigInt,
-        error::{ErrorKind, RuntimeError},
-    },
+    runtime::error::{ErrorKind, RuntimeError},
 };
 
 macro_rules! impl_trace {
@@ -93,7 +88,6 @@ pub struct Gc<'gc> {
     gen0: Generation,
     gen1: Generation,
     gen2: Generation,
-    int_pool: Pool<BigInt>,
     marked: IntSet<usize>,
     _phantom: PhantomData<&'gc ()>,
 }
@@ -115,11 +109,6 @@ impl<'gc> Drop for Gc<'gc> {
 impl<'gc> Gc<'gc> {
     pub fn ready(&self) -> bool {
         self.ready
-    }
-
-    #[inline]
-    pub fn int_pool(&mut self) -> &mut Pool<BigInt> {
-        &mut self.int_pool
     }
 
     #[allow(dead_code)]
