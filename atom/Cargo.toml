@@ -20,7 +20,7 @@ tracing-subscriber = { version = "0.3.18", features = [
 ], optional = true }
 bytes = "1.7.1"
 argh = "0.1.12"
-mimalloc = { version = "0.1.43", optional = true }
+mimalloc = { version = "0.1.47", optional = true }
 serde = { version = "1.0.219", features = ["derive"] }
 lazy_static = "1.5.0"
 pastey = "0.1.0"
@@ -28,7 +28,7 @@ libc = "0.2.172"
 num_enum = "0.7.3"
 linear-map = "1.2.0"
 gmp-mpfr-sys = { version = "~1.6.5", default-features = false }
-libmimalloc-sys = { version = "0.1.42", features = [
+libmimalloc-sys = { version = "0.1.43", features = [
     "extended",
 ], optional = true }
 
