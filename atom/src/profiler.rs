@@ -31,8 +31,6 @@ impl VmProfiler {
         self.start_time = Instant::now();
     }
 
-    pub fn enter_instruction(&mut self, _op: Op) {}
-
     pub fn record_instruction(&mut self, op: Op) {
         self.counters[(op as u64) as usize] += 1;
     }

@@ -1,7 +1,7 @@
 use bytes::Buf;
 
 use crate::{
-    bytecode::{Bytecode, Serializable},
+    bytecode::{Bytecode, Op},
     gc::{Gc, Handle, Trace},
     lexer::Span,
     runtime::{function::Fn, value::Value},
@@ -49,8 +49,17 @@ impl Iterator for Frame<'_> {
 
     fn next(&mut self) -> Option<Bytecode> {
         if self.offset < self.handle.body.len() {
-            let bc = Bytecode::deserialize(&mut &self.handle.body[self.offset..self.offset + 5]);
+            let op: Op = self.handle.body[self.offset].into();
+            let code = u32::from_be_bytes(
+                self.handle.body[self.offset + 1..self.offset + 5]
+                    .try_into()
+                    .unwrap(),
+            );
+
+            let bc = Bytecode { op, code };
+
             self.offset += 8;
+
             return Some(bc);
         }
 

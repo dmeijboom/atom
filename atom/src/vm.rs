@@ -295,7 +295,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         }
 
         let mut object = object.as_object();
-        object.attrs.insert(member, value);
+        object.set_attr(member, value);
 
         Ok(())
     }
@@ -307,7 +307,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         member: u32,
     ) -> Result<(), Error> {
         let member = self.compile_context.get_atom(member);
-        let instance_id = object.attrs[&value::INSTANCE].as_int();
+        let instance_id = object
+            .get_attr(value::INSTANCE)
+            .ok_or_else(|| ErrorKind::MissingAttribute("instance").at(self.frame.span()))?
+            .as_int();
         let instance = &mut self.instances[instance_id as usize];
 
         if let Some(handle) = instance.get_fn_by_name(gc, member)? {
@@ -340,7 +343,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     ) -> Result<(), Error> {
         let object = object.as_object();
 
-        if let Some(value) = object.attrs.get(&member).cloned() {
+        if let Some(value) = object.get_attr(member) {
             self.stack.push(value);
             return Ok(());
         }
@@ -370,7 +373,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let method = Method::new(Handle::clone(&object).into(), func);
         let handle = gc.alloc(method)?;
 
-        object.attrs.insert(member, Handle::clone(&handle).into());
+        object.set_attr(member, Handle::clone(&handle).into());
         self.stack.push(handle.into());
 
         Ok(())
@@ -390,8 +393,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
     fn return_local(&mut self, idx: u32) -> Result<(), Error> {
         self.load_local(idx);
-        self.ret();
-        Ok(())
+        self.ret()
     }
 
     fn load_local(&mut self, idx: u32) {
@@ -705,7 +707,9 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
         // Setup package class
         let class = gc.alloc(Class::new("Package", self.frame.instance()))?;
-        let object = Object::with_attr(gc, class, vec![(value::INSTANCE, BigInt::from(id))])?;
+        let mut object = Object::new(class);
+        object.set_attr(value::INSTANCE, BigInt::from(id).into_atom(gc)?);
+
         let handle = gc.alloc(object)?;
 
         // Insert the package object as the first variable (which is `self`)
@@ -846,15 +850,19 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let _ = self.stack.pop();
     }
 
-    fn ret(&mut self) {
-        self.frame.returned = true;
-        self.frame.offset = self.frame.handle.body.len();
+    fn ret(&mut self) -> Result<(), Error> {
+        if let Some(frame) = self.call_stack.pop() {
+            self.frame = frame;
+        }
+
+        Ok(())
     }
 
+    #[inline(always)]
     fn eval(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
         while let Some(bc) = self.frame.next() {
             #[cfg(feature = "profiler")]
-            self.profiler.enter_instruction(bc.op);
+            self.profiler.record_instruction(bc.op);
 
             match bc.op {
                 Op::Add => self.add(gc)?,
@@ -884,8 +892,6 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::LoadLocal => self.load_local(bc.code),
                 Op::StoreLocal => self.store_local(bc.code),
                 Op::Discard => self.discard(),
-                Op::Return => self.ret(),
-                Op::ReturnLocal => self.return_local(bc.code)?,
                 Op::Call => self.call(gc, bc.code)?,
                 Op::CallFn => self.call_fn(gc, bc.code2())?,
                 Op::CallExtern => self.call_extern(gc, bc.code)?,
@@ -900,11 +906,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
                 Op::Import => self.import(gc, bc.code)?,
+                Op::Return => self.ret()?,
+                Op::ReturnLocal => self.return_local(bc.code)?,
                 Op::Nop => unreachable!(),
             }
-
-            #[cfg(feature = "profiler")]
-            self.profiler.record_instruction(bc.op);
         }
 
         Ok(())

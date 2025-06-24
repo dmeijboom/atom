@@ -145,6 +145,10 @@ impl<'gc> Value<'gc> {
         }
     }
 
+    pub fn into_bits(self) -> u64 {
+        self.bits
+    }
+
     #[inline]
     pub fn new_int(i: i64) -> Self {
         Self::new(
@@ -155,6 +159,13 @@ impl<'gc> Value<'gc> {
                 i as u64
             },
         )
+    }
+
+    pub fn from_bits(bits: u64) -> Self {
+        Self {
+            bits,
+            _phantom: PhantomData,
+        }
     }
 
     #[inline(always)]

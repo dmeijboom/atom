@@ -35,6 +35,8 @@ pub enum ErrorKind {
     },
     #[error("invalid memory layout")]
     InvalidMemoryLayout,
+    #[error("missing attribute: {0}")]
+    MissingAttribute(&'static str),
     #[error("unsupported operation: {left} {op} {right}")]
     UnsupportedBinaryOp {
         left: Type,

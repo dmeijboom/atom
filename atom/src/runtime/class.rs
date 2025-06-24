@@ -7,11 +7,7 @@ use crate::{
     gc::{Gc, Handle, Trace},
 };
 
-use super::{
-    error::RuntimeError,
-    function::Fn,
-    value::{IntoAtom, Value},
-};
+use super::{error::RuntimeError, function::Fn, value::Value};
 
 #[derive(Debug, Clone)]
 pub struct Inline<'gc> {
@@ -97,7 +93,7 @@ impl<'gc> Class<'gc> {
 
 pub struct Object<'gc> {
     pub class: Handle<'gc, Class<'gc>>,
-    pub attrs: IntMap<u32, Value<'gc>>,
+    attrs: IntMap<u32, Value<'gc>>,
 }
 
 impl<'gc> Trace for Object<'gc> {
@@ -118,20 +114,13 @@ impl<'gc> Object<'gc> {
         }
     }
 
-    pub fn with_attr<T>(
-        gc: &mut Gc<'gc>,
-        class: Handle<'gc, Class<'gc>>,
-        attrs: Vec<(u32, T)>,
-    ) -> Result<Self, RuntimeError>
-    where
-        T: IntoAtom<'gc>,
-    {
-        Ok(Self {
-            class,
-            attrs: attrs
-                .into_iter()
-                .map(|(k, v)| Ok((k, v.into_atom(gc)?)))
-                .collect::<Result<IntMap<_, _>, _>>()?,
-        })
+    #[inline]
+    pub fn get_attr(&self, key: u32) -> Option<Value<'gc>> {
+        self.attrs.get(&key).cloned()
+    }
+
+    #[inline]
+    pub fn set_attr(&mut self, key: u32, value: Value<'gc>) {
+        self.attrs.insert(key, value);
     }
 }
