@@ -133,7 +133,7 @@ module.exports = grammar({
         $.identifier,
         $.number,
         $.string,
-        $.boolean,
+        $.atom,
         $.parenthesized_expression,
       ),
 
@@ -192,7 +192,7 @@ module.exports = grammar({
     escape_sequence: ($) =>
       seq("\\", choice(/[\\"/bfnrt]/, /u[0-9a-fA-F]{4}/, /x[0-9a-fA-F]{2}/)),
 
-    boolean: ($) => choice("true", "false"),
+    atom: ($) => /:[a-zA-Z_][a-zA-Z0-9_]*/,
 
     comment: ($) =>
       choice(seq("//", /.*/), seq("/*", /[^*]*\*+([^/*][^*]*\*+)*/, "/")),

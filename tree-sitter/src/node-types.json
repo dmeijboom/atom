@@ -8,11 +8,11 @@
       "required": false,
       "types": [
         {
-          "type": "binary_expression",
+          "type": "atom",
           "named": true
         },
         {
-          "type": "boolean",
+          "type": "binary_expression",
           "named": true
         },
         {
@@ -99,11 +99,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -191,11 +191,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -239,11 +239,11 @@
       "required": true,
       "types": [
         {
-          "type": "binary_expression",
+          "type": "atom",
           "named": true
         },
         {
-          "type": "boolean",
+          "type": "binary_expression",
           "named": true
         },
         {
@@ -325,11 +325,6 @@
     }
   },
   {
-    "type": "boolean",
-    "named": true,
-    "fields": {}
-  },
-  {
     "type": "call_expression",
     "named": true,
     "fields": {
@@ -348,11 +343,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -451,11 +446,11 @@
       "required": true,
       "types": [
         {
-          "type": "binary_expression",
+          "type": "atom",
           "named": true
         },
         {
-          "type": "boolean",
+          "type": "binary_expression",
           "named": true
         },
         {
@@ -534,11 +529,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -606,15 +601,15 @@
         "required": true,
         "types": [
           {
+            "type": "atom",
+            "named": true
+          },
+          {
             "type": "binary_expression",
             "named": true
           },
           {
             "type": "block",
-            "named": true
-          },
-          {
-            "type": "boolean",
             "named": true
           },
           {
@@ -688,11 +683,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -746,11 +741,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -819,11 +814,11 @@
       "required": true,
       "types": [
         {
-          "type": "binary_expression",
+          "type": "atom",
           "named": true
         },
         {
-          "type": "boolean",
+          "type": "binary_expression",
           "named": true
         },
         {
@@ -866,11 +861,11 @@
         "required": false,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -980,11 +975,11 @@
       "required": true,
       "types": [
         {
-          "type": "binary_expression",
+          "type": "atom",
           "named": true
         },
         {
-          "type": "boolean",
+          "type": "binary_expression",
           "named": true
         },
         {
@@ -1037,11 +1032,11 @@
         "required": true,
         "types": [
           {
-            "type": "binary_expression",
+            "type": "atom",
             "named": true
           },
           {
-            "type": "boolean",
+            "type": "binary_expression",
             "named": true
           },
           {
@@ -1197,6 +1192,10 @@
     "named": false
   },
   {
+    "type": "atom",
+    "named": true
+  },
+  {
     "type": "class",
     "named": false
   },
@@ -1206,10 +1205,6 @@
   },
   {
     "type": "extern",
-    "named": false
-  },
-  {
-    "type": "false",
     "named": false
   },
   {
@@ -1243,10 +1238,6 @@
   {
     "type": "string_content",
     "named": true
-  },
-  {
-    "type": "true",
-    "named": false
   },
   {
     "type": "{",

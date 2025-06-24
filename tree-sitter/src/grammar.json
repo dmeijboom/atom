@@ -663,7 +663,7 @@
         },
         {
           "type": "SYMBOL",
-          "name": "boolean"
+          "name": "atom"
         },
         {
           "type": "SYMBOL",
@@ -1202,18 +1202,9 @@
         }
       ]
     },
-    "boolean": {
-      "type": "CHOICE",
-      "members": [
-        {
-          "type": "STRING",
-          "value": "true"
-        },
-        {
-          "type": "STRING",
-          "value": "false"
-        }
-      ]
+    "atom": {
+      "type": "PATTERN",
+      "value": ":[a-zA-Z_][a-zA-Z0-9_]*"
     },
     "comment": {
       "type": "CHOICE",
