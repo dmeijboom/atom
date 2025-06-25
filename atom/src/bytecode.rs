@@ -36,6 +36,7 @@ pub enum Op {
     ShiftLeft,
     ShiftRight,
     LoadConst,
+    LoadConstInt,
     Store,
     Load,
     LoadFn,
@@ -158,6 +159,7 @@ impl Display for Bytecode {
             | Op::LoadFn
             | Op::LoadClass
             | Op::LoadConst
+            | Op::LoadConstInt
             | Op::LoadAtom
             | Op::Jump
             | Op::JumpIfFalse

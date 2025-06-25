@@ -33,6 +33,57 @@ pub enum Tag {
     Object,
 }
 
+#[derive(Debug)]
+pub struct OneOf(pub Type, pub Type);
+
+impl Display for OneOf {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} | {}", self.0.name(), self.1.name())
+    }
+}
+
+impl PartialEq<Type> for OneOf {
+    fn eq(&self, other: &Type) -> bool {
+        self.0 == *other || self.1 == *other
+    }
+}
+
+#[derive(Debug)]
+pub enum TypeAssert {
+    Type(Type),
+    OneOf(OneOf),
+}
+
+impl From<Type> for TypeAssert {
+    fn from(ty: Type) -> Self {
+        TypeAssert::Type(ty)
+    }
+}
+
+impl From<OneOf> for TypeAssert {
+    fn from(one_of: OneOf) -> Self {
+        TypeAssert::OneOf(one_of)
+    }
+}
+
+impl PartialEq<Type> for TypeAssert {
+    fn eq(&self, other: &Type) -> bool {
+        match self {
+            TypeAssert::Type(ty) => ty.eq(other),
+            TypeAssert::OneOf(one_of) => one_of.eq(other),
+        }
+    }
+}
+
+impl Display for TypeAssert {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            TypeAssert::Type(ty) => write!(f, "{ty}"),
+            TypeAssert::OneOf(one_of) => write!(f, "{one_of}"),
+        }
+    }
+}
+
 #[repr(u64)]
 #[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, FromPrimitive, IntoPrimitive)]
 pub enum Type {

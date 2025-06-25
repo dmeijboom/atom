@@ -49,6 +49,10 @@ impl TokenKind {
     pub fn at(self, span: Span) -> Token {
         Token { kind: self, span }
     }
+
+    pub fn is_ident(&self) -> bool {
+        matches!(self, Self::Ident(_))
+    }
 }
 
 impl Display for TokenKind {
@@ -254,8 +258,9 @@ impl<'a> Lexer<'a> {
         while let Some(cur) = self.cur() {
             let span = self.span();
             let next = self.peek();
+            let last_is_ident = tokens.last().map_or(false, |t: &Token| t.kind.is_ident());
 
-            if cur == ':' && matches!(next, Some('a'..='z' | 'A'..='Z')) {
+            if cur == ':' && matches!(next, Some('a'..='z' | 'A'..='Z')) && !last_is_ident {
                 tokens.push(self.atom());
             } else if matches!(cur, '_' | 'a'..='z' | 'A'..='Z') {
                 tokens.push(self.ident_or_keyword());

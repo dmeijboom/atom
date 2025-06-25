@@ -41,7 +41,7 @@ impl<T: Clone + Default, const N: usize> Stack<T, N> {
     }
 
     pub fn iter(&self) -> Iter<'_, T> {
-        self.data[..self.sp + 1].iter()
+        self.data[..self.sp].iter()
     }
 }
 

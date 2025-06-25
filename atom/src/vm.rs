@@ -27,14 +27,16 @@ use crate::{
         error::{Call, ErrorKind, RuntimeError},
         function::{Fn, Method},
         str::Str,
-        value::{self, IntoAtom, Tag, Type, Value},
+        value::{self, IntoAtom, OneOf, Tag, Type, TypeAssert, Value},
     },
 };
 
 fn array_idx(elem: Value, len: usize) -> usize {
-    match elem.as_bigint().as_i64() {
-        n if n < 0 => len + n as usize,
-        n => n as usize,
+    let i = elem.as_bigint();
+
+    match i.as_i64() {
+        n if n < 0 => (len as i64 + n) as usize,
+        _ => i.as_usize(),
     }
 }
 
@@ -174,15 +176,17 @@ fn instance_with_frame<'gc>(
     mut package: Package,
 ) -> Result<(Instance<'gc>, Frame<'gc>), Error> {
     let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
+    func.context.instance = id;
+
     let consts = mem::take(&mut package.consts)
         .into_iter()
         .map(|c| c.into_atom(gc))
         .collect::<Result<Vec<_>, _>>()?;
-
     let instance = Instance::new(id, package, consts);
-    func.context.instance = id;
 
-    let frame = Frame::new(func);
+    // This is not an ordinary function, no need to return a value
+    let mut frame = Frame::new(func);
+    frame.returned = true;
 
     Ok((instance, frame))
 }
@@ -405,8 +409,10 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         self.frame.locals[idx as usize] = self.stack.pop();
     }
 
-    fn assert_type(&self, left: Type, right: Type) -> Result<(), Error> {
-        if left != right {
+    fn assert_type(&self, left: Type, right: impl Into<TypeAssert>) -> Result<(), Error> {
+        let right = right.into();
+
+        if right != left {
             return Err(ErrorKind::TypeMismatch { left, right }
                 .at(self.frame.span())
                 .into());
@@ -570,11 +576,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         };
 
         if let Some(from) = from.as_ref() {
-            self.assert_type(from.ty(), Type::Int)?;
+            self.assert_type(from.ty(), OneOf(Type::Int, Type::BigInt))?;
         }
 
         if let Some(to) = to.as_ref() {
-            self.assert_type(to.ty(), Type::Int)?;
+            self.assert_type(to.ty(), OneOf(Type::Int, Type::BigInt))?;
         }
 
         let array = self.stack.pop();
@@ -591,7 +597,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 let new_str = gc.alloc(Str(new_array))?;
                 self.stack.push(new_str.into());
             }
-            ty => self.assert_type(ty, Type::Array)?,
+            ty => self.assert_type(ty, OneOf(Type::Array, Type::Str))?,
         }
 
         self.gc_tick(gc);
@@ -624,7 +630,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
-        self.assert_type(elem.ty(), Type::Int)?;
+        self.assert_type(elem.ty(), OneOf(Type::Int, Type::BigInt))?;
 
         match array.ty() {
             Type::Array => {
@@ -637,7 +643,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 *elem = value;
             }
             Type::Str => {
-                self.assert_type(value.ty(), Type::Int)?;
+                self.assert_type(value.ty(), OneOf(Type::Int, Type::BigInt))?;
 
                 let array = &mut array.as_str().0;
                 let idx = array_idx(elem, array.len());
@@ -647,7 +653,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
                 *elem = value.as_bigint().as_usize() as u8;
             }
-            _ => self.assert_type(array.ty(), Type::Array)?,
+            _ => self.assert_type(array.ty(), OneOf(Type::Array, Type::Str))?,
         }
 
         Ok(())
@@ -657,7 +663,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
-        self.assert_type(elem.ty(), Type::Int)?;
+        self.assert_type(elem.ty(), OneOf(Type::Int, Type::BigInt))?;
 
         let elem = match array.ty() {
             Type::Array => {
@@ -677,7 +683,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                     .map(Value::from)
                     .ok_or_else(|| self.index_out_of_bounds(idx))?
             }
-            _ => return self.assert_type(array.ty(), Type::Array),
+            _ => return self.assert_type(array.ty(), OneOf(Type::Array, Type::Str)),
         };
 
         self.stack.push(elem);
@@ -846,11 +852,17 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         ));
     }
 
+    fn load_const_int(&mut self, i: u32) {
+        self.stack.push(Value::new(Tag::Int, i as u64));
+    }
+
     fn discard(&mut self) {
         let _ = self.stack.pop();
     }
 
     fn ret(&mut self) -> Result<(), Error> {
+        self.frame.returned = true;
+
         if let Some(frame) = self.call_stack.pop() {
             self.frame = frame;
         }
@@ -882,6 +894,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::ShiftLeft => self.shl(gc)?,
                 Op::ShiftRight => self.shr(gc)?,
                 Op::LoadConst => self.load_const(bc.code),
+                Op::LoadConstInt => self.load_const_int(bc.code),
                 Op::LoadAtom => self.load_atom(bc.code),
                 Op::LoadMember => self.load_member(gc, bc.code)?,
                 Op::StoreMember => self.store_member(bc.code)?,
@@ -980,7 +993,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
             match self.call_stack.pop() {
                 Some(frame) => {
-                    if !self.frame.returned && !self.call_stack.is_empty() {
+                    if !self.frame.returned {
                         self.stack.push(Value::default());
                     }
 

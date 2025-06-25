@@ -568,6 +568,9 @@ impl Compiler {
             ExprKind::Literal(Literal::Atom(name)) => {
                 Bytecode::with_code(Op::LoadAtom, ctx.push_atom(name)).at(expr.span)
             }
+            ExprKind::Literal(Literal::Int(i)) if i > 0 && u32::try_from(i).is_ok() => {
+                Bytecode::with_code(Op::LoadConstInt, i as u32).at(expr.span)
+            }
             ExprKind::Literal(lit) => Bytecode::with_code(
                 Op::LoadConst,
                 match lit {
