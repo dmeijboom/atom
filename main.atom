@@ -1,7 +1,1 @@
 import std;
-import std/map;
-
-let dict = map.Map();
-dict.set("key1", "value1");
-
-std.println(dict.get("key1"));

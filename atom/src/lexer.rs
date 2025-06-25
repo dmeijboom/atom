@@ -258,7 +258,7 @@ impl<'a> Lexer<'a> {
         while let Some(cur) = self.cur() {
             let span = self.span();
             let next = self.peek();
-            let last_is_ident = tokens.last().map_or(false, |t: &Token| t.kind.is_ident());
+            let last_is_ident = tokens.last().is_some_and(|t: &Token| t.kind.is_ident());
 
             if cur == ':' && matches!(next, Some('a'..='z' | 'A'..='Z')) && !last_is_ident {
                 tokens.push(self.atom());

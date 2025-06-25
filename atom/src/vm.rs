@@ -161,7 +161,7 @@ pub struct Vm<'gc, F: Ffi<'gc>, const S: usize> {
     std: Std<'gc>,
     frame: Frame<'gc>,
     search_path: PathBuf,
-    compile_context: Context,
+    compiler_ctx: Context,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
     instances: Vec<Instance<'gc>>,
@@ -205,7 +205,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             ffi,
             frame,
             search_path,
-            compile_context,
+            compiler_ctx: compile_context,
             std: Std::default(),
             packages: HashMap::default(),
             instances: vec![instance],
@@ -270,7 +270,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             return self.load_attr(gc, recv, idx);
         }
 
-        let member = self.compile_context.get_atom(idx);
+        let member = &self.compiler_ctx.atoms[idx as usize];
 
         if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
             if let Some(func) = class.get_method(gc, member)? {
@@ -310,7 +310,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         object: Handle<'gc, Object<'gc>>,
         member: u32,
     ) -> Result<(), Error> {
-        let member = self.compile_context.get_atom(member);
+        let member = &self.compiler_ctx.atoms[member as usize];
         let instance_id = object
             .get_attr(value::INSTANCE)
             .ok_or_else(|| ErrorKind::MissingAttribute("instance").at(self.frame.span()))?
@@ -365,11 +365,11 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         mut object: Handle<'gc, Object<'gc>>,
         member: u32,
     ) -> Result<(), Error> {
-        let member_name = self.compile_context.get_atom(member);
-        let func = object.class.get_method(gc, member_name)?.ok_or_else(|| {
+        let name = &self.compiler_ctx.atoms[member as usize];
+        let func = object.class.get_method(gc, name)?.ok_or_else(|| {
             ErrorKind::UnknownAttr {
                 class_name: object.class.name.clone(),
-                attribute: member_name.to_string(),
+                attribute: name.to_string(),
             }
             .at(self.frame.span())
         })?;
@@ -705,7 +705,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let id = self.instances.len();
 
         // Parse and compile module
-        let module = compile(self.make_path(name), &mut self.compile_context, true)
+        let module = compile(self.make_path(name), &mut self.compiler_ctx, true)
             .map_err(|e| Error::Import(Box::new(e)))?;
 
         // Initialize instance and frame

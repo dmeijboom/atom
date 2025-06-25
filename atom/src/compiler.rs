@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
+    hash::{Hash, Hasher},
     io, mem,
 };
 
@@ -10,6 +11,7 @@ use wyhash2::WyHash;
 use crate::{
     ast::{self, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Stmt, StmtKind},
     bytecode::{Bytecode, Const, Op, Serializable, Spanned},
+    collections::{OrderedMap, OrderedSet},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
     runtime::function::Fn,
@@ -20,6 +22,18 @@ pub struct Class {
     pub name: Cow<'static, str>,
     pub public: bool,
     pub methods: HashMap<Cow<'static, str>, Fn>,
+}
+
+impl Hash for Class {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.name.hash(state);
+    }
+}
+
+impl PartialEq for Class {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name
+    }
 }
 
 impl Class {
@@ -63,7 +77,7 @@ pub enum ErrorKind {
 
 pub type CompileError = SpannedError<ErrorKind>;
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, Default, PartialEq)]
 struct Var {
     id: usize,
     init: bool,
@@ -71,49 +85,54 @@ struct Var {
     span: Span,
 }
 
-impl Var {
-    fn new(span: Span, id: usize) -> Self {
+struct VarBuilder {
+    var: Var,
+}
+
+impl VarBuilder {
+    fn new(id: usize, span: Span) -> Self {
         Self {
-            span,
-            id,
-            init: false,
-            used: false,
+            var: Var {
+                id,
+                init: false,
+                used: false,
+                span,
+            },
         }
     }
 
-    fn with_init(span: Span, id: usize, init: bool) -> Self {
-        let mut var = Self::new(span, id);
-        var.init = init;
-        var
+    pub fn init(mut self, init: bool) -> Self {
+        self.var.init = init;
+        self
     }
 
-    fn set_used(&mut self, name: &str) -> Result<(), CompileError> {
-        if !self.init {
-            return Err(ErrorKind::NameUninitialized(name.to_string()).at(self.span));
-        }
+    pub fn used(mut self, used: bool) -> Self {
+        self.var.used = used;
+        self
+    }
 
-        self.used = true;
-        Ok(())
+    pub fn build(self) -> Var {
+        self.var
     }
 }
 
 #[derive(Default)]
 struct Scope {
-    fn_id: Option<usize>,
+    func: Option<u32>,
     vars: HashMap<String, Var, WyHash>,
 }
 
 impl Scope {
     pub fn new() -> Self {
         Self {
-            fn_id: None,
+            func: None,
             ..Self::default()
         }
     }
 
-    pub fn with_fn(fn_id: usize) -> Self {
+    pub fn with_fn(fn_id: u32) -> Self {
         Self {
-            fn_id: Some(fn_id),
+            func: Some(fn_id),
             ..Self::default()
         }
     }
@@ -145,53 +164,33 @@ enum Symbol {
 }
 
 pub struct Context {
-    atoms: Vec<String>,
+    pub atoms: OrderedSet<String>,
 }
 
 impl Default for Context {
     fn default() -> Self {
         Self {
-            atoms: vec![
+            atoms: OrderedSet::new([
                 "false".to_string(),
                 "true".to_string(),
                 "nil".to_string(),
                 "instance".to_string(),
-            ],
+            ]),
         }
-    }
-}
-
-impl Context {
-    pub fn iter_atoms(&self) -> impl Iterator<Item = &str> {
-        self.atoms.iter().map(String::as_str)
-    }
-
-    pub fn get_atom(&self, n: u32) -> &str {
-        &self.atoms[n as usize]
-    }
-
-    pub fn push_atom(&mut self, name: String) -> u32 {
-        if let Some(id) = self.atoms.iter().position(|atom| atom == &name) {
-            return id as u32;
-        }
-
-        let id = self.atoms.len();
-        self.atoms.push(name);
-        id as u32
     }
 }
 
 pub struct Compiler {
     optimize: bool,
     vars_seq: usize,
-    names: Vec<String>,
+    names: HashSet<String>,
     scope: VecDeque<Scope>,
     body: BytesMut,
-    consts: Vec<Const>,
-    funcs: Vec<Fn>,
-    classes: Vec<Class>,
+    consts: OrderedSet<Const>,
+    funcs: OrderedMap<String, Fn>,
+    classes: OrderedMap<String, Class>,
     markers: Vec<Marker>,
-    imports: Vec<String>,
+    imports: HashSet<String>,
     locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
@@ -200,12 +199,12 @@ impl Default for Compiler {
         Self {
             vars_seq: 0,
             body: BytesMut::new(),
-            funcs: vec![],
-            consts: vec![],
-            classes: vec![],
+            funcs: OrderedMap::default(),
+            consts: OrderedSet::default(),
+            classes: OrderedMap::default(),
             markers: vec![],
-            imports: vec![],
-            names: vec![],
+            imports: HashSet::default(),
+            names: HashSet::default(),
             optimize: true,
             locals: VecDeque::default(),
             scope: VecDeque::from(vec![Scope::new()]),
@@ -230,16 +229,6 @@ impl Compiler {
         }
 
         Ok(None)
-    }
-
-    fn push_const(&mut self, const_: Const) -> u32 {
-        if let Some(idx) = self.consts.iter().position(|c| c == &const_) {
-            return idx as u32;
-        }
-
-        let idx = self.consts.len();
-        self.consts.push(const_);
-        idx as u32
     }
 
     fn push_bytecode(&mut self, bytecode: Spanned<Bytecode>) -> usize {
@@ -277,10 +266,10 @@ impl Compiler {
         self.vars_seq += 1;
 
         if let Some(scope) = self.scope.front_mut() {
-            let mut var = Var::with_init(span, id, init);
-            var.used = true; // Hidden vars are always used
-
-            scope.vars.insert(name, var);
+            scope.vars.insert(
+                name,
+                VarBuilder::new(id, span).init(init).used(true).build(),
+            );
         }
 
         Ok(id)
@@ -295,7 +284,9 @@ impl Compiler {
         self.vars_seq += 1;
 
         if let Some(scope) = self.scope.front_mut() {
-            scope.vars.insert(name, Var::with_init(span, id, init));
+            scope
+                .vars
+                .insert(name, VarBuilder::new(id, span).init(init).build());
         }
 
         Ok(id)
@@ -308,7 +299,7 @@ impl Compiler {
         arg_count: usize,
         public: bool,
     ) -> Result<Fn, CompileError> {
-        let idx = self.push_const(Const::Str(name.clone()));
+        let idx = self.consts.insert(Const::Str(name.clone()));
         let code = Bytecode::with_code(Op::CallExtern, idx).at(span);
         let mut body = BytesMut::new();
         code.serialize(&mut body);
@@ -414,24 +405,28 @@ impl Compiler {
     ) -> Result<Symbol, CompileError> {
         match self.load_local(name) {
             Some(local) => {
-                if check_init {
-                    local.set_used(name)?;
+                local.used = true;
+
+                if check_init && !local.init {
+                    return Err(ErrorKind::NameUninitialized(name.to_string()).at(local.span));
                 }
 
                 Ok(Symbol::Local(local.id as u32))
             }
             None => match self.load_var(name) {
                 Some(var) => {
-                    if check_init {
-                        var.set_used(name)?;
+                    var.used = true;
+
+                    if check_init && !var.init {
+                        return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
                     }
 
                     Ok(Symbol::Var(var.id as u32))
                 }
-                None => match self.classes.iter().position(|c| c.name == name) {
-                    Some(idx) => Ok(Symbol::Class(idx as u32)),
-                    None => match self.funcs.iter().position(|f| f.name == name) {
-                        Some(idx) => Ok(Symbol::Fn(idx as u32)),
+                None => match self.classes.get(name) {
+                    Some(idx) => Ok(Symbol::Class(idx)),
+                    None => match self.funcs.get(name) {
+                        Some(idx) => Ok(Symbol::Fn(idx)),
                         None => Err(ErrorKind::UnknownName(name.to_string()).at(span)),
                     },
                 },
@@ -477,7 +472,7 @@ impl Compiler {
             ExprKind::Member(object, member) => {
                 self.expr(ctx, *object)?;
                 self.expr(ctx, rhs)?;
-                let idx = ctx.push_atom(member);
+                let idx = ctx.atoms.insert(member);
                 Bytecode::with_code(Op::StoreMember, idx).at(span)
             }
             ExprKind::CompMember(object, index) => {
@@ -555,8 +550,7 @@ impl Compiler {
             }
             ExprKind::Member(object, member) => {
                 self.expr(ctx, *object)?;
-                let idx = ctx.push_atom(member);
-                Bytecode::with_code(Op::LoadMember, idx).at(expr.span)
+                Bytecode::with_code(Op::LoadMember, ctx.atoms.insert(member)).at(expr.span)
             }
             ExprKind::CompMember(object, elem) => {
                 self.expr(ctx, *object)?;
@@ -574,7 +568,7 @@ impl Compiler {
             ExprKind::Ident(name) => self.load_name(expr.span, &name)?,
             ExprKind::Call(callee, args) => self.call(ctx, expr.span, *callee, args)?,
             ExprKind::Literal(Literal::Atom(name)) => {
-                Bytecode::with_code(Op::LoadAtom, ctx.push_atom(name)).at(expr.span)
+                Bytecode::with_code(Op::LoadAtom, ctx.atoms.insert(name)).at(expr.span)
             }
             ExprKind::Literal(Literal::Int(i)) if i > 0 && u32::try_from(i).is_ok() => {
                 Bytecode::with_code(Op::LoadConstInt, i as u32).at(expr.span)
@@ -582,10 +576,10 @@ impl Compiler {
             ExprKind::Literal(lit) => Bytecode::with_code(
                 Op::LoadConst,
                 match lit {
-                    Literal::Int(i) => self.push_const(Const::Int(i)),
-                    Literal::BigInt(i) => self.push_const(Const::BigInt(i)),
-                    Literal::Float(f) => self.push_const(Const::Float(f)),
-                    Literal::String(s) => self.push_const(Const::Str(s)),
+                    Literal::Int(i) => self.consts.insert(Const::Int(i)),
+                    Literal::BigInt(i) => self.consts.insert(Const::BigInt(i)),
+                    Literal::Float(f) => self.consts.insert(Const::Float(f)),
+                    Literal::String(s) => self.consts.insert(Const::Str(s)),
                     _ => unreachable!(),
                 },
             )
@@ -651,7 +645,7 @@ impl Compiler {
         let locals = args
             .into_iter()
             .enumerate()
-            .map(|(i, n)| (n.name, Var::with_init(n.span, i, true)))
+            .map(|(i, n)| (n.name, VarBuilder::new(i, n.span).init(true).build()))
             .collect();
 
         self.scope.push_front(scope);
@@ -721,12 +715,12 @@ impl Compiler {
         args: Vec<FnArg>,
         public: bool,
     ) -> Result<(), CompileError> {
-        if self.funcs.iter().any(|f| f.name == name) {
+        if self.funcs.contains_key(&name) {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
-        let func = self.call_extern(span, name, args.len(), public)?;
-        self.funcs.push(func);
+        let func = self.call_extern(span, name.clone(), args.len(), public)?;
+        self.funcs.insert(name, func);
 
         Ok(())
     }
@@ -740,21 +734,22 @@ impl Compiler {
         stmts: Vec<Stmt>,
         public: bool,
     ) -> Result<(), CompileError> {
-        if self.funcs.iter().any(|f| f.name == name) {
+        if self.funcs.contains_key(&name) {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
-        let idx = self.funcs.len();
-        self.funcs.push(
+        let idx = self.funcs.insert(
+            name.clone(),
             Fn::builder()
-                .name(name)
+                .name(name.clone())
                 .public(public)
                 .arg_count(args.len() as u32)
                 .build(),
         );
 
-        let body = self.compile_fn_body(ctx, Scope::with_fn(idx), args, stmts)?;
-        self.funcs[idx].body = body.freeze();
+        self.funcs[&name].body = self
+            .compile_fn_body(ctx, Scope::with_fn(idx), args, stmts)?
+            .freeze();
 
         Ok(())
     }
@@ -763,19 +758,18 @@ impl Compiler {
         &mut self,
         ctx: &mut Context,
         span: Span,
-        class_name: String,
+        name: String,
         methods: Vec<Stmt>,
         public: bool,
     ) -> Result<(), CompileError> {
-        if self.classes.iter().any(|c| c.name == class_name) {
-            return Err(ErrorKind::DuplicateClass(class_name).at(span));
+        if self.classes.contains_key(&name) {
+            return Err(ErrorKind::DuplicateClass(name).at(span));
         }
 
-        let idx = self.classes.len();
-        let mut class = Class::new(class_name.clone());
+        let mut class = Class::new(name.clone());
         class.public = public;
 
-        self.classes.push(class);
+        self.classes.insert(name.clone(), class);
 
         let mut funcs = HashMap::with_hasher(WyHash::default());
 
@@ -803,9 +797,9 @@ impl Compiler {
             };
         }
 
-        self.classes[idx].methods = funcs
+        self.classes[&name].methods = funcs
             .into_iter()
-            .map(|(name, func)| (Cow::Owned(name), func))
+            .map(|(method, func)| (Cow::Owned(method), func))
             .collect();
 
         Ok(())
@@ -897,9 +891,9 @@ impl Compiler {
                     return Err(ErrorKind::DuplicateImport(name).at(stmt.span));
                 }
 
-                self.imports.push(name.clone());
+                self.imports.insert(name.clone());
 
-                let idx = self.push_const(Const::Str(name.clone()));
+                let idx = self.consts.insert(Const::Str(name.clone()));
                 self.push_bytecode(Bytecode::with_code(Op::Import, idx).at(stmt.span));
 
                 let var_name = path.last().cloned().unwrap_or_default();
@@ -907,7 +901,7 @@ impl Compiler {
                 let idx = self.push_var(stmt.span, var_name.clone(), true)?;
                 self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
 
-                self.names.push(var_name);
+                self.names.insert(var_name);
             }
             StmtKind::If(if_stmt) => self.if_stmt(ctx, if_stmt)?,
             StmtKind::Let(name, expr) => {
@@ -994,7 +988,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn optim_tail_call(&mut self, func: usize, body: &mut [u8]) -> Result<(), CompileError> {
+    fn optim_tail_call(&mut self, func: u32, body: &mut [u8]) -> Result<(), CompileError> {
         let mut iter = body
             .chunks_exact(8)
             .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
@@ -1004,7 +998,7 @@ impl Compiler {
         while let Some((i, code)) = iter.next() {
             match code.op {
                 Op::Return => continue,
-                Op::CallFn if code.code2().0 as usize == func => {
+                Op::CallFn if code.code2().0 as u32 == func => {
                     let mut buff = &mut body[i * 8..];
                     let (_, arg_count) = code.code2();
                     Bytecode::with_code(Op::TailCall, arg_count as u32).serialize(&mut buff);
@@ -1017,7 +1011,7 @@ impl Compiler {
                         _ => break,
                     };
 
-                    if idx as usize != func {
+                    if idx != func {
                         break;
                     }
 
@@ -1037,13 +1031,13 @@ impl Compiler {
             return Ok(body);
         }
 
-        if let Some(func) = scope.fn_id {
+        if let Some(func) = scope.func {
             if body
                 .chunks_exact(8)
                 .map(|mut buff| Spanned::<Bytecode>::deserialize(&mut buff))
                 .filter(|c| match c.op {
-                    Op::LoadFn => c.code as usize == func,
-                    Op::CallFn => c.code2().0 as usize == func,
+                    Op::LoadFn => c.code == func,
+                    Op::CallFn => c.code2().0 as u32 == func,
                     _ => false,
                 })
                 .count()
@@ -1066,9 +1060,9 @@ impl Compiler {
 
         Ok(Package {
             body: self.body.freeze(),
-            consts: self.consts,
-            functions: self.funcs,
-            classes: self.classes,
+            consts: self.consts.into_vec(),
+            functions: self.funcs.into_vec(),
+            classes: self.classes.into_vec(),
         })
     }
 }

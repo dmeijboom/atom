@@ -76,7 +76,7 @@ struct CompileCmd {
 fn print_opcode(i: usize, opcode: &Bytecode, indent: usize) {
     let mut prefix = format!("{}{i}:", " ".repeat(indent * 2));
 
-    while prefix.len() < 4 + (indent * 2) {
+    while prefix.len() < 6 + (indent * 2) {
         prefix.push(' ');
     }
 
@@ -97,10 +97,10 @@ fn print_func(f: &Fn, indent: usize) {
     }
 }
 
-fn print_atoms(ctx: &Context) {
+fn print_atoms(ctx: Context) {
     println!("atoms:");
 
-    for (n, name) in ctx.iter_atoms().enumerate() {
+    for (n, name) in ctx.atoms.into_iter().enumerate() {
         println!("  {n}: {name}");
     }
 
@@ -189,7 +189,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let module = vm::compile(source, &mut ctx, !no_optimize)?;
 
             if verbose {
-                print_atoms(&ctx);
+                print_atoms(ctx);
                 print_module(&module);
             }
         }

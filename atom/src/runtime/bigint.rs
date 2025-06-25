@@ -2,6 +2,7 @@ use std::{
     cmp::Ordering,
     ffi::{c_char, CStr, CString},
     fmt::Display,
+    hash::{Hash, Hasher},
     mem::MaybeUninit,
     ptr::{self, NonNull},
     str::FromStr,
@@ -30,6 +31,20 @@ pub enum BigInt {
         limbs: [MaybeUninit<limb_t>; 1],
     },
     Big(mpz_t),
+}
+
+impl Hash for BigInt {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            BigInt::Small { size, limbs } => {
+                state.write_i32(*size);
+                unsafe {
+                    state.write_u64(limbs[0].assume_init());
+                }
+            }
+            BigInt::Big(_) => self.to_string().hash(state),
+        }
+    }
 }
 
 impl Trace for BigInt {

@@ -1,4 +1,8 @@
-use std::{fmt::Display, ops::Deref};
+use std::{
+    fmt::Display,
+    hash::{Hash, Hasher},
+    ops::Deref,
+};
 
 use bytes::{Buf, BufMut};
 use num_enum::{FromPrimitive, IntoPrimitive};
@@ -185,6 +189,17 @@ pub enum Const {
     BigInt(BigInt),
     Float(f64),
     Str(String),
+}
+
+impl Hash for Const {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        match self {
+            Const::Int(i) => i.hash(state),
+            Const::BigInt(i) => i.hash(state),
+            Const::Float(f) => f.to_string().hash(state),
+            Const::Str(s) => s.hash(state),
+        }
+    }
 }
 
 impl Eq for Const {}
