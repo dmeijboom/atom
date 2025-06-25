@@ -43,6 +43,8 @@ pub struct Package {
 pub enum ErrorKind {
     #[error("unknown name '{0}'")]
     UnknownName(String),
+    #[error("name '{0}' is already defined")]
+    DuplicateName(String),
     #[error("package '{0}' already imported")]
     DuplicateImport(String),
     #[error("fn '{0}' already exists")]
@@ -182,6 +184,7 @@ impl Context {
 pub struct Compiler {
     optimize: bool,
     vars_seq: usize,
+    names: Vec<String>,
     scope: VecDeque<Scope>,
     body: BytesMut,
     consts: Vec<Const>,
@@ -202,6 +205,7 @@ impl Default for Compiler {
             classes: vec![],
             markers: vec![],
             imports: vec![],
+            names: vec![],
             optimize: true,
             locals: VecDeque::default(),
             scope: VecDeque::from(vec![Scope::new()]),
@@ -283,6 +287,10 @@ impl Compiler {
     }
 
     fn push_var(&mut self, span: Span, name: String, init: bool) -> Result<usize, CompileError> {
+        if self.names.contains(&name) {
+            return Err(ErrorKind::DuplicateName(name).at(span));
+        }
+
         let id = self.vars_seq;
         self.vars_seq += 1;
 
@@ -891,12 +899,15 @@ impl Compiler {
 
                 self.imports.push(name.clone());
 
-                let idx = self.push_const(Const::Str(name));
+                let idx = self.push_const(Const::Str(name.clone()));
                 self.push_bytecode(Bytecode::with_code(Op::Import, idx).at(stmt.span));
 
-                let idx =
-                    self.push_var(stmt.span, path.last().cloned().unwrap_or_default(), true)?;
+                let var_name = path.last().cloned().unwrap_or_default();
+
+                let idx = self.push_var(stmt.span, var_name.clone(), true)?;
                 self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
+
+                self.names.push(var_name);
             }
             StmtKind::If(if_stmt) => self.if_stmt(ctx, if_stmt)?,
             StmtKind::Let(name, expr) => {

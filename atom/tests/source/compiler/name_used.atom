@@ -1,0 +1,4 @@
+import bar;
+
+let bar = 10;
+bar.foo(bar);
