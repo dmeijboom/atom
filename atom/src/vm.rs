@@ -58,7 +58,7 @@ pub enum Error {
     Fatal(#[from] FatalError),
 }
 
-fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
+pub fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
     let chars = source.chars().collect::<Vec<_>>();
     let mut lexer = Lexer::new(&chars);
     let tokens = lexer.lex()?;

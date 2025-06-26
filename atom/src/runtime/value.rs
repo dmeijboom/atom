@@ -5,6 +5,7 @@ use std::{
 };
 
 use num_enum::{FromPrimitive, IntoPrimitive};
+use serde::Serialize;
 
 use crate::gc::{Gc, Handle, Trace};
 
@@ -85,7 +86,7 @@ impl Display for TypeAssert {
 }
 
 #[repr(u64)]
-#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, FromPrimitive, IntoPrimitive)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash, Eq, FromPrimitive, IntoPrimitive, Serialize)]
 pub enum Type {
     Int,
     BigInt,

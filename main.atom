@@ -1,1 +1,7 @@
 import std;
+
+fn simple(a, b, c) {
+    a + b - c
+}
+
+std.println(simple(3, 2, 1));

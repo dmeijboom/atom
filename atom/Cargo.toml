@@ -12,6 +12,7 @@ tracing = ["dep:tracing", "dep:tracing-subscriber"]
 [dependencies]
 atom-macros = { path = "../atom-macros" }
 
+ron = "0.10.1"
 wyhash2 = "0.2.1"
 thiserror = "1.0.61"
 tracing = { version = "0.1.40", optional = true }
@@ -33,5 +34,4 @@ libmimalloc-sys = { version = "0.1.43", features = [
 ], optional = true }
 
 [dev-dependencies]
-ron = "0.10.1"
 test-case = "3.3.1"

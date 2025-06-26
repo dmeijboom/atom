@@ -6,16 +6,43 @@ use std::{
 };
 
 use bytes::{Bytes, BytesMut};
+use lazy_static::lazy_static;
 use wyhash2::WyHash;
 
 use crate::{
-    ast::{self, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Stmt, StmtKind},
+    ast::{self, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Stmt, StmtKind},
     bytecode::{Bytecode, Const, Op, Serializable, Spanned},
     collections::{OrderedMap, OrderedSet},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
     runtime::function::Fn,
 };
+
+lazy_static! {
+    static ref BINARY_OPS: HashMap<ast::BinaryOp, Op> = {
+        [
+            (ast::BinaryOp::Add, Op::Add),
+            (ast::BinaryOp::Sub, Op::Sub),
+            (ast::BinaryOp::Mul, Op::Mul),
+            (ast::BinaryOp::Rem, Op::Rem),
+            (ast::BinaryOp::Div, Op::Div),
+            (ast::BinaryOp::Eq, Op::Eq),
+            (ast::BinaryOp::Ne, Op::Ne),
+            (ast::BinaryOp::Gt, Op::Gt),
+            (ast::BinaryOp::Gte, Op::Gte),
+            (ast::BinaryOp::Lt, Op::Lt),
+            (ast::BinaryOp::Lte, Op::Lte),
+            (ast::BinaryOp::BitOr, Op::BitwiseOr),
+            (ast::BinaryOp::BitAnd, Op::BitwiseAnd),
+            (ast::BinaryOp::ShiftLeft, Op::ShiftLeft),
+            (ast::BinaryOp::ShiftRight, Op::ShiftRight),
+            (ast::BinaryOp::Xor, Op::BitwiseXor),
+        ]
+        .iter()
+        .cloned()
+        .collect()
+    };
+}
 
 #[derive(Debug, Default)]
 pub struct Class {
@@ -231,7 +258,7 @@ impl Compiler {
         Ok(None)
     }
 
-    fn push_bytecode(&mut self, bytecode: Spanned<Bytecode>) -> usize {
+    fn push(&mut self, bytecode: Spanned<Bytecode>) -> usize {
         let offset = self.body.len();
         bytecode.serialize(&mut self.body);
         offset
@@ -318,20 +345,22 @@ impl Compiler {
         span: Span,
         callee: Expr,
         args: Vec<Expr>,
-    ) -> Result<Spanned<Bytecode>, CompileError> {
+    ) -> Result<(), CompileError> {
         let arg_count = args.len();
         self.expr_list(ctx, args)?;
         self.expr(ctx, callee)?;
 
         match self.tail() {
             Some(bc) if self.optimize && bc.op == Op::LoadFn => {
-                let opcode =
-                    Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16).at(bc.span);
                 self.remove_tail();
-                Ok(opcode)
+                self.push(
+                    Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16).at(bc.span),
+                )
             }
-            _ => Ok(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
-        }
+            _ => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
+        };
+
+        Ok(())
     }
 
     fn load_local(&mut self, name: &str) -> Option<&mut Var> {
@@ -355,7 +384,7 @@ impl Compiler {
         rhs: Expr,
         cond: bool,
     ) -> Result<(), CompileError> {
-        let offset = self.push_bytecode(match cond {
+        let offset = self.push(match cond {
             true => Bytecode::new(Op::PushJumpIfTrue).at(span),
             false => Bytecode::new(Op::PushJumpIfFalse).at(span),
         });
@@ -434,13 +463,15 @@ impl Compiler {
         }
     }
 
-    fn load_name(&mut self, span: Span, name: &str) -> Result<Spanned<Bytecode>, CompileError> {
-        Ok(match self.load_symbol(span, name, true)? {
-            Symbol::Local(id) => Bytecode::with_code(Op::LoadLocal, id).at(span),
-            Symbol::Var(id) => Bytecode::with_code(Op::Load, id).at(span),
-            Symbol::Class(id) => Bytecode::with_code(Op::LoadClass, id).at(span),
-            Symbol::Fn(id) => Bytecode::with_code(Op::LoadFn, id).at(span),
-        })
+    fn load_name(&mut self, span: Span, name: &str) -> Result<(), CompileError> {
+        match self.load_symbol(span, name, true)? {
+            Symbol::Local(id) => self.push(Bytecode::with_code(Op::LoadLocal, id).at(span)),
+            Symbol::Var(id) => self.push(Bytecode::with_code(Op::Load, id).at(span)),
+            Symbol::Class(id) => self.push(Bytecode::with_code(Op::LoadClass, id).at(span)),
+            Symbol::Fn(id) => self.push(Bytecode::with_code(Op::LoadFn, id).at(span)),
+        };
+
+        Ok(())
     }
 
     fn assign(
@@ -450,12 +481,12 @@ impl Compiler {
         op: Option<ast::AssignOp>,
         lhs: Expr,
         mut rhs: Expr,
-    ) -> Result<Spanned<Bytecode>, CompileError> {
+    ) -> Result<(), CompileError> {
         if let Some(op) = op {
             rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
         }
 
-        Ok(match lhs.kind {
+        match lhs.kind {
             ExprKind::Ident(name) => {
                 let sym = self.load_symbol(span, &name, false)?;
                 let bc = match sym {
@@ -466,31 +497,33 @@ impl Compiler {
 
                 self.expr(ctx, rhs)?;
                 self.set_init(sym);
-
-                bc
+                self.push(bc);
             }
             ExprKind::Member(object, member) => {
                 self.expr(ctx, *object)?;
                 self.expr(ctx, rhs)?;
                 let idx = ctx.atoms.insert(member);
-                Bytecode::with_code(Op::StoreMember, idx).at(span)
+                self.push(Bytecode::with_code(Op::StoreMember, idx).at(span));
             }
             ExprKind::CompMember(object, index) => {
                 self.expr(ctx, *object)?;
                 self.expr(ctx, *index)?;
                 self.expr(ctx, rhs)?;
-                Bytecode::new(Op::StoreElement).at(span)
+                self.push(Bytecode::new(Op::StoreElement).at(span));
             }
             _ => unimplemented!(),
-        })
+        };
+
+        Ok(())
     }
 
     fn slice(
         &mut self,
         ctx: &mut Context,
+        span: Span,
         begin: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
-    ) -> Result<Bytecode, CompileError> {
+    ) -> Result<(), CompileError> {
         let mut code = 0;
 
         if let Some(begin) = begin {
@@ -503,96 +536,130 @@ impl Compiler {
             self.expr(ctx, *end)?;
         }
 
-        Ok(Bytecode::with_code(Op::MakeSlice, code))
+        self.push(Bytecode::with_code(Op::MakeSlice, code).at(span));
+
+        Ok(())
+    }
+
+    fn not(&mut self, ctx: &mut Context, span: Span, expr: Expr) -> Result<(), CompileError> {
+        self.expr(ctx, expr)?;
+        self.push(Bytecode::new(Op::UnaryNot).at(span));
+
+        Ok(())
+    }
+
+    fn binary(
+        &mut self,
+        ctx: &mut Context,
+        span: Span,
+        lhs: Expr,
+        op: BinaryOp,
+        rhs: Expr,
+    ) -> Result<(), CompileError> {
+        self.expr(ctx, lhs)?;
+
+        match BINARY_OPS.get(&op).copied() {
+            Some(op) => {
+                self.expr(ctx, rhs)?;
+                self.push(Bytecode::new(op).at(span));
+            }
+            None => match op {
+                ast::BinaryOp::Or => self.logical(ctx, span, rhs, true)?,
+                ast::BinaryOp::And => self.logical(ctx, span, rhs, false)?,
+                _ => unreachable!(),
+            },
+        };
+
+        Ok(())
+    }
+
+    fn array(
+        &mut self,
+        ctx: &mut Context,
+        span: Span,
+        items: Vec<Expr>,
+    ) -> Result<(), CompileError> {
+        let len = items.len();
+        self.expr_list(ctx, items)?;
+        self.push(Bytecode::with_code(Op::MakeArray, len as u32).at(span));
+
+        Ok(())
+    }
+
+    fn member(
+        &mut self,
+        ctx: &mut Context,
+        span: Span,
+        object: Expr,
+        member: String,
+    ) -> Result<(), CompileError> {
+        self.expr(ctx, object)?;
+        self.push(Bytecode::with_code(Op::LoadMember, ctx.atoms.insert(member)).at(span));
+
+        Ok(())
+    }
+
+    fn comp_member(
+        &mut self,
+        ctx: &mut Context,
+        span: Span,
+        object: Expr,
+        elem: Expr,
+    ) -> Result<(), CompileError> {
+        self.expr(ctx, object)?;
+
+        match elem.kind {
+            ExprKind::Range(begin, end) => self.slice(ctx, span, begin, end)?,
+            kind => {
+                self.expr(ctx, kind.at(elem.span))?;
+                self.push(Bytecode::new(Op::LoadElement).at(elem.span));
+            }
+        };
+
+        Ok(())
+    }
+
+    fn atom(&mut self, ctx: &mut Context, span: Span, name: String) -> Result<(), CompileError> {
+        self.push(Bytecode::with_code(Op::LoadAtom, ctx.atoms.insert(name)).at(span));
+        Ok(())
+    }
+
+    fn load_const(&mut self, span: Span, c: Const) -> Result<(), CompileError> {
+        let code = self.consts.insert(c);
+        self.push(Bytecode::with_code(Op::LoadConst, code).at(span));
+        Ok(())
+    }
+
+    fn lit(&mut self, ctx: &mut Context, span: Span, lit: Literal) -> Result<(), CompileError> {
+        match lit {
+            Literal::Atom(name) => self.atom(ctx, span, name),
+            Literal::Int(i) if i > 0 && u32::try_from(i).is_ok() => {
+                self.push(Bytecode::with_code(Op::LoadConstInt, i as u32).at(span));
+                Ok(())
+            }
+            Literal::Int(i) => self.load_const(span, Const::Int(i)),
+            Literal::BigInt(i) => self.load_const(span, Const::BigInt(i)),
+            Literal::Float(f) => self.load_const(span, Const::Float(f)),
+            Literal::String(s) => self.load_const(span, Const::Str(s)),
+        }
     }
 
     fn expr(&mut self, ctx: &mut Context, expr: Expr) -> Result<(), CompileError> {
-        let code = match expr.kind {
+        match expr.kind {
             ExprKind::Unary(op, unary_expr) => match op {
-                ast::UnaryOp::Not => {
-                    let span = expr.span;
-                    self.expr(ctx, *unary_expr)?;
-                    Bytecode::new(Op::UnaryNot).at(span)
-                }
+                ast::UnaryOp::Not => self.not(ctx, expr.span, *unary_expr),
             },
-            ExprKind::Assign(op, lhs, rhs) => self.assign(ctx, expr.span, op, *lhs, *rhs)?,
-            ExprKind::Binary(lhs, op, rhs) => {
-                self.expr(ctx, *lhs)?;
-
-                let code = match op {
-                    ast::BinaryOp::Add => Bytecode::new(Op::Add).at(expr.span),
-                    ast::BinaryOp::Sub => Bytecode::new(Op::Sub).at(expr.span),
-                    ast::BinaryOp::Mul => Bytecode::new(Op::Mul).at(expr.span),
-                    ast::BinaryOp::Rem => Bytecode::new(Op::Rem).at(expr.span),
-                    ast::BinaryOp::Div => Bytecode::new(Op::Div).at(expr.span),
-                    ast::BinaryOp::Eq => Bytecode::new(Op::Eq).at(expr.span),
-                    ast::BinaryOp::Ne => Bytecode::new(Op::Ne).at(expr.span),
-                    ast::BinaryOp::Gt => Bytecode::new(Op::Gt).at(expr.span),
-                    ast::BinaryOp::Gte => Bytecode::new(Op::Gte).at(expr.span),
-                    ast::BinaryOp::Lt => Bytecode::new(Op::Lt).at(expr.span),
-                    ast::BinaryOp::Lte => Bytecode::new(Op::Lte).at(expr.span),
-                    ast::BinaryOp::Or => return self.logical(ctx, expr.span, *rhs, true),
-                    ast::BinaryOp::And => return self.logical(ctx, expr.span, *rhs, false),
-                    ast::BinaryOp::BitOr => Bytecode::new(Op::BitwiseOr).at(expr.span),
-                    ast::BinaryOp::BitAnd => Bytecode::new(Op::BitwiseAnd).at(expr.span),
-                    ast::BinaryOp::ShiftLeft => Bytecode::new(Op::ShiftLeft).at(expr.span),
-                    ast::BinaryOp::ShiftRight => Bytecode::new(Op::ShiftRight).at(expr.span),
-                    ast::BinaryOp::Xor => Bytecode::new(Op::BitwiseXor).at(expr.span),
-                };
-
-                self.expr(ctx, *rhs)?;
-                code
-            }
-            ExprKind::Array(items) => {
-                let len = items.len();
-                self.expr_list(ctx, items)?;
-                Bytecode::with_code(Op::MakeArray, len as u32).at(expr.span)
-            }
-            ExprKind::Member(object, member) => {
-                self.expr(ctx, *object)?;
-                Bytecode::with_code(Op::LoadMember, ctx.atoms.insert(member)).at(expr.span)
-            }
-            ExprKind::CompMember(object, elem) => {
-                self.expr(ctx, *object)?;
-                let span = elem.span;
-
-                match elem.kind {
-                    ExprKind::Range(begin, end) => self.slice(ctx, begin, end)?,
-                    elem => {
-                        self.expr(ctx, elem.at(span))?;
-                        Bytecode::new(Op::LoadElement)
-                    }
-                }
-                .at(span)
-            }
-            ExprKind::Ident(name) => self.load_name(expr.span, &name)?,
-            ExprKind::Call(callee, args) => self.call(ctx, expr.span, *callee, args)?,
-            ExprKind::Literal(Literal::Atom(name)) => {
-                Bytecode::with_code(Op::LoadAtom, ctx.atoms.insert(name)).at(expr.span)
-            }
-            ExprKind::Literal(Literal::Int(i)) if i > 0 && u32::try_from(i).is_ok() => {
-                Bytecode::with_code(Op::LoadConstInt, i as u32).at(expr.span)
-            }
-            ExprKind::Literal(lit) => Bytecode::with_code(
-                Op::LoadConst,
-                match lit {
-                    Literal::Int(i) => self.consts.insert(Const::Int(i)),
-                    Literal::BigInt(i) => self.consts.insert(Const::BigInt(i)),
-                    Literal::Float(f) => self.consts.insert(Const::Float(f)),
-                    Literal::String(s) => self.consts.insert(Const::Str(s)),
-                    _ => unreachable!(),
-                },
-            )
-            .at(expr.span),
-            ExprKind::Match(expr, arms, alt) => {
-                self.match_expr(ctx, *expr, arms, alt)?;
-                return Ok(());
-            }
+            ExprKind::Assign(op, lhs, rhs) => self.assign(ctx, expr.span, op, *lhs, *rhs),
+            ExprKind::Binary(lhs, op, rhs) => self.binary(ctx, expr.span, *lhs, op, *rhs),
+            ExprKind::Array(items) => self.array(ctx, expr.span, items),
+            ExprKind::Member(object, member) => self.member(ctx, expr.span, *object, member),
+            ExprKind::CompMember(object, elem) => self.comp_member(ctx, expr.span, *object, *elem),
+            ExprKind::Ident(name) => self.load_name(expr.span, &name),
+            ExprKind::Call(callee, args) => self.call(ctx, expr.span, *callee, args),
+            ExprKind::Literal(lit) => self.lit(ctx, expr.span, lit),
+            ExprKind::Match(expr, arms, alt) => self.match_expr(ctx, *expr, arms, alt),
             ExprKind::Range(_, _) => unreachable!(),
-        };
-
-        self.push_bytecode(code);
-        Ok(())
+        }
     }
 
     fn match_expr(
@@ -606,19 +673,19 @@ impl Compiler {
         let id = self.push_hidden_var(expr.span, true)?;
 
         self.expr(ctx, expr)?;
-        self.push_bytecode(Bytecode::with_code(Op::Store, id as u32).at(span));
+        self.push(Bytecode::with_code(Op::Store, id as u32).at(span));
 
         let mut offsets = vec![];
 
         for arm in arms {
             let span = arm.pat.span;
 
-            self.push_bytecode(Bytecode::with_code(Op::Load, id as u32).at(span));
+            self.push(Bytecode::with_code(Op::Load, id as u32).at(span));
             self.expr(ctx, arm.pat)?;
-            self.push_bytecode(Bytecode::new(Op::Eq).at(span));
-            let offset = self.push_bytecode(Bytecode::with_code(Op::JumpIfFalse, 0).at(span));
+            self.push(Bytecode::new(Op::Eq).at(span));
+            let offset = self.push(Bytecode::with_code(Op::JumpIfFalse, 0).at(span));
             self.expr(ctx, arm.expr)?;
-            offsets.push(self.push_bytecode(Bytecode::with_code(Op::Jump, 0).at(span)));
+            offsets.push(self.push(Bytecode::with_code(Op::Jump, 0).at(span)));
             self.set_offset(offset, self.offset());
         }
 
@@ -814,9 +881,9 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         let begin = self.offset();
         self.expr(ctx, expr)?;
-        let offset = self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span));
+        let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(ctx, body)?;
-        self.push_bytecode(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
+        self.push(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(begin, self.offset());
 
@@ -835,11 +902,11 @@ impl Compiler {
         self.stmt(ctx, pre)?;
         let begin = self.offset();
         self.expr(ctx, expr)?;
-        let offset = self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span));
+        let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(ctx, body)?;
         let post_idx = self.offset();
         self.expr(ctx, post)?;
-        self.push_bytecode(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
+        self.push(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(post_idx, self.offset());
 
@@ -854,7 +921,7 @@ impl Compiler {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
         let end_block_offset = if let Some(expr) = expr {
             self.expr(ctx, expr)?;
-            Some(self.push_bytecode(Bytecode::new(Op::JumpIfFalse).at(span)))
+            Some(self.push(Bytecode::new(Op::JumpIfFalse).at(span)))
         } else {
             None
         };
@@ -863,7 +930,7 @@ impl Compiler {
 
         match alt {
             Some(alt) => {
-                let end_stmt_offset = self.push_bytecode(Bytecode::new(Op::Jump).at(span));
+                let end_stmt_offset = self.push(Bytecode::new(Op::Jump).at(span));
 
                 if let Some(offset) = end_block_offset {
                     self.set_offset(offset, self.offset());
@@ -894,12 +961,12 @@ impl Compiler {
                 self.imports.insert(name.clone());
 
                 let idx = self.consts.insert(Const::Str(name.clone()));
-                self.push_bytecode(Bytecode::with_code(Op::Import, idx).at(stmt.span));
+                self.push(Bytecode::with_code(Op::Import, idx).at(stmt.span));
 
                 let var_name = path.last().cloned().unwrap_or_default();
 
                 let idx = self.push_var(stmt.span, var_name.clone(), true)?;
-                self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
+                self.push(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
 
                 self.names.insert(var_name);
             }
@@ -908,7 +975,7 @@ impl Compiler {
                 if let Some(expr) = expr {
                     let idx = self.push_var(expr.span, name, true)?;
                     self.expr(ctx, expr)?;
-                    self.push_bytecode(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
+                    self.push(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
                 } else {
                     self.push_var(stmt.span, name, false)?;
                 }
@@ -918,7 +985,7 @@ impl Compiler {
                 self.expr(ctx, expr)?;
 
                 if !assignment {
-                    self.push_bytecode(Bytecode::new(Op::Discard).at(stmt.span));
+                    self.push(Bytecode::new(Op::Discard).at(stmt.span));
                 }
             }
             StmtKind::Return(expr) => {
@@ -927,21 +994,19 @@ impl Compiler {
                 match self.tail() {
                     Some(opcode) if self.optimize && opcode.op == Op::LoadLocal => {
                         self.remove_tail();
-                        self.push_bytecode(
-                            Bytecode::with_code(Op::ReturnLocal, opcode.code).at(stmt.span),
-                        );
+                        self.push(Bytecode::with_code(Op::ReturnLocal, opcode.code).at(stmt.span));
                     }
                     _ => {
-                        self.push_bytecode(Bytecode::new(Op::Return).at(stmt.span));
+                        self.push(Bytecode::new(Op::Return).at(stmt.span));
                     }
                 }
             }
             StmtKind::Break => {
-                let offset = self.push_bytecode(Bytecode::new(Op::Jump).at(stmt.span));
+                let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));
                 self.markers.push(Marker::End(offset));
             }
             StmtKind::Continue => {
-                let offset = self.push_bytecode(Bytecode::new(Op::Jump).at(stmt.span));
+                let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));
                 self.markers.push(Marker::Begin(offset));
             }
             StmtKind::Class(name, methods, public) => {
@@ -1075,14 +1140,14 @@ mod tests {
     fn test_push_code() {
         let mut compiler = Compiler::default();
         let bc = Bytecode::new(Op::Load).at(Span::default());
-        let offset = compiler.push_bytecode(bc.clone());
+        let offset = compiler.push(bc.clone());
 
         assert_eq!(0, offset);
         assert_eq!(bc, compiler.tail().unwrap());
         assert_eq!(8, compiler.body.len());
 
         let bc = Bytecode::new(Op::Lt).at(Span::default());
-        let offset = compiler.push_bytecode(bc.clone());
+        let offset = compiler.push(bc.clone());
 
         assert_eq!(8, offset);
         assert_eq!(bc, compiler.tail().unwrap());
@@ -1093,9 +1158,9 @@ mod tests {
     fn test_replace_code() {
         let mut compiler = Compiler::default();
         let code = Bytecode::new(Op::Load).at(Span::default());
-        let offset = compiler.push_bytecode(code.clone());
+        let offset = compiler.push(code.clone());
 
-        compiler.push_bytecode(Bytecode::new(Op::Lt).at(Span::default()));
+        compiler.push(Bytecode::new(Op::Lt).at(Span::default()));
         compiler.set_offset(offset, 800);
 
         let code = Spanned::<Bytecode>::deserialize(&mut &compiler.body[..8]);
@@ -1130,9 +1195,10 @@ mod tests {
         let idx = compiler
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
-        let code = compiler
+        compiler
             .assign(&mut ctx, Span::default(), None, ident("n"), expr.clone())
             .unwrap();
+        let code = compiler.tail().unwrap();
 
         assert_eq!(Op::Store, code.op);
         assert_eq!(idx, code.code as usize);

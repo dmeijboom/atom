@@ -1,12 +1,13 @@
-use std::{path::PathBuf, process::exit};
+use std::{fs, path::PathBuf, process::exit};
 
 use argh::FromArgs;
 use bytecode::{Bytecode, Serializable, Spanned};
-use compiler::{Context, Package};
+use compiler::{Compiler, Context, Package};
 use error::Error;
 use gc::Gc;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
+use ron::ser::PrettyConfig;
 use runtime::{function::Fn, value::Value, Runtime};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
@@ -69,8 +70,10 @@ struct CompileCmd {
     source: PathBuf,
     #[argh(switch, description = "disable optimizations")]
     no_optimize: bool,
-    #[argh(switch, description = "show verbose output")]
-    verbose: bool,
+    #[argh(switch, description = "show AST output")]
+    ast: bool,
+    #[argh(switch, description = "show bytecode output")]
+    bytecode: bool,
 }
 
 fn print_opcode(i: usize, opcode: &Bytecode, indent: usize) {
@@ -181,14 +184,34 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             }
         }
         Cmd::Compile(CompileCmd {
+            ast,
             source,
-            verbose,
+            bytecode,
             no_optimize,
         }) => {
             let mut ctx = Context::default();
-            let module = vm::compile(source, &mut ctx, !no_optimize)?;
+            let source = fs::read_to_string(source)?;
+            let tree = vm::parse(&source)?;
 
-            if verbose {
+            if ast {
+                println!(
+                    "{}",
+                    ron::ser::to_string_pretty(
+                        &tree,
+                        PrettyConfig::default()
+                            .struct_names(true)
+                            .indentor("  ")
+                            .compact_arrays(true)
+                    )?
+                );
+
+                return Ok(());
+            }
+
+            let compiler = Compiler::default().with_optimize(!no_optimize);
+            let module = compiler.compile(&mut ctx, tree)?;
+
+            if bytecode {
                 print_atoms(ctx);
                 print_module(&module);
             }

@@ -1,5 +1,6 @@
 pub mod ast;
 pub mod bytecode;
+pub mod collections;
 pub mod compiler;
 pub mod error;
 pub mod frame;
@@ -10,5 +11,4 @@ pub mod parser;
 #[cfg(feature = "profiler")]
 mod profiler;
 pub mod runtime;
-pub mod collections;
 pub mod vm;

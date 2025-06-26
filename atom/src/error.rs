@@ -47,6 +47,8 @@ pub enum Error {
     Lex(#[from] TokenError),
     #[error("CompileError: {0}")]
     Compile(#[from] CompileError),
+    #[error("SerializeError: {0}")]
+    Serialize(#[from] ron::Error),
     #[error("{0}")]
     Runtime(#[from] vm::Error),
 }
@@ -58,6 +60,7 @@ impl Error {
             Error::Parse(e) => e.span,
             Error::Lex(e) => e.span,
             Error::Compile(e) => e.span,
+            Error::Serialize(_) => Span::default(),
             Error::Runtime(e) => match e {
                 vm::Error::Runtime(e) => e.span,
                 vm::Error::Fatal(e) => e.span,
