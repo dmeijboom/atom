@@ -145,24 +145,7 @@ impl VarBuilder {
 
 #[derive(Default)]
 struct Scope {
-    func: Option<u32>,
     vars: HashMap<String, Var, WyHash>,
-}
-
-impl Scope {
-    pub fn new() -> Self {
-        Self {
-            func: None,
-            ..Self::default()
-        }
-    }
-
-    pub fn with_fn(fn_id: u32) -> Self {
-        Self {
-            func: Some(fn_id),
-            ..Self::default()
-        }
-    }
 }
 
 enum Marker {
@@ -208,7 +191,6 @@ impl Default for Context {
 }
 
 pub struct Compiler {
-    optimize: bool,
     vars_seq: usize,
     names: HashSet<String>,
     scope: VecDeque<Scope>,
@@ -232,19 +214,13 @@ impl Default for Compiler {
             markers: vec![],
             imports: HashSet::default(),
             names: HashSet::default(),
-            optimize: true,
             locals: VecDeque::default(),
-            scope: VecDeque::from(vec![Scope::new()]),
+            scope: VecDeque::from(vec![Scope::default()]),
         }
     }
 }
 
 impl Compiler {
-    pub fn with_optimize(mut self, optimize: bool) -> Self {
-        self.optimize = optimize;
-        self
-    }
-
     fn offset(&self) -> usize {
         self.body.len()
     }
@@ -272,18 +248,19 @@ impl Compiler {
         bc.at(orig.span).serialize(&mut buff);
     }
 
-    fn tail(&self) -> Option<Spanned<Bytecode>> {
+    fn accept(&mut self, op: Op) -> Option<Spanned<Bytecode>> {
         if self.body.is_empty() {
-            None
-        } else {
-            Some(Spanned::<Bytecode>::deserialize(
-                &mut &self.body[self.body.len() - 8..],
-            ))
+            return None;
         }
-    }
 
-    fn remove_tail(&mut self) {
-        self.body.truncate(self.body.len() - 8);
+        let bc = Spanned::<Bytecode>::deserialize(&mut &self.body[self.body.len() - 8..]);
+
+        if bc.op == op {
+            self.body.truncate(self.body.len() - 8);
+            return Some(bc);
+        }
+
+        None
     }
 
     fn push_hidden_var(&mut self, span: Span, init: bool) -> Result<usize, CompileError> {
@@ -350,14 +327,11 @@ impl Compiler {
         self.expr_list(ctx, args)?;
         self.expr(ctx, callee)?;
 
-        match self.tail() {
-            Some(bc) if self.optimize && bc.op == Op::LoadFn => {
-                self.remove_tail();
-                self.push(
-                    Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16).at(bc.span),
-                )
-            }
-            _ => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
+        match self.accept(Op::LoadFn) {
+            Some(bc) => self.push(
+                Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16).at(bc.span),
+            ),
+            None => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
         };
 
         Ok(())
@@ -702,6 +676,27 @@ impl Compiler {
         Ok(())
     }
 
+    fn optim_tail_call(&mut self) -> Result<(), CompileError> {
+        let discard = self.accept(Op::Discard);
+
+        match self.accept(Op::CallFn) {
+            Some(bc) => {
+                let (idx, argc) = bc.code2();
+                self.push(Bytecode::with_code(Op::LoadFn, idx as u32).at(bc.span));
+                self.push(Bytecode::with_code(Op::TailCall, argc as u32).at(bc.span));
+
+                Ok(())
+            }
+            None => {
+                if let Some(bc) = discard {
+                    self.push(bc);
+                }
+
+                Ok(())
+            }
+        }
+    }
+
     fn compile_fn_body(
         &mut self,
         ctx: &mut Context,
@@ -718,16 +713,18 @@ impl Compiler {
         self.scope.push_front(scope);
         self.locals.push_front(locals);
 
-        let previous = mem::take(&mut self.body);
+        let global = mem::take(&mut self.body);
         self.compile_body(ctx, stmts)?;
-        let scope = self.pop_scope()?;
+        self.optim_tail_call()?;
+        self.pop_scope()?;
 
         if let Some(locals) = self.locals.pop_front() {
             check_unused(&locals)?;
         }
 
-        let body = mem::replace(&mut self.body, previous);
-        self.optim(scope.unwrap(), body)
+        let body = mem::replace(&mut self.body, global);
+
+        Ok(body)
     }
 
     fn method(
@@ -753,7 +750,7 @@ impl Compiler {
                 .build(),
         );
 
-        let mut body = self.compile_fn_body(ctx, Scope::new(), args, stmts)?;
+        let mut body = self.compile_fn_body(ctx, Scope::default(), args, stmts)?;
 
         if name == "init" {
             Bytecode::with_code(Op::ReturnLocal, 0).serialize(&mut body);
@@ -805,7 +802,7 @@ impl Compiler {
             return Err(ErrorKind::DuplicateFn(name).at(span));
         }
 
-        let idx = self.funcs.insert(
+        self.funcs.insert(
             name.clone(),
             Fn::builder()
                 .name(name.clone())
@@ -815,7 +812,7 @@ impl Compiler {
         );
 
         self.funcs[&name].body = self
-            .compile_fn_body(ctx, Scope::with_fn(idx), args, stmts)?
+            .compile_fn_body(ctx, Scope::default(), args, stmts)?
             .freeze();
 
         Ok(())
@@ -990,16 +987,14 @@ impl Compiler {
             }
             StmtKind::Return(expr) => {
                 self.expr(ctx, expr)?;
+                self.optim_tail_call()?;
 
-                match self.tail() {
-                    Some(opcode) if self.optimize && opcode.op == Op::LoadLocal => {
-                        self.remove_tail();
-                        self.push(Bytecode::with_code(Op::ReturnLocal, opcode.code).at(stmt.span));
+                match self.accept(Op::LoadLocal) {
+                    Some(bc) => {
+                        self.push(Bytecode::with_code(Op::ReturnLocal, bc.code).at(bc.span))
                     }
-                    _ => {
-                        self.push(Bytecode::new(Op::Return).at(stmt.span));
-                    }
-                }
+                    _ => self.push(Bytecode::new(Op::Return).at(stmt.span)),
+                };
             }
             StmtKind::Break => {
                 let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));
@@ -1046,75 +1041,11 @@ impl Compiler {
         ctx: &mut Context,
         stmts: Vec<Stmt>,
     ) -> Result<(), CompileError> {
-        self.scope.push_front(Scope::new());
+        self.scope.push_front(Scope::default());
         self.compile_body(ctx, stmts)?;
         self.pop_scope()?;
 
         Ok(())
-    }
-
-    fn optim_tail_call(&mut self, func: u32, body: &mut [u8]) -> Result<(), CompileError> {
-        let mut iter = body
-            .chunks_exact(8)
-            .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
-            .enumerate()
-            .rev();
-
-        while let Some((i, code)) = iter.next() {
-            match code.op {
-                Op::Return => continue,
-                Op::CallFn if code.code2().0 as u32 == func => {
-                    let mut buff = &mut body[i * 8..];
-                    let (_, arg_count) = code.code2();
-                    Bytecode::with_code(Op::TailCall, arg_count as u32).serialize(&mut buff);
-                    break;
-                }
-                Op::Call => {
-                    let arg_count = code.code;
-                    let (i, idx) = match iter.next() {
-                        Some((i, code)) if code.op == Op::LoadFn => (i, code.code),
-                        _ => break,
-                    };
-
-                    if idx != func {
-                        break;
-                    }
-
-                    let mut buff = &mut body[i * 8..];
-                    Bytecode::with_code(Op::TailCall, arg_count).serialize(&mut buff);
-                    break;
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    fn optim(&mut self, scope: Scope, mut body: BytesMut) -> Result<BytesMut, CompileError> {
-        if !self.optimize {
-            return Ok(body);
-        }
-
-        if let Some(func) = scope.func {
-            if body
-                .chunks_exact(8)
-                .map(|mut buff| Spanned::<Bytecode>::deserialize(&mut buff))
-                .filter(|c| match c.op {
-                    Op::LoadFn => c.code == func,
-                    Op::CallFn => c.code2().0 as u32 == func,
-                    _ => false,
-                })
-                .count()
-                != 1
-            {
-                return Ok(body);
-            }
-
-            self.optim_tail_call(func, &mut body)?;
-        }
-
-        Ok(body)
     }
 
     pub fn compile(mut self, ctx: &mut Context, stmts: Vec<Stmt>) -> Result<Package, CompileError> {
@@ -1143,15 +1074,16 @@ mod tests {
         let offset = compiler.push(bc.clone());
 
         assert_eq!(0, offset);
-        assert_eq!(bc, compiler.tail().unwrap());
         assert_eq!(8, compiler.body.len());
+        assert_eq!(Some(bc), compiler.accept(Op::Load));
+        assert_eq!(0, compiler.body.len());
 
         let bc = Bytecode::new(Op::Lt).at(Span::default());
         let offset = compiler.push(bc.clone());
 
-        assert_eq!(8, offset);
-        assert_eq!(bc, compiler.tail().unwrap());
-        assert_eq!(16, compiler.body.len());
+        assert_eq!(0, offset);
+        assert_eq!(None, compiler.accept(Op::Gt));
+        assert_eq!(8, compiler.body.len());
     }
 
     #[test]
@@ -1174,7 +1106,7 @@ mod tests {
         let top = compiler
             .push_var(Span::default(), "n".to_string(), true)
             .unwrap();
-        compiler.scope.push_front(Scope::new());
+        compiler.scope.push_front(Scope::default());
 
         let expected = compiler
             .push_var(Span::default(), "n".to_string(), true)
@@ -1198,7 +1130,7 @@ mod tests {
         compiler
             .assign(&mut ctx, Span::default(), None, ident("n"), expr.clone())
             .unwrap();
-        let code = compiler.tail().unwrap();
+        let code = compiler.accept(Op::Store).unwrap();
 
         assert_eq!(Op::Store, code.op);
         assert_eq!(idx, code.code as usize);

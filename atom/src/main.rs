@@ -58,8 +58,6 @@ enum Cmd {
 struct RunCmd {
     #[argh(positional)]
     source: PathBuf,
-    #[argh(switch, description = "disable optimizations")]
-    no_optimize: bool,
 }
 
 /// Compile a program
@@ -68,8 +66,6 @@ struct RunCmd {
 struct CompileCmd {
     #[argh(positional)]
     source: PathBuf,
-    #[argh(switch, description = "disable optimizations")]
-    no_optimize: bool,
     #[argh(switch, description = "show AST output")]
     ast: bool,
     #[argh(switch, description = "show bytecode output")]
@@ -152,12 +148,9 @@ macro_rules! format_col {
 
 fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
-        Cmd::Run(RunCmd {
-            source,
-            no_optimize,
-        }) => {
+        Cmd::Run(RunCmd { source }) => {
             let mut ctx = Context::default();
-            let module = vm::compile(source, &mut ctx, !no_optimize)?;
+            let module = vm::compile(source, &mut ctx)?;
             let mut gc = Gc::default();
             let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module, Runtime::default())?;
 
@@ -187,7 +180,6 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             ast,
             source,
             bytecode,
-            no_optimize,
         }) => {
             let mut ctx = Context::default();
             let source = fs::read_to_string(source)?;
@@ -208,7 +200,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
                 return Ok(());
             }
 
-            let compiler = Compiler::default().with_optimize(!no_optimize);
+            let compiler = Compiler::default();
             let module = compiler.compile(&mut ctx, tree)?;
 
             if bytecode {

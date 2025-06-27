@@ -70,11 +70,10 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
 pub fn compile(
     source: impl AsRef<Path>,
     ctx: &mut Context,
-    optimize: bool,
 ) -> Result<Package, crate::error::Error> {
     let source = fs::read_to_string(source)?;
     let program = parse(&source)?;
-    let compiler = Compiler::default().with_optimize(optimize);
+    let compiler = Compiler::default();
 
     Ok(compiler.compile(ctx, program)?)
 }
@@ -543,6 +542,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn tail_call(&mut self, gc: &mut Gc, arg_count: u32) -> Result<(), Error> {
+        self.frame.handle = self.stack.pop().as_fn();
         self.frame.offset = 0;
         self.frame.returned = false;
         self.frame.locals = self.stack.slice_to_end(arg_count as usize).to_vec();
@@ -705,7 +705,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         let id = self.instances.len();
 
         // Parse and compile module
-        let module = compile(self.make_path(name), &mut self.compiler_ctx, true)
+        let module = compile(self.make_path(name), &mut self.compiler_ctx)
             .map_err(|e| Error::Import(Box::new(e)))?;
 
         // Initialize instance and frame
