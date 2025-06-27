@@ -5,7 +5,7 @@ pub mod compiler;
 pub mod error;
 pub mod frame;
 pub mod gc;
-pub mod instance;
+pub mod module;
 pub mod lexer;
 pub mod parser;
 #[cfg(feature = "profiler")]

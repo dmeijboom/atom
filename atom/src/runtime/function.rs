@@ -48,7 +48,7 @@ impl FnBuilder {
 
 #[derive(Debug, Default, Clone)]
 pub struct Context {
-    pub instance: usize,
+    pub module: usize,
 }
 
 #[derive(Debug, Default, Clone)]

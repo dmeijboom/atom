@@ -21,7 +21,7 @@ mod compiler;
 mod error;
 mod frame;
 mod gc;
-mod instance;
+mod module;
 mod lexer;
 mod parser;
 #[cfg(feature = "profiler")]

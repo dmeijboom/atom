@@ -95,7 +95,7 @@ impl<'gc> Trace for Cache<'gc> {
     }
 }
 
-pub struct Instance<'gc> {
+pub struct Module<'gc> {
     id: usize,
     cache: Cache<'gc>,
     package: Package,
@@ -103,7 +103,7 @@ pub struct Instance<'gc> {
     pub vars: IntMap<u32, Value<'gc>>,
 }
 
-impl<'gc> Trace for Instance<'gc> {
+impl<'gc> Trace for Module<'gc> {
     fn trace(&self, gc: &mut Gc) {
         self.cache.trace(gc);
         self.consts
@@ -113,7 +113,7 @@ impl<'gc> Trace for Instance<'gc> {
     }
 }
 
-impl<'gc> Instance<'gc> {
+impl<'gc> Module<'gc> {
     pub fn new(id: usize, package: Package, consts: Vec<Value<'gc>>) -> Self {
         Self {
             id,
@@ -156,7 +156,7 @@ impl<'gc> Instance<'gc> {
                     .methods
                     .remove("init")
                     .map(|mut init| {
-                        init.context.instance = self.id;
+                        init.context.module = self.id;
                         gc.alloc(init)
                     })
                     .transpose()?,
@@ -188,7 +188,7 @@ impl<'gc> Instance<'gc> {
     pub fn get_fn(&mut self, gc: &mut Gc<'gc>, idx: usize) -> Result<Handle<'gc, Fn>, Error> {
         self.cache.functions.get_or_insert(idx, || {
             let mut func = self.package.functions[idx].clone();
-            func.context.instance = self.id;
+            func.context.module = self.id;
             let handle = gc.alloc(func)?;
             Ok(handle)
         })

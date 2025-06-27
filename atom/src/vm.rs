@@ -17,8 +17,8 @@ use crate::{
     error::SpannedError,
     frame::Frame,
     gc::{Gc, Handle, Trace},
-    instance::Instance,
     lexer::{Lexer, Span},
+    module::Module,
     parser::{self},
     runtime::{
         array::Array,
@@ -145,7 +145,7 @@ pub trait Ffi<'gc> {
 
 #[derive(Default)]
 struct Std<'gc> {
-    instance: usize,
+    module: usize,
     builtins: LinearMap<Cow<'static, str>, Handle<'gc, Class<'gc>>>,
 }
 
@@ -163,31 +163,31 @@ pub struct Vm<'gc, F: Ffi<'gc>, const S: usize> {
     compiler_ctx: Context,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
-    instances: Vec<Instance<'gc>>,
+    modules: Vec<Module<'gc>>,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
     packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
 }
 
-fn instance_with_frame<'gc>(
+fn module_with_frame<'gc>(
     id: usize,
     gc: &mut Gc<'gc>,
     mut package: Package,
-) -> Result<(Instance<'gc>, Frame<'gc>), Error> {
+) -> Result<(Module<'gc>, Frame<'gc>), Error> {
     let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
-    func.context.instance = id;
+    func.context.module = id;
 
     let consts = mem::take(&mut package.consts)
         .into_iter()
         .map(|c| c.into_atom(gc))
         .collect::<Result<Vec<_>, _>>()?;
-    let instance = Instance::new(id, package, consts);
+    let module = Module::new(id, package, consts);
 
     // This is not an ordinary function, no need to return a value
     let mut frame = Frame::new(func);
     frame.returned = true;
 
-    Ok((instance, frame))
+    Ok((module, frame))
 }
 
 impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
@@ -198,7 +198,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         package: Package,
         ffi: F,
     ) -> Result<Self, Error> {
-        let (instance, frame) = instance_with_frame(0, gc, package)?;
+        let (module, frame) = module_with_frame(0, gc, package)?;
 
         Ok(Self {
             ffi,
@@ -207,7 +207,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             compiler_ctx: compile_context,
             std: Std::default(),
             packages: HashMap::default(),
-            instances: vec![instance],
+            modules: vec![module],
             call_stack: vec![],
             stack: Stack::default(),
             #[cfg(feature = "profiler")]
@@ -245,13 +245,15 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         self.mark_sweep(gc);
     }
 
+    fn module(&mut self) -> &mut Module<'gc> {
+        &mut self.modules[self.frame.context().module]
+    }
+
     fn mark_sweep(&mut self, gc: &mut Gc) {
         self.frame.trace(gc);
         self.packages.values().for_each(|handle| gc.mark(handle));
         self.call_stack.iter().for_each(|frame| frame.trace(gc));
-        self.instances
-            .iter()
-            .for_each(|instance| instance.trace(gc));
+        self.modules.iter().for_each(|module| module.trace(gc));
         self.stack.iter().for_each(|value| value.trace(gc));
 
         gc.sweep();
@@ -310,20 +312,20 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         member: u32,
     ) -> Result<(), Error> {
         let member = &self.compiler_ctx.atoms[member as usize];
-        let instance_id = object
-            .get_attr(value::INSTANCE)
-            .ok_or_else(|| ErrorKind::MissingAttribute("instance").at(self.frame.span()))?
+        let module_id = object
+            .get_attr(value::MODULE)
+            .ok_or_else(|| ErrorKind::MissingAttribute("module").at(self.frame.span()))?
             .as_int();
-        let instance = &mut self.instances[instance_id as usize];
+        let module = &mut self.modules[module_id as usize];
 
-        if let Some(handle) = instance.get_fn_by_name(gc, member)? {
+        if let Some(handle) = module.get_fn_by_name(gc, member)? {
             if handle.public {
                 self.stack.push(handle.into());
                 return Ok(());
             }
         }
 
-        if let Some(handle) = instance.get_class_by_name(gc, member)? {
+        if let Some(handle) = module.get_class_by_name(gc, member)? {
             if handle.public {
                 self.stack.push(handle.into());
                 return Ok(());
@@ -383,13 +385,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn load_class(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let class = self.instances[self.frame.instance()].get_class(gc, idx as usize)?;
+        let class = self.module().get_class(gc, idx as usize)?;
         self.stack.push(class.into());
         Ok(())
     }
 
     fn load_fn(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance()].get_fn(gc, idx as usize)?;
+        let f = self.module().get_fn(gc, idx as usize)?;
         self.stack.push(f.into());
         Ok(())
     }
@@ -468,7 +470,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn call_extern(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance()].consts[idx as usize].as_str();
+        let name = self.module().consts[idx as usize].as_str();
         let args = mem::take(&mut self.frame.locals);
         let return_value = self.ffi.call(name.as_ref(), gc, args)?;
 
@@ -480,7 +482,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn call_fn(&mut self, gc: &mut Gc<'gc>, (idx, arg_count): (u16, u16)) -> Result<(), Error> {
-        let f = self.instances[self.frame.instance()].get_fn(gc, idx as usize)?;
+        let f = self.module().get_fn(gc, idx as usize)?;
         self.fn_call(gc, f, arg_count as u32)
     }
 
@@ -702,26 +704,26 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn import_path(&mut self, gc: &mut Gc<'gc>, name: &str) -> Result<usize, Error> {
-        let id = self.instances.len();
+        let id = self.modules.len();
 
         // Parse and compile module
         let module = compile(self.make_path(name), &mut self.compiler_ctx)
             .map_err(|e| Error::Import(Box::new(e)))?;
 
-        // Initialize instance and frame
-        let (mut instance, frame) = instance_with_frame(id, gc, module)?;
+        // Initialize module and frame
+        let (mut module, frame) = module_with_frame(id, gc, module)?;
 
         // Setup package class
-        let class = gc.alloc(Class::new("Package", self.frame.instance()))?;
+        let class = gc.alloc(Class::new("Package", self.frame.context().module))?;
         let mut object = Object::new(class);
-        object.set_attr(value::INSTANCE, BigInt::from(id).into_atom(gc)?);
+        object.set_attr(value::MODULE, BigInt::from(id).into_atom(gc)?);
 
         let handle = gc.alloc(object)?;
 
         // Insert the package object as the first variable (which is `self`)
-        instance.vars.insert(0, Handle::clone(&handle).into());
+        module.vars.insert(0, Handle::clone(&handle).into());
 
-        self.instances.push(instance);
+        self.modules.push(module);
         self.packages
             .insert(name.to_string(), Handle::clone(&handle));
 
@@ -736,7 +738,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.instances[self.frame.instance()].consts[idx as usize].as_str();
+        let name = self.module().consts[idx as usize].as_str();
 
         if let Some(handle) = self.packages.get(name.as_str()) {
             self.stack.push(Handle::clone(handle).into());
@@ -832,14 +834,13 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
 
     fn store(&mut self, idx: u32) -> Result<(), Error> {
         let var = self.stack.pop();
-        self.instances[self.frame.instance()].vars.insert(idx, var);
+        self.module().vars.insert(idx, var);
         Ok(())
     }
 
     fn load(&mut self, idx: u32) {
-        self.stack.push(Value::clone(
-            &self.instances[self.frame.instance()].vars[&idx],
-        ));
+        let value = Value::clone(&self.module().vars[&idx]);
+        self.stack.push(value);
     }
 
     fn load_atom(&mut self, idx: u32) {
@@ -847,9 +848,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn load_const(&mut self, idx: u32) {
-        self.stack.push(Value::clone(
-            &self.instances[self.frame.instance()].consts[idx as usize],
-        ));
+        let value = Value::clone(&self.module().consts[idx as usize]);
+        self.stack.push(value);
     }
 
     fn load_const_int(&mut self, i: u32) {
@@ -962,7 +962,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
     }
 
     fn bootstrap(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-        self.std.instance = self.import_path(gc, "std")?;
+        self.std.module = self.import_path(gc, "std")?;
 
         let user_frame = self.call_stack.remove(0);
 
@@ -970,8 +970,8 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         self.set_frame(user_frame);
         self.call_stack.clear();
 
-        let instance = &mut self.instances[self.std.instance];
-        let classes = instance
+        let module = &mut self.modules[self.std.module];
+        let classes = module
             .package()
             .classes
             .iter()
@@ -980,7 +980,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
             .collect::<Vec<_>>();
 
         for id in classes {
-            let class = instance.get_class(gc, id)?;
+            let class = module.get_class(gc, id)?;
             self.std.builtins.insert(class.name.clone(), class);
         }
 

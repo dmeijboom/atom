@@ -4,7 +4,10 @@ use crate::{
     bytecode::{Bytecode, Op},
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    runtime::{function::Fn, value::Value},
+    runtime::{
+        function::{Context, Fn},
+        value::Value,
+    },
 };
 
 pub struct Frame<'gc> {
@@ -31,8 +34,8 @@ impl<'gc> Frame<'gc> {
         }
     }
 
-    pub fn instance(&self) -> usize {
-        self.handle.context.instance
+    pub fn context(&self) -> &Context {
+        &self.handle.context
     }
 
     /// Get the span given the assumption that we're already at the next bytecode

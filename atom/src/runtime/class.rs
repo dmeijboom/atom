@@ -11,14 +11,14 @@ use super::{error::RuntimeError, function::Fn, value::Value};
 
 #[derive(Debug, Clone)]
 pub struct Inline<'gc> {
-    pub instance: usize,
+    pub module: usize,
     pub methods: LinearMap<Cow<'static, str>, Handle<'gc, Fn>>,
 }
 
 impl<'gc> Inline<'gc> {
-    pub fn new(instance: usize) -> Self {
+    pub fn new(module: usize) -> Self {
         Self {
-            instance,
+            module,
             methods: LinearMap::new(),
         }
     }
@@ -58,11 +58,11 @@ impl<'gc> Trace for Class<'gc> {
 }
 
 impl<'gc> Class<'gc> {
-    pub fn new(name: impl Into<Cow<'static, str>>, instance: usize) -> Self {
+    pub fn new(name: impl Into<Cow<'static, str>>, module: usize) -> Self {
         Self {
             name: name.into(),
             public: false,
-            inline: Inline::new(instance),
+            inline: Inline::new(module),
             init: None,
             methods: LinearMap::new(),
         }
@@ -78,7 +78,7 @@ impl<'gc> Class<'gc> {
             None => match self.methods.get(name) {
                 Some(func) => {
                     let mut handle = gc.alloc(func.clone())?;
-                    handle.context.instance = self.inline.instance;
+                    handle.context.module = self.inline.module;
 
                     self.inline
                         .methods

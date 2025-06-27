@@ -184,7 +184,7 @@ impl Default for Context {
                 "false".to_string(),
                 "true".to_string(),
                 "nil".to_string(),
-                "instance".to_string(),
+                "module".to_string(),
             ]),
         }
     }
