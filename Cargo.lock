@@ -47,7 +47,6 @@ name = "atom"
 version = "0.1.0"
 dependencies = [
  "argh",
- "atom-macros",
  "bytes",
  "gmp-mpfr-sys",
  "lazy_static",
@@ -64,15 +63,6 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "wyhash2",
-]
-
-[[package]]
-name = "atom-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

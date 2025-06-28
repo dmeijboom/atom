@@ -296,26 +296,6 @@ impl Compiler {
         Ok(id)
     }
 
-    fn call_extern(
-        &mut self,
-        span: Span,
-        name: String,
-        arg_count: usize,
-        public: bool,
-    ) -> Result<Fn, CompileError> {
-        let idx = self.consts.insert(Const::Str(name.clone()));
-        let code = Bytecode::with_code(Op::CallExtern, idx).at(span);
-        let mut body = BytesMut::new();
-        code.serialize(&mut body);
-
-        Ok(Fn::builder()
-            .name(name)
-            .public(public)
-            .arg_count(arg_count as u32)
-            .body(body.freeze())
-            .build())
-    }
-
     fn call(
         &mut self,
         ctx: &mut Context,
@@ -325,13 +305,28 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         let arg_count = args.len();
         self.expr_list(ctx, args)?;
-        self.expr(ctx, callee)?;
 
-        match self.accept(Op::LoadFn) {
-            Some(bc) => self.push(
-                Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16).at(bc.span),
-            ),
-            None => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
+        match callee.kind {
+            ExprKind::Ident(name) if name.starts_with('@') => {
+                let s = self
+                    .consts
+                    .insert(Const::Str(name.trim_start_matches('@').to_string()));
+
+                self.push(
+                    Bytecode::with_code2(Op::CallBuiltin, s as u16, arg_count as u16).at(span),
+                )
+            }
+            _ => {
+                self.expr(ctx, callee)?;
+
+                match self.accept(Op::LoadFn) {
+                    Some(bc) => self.push(
+                        Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16)
+                            .at(bc.span),
+                    ),
+                    None => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
+                }
+            }
         };
 
         Ok(())
@@ -772,23 +767,6 @@ impl Compiler {
         }
     }
 
-    fn extern_fn_stmt(
-        &mut self,
-        span: Span,
-        name: String,
-        args: Vec<FnArg>,
-        public: bool,
-    ) -> Result<(), CompileError> {
-        if self.funcs.contains_key(&name) {
-            return Err(ErrorKind::DuplicateFn(name).at(span));
-        }
-
-        let func = self.call_extern(span, name.clone(), args.len(), public)?;
-        self.funcs.insert(name, func);
-
-        Ok(())
-    }
-
     fn fn_stmt(
         &mut self,
         ctx: &mut Context,
@@ -847,16 +825,6 @@ impl Compiler {
                     body,
                     public,
                 } => self.method(ctx, span, &mut funcs, name, args, body, public)?,
-                StmtKind::ExternFn(name, args, public) => {
-                    if funcs.contains_key(&name) {
-                        return Err(ErrorKind::DuplicateMethod(name).at(span));
-                    }
-
-                    funcs.insert(
-                        name.clone(),
-                        self.call_extern(span, name, args.len(), public)?,
-                    );
-                }
                 _ => unreachable!(),
             };
         }
@@ -1006,9 +974,6 @@ impl Compiler {
             }
             StmtKind::Class(name, methods, public) => {
                 self.class_stmt(ctx, stmt.span, name, methods, public)?
-            }
-            StmtKind::ExternFn(name, args, public) => {
-                self.extern_fn_stmt(stmt.span, name, args, public)?
             }
             StmtKind::Fn {
                 name,

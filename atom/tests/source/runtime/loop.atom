@@ -4,4 +4,4 @@ for let i = 0; i < 6; i += 1 {
     output = output ^ [i];
 }
 
-ret(output);
+@ret(output);

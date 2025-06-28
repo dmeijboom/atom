@@ -16,6 +16,10 @@
           "named": true
         },
         {
+          "type": "builtin_call",
+          "named": true
+        },
+        {
           "type": "call_expression",
           "named": true
         },
@@ -104,6 +108,10 @@
           },
           {
             "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -199,6 +207,10 @@
             "named": true
           },
           {
+            "type": "builtin_call",
+            "named": true
+          },
+          {
             "type": "call_expression",
             "named": true
           },
@@ -244,6 +256,10 @@
         },
         {
           "type": "binary_expression",
+          "named": true
+        },
+        {
+          "type": "builtin_call",
           "named": true
         },
         {
@@ -298,10 +314,6 @@
           "named": true
         },
         {
-          "type": "extern_declaration",
-          "named": true
-        },
-        {
           "type": "for_statement",
           "named": true
         },
@@ -322,6 +334,32 @@
           "named": true
         }
       ]
+    }
+  },
+  {
+    "type": "builtin_call",
+    "named": true,
+    "fields": {
+      "arguments": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "argument_list",
+            "named": true
+          }
+        ]
+      },
+      "name": {
+        "multiple": false,
+        "required": true,
+        "types": [
+          {
+            "type": "identifier",
+            "named": true
+          }
+        ]
+      }
     }
   },
   {
@@ -348,6 +386,10 @@
           },
           {
             "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -390,10 +432,6 @@
       "multiple": true,
       "required": false,
       "types": [
-        {
-          "type": "extern_declaration",
-          "named": true
-        },
         {
           "type": "function_declaration",
           "named": true
@@ -454,6 +492,10 @@
           "named": true
         },
         {
+          "type": "builtin_call",
+          "named": true
+        },
+        {
           "type": "call_expression",
           "named": true
         },
@@ -485,32 +527,6 @@
     }
   },
   {
-    "type": "extern_declaration",
-    "named": true,
-    "fields": {
-      "name": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "identifier",
-            "named": true
-          }
-        ]
-      },
-      "parameters": {
-        "multiple": false,
-        "required": true,
-        "types": [
-          {
-            "type": "parameter_list",
-            "named": true
-          }
-        ]
-      }
-    }
-  },
-  {
     "type": "for_statement",
     "named": true,
     "fields": {
@@ -534,6 +550,10 @@
           },
           {
             "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -610,6 +630,10 @@
           },
           {
             "type": "block",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -691,6 +715,10 @@
             "named": true
           },
           {
+            "type": "builtin_call",
+            "named": true
+          },
+          {
             "type": "call_expression",
             "named": true
           },
@@ -746,6 +774,10 @@
           },
           {
             "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -822,6 +854,10 @@
           "named": true
         },
         {
+          "type": "builtin_call",
+          "named": true
+        },
+        {
           "type": "call_expression",
           "named": true
         },
@@ -866,6 +902,10 @@
           },
           {
             "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -918,10 +958,6 @@
         },
         {
           "type": "expression_statement",
-          "named": true
-        },
-        {
-          "type": "extern_declaration",
           "named": true
         },
         {
@@ -983,6 +1019,10 @@
           "named": true
         },
         {
+          "type": "builtin_call",
+          "named": true
+        },
+        {
           "type": "call_expression",
           "named": true
         },
@@ -1037,6 +1077,10 @@
           },
           {
             "type": "binary_expression",
+            "named": true
+          },
+          {
+            "type": "builtin_call",
             "named": true
           },
           {
@@ -1180,6 +1224,10 @@
     "named": false
   },
   {
+    "type": "@",
+    "named": false
+  },
+  {
     "type": "\\",
     "named": false
   },
@@ -1201,10 +1249,6 @@
   },
   {
     "type": "else",
-    "named": false
-  },
-  {
-    "type": "extern",
     "named": false
   },
   {

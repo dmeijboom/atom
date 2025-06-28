@@ -155,7 +155,7 @@ fn supports_assign(expr: &Expr) -> bool {
 fn is_modifier(token: &TokenKind) -> bool {
     matches!(
         token,
-        TokenKind::Keyword(keyword) if keyword == "pub" || keyword == "extern"
+        TokenKind::Keyword(keyword) if keyword == "pub"
     )
 }
 
@@ -349,6 +349,9 @@ impl Parser {
                 TokenKind::String(s) => Ok(ExprKind::Literal(Literal::String(s)).at(token.span)),
                 TokenKind::Ident(id) => Ok(ExprKind::Ident(id).at(token.span)),
                 TokenKind::Keyword(w) if w == "match" => Ok(self.match_expr()?.at(token.span)),
+                TokenKind::Punct("@") => {
+                    Ok(ExprKind::Ident(format!("@{}", self.ident()?)).at(token.span))
+                }
                 TokenKind::Punct("[") => Ok(self.array()?.at(token.span)),
                 TokenKind::Punct("(") => {
                     let lhs = self.expr(Prec::default())?;
@@ -543,16 +546,10 @@ impl Parser {
     fn fn_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         let public = self.accept_keyword("pub");
-        let is_extern = self.accept_keyword("extern");
         self.expect_keyword("fn")?;
         let name = self.ident()?;
         self.expect(TokenKind::Punct("("))?;
         let args = self.arg_list(TokenKind::Punct(")"))?;
-
-        if is_extern {
-            self.semi()?;
-            return Ok(StmtKind::ExternFn(name, args, public).at(span));
-        }
 
         let body = if self.accept(&TokenKind::Punct("=>")) {
             let span = self.span();

@@ -90,7 +90,6 @@ fn is_keyword(s: &str) -> bool {
             | "import"
             | "break"
             | "continue"
-            | "extern"
     )
 }
 
@@ -313,6 +312,7 @@ impl<'a> Lexer<'a> {
                             '=' => TokenKind::Punct("=").at(span),
                             '<' => TokenKind::Punct("<").at(span),
                             '>' => TokenKind::Punct(">").at(span),
+                            '@' => TokenKind::Punct("@").at(span),
                             '"' => self.string(span)?,
                             c => return Err(ErrorKind::InvalidInput(c).at(span)),
                         }

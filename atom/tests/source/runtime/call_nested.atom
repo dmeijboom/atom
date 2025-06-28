@@ -10,4 +10,4 @@ fn first(a, b) {
     second(b, a)
 }
 
-ret(first(10, 20));
+@ret(first(10, 20));

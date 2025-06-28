@@ -4,4 +4,4 @@ fn simple(a, b) {
 
 let function = simple;
 
-ret(function(10, 20));
+@ret(function(10, 20));

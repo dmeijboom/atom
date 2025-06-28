@@ -22,4 +22,4 @@ class Level4 {
     }
 }
 
-ret(Level4().level3.level2.level1.level);
+@ret(Level4().level3.level2.level1.level);

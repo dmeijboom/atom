@@ -26,6 +26,8 @@ pub enum ErrorKind {
         func_name: Cow<'static, str>,
         func_arg_count: u32,
     },
+    #[error("no such builtin '{name}'")]
+    UnknownBuiltin { name: String },
     #[error("no such field '{field}' in {ty}")]
     UnknownField { ty: Type, field: String },
     #[error("no such attribute '{attribute}' in {}", class_name)]

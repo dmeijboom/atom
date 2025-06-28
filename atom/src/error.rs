@@ -63,7 +63,6 @@ impl Error {
             Error::Serialize(_) => Span::default(),
             Error::Runtime(e) => match e {
                 vm::Error::Runtime(e) => e.span,
-                vm::Error::Fatal(e) => e.span,
                 vm::Error::Import(e) => e.span(),
             },
         }

@@ -3,4 +3,4 @@ fn simple(a) {
     a
 }
 
-ret(simple(3));
+@ret(simple(3));

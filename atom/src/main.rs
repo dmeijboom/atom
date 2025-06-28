@@ -8,21 +8,22 @@ use gc::Gc;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use ron::ser::PrettyConfig;
-use runtime::{function::Fn, value::Value, Runtime};
+use runtime::{function::Fn, value::Value};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
 use vm::Vm;
 
 mod ast;
+mod builtins;
 mod bytecode;
 mod collections;
 mod compiler;
 mod error;
 mod frame;
 mod gc;
-mod module;
 mod lexer;
+mod module;
 mod parser;
 #[cfg(feature = "profiler")]
 mod profiler;
@@ -35,7 +36,7 @@ static GLOBAL: MiMalloc = MiMalloc;
 
 const MAX_STACK_SIZE: usize = 250000 / size_of::<Value>();
 
-type AtomVm<'gc, L> = Vm<'gc, L, MAX_STACK_SIZE>;
+type AtomVm<'gc> = Vm<'gc, MAX_STACK_SIZE>;
 
 /// CLI options
 #[derive(FromArgs)]
@@ -152,7 +153,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let mut ctx = Context::default();
             let module = vm::compile(source, &mut ctx)?;
             let mut gc = Gc::default();
-            let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module, Runtime::default())?;
+            let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module)?;
 
             vm.run(&mut gc)?;
             gc.sweep();

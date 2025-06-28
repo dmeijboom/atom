@@ -6,4 +6,4 @@ class Simple {
 
 let function = Simple().run;
 
-ret(function(10, 20));
+@ret(function(10, 20));

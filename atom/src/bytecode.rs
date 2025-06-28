@@ -57,7 +57,7 @@ pub enum Op {
     MakeSlice,
     Call,
     CallFn,
-    CallExtern,
+    CallBuiltin,
     TailCall,
     UnaryNot,
     LoadElement,
@@ -154,7 +154,7 @@ impl Serializable for Bytecode {
 impl Display for Bytecode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self.op {
-            Op::CallFn => {
+            Op::CallFn | Op::CallBuiltin => {
                 let (hi, lo) = self.code2();
                 write!(f, "{:?} {} {}", self.op, hi, lo)
             }
@@ -172,7 +172,6 @@ impl Display for Bytecode {
             | Op::MakeArray
             | Op::MakeSlice
             | Op::Call
-            | Op::CallExtern
             | Op::TailCall
             | Op::LoadElement
             | Op::LoadMember

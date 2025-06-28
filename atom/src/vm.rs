@@ -11,10 +11,10 @@ use wyhash2::WyHash;
 
 use crate::{
     ast::Stmt,
+    builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn4},
     bytecode::Op,
     collections::Stack,
     compiler::{Compiler, Context, Package},
-    error::SpannedError,
     frame::Frame,
     gc::{Gc, Handle, Trace},
     lexer::{Lexer, Span},
@@ -41,21 +41,11 @@ fn array_idx(elem: Value, len: usize) -> usize {
 }
 
 #[derive(Debug, thiserror::Error)]
-pub enum FatalErrorKind {
-    #[error("invalid extern function '{0}'")]
-    InvalidExternFn(String),
-}
-
-pub type FatalError = SpannedError<FatalErrorKind>;
-
-#[derive(Debug, thiserror::Error)]
 pub enum Error {
     #[error("ImportError: {0}")]
     Import(#[from] Box<crate::error::Error>),
     #[error("RuntimeError: {0}")]
     Runtime(#[from] RuntimeError),
-    #[error("FatalError: {0}")]
-    Fatal(#[from] FatalError),
 }
 
 pub fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
@@ -80,7 +70,7 @@ pub fn compile(
 
 macro_rules! impl_op {
     ($(($fn:ident: $op:tt)),+) => {
-        impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
+        impl<'gc, const S: usize> Vm<'gc, S> {
             $(fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
                 let (lhs, rhs) = self.stack.operands();
 
@@ -128,19 +118,10 @@ macro_rules! impl_binary {
     ($fn:ident: $op:tt) => { impl_binary!(final $fn: $op (Tag::Float, Tag::Float)); };
 
     ($(($fn:ident: $op:tt)),+) => {
-        impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
+        impl<'gc, const S: usize> Vm<'gc, S> {
             $(impl_binary!($fn: $op);)+
         }
     };
-}
-
-pub trait Ffi<'gc> {
-    fn call(
-        &mut self,
-        name: &str,
-        gc: &mut Gc<'gc>,
-        args: Vec<Value<'gc>>,
-    ) -> Result<Value<'gc>, Error>;
 }
 
 #[derive(Default)]
@@ -155,17 +136,17 @@ impl<'gc> Trace for Std<'gc> {
     }
 }
 
-pub struct Vm<'gc, F: Ffi<'gc>, const S: usize> {
-    ffi: F,
+pub struct Vm<'gc, const S: usize> {
     std: Std<'gc>,
     frame: Frame<'gc>,
     search_path: PathBuf,
     compiler_ctx: Context,
+    modules: Vec<Module<'gc>>,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
-    modules: Vec<Module<'gc>>,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
+    builtins: HashMap<&'static str, Box<dyn BuiltinFunction>>,
     packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
 }
 
@@ -190,29 +171,149 @@ fn module_with_frame<'gc>(
     Ok((module, frame))
 }
 
-impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
+fn read_usize<'gc>(
+    gc: &mut Gc<'gc>,
+    addr: Value<'gc>,
+    offset: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    unsafe {
+        let ptr = addr.as_bigint().as_usize() as *mut u8;
+        let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const usize;
+
+        std::ptr::read(ptr).into_atom(gc)
+    }
+}
+
+fn ptr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+    (value.as_raw_ptr() as usize).into_atom(gc)
+}
+
+fn array_push<'gc>(
+    gc: &mut Gc<'gc>,
+    array: Value<'gc>,
+    element: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    let mut array = array.as_array();
+    array.push(gc, element)?;
+
+    Ok(Value::default())
+}
+
+fn data_ptr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+    match value.ty() {
+        Type::Array => value.as_array().deref().addr().unwrap_or(0).into_atom(gc),
+        Type::Str => value.as_str().0.addr().unwrap_or(0).into_atom(gc),
+        _ => unreachable!(),
+    }
+}
+
+fn r#typeof<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+    value.ty().name().to_string().into_atom(gc)
+}
+
+fn syscall4<'gc>(
+    gc: &mut Gc<'gc>,
+    arg1: Value<'gc>,
+    arg2: Value<'gc>,
+    arg3: Value<'gc>,
+    arg4: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    let return_code = unsafe {
+        libc::syscall(
+            arg1.as_int() as i32,
+            arg2.as_int(),
+            arg3.as_int(),
+            arg4.as_int(),
+        )
+    };
+
+    return_code.into_atom(gc)
+}
+
+fn repr_internal<'gc>(value: &Value<'gc>) -> String {
+    match value.ty() {
+        Type::Array => {
+            let array = value.as_array();
+            let mut s = String::from("[");
+
+            for (i, elem) in array.iter().enumerate() {
+                if i > 0 {
+                    s.push_str(", ");
+                }
+
+                s.push_str(&repr_internal(elem));
+            }
+
+            s.push(']');
+            s
+        }
+        Type::Str => {
+            format!("\"{}\"", value.as_str().as_str())
+        }
+        Type::Int => format!("{}", value.as_int()),
+        Type::BigInt => format!("{}", value.as_bigint()),
+        Type::Float => format!("{}", value.as_float()),
+        Type::Atom => match value.as_atom() {
+            0 => ":false".to_string(),
+            1 => ":true".to_string(),
+            2 => ":nil".to_string(),
+            idx => format!("<:{idx}>"),
+        },
+        Type::Fn => format!("{}(..)", value.as_fn().name),
+        Type::Method => format!(".{}(..)", value.as_fn().name),
+        Type::Class => value.as_class().name.to_string(),
+        Type::Object => format!("{}{{..}}", value.as_object().class.name),
+    }
+}
+
+pub fn repr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+    repr_internal(&value).into_atom(gc)
+}
+
+fn is_darwin<'gc>(_gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+    if cfg!(target_os = "macos") {
+        Ok(Value::new(Tag::Atom, value::TRUE as u64))
+    } else {
+        Ok(Value::new(Tag::Atom, value::FALSE as u64))
+    }
+}
+
+impl<'gc, const S: usize> Vm<'gc, S> {
     pub fn new(
         gc: &mut Gc<'gc>,
         compile_context: Context,
         search_path: PathBuf,
         package: Package,
-        ffi: F,
     ) -> Result<Self, Error> {
         let (module, frame) = module_with_frame(0, gc, package)?;
+        let mut builtins: HashMap<&'static str, Box<dyn BuiltinFunction>> = HashMap::default();
+        builtins.insert("is_darwin", Box::new(Fn0(is_darwin)));
+        builtins.insert("repr", Box::new(Fn1(repr)));
+        builtins.insert("typeof", Box::new(Fn1(r#typeof)));
+        builtins.insert("data_ptr", Box::new(Fn1(data_ptr)));
+        builtins.insert("ptr", Box::new(Fn1(ptr)));
+        builtins.insert("read_usize", Box::new(Fn2(read_usize)));
+        builtins.insert("array_push", Box::new(Fn2(array_push)));
+        builtins.insert("syscall4", Box::new(Fn4(syscall4)));
 
         Ok(Self {
-            ffi,
             frame,
             search_path,
             compiler_ctx: compile_context,
             std: Std::default(),
-            packages: HashMap::default(),
             modules: vec![module],
             call_stack: vec![],
             stack: Stack::default(),
+            builtins,
+            packages: HashMap::default(),
             #[cfg(feature = "profiler")]
             profiler: crate::profiler::VmProfiler::default(),
         })
+    }
+
+    #[allow(dead_code)]
+    pub fn register_builtin(&mut self, name: &'static str, f: Box<dyn BuiltinFunction>) {
+        self.builtins.insert(name, f);
     }
 
     fn unsupported_rhs(&self, lhs: Value, rhs: Value, op: &'static str) -> Error {
@@ -469,10 +570,21 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
         Ok(())
     }
 
-    fn call_extern(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
+    fn call_builtin(
+        &mut self,
+        gc: &mut Gc<'gc>,
+        (idx, arg_count): (u16, u16),
+    ) -> Result<(), Error> {
         let name = self.module().consts[idx as usize].as_str();
-        let args = mem::take(&mut self.frame.locals);
-        let return_value = self.ffi.call(name.as_ref(), gc, args)?;
+        let f = self.builtins.get_mut(name.as_str()).ok_or_else(|| {
+            ErrorKind::UnknownBuiltin {
+                name: name.to_string(),
+            }
+            .at(self.frame.span())
+        })?;
+
+        let args = self.stack.slice_to_end(arg_count as usize).to_vec();
+        let return_value = f.call(gc, args)?;
 
         self.frame.returned = true;
         self.stack.push(return_value);
@@ -907,7 +1019,7 @@ impl<'gc, F: Ffi<'gc>, const S: usize> Vm<'gc, F, S> {
                 Op::Discard => self.discard(),
                 Op::Call => self.call(gc, bc.code)?,
                 Op::CallFn => self.call_fn(gc, bc.code2())?,
-                Op::CallExtern => self.call_extern(gc, bc.code)?,
+                Op::CallBuiltin => self.call_builtin(gc, bc.code2())?,
                 Op::TailCall => self.tail_call(gc, bc.code)?,
                 Op::Jump => self.jump(bc.code),
                 Op::JumpIfFalse => self.jump_if_false(bc.code)?,

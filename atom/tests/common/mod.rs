@@ -5,40 +5,29 @@ mod tests {
 
     use atom::{
         ast::Stmt,
+        builtins::BuiltinFunction,
         compiler::{Compiler, Context, Package},
         error::Error,
         gc::Gc,
         lexer::Lexer,
         parser::Parser,
-        runtime::{value::Value, Runtime},
-        vm::{Error as VmError, Ffi, Vm},
+        runtime::{error::RuntimeError, value::Value},
+        vm::Vm,
     };
 
-    pub struct TestRuntime<'gc, F: Ffi<'gc>> {
-        fallback: F,
+    pub struct TestRuntime<'gc> {
         sender: Sender<Value<'gc>>,
     }
 
-    impl<'gc, F: Ffi<'gc>> Ffi<'gc> for TestRuntime<'gc, F> {
-        fn call(
-            &mut self,
-            name: &str,
-            gc: &mut Gc<'gc>,
-            args: Vec<Value<'gc>>,
-        ) -> Result<Value<'gc>, VmError> {
-            if name == "ret" {
-                gc.disable();
-                let _ = self.sender.send(Value::clone(&args[0]));
-                Ok(Value::default())
-            } else {
-                self.fallback.call(name, gc, args)
-            }
+    impl<'gc> TestRuntime<'gc> {
+        fn new(sender: Sender<Value<'gc>>) -> Self {
+            Self { sender }
         }
-    }
 
-    impl<'gc, F: Ffi<'gc>> TestRuntime<'gc, F> {
-        fn new(fallback: F, sender: Sender<Value<'gc>>) -> Self {
-            Self { fallback, sender }
+        fn ret(&mut self, gc: &mut Gc<'gc>, arg: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+            gc.disable();
+            let _ = self.sender.send(Value::clone(&arg));
+            Ok(Value::default())
         }
     }
 
@@ -58,15 +47,30 @@ mod tests {
     }
 
     pub fn compile(ctx: &mut Context, name: &str) -> Result<Package, Error> {
-        let mut program = _parse("\nextern fn ret(value);")?;
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
-        program.extend(_parse(&source)?);
+        let program = _parse(&source)?;
         let compiler = Compiler::default();
 
         Ok(compiler.compile(ctx, program)?)
     }
 
-    pub type TestVm<'gc> = Vm<'gc, TestRuntime<'gc, Runtime>, 1000>;
+    pub type TestVm<'gc> = Vm<'gc, 1000>;
+
+    struct RetBuiltin {
+        sender: Sender<u64>,
+    }
+
+    impl<'a> BuiltinFunction for RetBuiltin {
+        fn call<'gc>(
+            &mut self,
+            gc: &mut Gc<'gc>,
+            mut args: Vec<Value<'gc>>,
+        ) -> atom::builtins::Result<Value<'gc>> {
+            gc.disable();
+            let _ = self.sender.send(args.remove(0).into_bits());
+            Ok(Value::default())
+        }
+    }
 
     pub fn run<'gc>(
         gc: &mut Gc<'gc>,
@@ -75,12 +79,12 @@ mod tests {
     ) -> Result<Option<Value<'gc>>, Error> {
         let module = compile(&mut ctx, name)?;
         let (sender, recv) = std::sync::mpsc::channel();
-        let runtime = TestRuntime::new(Runtime::default(), sender);
-        let mut vm = TestVm::new(gc, ctx, "".into(), module, runtime)?;
 
+        let mut vm = TestVm::new(gc, ctx, "".into(), module)?;
+        vm.register_builtin("ret", Box::new(RetBuiltin { sender }));
         vm.run(gc)?;
 
-        Ok(recv.recv().ok())
+        Ok(recv.recv().ok().map(Value::from_bits))
     }
 }
 

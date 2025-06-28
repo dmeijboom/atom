@@ -142,7 +142,6 @@ pub enum StmtKind {
         step: Expr,
         body: Vec<Stmt>,
     },
-    ExternFn(String, Vec<FnArg>, bool),
     Fn {
         name: String,
         args: Vec<FnArg>,

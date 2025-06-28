@@ -2,4 +2,4 @@ fn simple(a, b, c) {
     a + b - c
 }
 
-ret(simple(3, 2, 1));
+@ret(simple(3, 2, 1));

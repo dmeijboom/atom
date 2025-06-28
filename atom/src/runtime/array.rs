@@ -215,6 +215,8 @@ impl<'gc, T: Trace> Array<'gc, T> {
 
 #[cfg(test)]
 mod tests {
+    use crate::runtime::value::{IntoAtom, Type, Value};
+
     use super::*;
 
     #[test]
@@ -253,5 +255,38 @@ mod tests {
         let array = Array::copy_from_slice(&mut gc, &[1, 2, 3, 4, 5, 6]).unwrap();
         let items = array.iter().copied().map(|item| item).collect::<Vec<_>>();
         assert_eq!(items, &[1, 2, 3, 4, 5, 6]);
+    }
+    #[test]
+    fn array_push() {
+        let mut gc = Gc::default();
+        let array: Array<Value> = Array::default();
+        let mut handle = gc.alloc(array).unwrap();
+
+        assert_eq!(handle.len(), 0);
+
+        let expected = [
+            (1, 1),
+            (2, 2),
+            (3, 4),
+            (4, 4),
+            (5, 8),
+            (6, 8),
+            (7, 8),
+            (8, 8),
+            (9, 16),
+        ];
+
+        for (i, (len, cap)) in expected.into_iter().enumerate() {
+            let item = (10 * i).into_atom(&mut gc).unwrap();
+            handle.push(&mut gc, item).expect("Array.push failed");
+
+            assert_eq!(handle.len() as i64, len);
+            assert_eq!(handle.cap as i64, cap);
+        }
+
+        for (i, item) in handle.iter().enumerate() {
+            assert_eq!(Type::Int, item.ty());
+            assert_eq!(10 * i, item.as_bigint().as_usize());
+        }
     }
 }

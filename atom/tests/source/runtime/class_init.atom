@@ -6,4 +6,4 @@ class Test {
 
 let test = Test();
 
-ret(test.name);
+@ret(test.name);

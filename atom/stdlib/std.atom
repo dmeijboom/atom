@@ -1,32 +1,25 @@
 import std/os;
 
-pub extern fn repr(value);
-pub extern fn typeof(value);
-extern fn ptr(value);
-extern fn read_usize(ptr, offset);
-extern fn array_push(array, elem);
-extern fn data_ptr(arrayLike);
-
 pub class Array {
-    fn push(self, elem) => array_push(self, elem);
-    fn len(self) => read_usize(ptr(self), 0);
-    fn cap(self) => read_usize(ptr(self), 8);
+    fn push(self, elem) => @array_push(self, elem);
+    fn len(self) => @read_usize(@ptr(self), 0);
+    fn cap(self) => @read_usize(@ptr(self), 8);
 }
 
 pub class Str {
-    fn len(self) => read_usize(ptr(self), 0);
+    fn len(self) => @read_usize(@ptr(self), 0);
 }
 
 pub fn println(val) {
     let line;
 
-    if typeof(val) == "Str" {
+    if @typeof(val) == "Str" {
         line = val;
     } else {
-        line = repr(val);
+        line = @repr(val);
     }
 
     line = line ^ "\n";
 
-    os.syscall4(os.platform.SYS_WRITE, os.STDOUT, data_ptr(line), line.len());
+    @syscall4(os.platform.SYS_WRITE, os.STDOUT, @data_ptr(line), line.len());
 }

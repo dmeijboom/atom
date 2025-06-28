@@ -6,7 +6,6 @@ module.exports = grammar({
 
     _statement: ($) =>
       choice(
-        $.extern_declaration,
         $.function_declaration,
         $.class_declaration,
         $.variable_declaration,
@@ -15,15 +14,6 @@ module.exports = grammar({
         $.for_statement,
         $.return_statement,
         $.expression_statement,
-      ),
-
-    extern_declaration: ($) =>
-      seq(
-        "extern",
-        "fn",
-        field("name", $.identifier),
-        field("parameters", $.parameter_list),
-        ";",
       ),
 
     function_declaration: ($) =>
@@ -62,7 +52,7 @@ module.exports = grammar({
     class_body: ($) =>
       seq(
         "{",
-        repeat(choice($.extern_declaration, $.function_declaration)),
+        repeat($.function_declaration),
         "}",
       ),
 
@@ -129,6 +119,7 @@ module.exports = grammar({
         $.binary_expression,
         $.unary_expression,
         $.call_expression,
+        $.builtin_call,
         $.member_access,
         $.identifier,
         $.number,
@@ -165,6 +156,13 @@ module.exports = grammar({
     call_expression: ($) =>
       seq(
         field("function", $._expression),
+        field("arguments", $.argument_list),
+      ),
+
+    builtin_call: ($) =>
+      seq(
+        "@",
+        field("name", $.identifier),
         field("arguments", $.argument_list),
       ),
 
