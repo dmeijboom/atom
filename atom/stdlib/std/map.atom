@@ -1,3 +1,5 @@
+import std;
+
 let P0 = 11562461410679940143;
 let P1 = 16646288086500911323;
 let P2 = 10285213230658275043;
@@ -104,9 +106,7 @@ pub class Entry {
 
 pub class Map {
     fn init(self) {
-        self.buckets = [:nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil,
-                        :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil, :nil,
-                        :nil, :nil, :nil, :nil, :nil];
+        self.buckets = std.repeat(:nil, 25);
     }
 
     fn set(self, key, value) {

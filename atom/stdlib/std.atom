@@ -6,6 +6,16 @@ pub class Array {
     fn cap(self) => @read_usize(@ptr(self), 8);
 }
 
+pub fn repeat(elem, count) {
+    let out = [];
+    
+    for let i = 0; i < count; i += 1 {
+        out.push(elem);
+    }
+    
+    out
+}
+
 pub class Str {
     fn len(self) => @read_usize(@ptr(self), 0);
 }

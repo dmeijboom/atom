@@ -2,7 +2,6 @@ use atom::{
     compiler::Context,
     gc::Gc,
     runtime::value::{IntoAtom, Type, Value},
-    vm,
 };
 use test_case::test_case;
 
@@ -58,7 +57,7 @@ fn runtime(name: &str, expected: impl for<'gc> IntoAtom<'gc>) {
     assert!(
         equals(&actual, &expected),
         "expected: {}, got: {}",
-        vm::repr(&mut gc, expected).unwrap(),
-        vm::repr(&mut gc, actual).unwrap(),
+        expected,
+        actual,
     );
 }

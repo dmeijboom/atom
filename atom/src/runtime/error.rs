@@ -18,8 +18,8 @@ pub enum ErrorKind {
     #[error(
         "invalid argument count on '{}(..)': expected {}, got: {}",
         func_name,
-        arg_count,
-        func_arg_count
+        func_arg_count,
+        arg_count
     )]
     ArgCountMismatch {
         arg_count: u32,

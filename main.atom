@@ -1,7 +1,7 @@
 import std;
+import std/map;
 
-fn simple(a, b, c) {
-    a + b - c
-}
+fn x(){}
 
-std.println(simple(3, 2, 1));
+std.println(map.Map());
+std.println(x);

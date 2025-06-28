@@ -18,7 +18,7 @@ use crate::{
     frame::Frame,
     gc::{Gc, Handle, Trace},
     lexer::{Lexer, Span},
-    module::Module,
+    module::{Metadata, Module},
     parser::{self},
     runtime::{
         array::Array,
@@ -28,6 +28,7 @@ use crate::{
         function::{Fn, Method},
         str::Str,
         value::{self, IntoAtom, OneOf, Tag, Type, TypeAssert, Value},
+        Runtime,
     },
 };
 
@@ -146,12 +147,12 @@ pub struct Vm<'gc, const S: usize> {
     call_stack: Vec<Frame<'gc>>,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
-    builtins: HashMap<&'static str, Box<dyn BuiltinFunction>>,
     packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
 }
 
-fn module_with_frame<'gc>(
+fn init_frame<'gc>(
     id: usize,
+    meta: Metadata,
     gc: &mut Gc<'gc>,
     mut package: Package,
 ) -> Result<(Module<'gc>, Frame<'gc>), Error> {
@@ -162,7 +163,7 @@ fn module_with_frame<'gc>(
         .into_iter()
         .map(|c| c.into_atom(gc))
         .collect::<Result<Vec<_>, _>>()?;
-    let module = Module::new(id, package, consts);
+    let module = Module::new(id, meta, package, consts);
 
     // This is not an ordinary function, no need to return a value
     let mut frame = Frame::new(func);
@@ -173,6 +174,7 @@ fn module_with_frame<'gc>(
 
 fn read_usize<'gc>(
     gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
     addr: Value<'gc>,
     offset: Value<'gc>,
 ) -> Result<Value<'gc>, RuntimeError> {
@@ -184,12 +186,17 @@ fn read_usize<'gc>(
     }
 }
 
-fn ptr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+fn ptr<'gc>(
+    gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
+    value: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
     (value.as_raw_ptr() as usize).into_atom(gc)
 }
 
 fn array_push<'gc>(
     gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
     array: Value<'gc>,
     element: Value<'gc>,
 ) -> Result<Value<'gc>, RuntimeError> {
@@ -199,7 +206,11 @@ fn array_push<'gc>(
     Ok(Value::default())
 }
 
-fn data_ptr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+fn data_ptr<'gc>(
+    gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
+    value: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
     match value.ty() {
         Type::Array => value.as_array().deref().addr().unwrap_or(0).into_atom(gc),
         Type::Str => value.as_str().0.addr().unwrap_or(0).into_atom(gc),
@@ -207,12 +218,17 @@ fn data_ptr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, Runt
     }
 }
 
-fn r#typeof<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
+fn r#typeof<'gc>(
+    gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
+    value: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
     value.ty().name().to_string().into_atom(gc)
 }
 
 fn syscall4<'gc>(
     gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
     arg1: Value<'gc>,
     arg2: Value<'gc>,
     arg3: Value<'gc>,
@@ -230,7 +246,19 @@ fn syscall4<'gc>(
     return_code.into_atom(gc)
 }
 
-fn repr_internal<'gc>(value: &Value<'gc>) -> String {
+fn fmt_type(module: &str, name: &str) -> String {
+    if module == "__root__" {
+        name.to_string()
+    } else {
+        format!(
+            "{}.{}",
+            module.split('/').next_back().unwrap_or_default(),
+            name
+        )
+    }
+}
+
+fn repr_internal<'gc>(rt: &dyn Runtime, value: &Value<'gc>) -> String {
     match value.ty() {
         Type::Array => {
             let array = value.as_array();
@@ -241,7 +269,7 @@ fn repr_internal<'gc>(value: &Value<'gc>) -> String {
                     s.push_str(", ");
                 }
 
-                s.push_str(&repr_internal(elem));
+                s.push_str(&repr_internal(rt, elem));
             }
 
             s.push(']');
@@ -253,24 +281,38 @@ fn repr_internal<'gc>(value: &Value<'gc>) -> String {
         Type::Int => format!("{}", value.as_int()),
         Type::BigInt => format!("{}", value.as_bigint()),
         Type::Float => format!("{}", value.as_float()),
-        Type::Atom => match value.as_atom() {
-            0 => ":false".to_string(),
-            1 => ":true".to_string(),
-            2 => ":nil".to_string(),
-            idx => format!("<:{idx}>"),
-        },
-        Type::Fn => format!("{}(..)", value.as_fn().name),
-        Type::Method => format!(".{}(..)", value.as_fn().name),
+        Type::Atom => format!(":{}", rt.get_atom(value.as_atom())),
+        Type::Fn => {
+            let func = value.as_fn();
+            let module = rt.get_module(func.context.module);
+
+            format!("{}(..)", fmt_type(&module.name, &func.name))
+        }
+        Type::Method => {
+            let func = &value.as_method().func;
+            let module = rt.get_module(func.context.module);
+
+            format!("{}(..)", fmt_type(&module.name, &func.name))
+        }
         Type::Class => value.as_class().name.to_string(),
-        Type::Object => format!("{}{{..}}", value.as_object().class.name),
+        Type::Object => {
+            let object = value.as_object();
+            let module = rt.get_module(object.class.context.module);
+
+            format!("{}{{..}}", fmt_type(&module.name, &object.class.name))
+        }
     }
 }
 
-pub fn repr<'gc>(gc: &mut Gc<'gc>, value: Value<'gc>) -> Result<Value<'gc>, RuntimeError> {
-    repr_internal(&value).into_atom(gc)
+pub fn repr<'gc>(
+    gc: &mut Gc<'gc>,
+    rt: &dyn Runtime,
+    value: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    repr_internal(rt, &value).into_atom(gc)
 }
 
-fn is_darwin<'gc>(_gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+fn is_darwin<'gc>(_gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
     if cfg!(target_os = "macos") {
         Ok(Value::new(Tag::Atom, value::TRUE as u64))
     } else {
@@ -278,14 +320,31 @@ fn is_darwin<'gc>(_gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
     }
 }
 
-impl<'gc, const S: usize> Vm<'gc, S> {
-    pub fn new(
-        gc: &mut Gc<'gc>,
-        compile_context: Context,
-        search_path: PathBuf,
-        package: Package,
-    ) -> Result<Self, Error> {
-        let (module, frame) = module_with_frame(0, gc, package)?;
+impl<'gc, const S: usize> Runtime for Vm<'gc, S> {
+    fn get_atom(&self, idx: u32) -> &str {
+        self.compiler_ctx.atoms[idx as usize].as_str()
+    }
+
+    fn get_module(&self, idx: usize) -> &Metadata {
+        self.modules[idx].metadata()
+    }
+
+    fn frame(&self) -> &Frame {
+        &self.frame
+    }
+}
+
+pub struct Builtins(HashMap<&'static str, Box<dyn BuiltinFunction>>);
+
+impl Builtins {
+    #[allow(dead_code)]
+    pub fn register(&mut self, name: &'static str, f: Box<dyn BuiltinFunction>) {
+        self.0.insert(name, f);
+    }
+}
+
+impl Default for Builtins {
+    fn default() -> Self {
         let mut builtins: HashMap<&'static str, Box<dyn BuiltinFunction>> = HashMap::default();
         builtins.insert("is_darwin", Box::new(Fn0(is_darwin)));
         builtins.insert("repr", Box::new(Fn1(repr)));
@@ -296,6 +355,19 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         builtins.insert("array_push", Box::new(Fn2(array_push)));
         builtins.insert("syscall4", Box::new(Fn4(syscall4)));
 
+        Self(builtins)
+    }
+}
+
+impl<'gc, const S: usize> Vm<'gc, S> {
+    pub fn new(
+        gc: &mut Gc<'gc>,
+        compile_context: Context,
+        search_path: PathBuf,
+        package: Package,
+    ) -> Result<Self, Error> {
+        let (module, frame) = init_frame(0, Metadata::default(), gc, package)?;
+
         Ok(Self {
             frame,
             search_path,
@@ -304,16 +376,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             modules: vec![module],
             call_stack: vec![],
             stack: Stack::default(),
-            builtins,
             packages: HashMap::default(),
             #[cfg(feature = "profiler")]
             profiler: crate::profiler::VmProfiler::default(),
         })
-    }
-
-    #[allow(dead_code)]
-    pub fn register_builtin(&mut self, name: &'static str, f: Box<dyn BuiltinFunction>) {
-        self.builtins.insert(name, f);
     }
 
     fn unsupported_rhs(&self, lhs: Value, rhs: Value, op: &'static str) -> Error {
@@ -573,10 +639,11 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     fn call_builtin(
         &mut self,
         gc: &mut Gc<'gc>,
+        Builtins(builtins): &mut Builtins,
         (idx, arg_count): (u16, u16),
     ) -> Result<(), Error> {
         let name = self.module().consts[idx as usize].as_str();
-        let f = self.builtins.get_mut(name.as_str()).ok_or_else(|| {
+        let f = builtins.get_mut(name.as_str()).ok_or_else(|| {
             ErrorKind::UnknownBuiltin {
                 name: name.to_string(),
             }
@@ -584,9 +651,8 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         })?;
 
         let args = self.stack.slice_to_end(arg_count as usize).to_vec();
-        let return_value = f.call(gc, args)?;
+        let return_value = f.call(gc, self, args)?;
 
-        self.frame.returned = true;
         self.stack.push(return_value);
         self.gc_tick(gc);
 
@@ -823,10 +889,11 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             .map_err(|e| Error::Import(Box::new(e)))?;
 
         // Initialize module and frame
-        let (mut module, frame) = module_with_frame(id, gc, module)?;
+        let meta = Metadata::new(name.to_string());
+        let (mut module, frame) = init_frame(id, meta, gc, module)?;
 
         // Setup package class
-        let class = gc.alloc(Class::new("Package", self.frame.context().module))?;
+        let class = gc.alloc(Class::new("Package", self.std.module))?;
         let mut object = Object::new(class);
         object.set_attr(value::MODULE, BigInt::from(id).into_atom(gc)?);
 
@@ -983,7 +1050,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     #[inline(always)]
-    fn eval(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+    fn eval(&mut self, gc: &mut Gc<'gc>, builtins: &mut Builtins) -> Result<(), Error> {
         while let Some(bc) = self.frame.next() {
             #[cfg(feature = "profiler")]
             self.profiler.record_instruction(bc.op);
@@ -1019,7 +1086,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::Discard => self.discard(),
                 Op::Call => self.call(gc, bc.code)?,
                 Op::CallFn => self.call_fn(gc, bc.code2())?,
-                Op::CallBuiltin => self.call_builtin(gc, bc.code2())?,
+                Op::CallBuiltin => self.call_builtin(gc, builtins, bc.code2())?,
                 Op::TailCall => self.tail_call(gc, bc.code)?,
                 Op::Jump => self.jump(bc.code),
                 Op::JumpIfFalse => self.jump_if_false(bc.code)?,
@@ -1073,12 +1140,12 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         mem::take(&mut self.profiler)
     }
 
-    fn bootstrap(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+    fn bootstrap(&mut self, gc: &mut Gc<'gc>, builtins: &mut Builtins) -> Result<(), Error> {
         self.std.module = self.import_path(gc, "std")?;
 
         let user_frame = self.call_stack.remove(0);
 
-        self.dispatch(gc)?;
+        self.dispatch(gc, builtins)?;
         self.set_frame(user_frame);
         self.call_stack.clear();
 
@@ -1099,9 +1166,9 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         Ok(())
     }
 
-    fn dispatch(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+    fn dispatch(&mut self, gc: &mut Gc<'gc>, builtins: &mut Builtins) -> Result<(), Error> {
         loop {
-            self.eval(gc)?;
+            self.eval(gc, builtins)?;
 
             match self.call_stack.pop() {
                 Some(frame) => {
@@ -1118,11 +1185,11 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         Ok(())
     }
 
-    pub fn run(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+    pub fn run(&mut self, gc: &mut Gc<'gc>, builtins: &mut Builtins) -> Result<(), Error> {
         #[cfg(feature = "profiler")]
         self.profiler.enter();
-        self.bootstrap(gc)
-            .and_then(|_| self.dispatch(gc))
+        self.bootstrap(gc, builtins)
+            .and_then(|_| self.dispatch(gc, builtins))
             .map_err(|e| self.add_trace(e))
     }
 }

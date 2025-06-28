@@ -1,0 +1,13 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: ident("@hello_world_is_a_builtin7"),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

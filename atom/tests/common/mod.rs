@@ -11,8 +11,8 @@ mod tests {
         gc::Gc,
         lexer::Lexer,
         parser::Parser,
-        runtime::{error::RuntimeError, value::Value},
-        vm::Vm,
+        runtime::{error::RuntimeError, value::Value, Runtime},
+        vm::{Builtins, Vm},
     };
 
     pub struct TestRuntime<'gc> {
@@ -64,8 +64,9 @@ mod tests {
         fn call<'gc>(
             &mut self,
             gc: &mut Gc<'gc>,
+            _rt: &dyn Runtime,
             mut args: Vec<Value<'gc>>,
-        ) -> atom::builtins::Result<Value<'gc>> {
+        ) -> atom::runtime::Result<Value<'gc>> {
             gc.disable();
             let _ = self.sender.send(args.remove(0).into_bits());
             Ok(Value::default())
@@ -80,9 +81,11 @@ mod tests {
         let module = compile(&mut ctx, name)?;
         let (sender, recv) = std::sync::mpsc::channel();
 
+        let mut builtins = Builtins::default();
+        builtins.register("ret", Box::new(RetBuiltin { sender }));
+
         let mut vm = TestVm::new(gc, ctx, "".into(), module)?;
-        vm.register_builtin("ret", Box::new(RetBuiltin { sender }));
-        vm.run(gc)?;
+        vm.run(gc, &mut builtins)?;
 
         Ok(recv.recv().ok().map(Value::from_bits))
     }

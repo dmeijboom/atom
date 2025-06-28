@@ -37,6 +37,7 @@ mod common;
 #[test_case("binary/complex1"; "complex binary operation 1")]
 #[test_case("binary/complex2"; "complex binary operation 2")]
 #[test_case("ident"; "identifier")]
+#[test_case("builtin"; "builtin")]
 #[test_case("array"; "array")]
 #[test_case("unary"; "not")]
 #[test_case("member/name"; "member on ident")]

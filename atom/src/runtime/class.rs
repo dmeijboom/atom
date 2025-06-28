@@ -10,12 +10,12 @@ use crate::{
 use super::{error::RuntimeError, function::Fn, value::Value};
 
 #[derive(Debug, Clone)]
-pub struct Inline<'gc> {
+pub struct Context<'gc> {
     pub module: usize,
     pub methods: LinearMap<Cow<'static, str>, Handle<'gc, Fn>>,
 }
 
-impl<'gc> Inline<'gc> {
+impl<'gc> Context<'gc> {
     pub fn new(module: usize) -> Self {
         Self {
             module,
@@ -24,7 +24,7 @@ impl<'gc> Inline<'gc> {
     }
 }
 
-impl<'gc> Trace for Inline<'gc> {
+impl<'gc> Trace for Context<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         for handle in self.methods.values() {
             gc.mark(handle);
@@ -36,7 +36,7 @@ impl<'gc> Trace for Inline<'gc> {
 pub struct Class<'gc> {
     pub name: Cow<'static, str>,
     pub public: bool,
-    pub inline: Inline<'gc>,
+    pub context: Context<'gc>,
     pub init: Option<Handle<'gc, Fn>>,
     pub methods: LinearMap<Cow<'static, str>, Fn>,
 }
@@ -49,7 +49,7 @@ impl<'gc> PartialEq for Class<'gc> {
 
 impl<'gc> Trace for Class<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
-        self.inline.trace(gc);
+        self.context.trace(gc);
 
         if let Some(init) = &self.init {
             gc.mark(init);
@@ -62,7 +62,7 @@ impl<'gc> Class<'gc> {
         Self {
             name: name.into(),
             public: false,
-            inline: Inline::new(module),
+            context: Context::new(module),
             init: None,
             methods: LinearMap::new(),
         }
@@ -73,14 +73,14 @@ impl<'gc> Class<'gc> {
         gc: &mut Gc<'gc>,
         name: &str,
     ) -> Result<Option<Handle<'gc, Fn>>, RuntimeError> {
-        match self.inline.methods.get(name) {
+        match self.context.methods.get(name) {
             Some(handle) => Ok(Some(Handle::clone(handle))),
             None => match self.methods.get(name) {
                 Some(func) => {
                     let mut handle = gc.alloc(func.clone())?;
-                    handle.context.module = self.inline.module;
+                    handle.context.module = self.context.module;
 
-                    self.inline
+                    self.context
                         .methods
                         .insert(Cow::clone(&func.name), Handle::clone(&handle));
                     Ok(Some(handle))

@@ -12,7 +12,7 @@ use runtime::{function::Fn, value::Value};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
-use vm::Vm;
+use vm::{Builtins, Vm};
 
 mod ast;
 mod builtins;
@@ -153,9 +153,10 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             let mut ctx = Context::default();
             let module = vm::compile(source, &mut ctx)?;
             let mut gc = Gc::default();
+            let mut builtins = Builtins::default();
             let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module)?;
 
-            vm.run(&mut gc)?;
+            vm.run(&mut gc, &mut builtins)?;
             gc.sweep();
 
             #[cfg(feature = "profiler")]

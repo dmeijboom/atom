@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use linear_map::LinearMap;
@@ -6,7 +7,7 @@ use wyhash2::WyHash;
 use crate::collections::IntMap;
 use crate::compiler::Package;
 use crate::gc::{DynHandle, Gc, Handle, Trace};
-use crate::runtime::class::Inline;
+use crate::runtime::class::Context;
 use crate::runtime::{class::Class, function::Fn, value::Value};
 use crate::vm::Error;
 
@@ -95,8 +96,30 @@ impl<'gc> Trace for Cache<'gc> {
     }
 }
 
+#[derive(Debug)]
+pub struct Metadata {
+    pub name: Cow<'static, str>,
+}
+
+impl Metadata {
+    pub fn new(name: String) -> Self {
+        Self {
+            name: Cow::Owned(name),
+        }
+    }
+}
+
+impl Default for Metadata {
+    fn default() -> Self {
+        Self {
+            name: Cow::Borrowed("__root__"),
+        }
+    }
+}
+
 pub struct Module<'gc> {
     id: usize,
+    meta: Metadata,
     cache: Cache<'gc>,
     package: Package,
     pub consts: Vec<Value<'gc>>,
@@ -114,14 +137,19 @@ impl<'gc> Trace for Module<'gc> {
 }
 
 impl<'gc> Module<'gc> {
-    pub fn new(id: usize, package: Package, consts: Vec<Value<'gc>>) -> Self {
+    pub fn new(id: usize, meta: Metadata, package: Package, consts: Vec<Value<'gc>>) -> Self {
         Self {
             id,
+            meta,
             vars: IntMap::default(),
             consts,
             cache: Cache::new(package.classes.len(), package.functions.len()),
             package,
         }
+    }
+
+    pub fn metadata(&self) -> &Metadata {
+        &self.meta
     }
 
     pub fn package(&self) -> &Package {
@@ -151,7 +179,7 @@ impl<'gc> Module<'gc> {
             let class = Class {
                 name: orig.name.clone(),
                 public: orig.public,
-                inline: Inline::new(self.id),
+                context: Context::new(self.id),
                 init: orig
                     .methods
                     .remove("init")
