@@ -69,34 +69,13 @@ pub fn compile(
     Ok(compiler.compile(ctx, program)?)
 }
 
-macro_rules! impl_op {
-    ($(($fn:ident: $op:tt)),+) => {
-        impl<'gc, const S: usize> Vm<'gc, S> {
-            $(fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
-                let (lhs, rhs) = self.stack.operands();
-
-                self.stack.push(match (lhs.tag(), rhs.tag()) {
-                    (Tag::Int, Tag::Int) => lhs.as_int().$fn(&rhs.as_int()).into_atom(gc)?,
-                    (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
-                        lhs.as_bigint().$fn(&rhs.as_bigint()).into_atom(gc)?
-                    },
-                    (Tag::Float, Tag::Float) => lhs.as_float().$fn(&rhs.as_float()).into_atom(gc)?,
-                    _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
-                });
-
-                Ok(())
-            })+
-        }
-    };
-}
-
 macro_rules! impl_binary {
     (final $fn:ident: $op:tt $($float:pat)?) => {
         fn $fn(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
             let (lhs, rhs) = self.stack.operands();
 
             if lhs.is_int() && rhs.is_int() {
-                self.stack.push(lhs.as_int().$fn(rhs.as_int()).into_atom(gc)?);
+                self.stack.push(lhs.as_int().$fn(&rhs.as_int()).into_atom(gc)?);
                 return Ok(());
             }
 
@@ -104,7 +83,7 @@ macro_rules! impl_binary {
                 (Tag::BigInt, Tag::BigInt) | (Tag::Int, Tag::BigInt) | (Tag::BigInt, Tag::Int) => {
                     lhs.as_bigint().$fn(&rhs.as_bigint()).into_atom(gc)?
                 }
-                $($float => lhs.as_float().$fn(rhs.as_float()).into_atom(gc)?,)?
+                $($float => lhs.as_float().$fn(&rhs.as_float()).into_atom(gc)?,)?
                 _ => return Err(self.unsupported(stringify!($op), lhs.ty(), rhs.ty())),
             });
 
@@ -184,6 +163,14 @@ fn read_usize<'gc>(
 
         std::ptr::read(ptr).into_atom(gc)
     }
+}
+
+fn str<'gc>(
+    gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
+    value: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    (value.to_string()).into_atom(gc)
 }
 
 fn ptr<'gc>(
@@ -276,7 +263,7 @@ fn repr_internal<'gc>(rt: &dyn Runtime, value: &Value<'gc>) -> String {
             s
         }
         Type::Str => {
-            format!("\"{}\"", value.as_str().as_str())
+            format!("'{}'", value.as_str().as_str())
         }
         Type::Int => format!("{}", value.as_int()),
         Type::BigInt => format!("{}", value.as_bigint()),
@@ -351,6 +338,7 @@ impl Default for Builtins {
         builtins.insert("typeof", Box::new(Fn1(r#typeof)));
         builtins.insert("data_ptr", Box::new(Fn1(data_ptr)));
         builtins.insert("ptr", Box::new(Fn1(ptr)));
+        builtins.insert("str", Box::new(Fn1(str)));
         builtins.insert("read_usize", Box::new(Fn2(read_usize)));
         builtins.insert("array_push", Box::new(Fn2(array_push)));
         builtins.insert("syscall4", Box::new(Fn4(syscall4)));
@@ -1194,14 +1182,11 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 }
 
-impl_op!(
+impl_binary!(
     (lt: <),
     (le: <=),
     (gt: >),
-    (ge: >=)
-);
-
-impl_binary!(
+    (ge: >=),
     (add: +),
     (sub: -),
     (mul: *),

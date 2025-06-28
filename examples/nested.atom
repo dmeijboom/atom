@@ -1,0 +1,123 @@
+import std;
+
+let result = "";
+let depth = 0;
+let totalIterations = 0;
+
+for let x = 1; x < 6; x += 1 {
+    result = result ^ "Layer" ^ @str(x) ^ ": ";
+    depth = depth + 1;
+
+    for let y = 1; y < 4; y += 1 {
+        if x % 2 == 0 {
+            if y % 2 == 1 {
+                for let z = 1; z < 3; z += 1 {
+                    totalIterations = totalIterations + 1;
+
+                    if z == 1 {
+                        if x > 2 {
+                            if y == 1 {
+                                result = result ^ "[" ^ @str(x) ^ "," ^ @str(y) ^ "," ^ @str(z) ^ "]";
+
+                                for let a = 0; a < 2; a += 1 {
+                                    if a == 0 {
+                                        if x + y + z > 5 {
+                                            if totalIterations % 3 == 0 {
+                                                result = result ^ "★";
+
+                                                for let b = 0; b < 2; b += 1 {
+                                                    if b == 1 {
+                                                        if x * y > 4 {
+                                                            result = result ^ "♦";
+                                                        } else {
+                                                            if z % 2 == 1 {
+                                                                result = result ^ "♠";
+                                                            } else {
+                                                                result = result ^ "♥";
+                                                            }
+                                                        }
+                                                    }
+                                                }
+                                            } else {
+                                                if totalIterations % 2 == 0 {
+                                                    result = result ^ "▲";
+                                                } else {
+                                                    result = result ^ "▼";
+                                                }
+                                            }
+                                        } else {
+                                            result = result ^ "◆";
+                                        }
+                                    } else {
+                                        result = result ^ "○";
+                                    }
+                                }
+                            } else {
+                                if y == 3 {
+                                    result = result ^ "{" ^ @str(x) ^ "," ^ @str(y) ^ "}";
+                                } else {
+                                    result = result ^ "(" ^ @str(x) ^ "," ^ @str(y) ^ ")";
+                                }
+                            }
+                        } else {
+                            result = result ^ "~" ^ @str(x) ^ "~";
+                        }
+                    } else {
+                        if x == 4 {
+                            if y + z > 3 {
+                                result = result ^ "MAX";
+                            } else {
+                                result = result ^ "mid";
+                            }
+                        } else {
+                            result = result ^ "min";
+                        }
+                    }
+                }
+            } else {
+                if y == 2 {
+                    result = result ^ "EVEN-EVEN";
+                } else {
+                    result = result ^ "SKIP";
+                }
+            }
+        } else {
+            if y == 1 {
+                for let w = 0; w < 2; w += 1 {
+                    totalIterations = totalIterations + 1;
+
+                    if w == 0 {
+                        if x == 1 {
+                            result = result ^ "FIRST";
+                        } else {
+                            if x == 3 {
+                                result = result ^ "THIRD";
+                            } else {
+                                result = result ^ "FIFTH";
+                            }
+                        }
+                    } else {
+                        result = result ^ "-" ^ @str(x) ^ "w" ^ @str(w);
+                    }
+                }
+            } else {
+                if y == 2 {
+                    if x > 3 {
+                        result = result ^ "BIG";
+                    } else {
+                        result = result ^ "small";
+                    }
+                } else {
+                    result = result ^ "end";
+                }
+            }
+        }
+
+        result = result ^ " | ";
+    }
+
+    result = result ^ ", ";
+    depth = depth - 1;
+}
+
+std.println([result, depth, totalIterations]);

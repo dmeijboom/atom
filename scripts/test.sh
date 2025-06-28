@@ -2,7 +2,7 @@
 
 cargo build --release
 
-PROGRAMS="fib factorial calc fizzbuzz fib_method"
+PROGRAMS="fib factorial calc fizzbuzz fib_method nested"
 
 for program in $PROGRAMS
 do
