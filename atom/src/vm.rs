@@ -6,7 +6,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use linear_map::LinearMap;
 use wyhash2::WyHash;
 
 use crate::{
@@ -22,20 +21,10 @@ use crate::{
     parser::{self},
     runtime::{
         error::{Call, ErrorKind, RuntimeError},
-        function::Context,
         value::{self, IntoAtom, OneOf, Tag, Type, TypeAssert, Value},
-        Array, BigInt, Class, Fn, Method, Object, Runtime, Str,
+        Array, BigInt, Class, Context, Fn, Method, Object, Runtime, Str,
     },
 };
-
-fn array_idx(elem: Value, len: usize) -> usize {
-    let i = elem.as_bigint();
-
-    match i.as_i64() {
-        n if n < 0 => (len as i64 + n) as usize,
-        _ => i.as_usize(),
-    }
-}
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -100,26 +89,15 @@ macro_rules! impl_binary {
     };
 }
 
-#[derive(Default)]
-struct Std<'gc> {
-    module: usize,
-    builtins: LinearMap<Cow<'static, str>, Handle<'gc, Class<'gc>>>,
-}
-
-impl<'gc> Trace for Std<'gc> {
-    fn trace(&self, gc: &mut Gc<'_>) {
-        self.builtins.values().for_each(|handle| gc.mark(handle));
-    }
-}
-
 pub struct Vm<'gc, const S: usize> {
-    std: Std<'gc>,
+    std: Context,
     frame: Frame<'gc>,
     search_path: PathBuf,
     modules: Vec<Module<'gc>>,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
     global_context: GlobalContext,
+    package: Handle<'gc, Class<'gc>>,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
     packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
@@ -134,7 +112,6 @@ fn read_usize<'gc>(
     unsafe {
         let ptr = addr.as_bigint().as_usize() as *mut u8;
         let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const usize;
-
         std::ptr::read(ptr).into_atom(gc)
     }
 }
@@ -163,7 +140,6 @@ fn array_push<'gc>(
 ) -> Result<Value<'gc>, RuntimeError> {
     let mut array = array.as_array();
     array.push(gc, element)?;
-
     Ok(Value::default())
 }
 
@@ -273,12 +249,8 @@ pub fn repr<'gc>(
     repr_internal(rt, &value).into_atom(gc)
 }
 
-fn is_darwin<'gc>(_gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
-    if cfg!(target_os = "macos") {
-        Ok(Value::new(Tag::Atom, value::TRUE as u64))
-    } else {
-        Ok(Value::new(Tag::Atom, value::FALSE as u64))
-    }
+fn is_darwin<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
+    cfg!(target_os = "macos").into_atom(gc)
 }
 
 impl<'gc, const S: usize> Runtime for Vm<'gc, S> {
@@ -321,6 +293,15 @@ impl Default for Builtins {
     }
 }
 
+fn array_idx(elem: Value, len: usize) -> usize {
+    let i = elem.as_bigint();
+
+    match i.as_i64() {
+        n if n < 0 => (len as i64 + n) as usize,
+        _ => i.as_usize(),
+    }
+}
+
 impl<'gc, const S: usize> Vm<'gc, S> {
     pub fn new(
         gc: &mut Gc<'gc>,
@@ -330,12 +311,14 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     ) -> Result<Self, Error> {
         let frame = Frame::from_package(gc, Context::with_module(0), &mut package)?;
         let module = Module::new(0, Metadata::default(), package);
+        let package = gc.alloc(Class::new(Cow::Borrowed("Package"), 1))?;
 
         Ok(Self {
             frame,
+            package,
             search_path,
             global_context,
-            std: Std::default(),
+            std: Context::default(),
             modules: vec![module],
             call_stack: vec![],
             stack: Stack::default(),
@@ -345,18 +328,8 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         })
     }
 
-    fn unsupported_rhs(&self, lhs: Value, rhs: Value, op: &'static str) -> Error {
-        ErrorKind::UnsupportedBinaryOp {
-            left: lhs.ty(),
-            right: rhs.ty(),
-            op,
-        }
-        .at(self.frame.span())
-        .into()
-    }
-
-    fn unsupported(&self, op: &'static str, lty: Type, rty: Type) -> Error {
-        ErrorKind::UnsupportedOp { lty, rty, op }
+    fn unsupported(&self, op: &'static str, left: Type, right: Type) -> Error {
+        ErrorKind::UnsupportedOp { left, right, op }
             .at(self.frame.span())
             .into()
     }
@@ -373,6 +346,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         }
 
         self.mark_sweep(gc);
+    }
+
+    fn is_package(&self, class: &Class<'gc>) -> bool {
+        class.name == "Package" && class.context.module == self.std.module
     }
 
     fn module(&mut self) -> &mut Module<'gc> {
@@ -403,8 +380,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
         let member = &self.global_context.atoms[idx as usize];
 
-        if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
-            if let Some(func) = class.get_method(gc, member)? {
+        if let Some(mut class) =
+            self.modules[self.std.module].load_class_by_name(gc, recv.ty().name())?
+        {
+            if let Some(func) = class.load_method(gc, member)? {
                 let method = Method::new(recv, func);
                 let handle = gc.alloc(method)?;
 
@@ -483,7 +462,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             return Ok(());
         }
 
-        if object.class.name == "Package" {
+        if self.is_package(&object.class) {
             return self.load_export(gc, object, member);
         }
 
@@ -497,7 +476,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         member: u32,
     ) -> Result<(), Error> {
         let name = &self.global_context.atoms[member as usize];
-        let func = object.class.get_method(gc, name)?.ok_or_else(|| {
+        let func = object.class.load_method(gc, name)?.ok_or_else(|| {
             ErrorKind::UnknownAttr {
                 class_name: object.class.name.clone(),
                 attribute: name.to_string(),
@@ -854,29 +833,30 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
         // Parse and compile module
         let mut package = compile(self.make_path(name), &mut self.global_context)
-            .map_err(|e| Error::Import(Box::new(e)))?;
+            .map_err(Box::new)
+            .map_err(Error::Import)?;
 
         // Initialize module and frame
         let meta = Metadata::new(name.to_string());
         let frame = Frame::from_package(gc, Context::with_module(id), &mut package)?;
-        let mut module = Module::new(id, meta, package);
+
+        self.modules.push(Module::new(id, meta, package));
 
         // Setup package class
-        let class = gc.alloc(Class::new("Package", self.std.module))?;
-        let mut object = Object::new(class);
+        let class = Handle::clone(&self.package);
+
+        let mut object = gc.alloc(Object::new(class))?;
         object.set_attr(value::MODULE, BigInt::from(id).into_atom(gc)?);
 
-        let handle = gc.alloc(object)?;
-
         // Insert the package object as the first variable (which is `self`)
-        module.vars.insert(0, Handle::clone(&handle).into());
-
-        self.modules.push(module);
+        self.modules[id]
+            .vars
+            .insert(0, Handle::clone(&object).into());
         self.packages
-            .insert(name.to_string(), Handle::clone(&handle));
+            .insert(name.to_string(), Handle::clone(&object));
 
         // Push package to the stack (it will be stored)
-        self.stack.push(handle.into());
+        self.stack.push(object.into());
 
         // Activate the frame
         self.set_frame(frame);
@@ -923,13 +903,13 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             return Ok(false);
         }
 
-        Ok(match ty {
-            Type::Int => lhs.as_bigint() == rhs.as_bigint(),
-            Type::Float => lhs.as_float() == rhs.as_float(),
-            Type::Str => lhs.as_str() == rhs.as_str(),
-            Type::Atom => lhs.as_atom() == rhs.as_atom(),
-            _ => return Err(self.unsupported_rhs(lhs, rhs, "==")),
-        })
+        match ty {
+            Type::Int => Ok(lhs.as_bigint() == rhs.as_bigint()),
+            Type::Float => Ok(lhs.as_float() == rhs.as_float()),
+            Type::Str => Ok(lhs.as_str() == rhs.as_str()),
+            Type::Atom => Ok(lhs.as_atom() == rhs.as_atom()),
+            _ => Err(self.unsupported("==", lhs.ty(), rhs.ty())),
+        }
     }
 
     fn eq(&mut self) -> Result<(), Error> {
@@ -1112,27 +1092,14 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn bootstrap(&mut self, gc: &mut Gc<'gc>, builtins: &mut Builtins) -> Result<(), Error> {
-        self.std.module = self.import_path(gc, "std")?;
+        let id = self.import_path(gc, "std")?;
+        self.std = Context::with_module(id);
 
         let user_frame = self.call_stack.remove(0);
 
         self.dispatch(gc, builtins)?;
         self.set_frame(user_frame);
         self.call_stack.clear();
-
-        let module = &mut self.modules[self.std.module];
-        let classes = module
-            .package()
-            .classes
-            .iter()
-            .enumerate()
-            .filter_map(|(id, c)| if c.public { Some(id) } else { None })
-            .collect::<Vec<_>>();
-
-        for id in classes {
-            let class = module.load_class(gc, id)?;
-            self.std.builtins.insert(class.name.clone(), class);
-        }
 
         Ok(())
     }

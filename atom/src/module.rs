@@ -6,7 +6,6 @@ use wyhash2::WyHash;
 use crate::collections::IntMap;
 use crate::compiler::Package;
 use crate::gc::{DynHandle, Gc, Handle, Trace};
-use crate::runtime::class::Context;
 use crate::runtime::{Class, Fn, IntoAtom, Value};
 use crate::vm::Error;
 
@@ -186,27 +185,20 @@ impl<'gc> Module<'gc> {
     ) -> Result<Handle<'gc, Class<'gc>>, Error> {
         self.cache.classes.get_or_insert(idx, || {
             let orig = &mut self.package.classes[idx];
-            let class = Class {
-                name: orig.name.clone(),
-                public: orig.public,
-                context: Context::new(self.id),
-                init: orig
-                    .methods
-                    .remove("init")
-                    .map(|mut init| {
-                        init.context.module = self.id;
-                        gc.alloc(init)
-                    })
-                    .transpose()?,
-                methods: orig
-                    .methods
-                    .iter()
-                    .map(|(name, func)| (name.clone(), func.clone()))
-                    .collect(),
-            };
+            let mut class = Class::new(orig.name.clone(), self.id);
 
-            let handle = gc.alloc(class)?;
-            Ok(handle)
+            if let Some(mut init) = orig.methods.remove("init") {
+                init.context = class.context.clone();
+                class.init = Some(gc.alloc(init)?);
+            }
+
+            class.methods = orig
+                .methods
+                .iter()
+                .map(|(name, func)| (name.clone(), func.clone()))
+                .collect();
+
+            Ok(gc.alloc(class)?)
         })
     }
 

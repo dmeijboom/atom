@@ -21,6 +21,17 @@ pub use value::{IntoAtom, Value};
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
+#[derive(Debug, Default, Clone)]
+pub struct Context {
+    pub module: usize,
+}
+
+impl Context {
+    pub fn with_module(module: usize) -> Self {
+        Self { module }
+    }
+}
+
 pub trait Runtime {
     fn frame(&self) -> &Frame;
     fn get_atom(&self, idx: u32) -> &str;

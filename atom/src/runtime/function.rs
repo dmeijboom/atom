@@ -4,7 +4,7 @@ use bytes::Bytes;
 
 use crate::gc::{Handle, Trace};
 
-use super::value::Value;
+use super::{value::Value, Context};
 
 #[derive(Default)]
 pub struct FnBuilder {
@@ -43,17 +43,6 @@ impl FnBuilder {
             body: self.body,
             context: Context::default(),
         }
-    }
-}
-
-#[derive(Debug, Default, Clone)]
-pub struct Context {
-    pub module: usize,
-}
-
-impl Context {
-    pub fn with_module(module: usize) -> Self {
-        Self { module }
     }
 }
 

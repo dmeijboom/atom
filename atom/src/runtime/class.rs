@@ -4,24 +4,14 @@ use linear_map::LinearMap;
 
 use crate::gc::{Gc, Handle, Trace};
 
-use super::{error::RuntimeError, function::Fn};
+use super::{error::RuntimeError, function::Fn, Context};
 
-#[derive(Debug, Clone)]
-pub struct Context<'gc> {
-    pub module: usize,
+#[derive(Debug, Default, Clone)]
+pub struct Cache<'gc> {
     pub methods: LinearMap<Cow<'static, str>, Handle<'gc, Fn>>,
 }
 
-impl<'gc> Context<'gc> {
-    pub fn new(module: usize) -> Self {
-        Self {
-            module,
-            methods: LinearMap::new(),
-        }
-    }
-}
-
-impl<'gc> Trace for Context<'gc> {
+impl<'gc> Trace for Cache<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
         for handle in self.methods.values() {
             gc.mark(handle);
@@ -33,7 +23,8 @@ impl<'gc> Trace for Context<'gc> {
 pub struct Class<'gc> {
     pub name: Cow<'static, str>,
     pub public: bool,
-    pub context: Context<'gc>,
+    pub cache: Cache<'gc>,
+    pub context: Context,
     pub init: Option<Handle<'gc, Fn>>,
     pub methods: LinearMap<Cow<'static, str>, Fn>,
 }
@@ -46,7 +37,7 @@ impl<'gc> PartialEq for Class<'gc> {
 
 impl<'gc> Trace for Class<'gc> {
     fn trace(&self, gc: &mut crate::gc::Gc) {
-        self.context.trace(gc);
+        self.cache.trace(gc);
 
         if let Some(init) = &self.init {
             gc.mark(init);
@@ -59,25 +50,26 @@ impl<'gc> Class<'gc> {
         Self {
             name: name.into(),
             public: false,
-            context: Context::new(module),
             init: None,
+            cache: Cache::default(),
+            context: Context::with_module(module),
             methods: LinearMap::new(),
         }
     }
 
-    pub fn get_method(
+    pub fn load_method(
         &mut self,
         gc: &mut Gc<'gc>,
         name: &str,
     ) -> Result<Option<Handle<'gc, Fn>>, RuntimeError> {
-        match self.context.methods.get(name) {
+        match self.cache.methods.get(name) {
             Some(handle) => Ok(Some(Handle::clone(handle))),
             None => match self.methods.get(name) {
                 Some(func) => {
                     let mut handle = gc.alloc(func.clone())?;
                     handle.context.module = self.context.module;
 
-                    self.context
+                    self.cache
                         .methods
                         .insert(Cow::clone(&func.name), Handle::clone(&handle));
                     Ok(Some(handle))

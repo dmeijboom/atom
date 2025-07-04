@@ -8,11 +8,11 @@ pub class Array {
 
 pub fn repeat(elem, count) {
     let out = [];
-    
+
     for let i = 0; i < count; i += 1 {
         out.push(elem);
     }
-    
+
     out
 }
 

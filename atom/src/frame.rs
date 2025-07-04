@@ -7,7 +7,7 @@ use crate::{
     compiler::Package,
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    runtime::{error::RuntimeError, function::Context, Fn, Value},
+    runtime::{error::RuntimeError, Context, Fn, Value},
 };
 
 pub struct Frame<'gc> {
