@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     gc::Gc,
-    runtime::{error::ErrorKind, value::Value, Result, Runtime},
+    runtime::{error::ErrorKind, Result, Runtime, Value},
 };
 
 pub struct Fn0<F>(pub F);

@@ -10,12 +10,14 @@ use lazy_static::lazy_static;
 use wyhash2::WyHash;
 
 use crate::{
-    ast::{self, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Stmt, StmtKind},
+    ast::{
+        self, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, MatchArm, Stmt, StmtKind,
+    },
     bytecode::{Bytecode, Const, Op, Serializable, Spanned},
     collections::{OrderedMap, OrderedSet},
     error::{IntoSpanned, SpannedError},
     lexer::Span,
-    runtime::function::Fn,
+    runtime::Fn,
 };
 
 lazy_static! {
@@ -173,11 +175,11 @@ enum Symbol {
     Fn(u32),
 }
 
-pub struct Context {
+pub struct GlobalContext {
     pub atoms: OrderedSet<String>,
 }
 
-impl Default for Context {
+impl Default for GlobalContext {
     fn default() -> Self {
         Self {
             atoms: OrderedSet::new([
@@ -190,30 +192,41 @@ impl Default for Context {
     }
 }
 
+#[derive(Default)]
+struct Seq(usize);
+
+impl Seq {
+    fn next(&mut self) -> usize {
+        let id = self.0;
+        self.0 += 1;
+        id
+    }
+}
+
 pub struct Compiler {
-    vars_seq: usize,
+    vars: Seq,
+    body: BytesMut,
+    markers: Vec<Marker>,
     names: HashSet<String>,
     scope: VecDeque<Scope>,
-    body: BytesMut,
+    imports: HashSet<String>,
     consts: OrderedSet<Const>,
     funcs: OrderedMap<String, Fn>,
     classes: OrderedMap<String, Class>,
-    markers: Vec<Marker>,
-    imports: HashSet<String>,
     locals: VecDeque<HashMap<String, Var, WyHash>>,
 }
 
 impl Default for Compiler {
     fn default() -> Self {
         Self {
-            vars_seq: 0,
+            vars: Seq::default(),
             body: BytesMut::new(),
+            markers: vec![],
+            names: HashSet::default(),
             funcs: OrderedMap::default(),
             consts: OrderedSet::default(),
             classes: OrderedMap::default(),
-            markers: vec![],
             imports: HashSet::default(),
-            names: HashSet::default(),
             locals: VecDeque::default(),
             scope: VecDeque::from(vec![Scope::default()]),
         }
@@ -242,9 +255,8 @@ impl Compiler {
 
     fn set_offset(&mut self, offset: usize, new_offset: usize) {
         let orig = Spanned::<Bytecode>::deserialize(&mut &self.body[offset..offset + 8]);
-        let (code1, _) = orig.code2();
         let mut buff = &mut self.body[offset..];
-        let bc = Bytecode::with_code2(orig.op, code1, (new_offset / 8) as u16);
+        let bc = Bytecode::with_code(orig.op, (new_offset / 8) as u32);
         bc.at(orig.span).serialize(&mut buff);
     }
 
@@ -264,14 +276,11 @@ impl Compiler {
     }
 
     fn push_hidden_var(&mut self, span: Span, init: bool) -> Result<usize, CompileError> {
-        let id = self.vars_seq;
-        let name = format!("__{}", self.vars_seq);
-
-        self.vars_seq += 1;
+        let id = self.vars.next();
 
         if let Some(scope) = self.scope.front_mut() {
             scope.vars.insert(
-                name,
+                format!("__{}", id),
                 VarBuilder::new(id, span).init(init).used(true).build(),
             );
         }
@@ -284,8 +293,7 @@ impl Compiler {
             return Err(ErrorKind::DuplicateName(name).at(span));
         }
 
-        let id = self.vars_seq;
-        self.vars_seq += 1;
+        let id = self.vars.next();
 
         if let Some(scope) = self.scope.front_mut() {
             scope
@@ -298,7 +306,7 @@ impl Compiler {
 
     fn call(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         callee: Expr,
         args: Vec<Expr>,
@@ -348,7 +356,7 @@ impl Compiler {
 
     fn logical(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         rhs: Expr,
         cond: bool,
@@ -364,7 +372,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn expr_list(&mut self, ctx: &mut Context, exprs: Vec<Expr>) -> Result<(), CompileError> {
+    fn expr_list(&mut self, ctx: &mut GlobalContext, exprs: Vec<Expr>) -> Result<(), CompileError> {
         for expr in exprs {
             self.expr(ctx, expr)?;
         }
@@ -445,7 +453,7 @@ impl Compiler {
 
     fn assign(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         op: Option<ast::AssignOp>,
         lhs: Expr,
@@ -488,7 +496,7 @@ impl Compiler {
 
     fn slice(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         begin: Option<Box<Expr>>,
         end: Option<Box<Expr>>,
@@ -510,7 +518,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn not(&mut self, ctx: &mut Context, span: Span, expr: Expr) -> Result<(), CompileError> {
+    fn not(&mut self, ctx: &mut GlobalContext, span: Span, expr: Expr) -> Result<(), CompileError> {
         self.expr(ctx, expr)?;
         self.push(Bytecode::new(Op::UnaryNot).at(span));
 
@@ -519,7 +527,7 @@ impl Compiler {
 
     fn binary(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         lhs: Expr,
         op: BinaryOp,
@@ -544,7 +552,7 @@ impl Compiler {
 
     fn array(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         items: Vec<Expr>,
     ) -> Result<(), CompileError> {
@@ -557,7 +565,7 @@ impl Compiler {
 
     fn member(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         object: Expr,
         member: String,
@@ -570,7 +578,7 @@ impl Compiler {
 
     fn comp_member(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         object: Expr,
         elem: Expr,
@@ -588,7 +596,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn atom(&mut self, ctx: &mut Context, span: Span, name: String) -> Result<(), CompileError> {
+    fn atom(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        name: String,
+    ) -> Result<(), CompileError> {
         self.push(Bytecode::with_code(Op::LoadAtom, ctx.atoms.insert(name)).at(span));
         Ok(())
     }
@@ -599,7 +612,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn lit(&mut self, ctx: &mut Context, span: Span, lit: Literal) -> Result<(), CompileError> {
+    fn lit(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        lit: Literal,
+    ) -> Result<(), CompileError> {
         match lit {
             Literal::Atom(name) => self.atom(ctx, span, name),
             Literal::Int(i) if i > 0 && u32::try_from(i).is_ok() => {
@@ -613,19 +631,19 @@ impl Compiler {
         }
     }
 
-    fn expr(&mut self, ctx: &mut Context, expr: Expr) -> Result<(), CompileError> {
-        match expr.kind {
+    fn expr(&mut self, ctx: &mut GlobalContext, root: Expr) -> Result<(), CompileError> {
+        match root.kind {
             ExprKind::Unary(op, unary_expr) => match op {
-                ast::UnaryOp::Not => self.not(ctx, expr.span, *unary_expr),
+                ast::UnaryOp::Not => self.not(ctx, root.span, *unary_expr),
             },
-            ExprKind::Assign(op, lhs, rhs) => self.assign(ctx, expr.span, op, *lhs, *rhs),
-            ExprKind::Binary(lhs, op, rhs) => self.binary(ctx, expr.span, *lhs, op, *rhs),
-            ExprKind::Array(items) => self.array(ctx, expr.span, items),
-            ExprKind::Member(object, member) => self.member(ctx, expr.span, *object, member),
-            ExprKind::CompMember(object, elem) => self.comp_member(ctx, expr.span, *object, *elem),
-            ExprKind::Ident(name) => self.load_name(expr.span, &name),
-            ExprKind::Call(callee, args) => self.call(ctx, expr.span, *callee, args),
-            ExprKind::Literal(lit) => self.lit(ctx, expr.span, lit),
+            ExprKind::Assign(op, lhs, rhs) => self.assign(ctx, root.span, op, *lhs, *rhs),
+            ExprKind::Binary(lhs, op, rhs) => self.binary(ctx, root.span, *lhs, op, *rhs),
+            ExprKind::Array(items) => self.array(ctx, root.span, items),
+            ExprKind::Member(object, member) => self.member(ctx, root.span, *object, member),
+            ExprKind::CompMember(object, elem) => self.comp_member(ctx, root.span, *object, *elem),
+            ExprKind::Ident(name) => self.load_name(root.span, &name),
+            ExprKind::Call(callee, args) => self.call(ctx, root.span, *callee, args),
+            ExprKind::Literal(lit) => self.lit(ctx, root.span, lit),
             ExprKind::Match(expr, arms, alt) => self.match_expr(ctx, *expr, arms, alt),
             ExprKind::Range(_, _) => unreachable!(),
         }
@@ -633,7 +651,7 @@ impl Compiler {
 
     fn match_expr(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         expr: Expr,
         arms: Vec<MatchArm>,
         alt: Option<Box<Expr>>,
@@ -652,9 +670,9 @@ impl Compiler {
             self.push(Bytecode::with_code(Op::Load, id as u32).at(span));
             self.expr(ctx, arm.pat)?;
             self.push(Bytecode::new(Op::Eq).at(span));
-            let offset = self.push(Bytecode::with_code(Op::JumpIfFalse, 0).at(span));
+            let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
             self.expr(ctx, arm.expr)?;
-            offsets.push(self.push(Bytecode::with_code(Op::Jump, 0).at(span)));
+            offsets.push(self.push(Bytecode::new(Op::Jump).at(span)));
             self.set_offset(offset, self.offset());
         }
 
@@ -694,22 +712,22 @@ impl Compiler {
 
     fn compile_fn_body(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         scope: Scope,
         args: Vec<FnArg>,
-        stmts: Vec<Stmt>,
+        body: Vec<Stmt>,
     ) -> Result<BytesMut, CompileError> {
-        let locals = args
-            .into_iter()
-            .enumerate()
-            .map(|(i, n)| (n.name, VarBuilder::new(i, n.span).init(true).build()))
-            .collect();
-
         self.scope.push_front(scope);
-        self.locals.push_front(locals);
+        self.locals.push_front(
+            args.into_iter()
+                .enumerate()
+                .map(|(i, n)| (n.name, VarBuilder::new(i, n.span).init(true).build()))
+                .collect(),
+        );
 
         let global = mem::take(&mut self.body);
-        self.compile_body(ctx, stmts)?;
+
+        self.compile_body(ctx, body)?;
         self.optim_tail_call()?;
         self.pop_scope()?;
 
@@ -724,34 +742,31 @@ impl Compiler {
 
     fn method(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         methods: &mut HashMap<String, Fn, WyHash>,
-        name: String,
-        args: Vec<FnArg>,
-        stmts: Vec<Stmt>,
-        public: bool,
+        fn_stmt: FnStmt,
     ) -> Result<(), CompileError> {
-        if methods.contains_key(name.as_str()) {
-            return Err(ErrorKind::DuplicateMethod(name).at(span));
+        if methods.contains_key(fn_stmt.name.as_str()) {
+            return Err(ErrorKind::DuplicateMethod(fn_stmt.name).at(span));
         }
 
         methods.insert(
-            name.clone(),
+            fn_stmt.name.clone(),
             Fn::builder()
-                .name(name.clone())
-                .arg_count(args.len() as u32)
-                .public(public)
+                .name(fn_stmt.name.clone())
+                .arg_count(fn_stmt.args.len() as u32)
+                .public(fn_stmt.public)
                 .build(),
         );
 
-        let mut body = self.compile_fn_body(ctx, Scope::default(), args, stmts)?;
+        let mut body = self.compile_fn_body(ctx, Scope::default(), fn_stmt.args, fn_stmt.body)?;
 
-        if name == "init" {
+        if fn_stmt.name == "init" {
             Bytecode::with_code(Op::ReturnLocal, 0).serialize(&mut body);
         }
 
-        if let Some(method) = methods.get_mut(&name) {
+        if let Some(method) = methods.get_mut(&fn_stmt.name) {
             method.body = body.freeze();
         }
 
@@ -769,28 +784,25 @@ impl Compiler {
 
     fn fn_stmt(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
-        name: String,
-        args: Vec<FnArg>,
-        stmts: Vec<Stmt>,
-        public: bool,
+        fn_stmt: FnStmt,
     ) -> Result<(), CompileError> {
-        if self.funcs.contains_key(&name) {
-            return Err(ErrorKind::DuplicateFn(name).at(span));
+        if self.funcs.contains_key(&fn_stmt.name) {
+            return Err(ErrorKind::DuplicateFn(fn_stmt.name).at(span));
         }
 
         self.funcs.insert(
-            name.clone(),
+            fn_stmt.name.clone(),
             Fn::builder()
-                .name(name.clone())
-                .public(public)
-                .arg_count(args.len() as u32)
+                .name(fn_stmt.name.clone())
+                .public(fn_stmt.public)
+                .arg_count(fn_stmt.args.len() as u32)
                 .build(),
         );
 
-        self.funcs[&name].body = self
-            .compile_fn_body(ctx, Scope::default(), args, stmts)?
+        self.funcs[&fn_stmt.name].body = self
+            .compile_fn_body(ctx, Scope::default(), fn_stmt.args, fn_stmt.body)?
             .freeze();
 
         Ok(())
@@ -798,7 +810,7 @@ impl Compiler {
 
     fn class_stmt(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         name: String,
         methods: Vec<Stmt>,
@@ -819,12 +831,7 @@ impl Compiler {
             let span = method.span;
 
             match method.kind {
-                StmtKind::Fn {
-                    name,
-                    args,
-                    body,
-                    public,
-                } => self.method(ctx, span, &mut funcs, name, args, body, public)?,
+                StmtKind::Fn(fn_stmt) => self.method(ctx, span, &mut funcs, fn_stmt)?,
                 _ => unreachable!(),
             };
         }
@@ -839,7 +846,7 @@ impl Compiler {
 
     fn for_stmt(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         expr: Expr,
         body: Vec<Stmt>,
@@ -857,7 +864,7 @@ impl Compiler {
 
     fn for_cond_stmt(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         span: Span,
         pre: Stmt,
         expr: Expr,
@@ -878,9 +885,21 @@ impl Compiler {
         Ok(())
     }
 
+    fn ret(&mut self, ctx: &mut GlobalContext, span: Span, expr: Expr) -> Result<(), CompileError> {
+        self.expr(ctx, expr)?;
+        self.optim_tail_call()?;
+
+        match self.accept(Op::LoadLocal) {
+            Some(bc) => self.push(Bytecode::with_code(Op::ReturnLocal, bc.code).at(bc.span)),
+            _ => self.push(Bytecode::new(Op::Return).at(span)),
+        };
+
+        Ok(())
+    }
+
     fn if_stmt(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         IfStmt(expr, stmts, alt): IfStmt,
     ) -> Result<(), CompileError> {
         let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
@@ -914,7 +933,7 @@ impl Compiler {
         Ok(())
     }
 
-    fn stmt(&mut self, ctx: &mut Context, stmt: Stmt) -> Result<(), CompileError> {
+    fn stmt(&mut self, ctx: &mut GlobalContext, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
             StmtKind::Import(path) => {
                 let name = path.join("/");
@@ -953,17 +972,7 @@ impl Compiler {
                     self.push(Bytecode::new(Op::Discard).at(stmt.span));
                 }
             }
-            StmtKind::Return(expr) => {
-                self.expr(ctx, expr)?;
-                self.optim_tail_call()?;
-
-                match self.accept(Op::LoadLocal) {
-                    Some(bc) => {
-                        self.push(Bytecode::with_code(Op::ReturnLocal, bc.code).at(bc.span))
-                    }
-                    _ => self.push(Bytecode::new(Op::Return).at(stmt.span)),
-                };
-            }
+            StmtKind::Return(expr) => self.ret(ctx, stmt.span, expr)?,
             StmtKind::Break => {
                 let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));
                 self.markers.push(Marker::End(offset));
@@ -975,12 +984,7 @@ impl Compiler {
             StmtKind::Class(name, methods, public) => {
                 self.class_stmt(ctx, stmt.span, name, methods, public)?
             }
-            StmtKind::Fn {
-                name,
-                args,
-                body,
-                public,
-            } => self.fn_stmt(ctx, stmt.span, name, args, body, public)?,
+            StmtKind::Fn(fn_stmt) => self.fn_stmt(ctx, stmt.span, fn_stmt)?,
             StmtKind::For(expr, body) => self.for_stmt(ctx, stmt.span, expr, body)?,
             StmtKind::ForCond {
                 init,
@@ -993,7 +997,11 @@ impl Compiler {
         Ok(())
     }
 
-    fn compile_body(&mut self, ctx: &mut Context, stmts: Vec<Stmt>) -> Result<(), CompileError> {
+    fn compile_body(
+        &mut self,
+        ctx: &mut GlobalContext,
+        stmts: Vec<Stmt>,
+    ) -> Result<(), CompileError> {
         for stmt in stmts {
             self.stmt(ctx, stmt)?;
         }
@@ -1003,7 +1011,7 @@ impl Compiler {
 
     fn compile_scoped_body(
         &mut self,
-        ctx: &mut Context,
+        ctx: &mut GlobalContext,
         stmts: Vec<Stmt>,
     ) -> Result<(), CompileError> {
         self.scope.push_front(Scope::default());
@@ -1013,7 +1021,11 @@ impl Compiler {
         Ok(())
     }
 
-    pub fn compile(mut self, ctx: &mut Context, stmts: Vec<Stmt>) -> Result<Package, CompileError> {
+    pub fn compile(
+        mut self,
+        ctx: &mut GlobalContext,
+        stmts: Vec<Stmt>,
+    ) -> Result<Package, CompileError> {
         // In the root scope, `self` refers to the current package
         self.push_var(Span::default(), "self".to_string(), true)?;
         self.compile_scoped_body(ctx, stmts)?;
@@ -1084,7 +1096,7 @@ mod tests {
 
     #[test]
     fn test_assign() {
-        let mut ctx = Context::default();
+        let mut ctx = GlobalContext::default();
         let mut compiler = Compiler::default();
         let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
 

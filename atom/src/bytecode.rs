@@ -10,11 +10,7 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 use crate::{
     gc::Gc,
     lexer::Span,
-    runtime::{
-        bigint::BigInt,
-        error::RuntimeError,
-        value::{IntoAtom, Value},
-    },
+    runtime::{error::RuntimeError, BigInt, IntoAtom, Value},
 };
 
 #[derive(FromPrimitive, IntoPrimitive)]
@@ -175,6 +171,7 @@ impl Display for Bytecode {
             | Op::TailCall
             | Op::LoadElement
             | Op::LoadMember
+            | Op::StoreMember
             | Op::LoadLocal
             | Op::ReturnLocal => write!(f, "{:?} {}", self.op, self.code),
             _ => write!(f, "{:?}", self.op),

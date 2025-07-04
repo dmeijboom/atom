@@ -6,12 +6,12 @@ mod tests {
     use atom::{
         ast::Stmt,
         builtins::BuiltinFunction,
-        compiler::{Compiler, Context, Package},
+        compiler::{Compiler, GlobalContext, Package},
         error::Error,
         gc::Gc,
         lexer::Lexer,
         parser::Parser,
-        runtime::{error::RuntimeError, value::Value, Runtime},
+        runtime::{error::RuntimeError, Runtime, Value},
         vm::{Builtins, Vm},
     };
 
@@ -46,7 +46,7 @@ mod tests {
         Ok(program)
     }
 
-    pub fn compile(ctx: &mut Context, name: &str) -> Result<Package, Error> {
+    pub fn compile(ctx: &mut GlobalContext, name: &str) -> Result<Package, Error> {
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
         let program = _parse(&source)?;
         let compiler = Compiler::default();
@@ -75,7 +75,7 @@ mod tests {
 
     pub fn run<'gc>(
         gc: &mut Gc<'gc>,
-        mut ctx: Context,
+        mut ctx: GlobalContext,
         name: &str,
     ) -> Result<Option<Value<'gc>>, Error> {
         let module = compile(&mut ctx, name)?;

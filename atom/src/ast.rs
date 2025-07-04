@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{lexer::Span, runtime::bigint::BigInt};
+use crate::{lexer::Span, runtime::BigInt};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -126,6 +126,15 @@ impl FnArg {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct FnStmt {
+    pub name: String,
+    pub public: bool,
+    pub args: Vec<FnArg>,
+    pub body: Vec<Stmt>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub enum StmtKind {
     Break,
     Continue,
@@ -142,12 +151,7 @@ pub enum StmtKind {
         step: Expr,
         body: Vec<Stmt>,
     },
-    Fn {
-        name: String,
-        args: Vec<FnArg>,
-        body: Vec<Stmt>,
-        public: bool,
-    },
+    Fn(FnStmt),
 }
 
 impl StmtKind {

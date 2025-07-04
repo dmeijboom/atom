@@ -12,9 +12,10 @@ use crate::gc::{Gc, Handle, Trace};
 use super::{
     array::Array,
     bigint::BigInt,
-    class::{Class, Object},
+    class::Class,
     error::RuntimeError,
     function::{Fn, Method},
+    object::Object,
     str::Str,
 };
 
@@ -129,55 +130,41 @@ trait ValueHandle {
     fn tag() -> Tag;
 }
 
-impl ValueHandle for Str<'_> {
-    fn tag() -> Tag {
-        Tag::Str
-    }
+macro_rules! impl_value_handle {
+    ($(($name:ident: $for:ty)),+) => {
+        $(impl ValueHandle for $for {
+            fn tag() -> Tag {
+                Tag::$name
+            }
+        })+
+    };
 }
 
-impl ValueHandle for Class<'_> {
-    fn tag() -> Tag {
-        Tag::Class
-    }
+impl_value_handle!(
+    (Fn: Fn),
+    (Str: Str<'_>),
+    (BigInt: BigInt),
+    (Class: Class<'_>),
+    (Object: Object<'_>),
+    (Method: Method<'_>),
+    (Array: Array<'_, Value<'_>>)
+);
+
+macro_rules! atoms {
+    ($($n:expr => $name:ident),+) => {
+        $(pub const $name: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | $n) as u32;)+
+    };
 }
 
-impl ValueHandle for Object<'_> {
-    fn tag() -> Tag {
-        Tag::Object
-    }
-}
-
-impl ValueHandle for Fn {
-    fn tag() -> Tag {
-        Tag::Fn
-    }
-}
-
-impl ValueHandle for BigInt {
-    fn tag() -> Tag {
-        Tag::BigInt
-    }
-}
-
-impl ValueHandle for Method<'_> {
-    fn tag() -> Tag {
-        Tag::Method
-    }
-}
-
-impl ValueHandle for Array<'_, Value<'_>> {
-    fn tag() -> Tag {
-        Tag::Array
-    }
+atoms! {
+    0 => FALSE,
+    1 => TRUE,
+    2 => NIL,
+    3 => MODULE
 }
 
 pub const SIGN_BIT: u64 = 1 << 63;
 pub const INT_MASK: u64 = 0xffff_ffff_ffff;
-pub const FALSE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN) as u32;
-pub const TRUE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 1) as u32;
-pub const NIL: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 2) as u32;
-pub const MODULE: u32 = ((Tag::Atom as u64) << 48 | SIG_NAN | 3) as u32;
-
 const SIG_NAN: u64 = 0x7ff0_0000_0000_0000;
 const TAG_MASK: u64 = 0b1111 << 48;
 const NAN: u64 = (Tag::Float as u64) << 48 | SIG_NAN;

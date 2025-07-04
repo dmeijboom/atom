@@ -1,7 +1,7 @@
 use atom::{
-    compiler::Context,
+    compiler::GlobalContext,
     gc::Gc,
-    runtime::value::{IntoAtom, Type, Value},
+    runtime::{value::Type, IntoAtom, Value},
 };
 use test_case::test_case;
 
@@ -47,7 +47,7 @@ fn equals(lhs: &Value, rhs: &Value) -> bool {
 #[cfg_attr(miri, ignore)]
 fn runtime(name: &str, expected: impl for<'gc> IntoAtom<'gc>) {
     let mut gc = Gc::default();
-    let ctx = Context::default();
+    let ctx = GlobalContext::default();
     let actual = common::run(&mut gc, ctx, &format!("runtime/{name}.atom"));
     let actual = actual
         .expect("runtime error")

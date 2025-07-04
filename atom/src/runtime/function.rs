@@ -38,8 +38,8 @@ impl FnBuilder {
     pub fn build(self) -> Fn {
         Fn {
             name: self.name,
-            arg_count: self.arg_count,
             public: self.public,
+            arg_count: self.arg_count,
             body: self.body,
             context: Context::default(),
         }
@@ -49,6 +49,12 @@ impl FnBuilder {
 #[derive(Debug, Default, Clone)]
 pub struct Context {
     pub module: usize,
+}
+
+impl Context {
+    pub fn with_module(module: usize) -> Self {
+        Self { module }
+    }
 }
 
 #[derive(Debug, Default, Clone)]

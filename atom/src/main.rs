@@ -2,13 +2,13 @@ use std::{fs, path::PathBuf, process::exit};
 
 use argh::FromArgs;
 use bytecode::{Bytecode, Serializable, Spanned};
-use compiler::{Compiler, Context, Package};
+use compiler::{Compiler, GlobalContext, Package};
 use error::Error;
 use gc::Gc;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use ron::ser::PrettyConfig;
-use runtime::{function::Fn, value::Value};
+use runtime::{Fn, Value};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
@@ -97,7 +97,7 @@ fn print_func(f: &Fn, indent: usize) {
     }
 }
 
-fn print_atoms(ctx: Context) {
+fn print_atoms(ctx: GlobalContext) {
     println!("atoms:");
 
     for (n, name) in ctx.atoms.into_iter().enumerate() {
@@ -150,7 +150,7 @@ macro_rules! format_col {
 fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run(RunCmd { source }) => {
-            let mut ctx = Context::default();
+            let mut ctx = GlobalContext::default();
             let module = vm::compile(source, &mut ctx)?;
             let mut gc = Gc::default();
             let mut builtins = Builtins::default();
@@ -183,7 +183,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
             source,
             bytecode,
         }) => {
-            let mut ctx = Context::default();
+            let mut ctx = GlobalContext::default();
             let source = fs::read_to_string(source)?;
             let tree = vm::parse(&source)?;
 

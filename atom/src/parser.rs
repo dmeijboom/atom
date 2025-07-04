@@ -8,8 +8,8 @@ use lazy_static::lazy_static;
 
 use crate::{
     ast::{
-        AssignOp, BinaryOp, Expr, ExprKind, FnArg, IfStmt, Literal, MatchArm, Path, Stmt, StmtKind,
-        UnaryOp,
+        AssignOp, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, MatchArm, Path, Stmt,
+        StmtKind, UnaryOp,
     },
     error::{IntoSpanned, SpannedError},
     lexer::{Span, Token, TokenKind},
@@ -561,12 +561,12 @@ impl Parser {
             self.block()?
         };
 
-        Ok(StmtKind::Fn {
+        Ok(StmtKind::Fn(FnStmt {
             name,
             args,
             body,
             public,
-        }
+        })
         .at(span))
     }
 

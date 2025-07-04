@@ -14,21 +14,17 @@ use crate::{
     builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn4},
     bytecode::Op,
     collections::Stack,
-    compiler::{Compiler, Context, Package},
+    compiler::{Compiler, GlobalContext, Package},
     frame::Frame,
     gc::{Gc, Handle, Trace},
     lexer::{Lexer, Span},
     module::{Metadata, Module},
     parser::{self},
     runtime::{
-        array::Array,
-        bigint::BigInt,
-        class::{Class, Object},
         error::{Call, ErrorKind, RuntimeError},
-        function::{Fn, Method},
-        str::Str,
+        function::Context,
         value::{self, IntoAtom, OneOf, Tag, Type, TypeAssert, Value},
-        Runtime,
+        Array, BigInt, Class, Fn, Method, Object, Runtime, Str,
     },
 };
 
@@ -60,7 +56,7 @@ pub fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
 
 pub fn compile(
     source: impl AsRef<Path>,
-    ctx: &mut Context,
+    ctx: &mut GlobalContext,
 ) -> Result<Package, crate::error::Error> {
     let source = fs::read_to_string(source)?;
     let program = parse(&source)?;
@@ -120,35 +116,13 @@ pub struct Vm<'gc, const S: usize> {
     std: Std<'gc>,
     frame: Frame<'gc>,
     search_path: PathBuf,
-    compiler_ctx: Context,
     modules: Vec<Module<'gc>>,
     stack: Stack<Value<'gc>, S>,
     call_stack: Vec<Frame<'gc>>,
+    global_context: GlobalContext,
     #[cfg(feature = "profiler")]
     profiler: crate::profiler::VmProfiler,
     packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
-}
-
-fn init_frame<'gc>(
-    id: usize,
-    meta: Metadata,
-    gc: &mut Gc<'gc>,
-    mut package: Package,
-) -> Result<(Module<'gc>, Frame<'gc>), Error> {
-    let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
-    func.context.module = id;
-
-    let consts = mem::take(&mut package.consts)
-        .into_iter()
-        .map(|c| c.into_atom(gc))
-        .collect::<Result<Vec<_>, _>>()?;
-    let module = Module::new(id, meta, package, consts);
-
-    // This is not an ordinary function, no need to return a value
-    let mut frame = Frame::new(func);
-    frame.returned = true;
-
-    Ok((module, frame))
 }
 
 fn read_usize<'gc>(
@@ -309,7 +283,7 @@ fn is_darwin<'gc>(_gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, Ru
 
 impl<'gc, const S: usize> Runtime for Vm<'gc, S> {
     fn get_atom(&self, idx: u32) -> &str {
-        self.compiler_ctx.atoms[idx as usize].as_str()
+        self.global_context.atoms[idx as usize].as_str()
     }
 
     fn get_module(&self, idx: usize) -> &Metadata {
@@ -350,16 +324,17 @@ impl Default for Builtins {
 impl<'gc, const S: usize> Vm<'gc, S> {
     pub fn new(
         gc: &mut Gc<'gc>,
-        compile_context: Context,
+        global_context: GlobalContext,
         search_path: PathBuf,
-        package: Package,
+        mut package: Package,
     ) -> Result<Self, Error> {
-        let (module, frame) = init_frame(0, Metadata::default(), gc, package)?;
+        let frame = Frame::from_package(gc, Context::with_module(0), &mut package)?;
+        let module = Module::new(0, Metadata::default(), package);
 
         Ok(Self {
             frame,
             search_path,
-            compiler_ctx: compile_context,
+            global_context,
             std: Std::default(),
             modules: vec![module],
             call_stack: vec![],
@@ -426,7 +401,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             return self.load_attr(gc, recv, idx);
         }
 
-        let member = &self.compiler_ctx.atoms[idx as usize];
+        let member = &self.global_context.atoms[idx as usize];
 
         if let Some(mut class) = self.std.builtins.get(recv.ty().name()).cloned() {
             if let Some(func) = class.get_method(gc, member)? {
@@ -466,21 +441,21 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         object: Handle<'gc, Object<'gc>>,
         member: u32,
     ) -> Result<(), Error> {
-        let member = &self.compiler_ctx.atoms[member as usize];
+        let member = &self.global_context.atoms[member as usize];
         let module_id = object
             .get_attr(value::MODULE)
             .ok_or_else(|| ErrorKind::MissingAttribute("module").at(self.frame.span()))?
             .as_int();
         let module = &mut self.modules[module_id as usize];
 
-        if let Some(handle) = module.get_fn_by_name(gc, member)? {
+        if let Some(handle) = module.load_fn_by_name(gc, member)? {
             if handle.public {
                 self.stack.push(handle.into());
                 return Ok(());
             }
         }
 
-        if let Some(handle) = module.get_class_by_name(gc, member)? {
+        if let Some(handle) = module.load_class_by_name(gc, member)? {
             if handle.public {
                 self.stack.push(handle.into());
                 return Ok(());
@@ -521,7 +496,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         mut object: Handle<'gc, Object<'gc>>,
         member: u32,
     ) -> Result<(), Error> {
-        let name = &self.compiler_ctx.atoms[member as usize];
+        let name = &self.global_context.atoms[member as usize];
         let func = object.class.get_method(gc, name)?.ok_or_else(|| {
             ErrorKind::UnknownAttr {
                 class_name: object.class.name.clone(),
@@ -540,13 +515,13 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn load_class(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let class = self.module().get_class(gc, idx as usize)?;
+        let class = self.module().load_class(gc, idx as usize)?;
         self.stack.push(class.into());
         Ok(())
     }
 
     fn load_fn(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let f = self.module().get_fn(gc, idx as usize)?;
+        let f = self.module().load_fn(gc, idx as usize)?;
         self.stack.push(f.into());
         Ok(())
     }
@@ -630,7 +605,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         Builtins(builtins): &mut Builtins,
         (idx, arg_count): (u16, u16),
     ) -> Result<(), Error> {
-        let name = self.module().consts[idx as usize].as_str();
+        let name = self.module().load_const(gc, idx as usize)?.as_str();
         let f = builtins.get_mut(name.as_str()).ok_or_else(|| {
             ErrorKind::UnknownBuiltin {
                 name: name.to_string(),
@@ -648,7 +623,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn call_fn(&mut self, gc: &mut Gc<'gc>, (idx, arg_count): (u16, u16)) -> Result<(), Error> {
-        let f = self.module().get_fn(gc, idx as usize)?;
+        let f = self.module().load_fn(gc, idx as usize)?;
         self.fn_call(gc, f, arg_count as u32)
     }
 
@@ -691,7 +666,12 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         Ok(())
     }
 
-    fn fn_call(&mut self, gc: &mut Gc, func: Handle<'gc, Fn>, arg_count: u32) -> Result<(), Error> {
+    fn fn_call(
+        &mut self,
+        gc: &mut Gc<'gc>,
+        func: Handle<'gc, Fn>,
+        arg_count: u32,
+    ) -> Result<(), Error> {
         if arg_count != func.arg_count {
             return Err(ErrorKind::ArgCountMismatch {
                 func_name: func.name.clone(),
@@ -873,12 +853,13 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let id = self.modules.len();
 
         // Parse and compile module
-        let module = compile(self.make_path(name), &mut self.compiler_ctx)
+        let mut package = compile(self.make_path(name), &mut self.global_context)
             .map_err(|e| Error::Import(Box::new(e)))?;
 
         // Initialize module and frame
         let meta = Metadata::new(name.to_string());
-        let (mut module, frame) = init_frame(id, meta, gc, module)?;
+        let frame = Frame::from_package(gc, Context::with_module(id), &mut package)?;
+        let mut module = Module::new(id, meta, package);
 
         // Setup package class
         let class = gc.alloc(Class::new("Package", self.std.module))?;
@@ -905,7 +886,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.module().consts[idx as usize].as_str();
+        let name = self.module().load_const(gc, idx as usize)?.as_str();
 
         if let Some(handle) = self.packages.get(name.as_str()) {
             self.stack.push(Handle::clone(handle).into());
@@ -1014,9 +995,11 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         self.stack.push(Value::new(Tag::Atom, idx as u64));
     }
 
-    fn load_const(&mut self, idx: u32) {
-        let value = Value::clone(&self.module().consts[idx as usize]);
+    fn load_const(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
+        let value = Value::clone(&self.module().load_const(gc, idx as usize)?);
         self.stack.push(value);
+
+        Ok(())
     }
 
     fn load_const_int(&mut self, i: u32) {
@@ -1060,7 +1043,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::BitwiseXor => self.bit_xor(gc)?,
                 Op::ShiftLeft => self.shl(gc)?,
                 Op::ShiftRight => self.shr(gc)?,
-                Op::LoadConst => self.load_const(bc.code),
+                Op::LoadConst => self.load_const(gc, bc.code)?,
                 Op::LoadConstInt => self.load_const_int(bc.code),
                 Op::LoadAtom => self.load_atom(bc.code),
                 Op::LoadMember => self.load_member(gc, bc.code)?,
@@ -1147,7 +1130,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             .collect::<Vec<_>>();
 
         for id in classes {
-            let class = module.get_class(gc, id)?;
+            let class = module.load_class(gc, id)?;
             self.std.builtins.insert(class.name.clone(), class);
         }
 

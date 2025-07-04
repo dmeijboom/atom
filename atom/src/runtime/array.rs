@@ -215,7 +215,7 @@ impl<'gc, T: Trace> Array<'gc, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::value::{IntoAtom, Type, Value};
+    use crate::runtime::{value::Type, IntoAtom, Value};
 
     use super::*;
 

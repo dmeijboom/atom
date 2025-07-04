@@ -1,13 +1,13 @@
+use std::mem;
+
 use bytes::Buf;
 
 use crate::{
     bytecode::{Bytecode, Op},
+    compiler::Package,
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    runtime::{
-        function::{Context, Fn},
-        value::Value,
-    },
+    runtime::{error::RuntimeError, function::Context, Fn, Value},
 };
 
 pub struct Frame<'gc> {
@@ -32,6 +32,21 @@ impl<'gc> Frame<'gc> {
             returned: false,
             handle,
         }
+    }
+
+    pub fn from_package(
+        gc: &mut Gc<'gc>,
+        context: Context,
+        package: &mut Package,
+    ) -> Result<Self, RuntimeError> {
+        let mut func = gc.alloc(Fn::builder().body(mem::take(&mut package.body)).build())?;
+        func.context = context;
+
+        // This is not an ordinary function, no need to return a value
+        let mut frame = Self::new(func);
+        frame.returned = true;
+
+        Ok(frame)
     }
 
     pub fn context(&self) -> &Context {

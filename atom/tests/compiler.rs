@@ -1,4 +1,4 @@
-use atom::compiler::Context;
+use atom::compiler::GlobalContext;
 use test_case::test_case;
 
 mod common;
@@ -9,7 +9,7 @@ mod common;
 #[test_case("duplicate_method", Err("CompileError: method 'bar' already exists"); "duplicate method")]
 #[cfg_attr(miri, ignore)]
 fn compile(name: &str, expected: Result<(), &'static str>) {
-    let mut ctx = Context::default();
+    let mut ctx = GlobalContext::default();
     let filename = format!("compiler/{name}.atom");
     let result = common::compile(&mut ctx, &filename);
 

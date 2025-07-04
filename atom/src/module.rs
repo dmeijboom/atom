@@ -1,53 +1,58 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
 
-use linear_map::LinearMap;
 use wyhash2::WyHash;
 
 use crate::collections::IntMap;
 use crate::compiler::Package;
 use crate::gc::{DynHandle, Gc, Handle, Trace};
 use crate::runtime::class::Context;
-use crate::runtime::{class::Class, function::Fn, value::Value};
+use crate::runtime::{Class, Fn, IntoAtom, Value};
 use crate::vm::Error;
 
-struct LazyCache<T> {
-    values: Vec<Option<T>>,
-    lookup: LinearMap<String, usize>,
-}
+#[derive(Default)]
+struct LookupTable(HashMap<String, usize, WyHash>);
 
-impl<T: DynHandle> Trace for LazyCache<T> {
-    fn trace(&self, gc: &mut Gc) {
-        self.values
-            .iter()
-            .flatten()
-            .for_each(|handle| gc.mark(handle));
-    }
-}
-
-impl<T: Clone> LazyCache<T> {
-    pub fn new(size: usize) -> Self {
-        Self {
-            values: vec![None; size],
-            lookup: LinearMap::new(),
-        }
-    }
-
-    pub fn lookup(&mut self, name: &str, f: impl FnOnce() -> Option<usize>) -> Option<usize> {
-        match self.lookup.get(name).copied() {
+impl LookupTable {
+    pub fn get_or_insert(
+        &mut self,
+        name: &str,
+        f: impl FnOnce() -> Option<usize>,
+    ) -> Option<usize> {
+        match self.0.get(name).copied() {
             Some(idx) => Some(idx),
             None => match f() {
                 Some(idx) => {
-                    self.lookup.insert(name.to_string(), idx);
+                    self.0.insert(name.to_string(), idx);
                     Some(idx)
                 }
                 None => None,
             },
         }
     }
+}
+
+struct LazyCache<T>(Vec<Option<T>>);
+
+impl<T> LazyCache<T> {
+    pub fn iter(&self) -> impl Iterator<Item = &T> {
+        self.0.iter().flatten()
+    }
+}
+
+impl<T: DynHandle> Trace for LazyCache<T> {
+    fn trace(&self, gc: &mut Gc) {
+        self.iter().for_each(|handle| gc.mark(handle));
+    }
+}
+
+impl<T: Clone> LazyCache<T> {
+    pub fn new(size: usize) -> Self {
+        Self(vec![None; size])
+    }
 
     pub fn get(&self, idx: usize) -> Option<T> {
-        self.values[idx].as_ref().cloned()
+        self.0[idx].as_ref().cloned()
     }
 
     pub fn get_or_insert<E>(
@@ -60,21 +65,27 @@ impl<T: Clone> LazyCache<T> {
         }
 
         let value = f()?;
-        self.values[idx] = Some(value.clone());
+        self.0[idx] = Some(value.clone());
         Ok(value)
     }
 }
 
 struct Cache<'gc> {
+    classes_lookup: LookupTable,
+    functions_lookup: LookupTable,
+    consts: LazyCache<Value<'gc>>,
     functions: LazyCache<Handle<'gc, Fn>>,
     classes: LazyCache<Handle<'gc, Class<'gc>>>,
     methods: LazyCache<HashMap<String, Handle<'gc, Fn>, WyHash>>,
 }
 
 impl<'gc> Cache<'gc> {
-    pub fn new(classes: usize, functions: usize) -> Self {
+    pub fn new(consts: usize, classes: usize, functions: usize) -> Self {
         Self {
+            consts: LazyCache::new(consts),
             classes: LazyCache::new(classes),
+            classes_lookup: LookupTable::default(),
+            functions_lookup: LookupTable::default(),
             functions: LazyCache::new(functions),
             methods: LazyCache::new(classes),
         }
@@ -85,10 +96,11 @@ impl<'gc> Trace for Cache<'gc> {
     fn trace(&self, gc: &mut Gc) {
         self.classes.trace(gc);
         self.functions.trace(gc);
+        self.consts.iter().for_each(|value| {
+            value.trace(gc);
+        });
         self.methods
-            .values
             .iter()
-            .flatten()
             .flat_map(|value| value.values())
             .for_each(|handle| {
                 gc.mark(handle);
@@ -122,28 +134,26 @@ pub struct Module<'gc> {
     meta: Metadata,
     cache: Cache<'gc>,
     package: Package,
-    pub consts: Vec<Value<'gc>>,
     pub vars: IntMap<u32, Value<'gc>>,
 }
 
 impl<'gc> Trace for Module<'gc> {
     fn trace(&self, gc: &mut Gc) {
         self.cache.trace(gc);
-        self.consts
-            .iter()
-            .chain(self.vars.values())
-            .for_each(|value| value.trace(gc));
     }
 }
 
 impl<'gc> Module<'gc> {
-    pub fn new(id: usize, meta: Metadata, package: Package, consts: Vec<Value<'gc>>) -> Self {
+    pub fn new(id: usize, meta: Metadata, package: Package) -> Self {
         Self {
             id,
             meta,
             vars: IntMap::default(),
-            consts,
-            cache: Cache::new(package.classes.len(), package.functions.len()),
+            cache: Cache::new(
+                package.consts.len(),
+                package.classes.len(),
+                package.functions.len(),
+            ),
             package,
         }
     }
@@ -156,20 +166,20 @@ impl<'gc> Module<'gc> {
         &self.package
     }
 
-    pub fn get_class_by_name(
+    pub fn load_class_by_name(
         &mut self,
         gc: &mut Gc<'gc>,
         name: &str,
     ) -> Result<Option<Handle<'gc, Class<'gc>>>, Error> {
-        match self.cache.classes.lookup(name, || {
+        match self.cache.classes_lookup.get_or_insert(name, || {
             self.package.classes.iter().position(|c| c.name == name)
         }) {
-            Some(idx) => self.get_class(gc, idx).map(Some),
+            Some(idx) => self.load_class(gc, idx).map(Some),
             None => Ok(None),
         }
     }
 
-    pub fn get_class(
+    pub fn load_class(
         &mut self,
         gc: &mut Gc<'gc>,
         idx: usize,
@@ -200,25 +210,31 @@ impl<'gc> Module<'gc> {
         })
     }
 
-    pub fn get_fn_by_name(
+    pub fn load_fn_by_name(
         &mut self,
         gc: &mut Gc<'gc>,
         name: &str,
     ) -> Result<Option<Handle<'gc, Fn>>, Error> {
-        match self.cache.functions.lookup(name, || {
+        match self.cache.functions_lookup.get_or_insert(name, || {
             self.package.functions.iter().position(|f| f.name == name)
         }) {
-            Some(idx) => self.get_fn(gc, idx).map(Some),
+            Some(idx) => self.load_fn(gc, idx).map(Some),
             None => Ok(None),
         }
     }
 
-    pub fn get_fn(&mut self, gc: &mut Gc<'gc>, idx: usize) -> Result<Handle<'gc, Fn>, Error> {
+    pub fn load_fn(&mut self, gc: &mut Gc<'gc>, idx: usize) -> Result<Handle<'gc, Fn>, Error> {
         self.cache.functions.get_or_insert(idx, || {
             let mut func = self.package.functions[idx].clone();
             func.context.module = self.id;
             let handle = gc.alloc(func)?;
             Ok(handle)
+        })
+    }
+
+    pub fn load_const(&mut self, gc: &mut Gc<'gc>, idx: usize) -> Result<Value<'gc>, Error> {
+        self.cache.consts.get_or_insert(idx, || {
+            Ok(self.package.consts[idx].clone().into_atom(gc)?)
         })
     }
 }

@@ -1,7 +1,3 @@
 import std;
-import std/map;
 
-fn x(){}
-
-std.println(map.Map());
-std.println(x);
+std.println("Hello, World!");

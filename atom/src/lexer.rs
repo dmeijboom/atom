@@ -7,7 +7,8 @@ use serde::Serialize;
 
 use crate::{
     error::{IntoSpanned, SpannedError},
-    runtime::bigint::{self, BigInt},
+    runtime::bigint,
+    runtime::BigInt,
 };
 
 #[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
