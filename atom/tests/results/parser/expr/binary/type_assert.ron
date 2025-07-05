@@ -1,0 +1,23 @@
+[
+    Stmt(
+        kind: expr(Expr(
+            kind: binary(Expr(
+                kind: ident("X"),
+                span: Span(
+                    offset: 0,
+                ),
+            ), typeAssert, Expr(
+                kind: ident("Y"),
+                span: Span(
+                    offset: 5,
+                ),
+            )),
+            span: Span(
+                offset: 0,
+            ),
+        )),
+        span: Span(
+            offset: 0,
+        ),
+    ),
+]

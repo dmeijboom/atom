@@ -84,6 +84,7 @@ fn is_keyword(s: &str) -> bool {
             | "pub"
             | "let"
             | "fn"
+            | "is"
             | "return"
             | "match"
             | "new"

@@ -31,7 +31,7 @@ pub struct Class<'gc> {
 
 impl<'gc> PartialEq for Class<'gc> {
     fn eq(&self, other: &Self) -> bool {
-        self.name == other.name
+        self.name == other.name && self.context == other.context
     }
 }
 

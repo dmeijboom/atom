@@ -34,6 +34,7 @@ lazy_static! {
             (ast::BinaryOp::Gte, Op::Gte),
             (ast::BinaryOp::Lt, Op::Lt),
             (ast::BinaryOp::Lte, Op::Lte),
+            (ast::BinaryOp::TypeAssert, Op::TypeAssert),
             (ast::BinaryOp::BitOr, Op::BitwiseOr),
             (ast::BinaryOp::BitAnd, Op::BitwiseAnd),
             (ast::BinaryOp::ShiftLeft, Op::ShiftLeft),

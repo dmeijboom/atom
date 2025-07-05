@@ -23,7 +23,7 @@ pub class Str {
 pub fn println(val) {
     let line;
 
-    if @typeof(val) == "Str" {
+    if val is Str {
         line = val;
     } else {
         line = @repr(val);

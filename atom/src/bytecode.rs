@@ -25,6 +25,7 @@ pub enum Op {
     Lte,
     Gt,
     Gte,
+    TypeAssert,
     Add,
     Sub,
     Mul,

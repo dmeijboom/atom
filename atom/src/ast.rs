@@ -46,6 +46,7 @@ pub enum BinaryOp {
     Lte,
     Or,
     And,
+    TypeAssert,
     BitOr,
     BitAnd,
     ShiftLeft,

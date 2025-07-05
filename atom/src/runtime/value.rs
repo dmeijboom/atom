@@ -216,6 +216,10 @@ impl<'gc> Value<'gc> {
         self.bits == NAN || (self.bits & SIG_NAN) != SIG_NAN
     }
 
+    pub fn is_class(&self) -> bool {
+        ((self.bits & TAG_MASK) >> 48) == Tag::Class as u64
+    }
+
     pub fn is_object(&self) -> bool {
         ((self.bits & TAG_MASK) >> 48) == Tag::Object as u64
     }

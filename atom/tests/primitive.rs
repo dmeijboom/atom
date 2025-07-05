@@ -25,7 +25,7 @@ fn int(name: &str, expected: Result<i64, &'static str>) {
 #[test_case("basic", Ok(0.42); "basic float")]
 #[test_case("min", Ok(-1.7976931348623157E+308f64); "minimum float")]
 #[test_case("max", Ok(1.7976931348623157E+308f64); "maximum float")]
-#[test_case("double-dot", Err("ParseError: unexpected token ., expected: )"); "double dot not allowed")]
+#[test_case("double-dot", Err("ParseError: unexpected token '.', expected: ')'"); "double dot not allowed")]
 #[cfg_attr(miri, ignore)]
 fn float(name: &str, expected: Result<f64, &'static str>) {
     let mut gc = Gc::default();

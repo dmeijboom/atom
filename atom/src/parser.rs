@@ -29,6 +29,7 @@ lazy_static! {
             (">", TokenType::Binary((BinaryOp::Gt, Prec::Relational))),
             ("==", TokenType::Binary((BinaryOp::Eq, Prec::Equal))),
             ("!=", TokenType::Binary((BinaryOp::Ne, Prec::Equal))),
+            ("is", TokenType::Binary((BinaryOp::TypeAssert, Prec::Equal))),
             ("&", TokenType::Binary((BinaryOp::BitAnd, Prec::BitwiseAnd))),
             ("<<", TokenType::Binary((BinaryOp::ShiftLeft, Prec::Shift))),
             (">>", TokenType::Binary((BinaryOp::ShiftRight, Prec::Shift))),
@@ -130,7 +131,7 @@ impl Add<u8> for Prec {
 pub enum ErrorKind {
     #[error("invalid expr '{0}'")]
     InvalidExpr(TokenKind),
-    #[error("unexpected token {actual}, expected: {expected}")]
+    #[error("unexpected token '{actual}', expected: '{expected}'")]
     UnexpectedToken {
         expected: Cow<'static, str>,
         actual: String,
@@ -239,12 +240,12 @@ impl Parser {
         match self.next() {
             Some(token) if token.kind == expected => Ok(()),
             Some(token) => Err(ErrorKind::UnexpectedToken {
-                expected: Cow::Owned(format!("{expected}")),
+                expected: Cow::Owned(expected.to_string()),
                 actual: token.to_string(),
             }
             .at(self.span())),
             None => Err(ErrorKind::UnexpectedToken {
-                expected: Cow::Owned(format!("{expected}")),
+                expected: Cow::Owned(expected.to_string()),
                 actual: "EOF".to_string(),
             }
             .at(self.span())),
@@ -420,6 +421,7 @@ impl Parser {
                     Some(TokenType::Postfix(PostfixType::Member))
                 }
                 TokenKind::Punct(tok) => TOKEN_TYPES.get(tok).cloned(),
+                TokenKind::Keyword(tok) => TOKEN_TYPES.get(tok.as_str()).cloned(),
                 _ => None,
             },
             None => None,

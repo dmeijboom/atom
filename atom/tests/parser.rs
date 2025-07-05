@@ -26,6 +26,7 @@ mod common;
 #[test_case("binary/bitxor"; "bitwise xor")]
 #[test_case("binary/shiftleft"; "bitwise shift left")]
 #[test_case("binary/shiftright"; "bitwise shift right")]
+#[test_case("binary/type_assert"; "type assertion")]
 #[test_case("binary/lt"; "less than")]
 #[test_case("binary/lte"; "less than or equal")]
 #[test_case("binary/gt"; "greater than")]

@@ -21,7 +21,7 @@ pub use value::{IntoAtom, Value};
 
 pub type Result<T> = std::result::Result<T, RuntimeError>;
 
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Default, Clone, PartialEq)]
 pub struct Context {
     pub module: usize,
 }

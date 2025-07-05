@@ -156,14 +156,6 @@ fn data_ptr<'gc>(
     }
 }
 
-fn r#typeof<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    value.ty().name().to_string().into_atom(gc)
-}
-
 fn syscall4<'gc>(
     gc: &mut Gc<'gc>,
     _rt: &dyn Runtime,
@@ -279,7 +271,6 @@ impl Default for Builtins {
         let mut builtins: HashMap<&'static str, Box<dyn BuiltinFunction>> = HashMap::default();
         builtins.insert("is_darwin", Box::new(Fn0(is_darwin)));
         builtins.insert("repr", Box::new(Fn1(repr)));
-        builtins.insert("typeof", Box::new(Fn1(r#typeof)));
         builtins.insert("data_ptr", Box::new(Fn1(data_ptr)));
         builtins.insert("ptr", Box::new(Fn1(ptr)));
         builtins.insert("str", Box::new(Fn1(str)));
@@ -963,6 +954,29 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         self.stack.push(Value::new(Tag::Atom, idx as u64));
     }
 
+    fn type_assert(&mut self, gc: &mut Gc<'gc>) -> Result<(), Error> {
+        let (lhs, rhs) = self.stack.operands();
+
+        if !rhs.is_class() {
+            return self.assert_type(rhs.ty(), Type::Class);
+        }
+
+        let rhs = rhs.as_class();
+
+        if lhs.is_object() && lhs.as_object().class == rhs {
+            self.stack.push(true.into_atom(gc)?);
+            return Ok(());
+        }
+
+        if let Some(lhs) = self.modules[self.std.module].load_class_by_name(gc, lhs.ty().name())? {
+            self.stack.push((lhs == rhs).into_atom(gc)?);
+            return Ok(());
+        }
+
+        self.stack.push(false.into_atom(gc)?);
+        Ok(())
+    }
+
     fn load_const(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
         let value = Value::clone(&self.module().load_const(gc, idx as usize)?);
         self.stack.push(value);
@@ -1006,6 +1020,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::Lte => self.le(gc)?,
                 Op::Gt => self.gt(gc)?,
                 Op::Gte => self.ge(gc)?,
+                Op::TypeAssert => self.type_assert(gc)?,
                 Op::BitwiseAnd => self.bitand(gc)?,
                 Op::BitwiseOr => self.bitor(gc)?,
                 Op::BitwiseXor => self.bit_xor(gc)?,
