@@ -32,8 +32,8 @@ impl Context {
     }
 }
 
-pub trait Runtime {
-    fn frame(&self) -> &Frame;
+pub trait Runtime<'gc> {
+    fn frame(&self) -> &Frame<'gc>;
     fn get_atom(&self, idx: u32) -> &str;
     fn get_module(&self, idx: usize) -> &Metadata;
 }

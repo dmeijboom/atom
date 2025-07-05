@@ -251,7 +251,7 @@ fn is_darwin<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, Run
     cfg!(target_os = "macos").into_atom(gc)
 }
 
-impl<'gc, const S: usize> Runtime for Vm<'gc, S> {
+impl<'gc, const S: usize> Runtime<'gc> for Vm<'gc, S> {
     fn get_atom(&self, idx: u32) -> &str {
         self.global_context.atoms[idx as usize].as_str()
     }
@@ -260,7 +260,7 @@ impl<'gc, const S: usize> Runtime for Vm<'gc, S> {
         self.modules[idx].metadata()
     }
 
-    fn frame(&self) -> &Frame {
+    fn frame(&self) -> &Frame<'gc> {
         &self.frame
     }
 }
