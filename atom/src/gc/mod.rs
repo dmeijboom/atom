@@ -82,7 +82,7 @@ pub struct GcStats {
 
 #[derive(Default)]
 pub struct Gc<'gc> {
-    ready: bool,
+    pub ready: bool,
     stats: GcStats,
     disabled: bool,
     gen0: Generation,
@@ -107,10 +107,6 @@ impl<'gc> Drop for Gc<'gc> {
 }
 
 impl<'gc> Gc<'gc> {
-    pub fn ready(&self) -> bool {
-        self.ready
-    }
-
     #[allow(dead_code)]
     pub fn stats(&self) -> GcStats {
         self.stats.clone()

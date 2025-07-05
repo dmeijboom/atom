@@ -161,17 +161,17 @@ impl<'gc> Module<'gc> {
         &self.meta
     }
 
-    pub fn package(&self) -> &Package {
-        &self.package
-    }
-
     pub fn load_class_by_name(
         &mut self,
         gc: &mut Gc<'gc>,
         name: &str,
     ) -> Result<Option<Handle<'gc, Class<'gc>>>, Error> {
         match self.cache.classes_lookup.get_or_insert(name, || {
-            self.package.classes.iter().position(|c| c.name == name)
+            self.package
+                .classes
+                .iter()
+                .filter(|c| c.public)
+                .position(|c| c.name == name)
         }) {
             Some(idx) => self.load_class(gc, idx).map(Some),
             None => Ok(None),
@@ -208,7 +208,11 @@ impl<'gc> Module<'gc> {
         name: &str,
     ) -> Result<Option<Handle<'gc, Fn>>, Error> {
         match self.cache.functions_lookup.get_or_insert(name, || {
-            self.package.functions.iter().position(|f| f.name == name)
+            self.package
+                .functions
+                .iter()
+                .filter(|f| f.public)
+                .position(|f| f.name == name)
         }) {
             Some(idx) => self.load_fn(gc, idx).map(Some),
             None => Ok(None),

@@ -1,6 +1,7 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
+    fmt::{self, Write},
     fs, mem,
     ops::*,
     path::{Path, PathBuf},
@@ -171,19 +172,18 @@ fn syscall4<'gc>(
     arg3: Value<'gc>,
     arg4: Value<'gc>,
 ) -> Result<Value<'gc>, RuntimeError> {
-    let return_code = unsafe {
+    unsafe {
         libc::syscall(
             arg1.as_int() as i32,
             arg2.as_int(),
             arg3.as_int(),
             arg4.as_int(),
         )
-    };
-
-    return_code.into_atom(gc)
+    }
+    .into_atom(gc)
 }
 
-fn fmt_type(module: &str, name: &str) -> String {
+fn format_type(module: &str, name: &str) -> String {
     if module == "__root__" {
         name.to_string()
     } else {
@@ -195,48 +195,44 @@ fn fmt_type(module: &str, name: &str) -> String {
     }
 }
 
-fn repr_internal<'gc>(rt: &dyn Runtime, value: &Value<'gc>) -> String {
+fn format_repr<'gc>(rt: &dyn Runtime, w: &mut impl Write, value: &Value<'gc>) -> fmt::Result {
     match value.ty() {
         Type::Array => {
-            let array = value.as_array();
-            let mut s = String::from("[");
+            write!(w, "[")?;
 
-            for (i, elem) in array.iter().enumerate() {
+            for (i, elem) in value.as_array().iter().enumerate() {
                 if i > 0 {
-                    s.push_str(", ");
+                    write!(w, ", ")?;
                 }
 
-                s.push_str(&repr_internal(rt, elem));
+                format_repr(rt, w, elem)?;
             }
 
-            s.push(']');
-            s
+            write!(w, "]")
         }
-        Type::Str => {
-            format!("'{}'", value.as_str().as_str())
-        }
-        Type::Int => format!("{}", value.as_int()),
-        Type::BigInt => format!("{}", value.as_bigint()),
-        Type::Float => format!("{}", value.as_float()),
-        Type::Atom => format!(":{}", rt.get_atom(value.as_atom())),
+        Type::Str => write!(w, "'{}'", value.as_str().as_str()),
+        Type::Int => write!(w, "{}", value.as_int()),
+        Type::BigInt => write!(w, "{}", value.as_bigint()),
+        Type::Float => write!(w, "{}", value.as_float()),
+        Type::Atom => write!(w, ":{}", rt.get_atom(value.as_atom())),
         Type::Fn => {
             let func = value.as_fn();
             let module = rt.get_module(func.context.module);
 
-            format!("{}(..)", fmt_type(&module.name, &func.name))
+            write!(w, "{}(..)", format_type(&module.name, &func.name))
         }
         Type::Method => {
             let func = &value.as_method().func;
             let module = rt.get_module(func.context.module);
 
-            format!("{}(..)", fmt_type(&module.name, &func.name))
+            write!(w, "{}(..)", format_type(&module.name, &func.name))
         }
-        Type::Class => value.as_class().name.to_string(),
+        Type::Class => write!(w, "{}", value.as_class().name),
         Type::Object => {
             let object = value.as_object();
             let module = rt.get_module(object.class.context.module);
 
-            format!("{}{{..}}", fmt_type(&module.name, &object.class.name))
+            write!(w, "{}{{..}}", format_type(&module.name, &object.class.name))
         }
     }
 }
@@ -246,7 +242,9 @@ pub fn repr<'gc>(
     rt: &dyn Runtime,
     value: Value<'gc>,
 ) -> Result<Value<'gc>, RuntimeError> {
-    repr_internal(rt, &value).into_atom(gc)
+    let mut s = String::new();
+    let _ = format_repr(rt, &mut s, &value);
+    s.into_atom(gc)
 }
 
 fn is_darwin<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
@@ -341,7 +339,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn gc_tick(&mut self, gc: &mut Gc) {
-        if !gc.ready() {
+        if !gc.ready {
             return;
         }
 
@@ -358,6 +356,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
     fn mark_sweep(&mut self, gc: &mut Gc) {
         self.frame.trace(gc);
+        self.package.trace(gc);
         self.packages.values().for_each(|handle| gc.mark(handle));
         self.call_stack.iter().for_each(|frame| frame.trace(gc));
         self.modules.iter().for_each(|module| module.trace(gc));
@@ -384,9 +383,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             self.modules[self.std.module].load_class_by_name(gc, recv.ty().name())?
         {
             if let Some(func) = class.load_method(gc, member)? {
-                let method = Method::new(recv, func);
-                let handle = gc.alloc(method)?;
-
+                let handle = gc.alloc(Method::new(recv, func))?;
                 self.stack.push(handle.into());
                 return Ok(());
             }
@@ -408,8 +405,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             self.assert_type(object.ty(), Type::Object)?;
         }
 
-        let mut object = object.as_object();
-        object.set_attr(member, value);
+        object.as_object().set_attr(member, value);
 
         Ok(())
     }
@@ -428,17 +424,13 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let module = &mut self.modules[module_id as usize];
 
         if let Some(handle) = module.load_fn_by_name(gc, member)? {
-            if handle.public {
-                self.stack.push(handle.into());
-                return Ok(());
-            }
+            self.stack.push(handle.into());
+            return Ok(());
         }
 
         if let Some(handle) = module.load_class_by_name(gc, member)? {
-            if handle.public {
-                self.stack.push(handle.into());
-                return Ok(());
-            }
+            self.stack.push(handle.into());
+            return Ok(());
         }
 
         Err(ErrorKind::UnknownAttr {
@@ -560,13 +552,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         arg_count: u32,
     ) -> Result<(), Error> {
         let init = class.init.clone();
-        let object = Object::new(class);
-        let handle = gc.alloc(object)?;
+        let handle = gc.alloc(Object::new(class))?;
 
         if let Some(f) = init {
-            let method = Method::new(handle.into(), f);
-            let handle = gc.alloc(method)?;
-
+            let handle = gc.alloc(Method::new(handle.into(), f))?;
             self.stack.push(handle.into());
             self.call(gc, arg_count)?;
         } else {
@@ -844,7 +833,6 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
         // Setup package class
         let class = Handle::clone(&self.package);
-
         let mut object = gc.alloc(Object::new(class))?;
         object.set_attr(value::MODULE, BigInt::from(id).into_atom(gc)?);
 
