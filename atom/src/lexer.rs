@@ -88,6 +88,7 @@ fn is_keyword(s: &str) -> bool {
             | "return"
             | "match"
             | "new"
+            | "yield"
             | "class"
             | "import"
             | "break"

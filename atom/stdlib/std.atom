@@ -6,6 +6,12 @@ pub class Array {
     fn cap(self) => @read_usize(@ptr(self), 8);
 }
 
+pub fn* range(from, to) {
+    for let i = from; i < to; i += 1 {
+        yield i;
+    }
+}
+
 pub fn repeat(elem, count) {
     let out = [];
 

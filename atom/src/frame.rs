@@ -7,12 +7,13 @@ use crate::{
     compiler::Package,
     gc::{Gc, Handle, Trace},
     lexer::Span,
-    runtime::{error::RuntimeError, Context, Fn, Value},
+    runtime::{error::RuntimeError, function::Resumable, Context, Fn, Value},
 };
 
 pub struct Frame<'gc> {
     pub offset: usize,
     pub returned: bool,
+    pub resumable: bool,
     pub locals: Vec<Value<'gc>>,
     pub handle: Handle<'gc, Fn>,
 }
@@ -30,8 +31,17 @@ impl<'gc> Frame<'gc> {
             offset: 0,
             locals: vec![],
             returned: false,
+            resumable: false,
             handle,
         }
+    }
+
+    pub fn as_resumable(&self) -> Option<Handle<'gc, Resumable<'gc>>> {
+        if self.resumable {
+            return self.locals.last().map(|v| v.as_resumable());
+        }
+
+        None
     }
 
     pub fn from_package(
@@ -75,7 +85,6 @@ impl Iterator for Frame<'_> {
             );
 
             let bc = Bytecode { op, code };
-
             self.offset += 8;
 
             return Some(bc);

@@ -798,6 +798,7 @@ impl Compiler {
             Fn::builder()
                 .name(fn_stmt.name.clone())
                 .public(fn_stmt.public)
+                .resumable(fn_stmt.resumable)
                 .arg_count(fn_stmt.args.len() as u32)
                 .build(),
         );
@@ -882,6 +883,18 @@ impl Compiler {
         self.push(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(post_idx, self.offset());
+
+        Ok(())
+    }
+
+    fn yield_stmt(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        expr: Expr,
+    ) -> Result<(), CompileError> {
+        self.expr(ctx, expr)?;
+        self.push(Bytecode::new(Op::Yield).at(span));
 
         Ok(())
     }
@@ -973,6 +986,7 @@ impl Compiler {
                     self.push(Bytecode::new(Op::Discard).at(stmt.span));
                 }
             }
+            StmtKind::Yield(expr) => self.yield_stmt(ctx, stmt.span, expr)?,
             StmtKind::Return(expr) => self.ret(ctx, stmt.span, expr)?,
             StmtKind::Break => {
                 let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));

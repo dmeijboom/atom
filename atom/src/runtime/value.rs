@@ -14,7 +14,7 @@ use super::{
     bigint::BigInt,
     class::Class,
     error::RuntimeError,
-    function::{Fn, Method},
+    function::{Fn, Method, Resumable},
     object::Object,
     str::Str,
 };
@@ -27,6 +27,7 @@ pub enum Tag {
     Float,
     Array,
     Fn,
+    Resumable,
     Method,
     Str,
     #[default]
@@ -94,6 +95,7 @@ pub enum Type {
     Float,
     Array,
     Fn,
+    Resumable,
     Method,
     Str,
     #[default]
@@ -110,6 +112,7 @@ impl Type {
             Type::Float => "Float",
             Type::Array => "Array",
             Type::Fn => "Fn",
+            Type::Resumable => "Resumable",
             Type::Method => "Method",
             Type::Str => "Str",
             Type::Atom => "Atom",
@@ -147,6 +150,7 @@ impl_value_handle!(
     (Class: Class<'_>),
     (Object: Object<'_>),
     (Method: Method<'_>),
+    (Resumable: Resumable<'_>),
     (Array: Array<'_, Value<'_>>)
 );
 
@@ -248,6 +252,7 @@ impl<'gc> Value<'gc> {
             Tag::Atom => Type::Atom,
             Tag::Class => Type::Class,
             Tag::Object => Type::Object,
+            Tag::Resumable => Type::Resumable,
         }
     }
 
@@ -318,6 +323,11 @@ impl<'gc> Value<'gc> {
     }
 
     #[inline]
+    pub fn as_resumable(&self) -> Handle<'gc, Resumable<'gc>> {
+        self.as_handle()
+    }
+
+    #[inline]
     pub fn as_atom(&self) -> u32 {
         (self.bits & INT_MASK) as u32
     }
@@ -330,6 +340,7 @@ impl<'gc> Trace for Value<'gc> {
             Tag::Str => gc.mark(&self.as_str()),
             Tag::Object => gc.mark(&self.as_object()),
             Tag::Fn => gc.mark(&self.as_fn()),
+            Tag::Resumable => gc.mark(&self.as_resumable()),
             Tag::Method => gc.mark(&self.as_method()),
             Tag::Class => gc.mark(&self.as_class()),
             Tag::Int | Tag::BigInt | Tag::Float | Tag::Atom => {}

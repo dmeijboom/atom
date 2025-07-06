@@ -22,6 +22,7 @@ use crate::{
     parser::{self},
     runtime::{
         error::{Call, ErrorKind, RuntimeError},
+        function::{Resumable, ResumableState},
         value::{self, IntoAtom, OneOf, Tag, Type, TypeAssert, Value},
         Array, BigInt, Class, Context, Fn, Method, Object, Runtime, Str,
     },
@@ -207,9 +208,13 @@ fn format_repr<'gc>(rt: &dyn Runtime, w: &mut impl Write, value: &Value<'gc>) ->
         Type::BigInt => write!(w, "{}", value.as_bigint()),
         Type::Float => write!(w, "{}", value.as_float()),
         Type::Atom => write!(w, ":{}", rt.get_atom(value.as_atom())),
-        Type::Fn => {
+        Type::Resumable | Type::Fn => {
             let func = value.as_fn();
             let module = rt.get_module(func.context.module);
+
+            if value.ty() == Type::Resumable {
+                write!(w, "*")?;
+            }
 
             write!(w, "{}(..)", format_type(&module.name, &func.name))
         }
@@ -327,6 +332,16 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         ErrorKind::IndexOutOfBounds(idx)
             .at(self.frame.span())
             .into()
+    }
+
+    fn arg_count_mismatch(&self, func: &Fn, arg_count: u32) -> Error {
+        ErrorKind::ArgCountMismatch {
+            func_name: func.name.clone(),
+            func_arg_count: func.arg_count,
+            arg_count,
+        }
+        .at(self.frame.span())
+        .into()
     }
 
     fn gc_tick(&mut self, gc: &mut Gc) {
@@ -490,7 +505,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
     fn return_local(&mut self, idx: u32) -> Result<(), Error> {
         self.load_local(idx);
-        self.ret()
+        self.ret(false)
     }
 
     fn load_local(&mut self, idx: u32) {
@@ -589,12 +604,48 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     fn call(&mut self, gc: &mut Gc<'gc>, arg_count: u32) -> Result<(), Error> {
         let callee = self.stack.pop();
 
-        match callee.ty() {
-            Type::Fn => self.fn_call(gc, callee.as_fn(), arg_count),
-            Type::Method => self.method_call(gc, callee.as_method(), arg_count),
-            Type::Class => self.init_class(gc, callee.as_class(), arg_count),
-            ty => Err(ErrorKind::NotCallable(ty).at(self.frame.span()).into()),
+        match callee.tag() {
+            Tag::Fn => self.fn_call(gc, callee.as_fn(), arg_count),
+            Tag::Resumable => self.resumable_call(gc, callee.as_resumable(), arg_count),
+            Tag::Method => self.method_call(gc, callee.as_method(), arg_count),
+            Tag::Class => self.init_class(gc, callee.as_class(), arg_count),
+            _ => Err(ErrorKind::NotCallable(callee.ty())
+                .at(self.frame.span())
+                .into()),
         }
+    }
+
+    fn resumable_call(
+        &mut self,
+        gc: &mut Gc<'gc>,
+        mut resumable: Handle<'gc, Resumable<'gc>>,
+        arg_count: u32,
+    ) -> Result<(), Error> {
+        if arg_count != 0 {
+            return Err(self.arg_count_mismatch(&resumable.func, arg_count));
+        }
+
+        match resumable.state {
+            ResumableState::Idle | ResumableState::Running => {
+                resumable.state = ResumableState::Running;
+
+                let mut frame = Frame::new(Handle::clone(&resumable.func));
+                let mut locals = resumable.locals.clone();
+                locals.push(Handle::clone(&resumable).into());
+
+                frame.resumable = true;
+                frame.offset = resumable.offset;
+                frame.locals = locals;
+
+                self.set_frame(frame);
+                self.gc_tick(gc);
+            }
+            ResumableState::Completed => {
+                self.stack.push(Value::new(Tag::Atom, value::NIL as u64));
+            }
+        };
+
+        Ok(())
     }
 
     fn method_call(
@@ -604,17 +655,11 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         arg_count: u32,
     ) -> Result<(), Error> {
         if arg_count != method.func.arg_count - 1 {
-            return Err(ErrorKind::ArgCountMismatch {
-                func_name: method.func.name.clone(),
-                func_arg_count: method.func.arg_count - 1,
-                arg_count,
-            }
-            .at(self.frame.span())
-            .into());
+            return Err(self.arg_count_mismatch(&method.func, arg_count));
         }
 
-        let frame = Frame::new(Handle::clone(&method.func));
-        self.call_stack.push(mem::replace(&mut self.frame, frame));
+        self.set_frame(Frame::new(Handle::clone(&method.func)));
+
         let locals = self.stack.slice_to_end(arg_count as usize);
 
         self.frame.locals = Vec::with_capacity(locals.len() + 1);
@@ -632,17 +677,19 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         arg_count: u32,
     ) -> Result<(), Error> {
         if arg_count != func.arg_count {
-            return Err(ErrorKind::ArgCountMismatch {
-                func_name: func.name.clone(),
-                func_arg_count: func.arg_count,
-                arg_count,
-            }
-            .at(self.frame.span())
-            .into());
+            return Err(self.arg_count_mismatch(&func, arg_count));
+        }
+
+        let locals = self.stack.slice_to_end(arg_count as usize).to_vec();
+
+        if func.resumable {
+            let resumable = gc.alloc(Resumable::new(func, locals))?;
+            self.stack.push(resumable.into());
+            return Ok(());
         }
 
         self.set_frame(Frame::new(func));
-        self.frame.locals = self.stack.slice_to_end(arg_count as usize).to_vec();
+        self.frame.locals = locals;
         self.gc_tick(gc);
 
         Ok(())
@@ -992,8 +1039,16 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let _ = self.stack.pop();
     }
 
-    fn ret(&mut self) -> Result<(), Error> {
+    fn ret(&mut self, yielded: bool) -> Result<(), Error> {
         self.frame.returned = true;
+
+        if let Some(mut resumable) = self.frame.as_resumable() {
+            if yielded {
+                resumable.offset = self.frame.offset;
+            } else {
+                resumable.state = ResumableState::Completed;
+            }
+        }
 
         if let Some(frame) = self.call_stack.pop() {
             self.frame = frame;
@@ -1052,7 +1107,8 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
                 Op::Import => self.import(gc, bc.code)?,
-                Op::Return => self.ret()?,
+                Op::Yield => self.ret(true)?,
+                Op::Return => self.ret(false)?,
                 Op::ReturnLocal => self.return_local(bc.code)?,
                 Op::Nop => unreachable!(),
             }

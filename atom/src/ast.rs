@@ -130,6 +130,7 @@ impl FnArg {
 pub struct FnStmt {
     pub name: String,
     pub public: bool,
+    pub resumable: bool,
     pub args: Vec<FnArg>,
     pub body: Vec<Stmt>,
 }
@@ -141,6 +142,7 @@ pub enum StmtKind {
     Continue,
     If(IfStmt),
     Expr(Expr),
+    Yield(Expr),
     Return(Expr),
     Import(Path),
     For(Expr, Vec<Stmt>),

@@ -549,6 +549,7 @@ impl Parser {
         let span = self.span();
         let public = self.accept_keyword("pub");
         self.expect_keyword("fn")?;
+        let resumable = self.accept(&TokenKind::Punct("*"));
         let name = self.ident()?;
         self.expect(TokenKind::Punct("("))?;
         let args = self.arg_list(TokenKind::Punct(")"))?;
@@ -565,6 +566,7 @@ impl Parser {
 
         Ok(StmtKind::Fn(FnStmt {
             name,
+            resumable,
             args,
             body,
             public,
@@ -680,6 +682,14 @@ impl Parser {
         self.semi()?;
         Ok(StmtKind::Continue.at(span))
     }
+    
+    fn yield_stmt(&mut self) -> Result<Stmt, ParseError> {
+        let span = self.span();
+        self.advance();
+        let expr = self.expr(Prec::default())?;
+        self.semi()?;
+        Ok(StmtKind::Yield(expr).at(span))
+    }
 
     fn body(&mut self, global: bool) -> Result<Vec<Stmt>, ParseError> {
         let mut stmts = vec![];
@@ -695,6 +705,7 @@ impl Parser {
                 TokenKind::Keyword(w) if w == "import" => self.import_stmt()?,
                 TokenKind::Keyword(w) if w == "break" => self.break_stmt()?,
                 TokenKind::Keyword(w) if w == "continue" => self.continue_stmt()?,
+                TokenKind::Keyword(w) if w == "yield" => self.yield_stmt()?,
                 TokenKind::Punct("}") if !global => break,
                 _ => self.expr_stmt()?,
             };

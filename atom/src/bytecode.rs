@@ -44,6 +44,7 @@ pub enum Op {
     LoadClass,
     LoadAtom,
     Discard,
+    Yield,
     Return,
     ReturnLocal,
     Jump,
