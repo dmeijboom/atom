@@ -19,7 +19,7 @@ macro_rules! assert_argc {
                 func_arg_count: $argc,
                 arg_count: $args.len() as u32,
             }
-            .at($rt.frame().span())
+            .at($rt.span())
             .into());
         }
     };

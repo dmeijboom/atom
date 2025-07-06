@@ -8,76 +8,92 @@
                             kind: ident("a"),
                             span: Span(
                                 offset: 0,
+                                line_number: 1,
                             ),
                         ), add, Expr(
                             kind: binary(Expr(
                                 kind: ident("b"),
                                 span: Span(
                                     offset: 4,
+                                    line_number: 1,
                                 ),
                             ), mul, Expr(
                                 kind: ident("c"),
                                 span: Span(
                                     offset: 8,
+                                    line_number: 1,
                                 ),
                             )),
                             span: Span(
                                 offset: 4,
+                                line_number: 1,
                             ),
                         )),
                         span: Span(
                             offset: 0,
+                            line_number: 1,
                         ),
                     ), sub, Expr(
                         kind: binary(Expr(
                             kind: ident("d"),
                             span: Span(
                                 offset: 12,
+                                line_number: 1,
                             ),
                         ), div, Expr(
                             kind: ident("e"),
                             span: Span(
                                 offset: 16,
+                                line_number: 1,
                             ),
                         )),
                         span: Span(
                             offset: 12,
+                            line_number: 1,
                         ),
                     )),
                     span: Span(
                         offset: 0,
+                        line_number: 1,
                     ),
                 ), and, Expr(
                     kind: ident("f"),
                     span: Span(
                         offset: 21,
+                        line_number: 1,
                     ),
                 )),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), or, Expr(
                 kind: binary(Expr(
                     kind: ident("g"),
                     span: Span(
                         offset: 26,
+                        line_number: 1,
                     ),
                 ), lt, Expr(
                     kind: ident("h"),
                     span: Span(
                         offset: 30,
+                        line_number: 1,
                     ),
                 )),
                 span: Span(
                     offset: 26,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

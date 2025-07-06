@@ -6,23 +6,28 @@
                     kind: literal(atom("true")),
                     span: Span(
                         offset: 1,
+                        line_number: 1,
                     ),
                 )),
                 span: Span(
                     offset: 1,
+                    line_number: 1,
                 ),
             ), or, Expr(
                 kind: literal(atom("false")),
                 span: Span(
                     offset: 10,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 1,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

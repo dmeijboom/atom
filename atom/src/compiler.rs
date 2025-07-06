@@ -13,10 +13,10 @@ use crate::{
     ast::{
         self, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, MatchArm, Stmt, StmtKind,
     },
-    bytecode::{Bytecode, Const, Op, Serializable, Spanned},
-    collections::{OrderedMap, OrderedSet},
+    bytecode::{self, Bytecode, Const, Op, Serializable},
+    collections::{IntMap, OrderedMap, OrderedSet},
     error::{IntoSpanned, SpannedError},
-    lexer::Span,
+    lexer::{Span, Spanned},
     runtime::Fn,
 };
 
@@ -81,6 +81,7 @@ pub struct Package {
     pub consts: Vec<Const>,
     pub classes: Vec<Class>,
     pub functions: Vec<Fn>,
+    pub offsets: IntMap<usize, Span>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -207,6 +208,7 @@ impl Seq {
 pub struct Compiler {
     vars: Seq,
     body: BytesMut,
+    offsets: IntMap<usize, Span>,
     markers: Vec<Marker>,
     names: HashSet<String>,
     scope: VecDeque<Scope>,
@@ -222,6 +224,7 @@ impl Default for Compiler {
         Self {
             vars: Seq::default(),
             body: BytesMut::new(),
+            offsets: IntMap::default(),
             markers: vec![],
             names: HashSet::default(),
             funcs: OrderedMap::default(),
@@ -250,15 +253,15 @@ impl Compiler {
 
     fn push(&mut self, bytecode: Spanned<Bytecode>) -> usize {
         let offset = self.body.len();
-        bytecode.serialize(&mut self.body);
+        bytecode.inner.serialize(&mut self.body);
+        self.offsets.insert(offset, bytecode.span);
         offset
     }
 
     fn set_offset(&mut self, offset: usize, new_offset: usize) {
-        let orig = Spanned::<Bytecode>::deserialize(&mut &self.body[offset..offset + 8]);
-        let mut buff = &mut self.body[offset..];
-        let bc = Bytecode::with_code(orig.op, (new_offset / 8) as u32);
-        bc.at(orig.span).serialize(&mut buff);
+        let orig = Bytecode::deserialize(&mut &self.body[offset..offset + bytecode::SIZE]);
+        Bytecode::with_code(orig.op, (new_offset / bytecode::SIZE) as u32)
+            .serialize(&mut &mut self.body[offset..]);
     }
 
     fn accept(&mut self, op: Op) -> Option<Spanned<Bytecode>> {
@@ -266,11 +269,13 @@ impl Compiler {
             return None;
         }
 
-        let bc = Spanned::<Bytecode>::deserialize(&mut &self.body[self.body.len() - 8..]);
+        let offset = self.body.len() - bytecode::SIZE;
+        let span = self.offsets.get(&offset).copied().unwrap_or_default();
+        let bc = Bytecode::deserialize(&mut &self.body[offset..]);
 
         if bc.op == op {
-            self.body.truncate(self.body.len() - 8);
-            return Some(bc);
+            self.body.truncate(offset);
+            return Some(bc.at(span));
         }
 
         None
@@ -857,7 +862,7 @@ impl Compiler {
         self.expr(ctx, expr)?;
         let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
         self.compile_scoped_body(ctx, body)?;
-        self.push(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
+        self.push(Bytecode::with_code(Op::Jump, (begin / bytecode::SIZE) as u32).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(begin, self.offset());
 
@@ -880,7 +885,7 @@ impl Compiler {
         self.compile_scoped_body(ctx, body)?;
         let post_idx = self.offset();
         self.expr(ctx, post)?;
-        self.push(Bytecode::with_code(Op::Jump, (begin as u32) / 8).at(span));
+        self.push(Bytecode::with_code(Op::Jump, (begin / bytecode::SIZE) as u32).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(post_idx, self.offset());
 
@@ -1048,6 +1053,7 @@ impl Compiler {
 
         Ok(Package {
             body: self.body.freeze(),
+            offsets: self.offsets,
             consts: self.consts.into_vec(),
             functions: self.funcs.into_vec(),
             classes: self.classes.into_vec(),
@@ -1066,7 +1072,7 @@ mod tests {
         let offset = compiler.push(bc.clone());
 
         assert_eq!(0, offset);
-        assert_eq!(8, compiler.body.len());
+        assert_eq!(bytecode::SIZE, compiler.body.len());
         assert_eq!(Some(bc), compiler.accept(Op::Load));
         assert_eq!(0, compiler.body.len());
 
@@ -1075,7 +1081,7 @@ mod tests {
 
         assert_eq!(0, offset);
         assert_eq!(None, compiler.accept(Op::Gt));
-        assert_eq!(8, compiler.body.len());
+        assert_eq!(bytecode::SIZE, compiler.body.len());
     }
 
     #[test]
@@ -1085,9 +1091,9 @@ mod tests {
         let offset = compiler.push(code.clone());
 
         compiler.push(Bytecode::new(Op::Lt).at(Span::default()));
-        compiler.set_offset(offset, 800);
+        compiler.set_offset(offset, 500);
 
-        let code = Spanned::<Bytecode>::deserialize(&mut &compiler.body[..8]);
+        let code = Bytecode::deserialize(&mut &compiler.body[..bytecode::SIZE]);
         assert_eq!(Op::Load, code.op);
         assert_eq!(100, code.code);
     }

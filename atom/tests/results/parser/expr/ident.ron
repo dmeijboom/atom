@@ -4,10 +4,12 @@
             kind: ident("hello_world_is_an_ident7"),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

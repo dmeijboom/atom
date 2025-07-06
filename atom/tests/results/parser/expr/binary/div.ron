@@ -5,19 +5,23 @@
                 kind: literal(int(10)),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), div, Expr(
                 kind: literal(int(4)),
                 span: Span(
                     offset: 5,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

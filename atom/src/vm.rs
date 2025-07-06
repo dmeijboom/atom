@@ -12,7 +12,7 @@ use wyhash2::WyHash;
 use crate::{
     ast::Stmt,
     builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn4},
-    bytecode::Op,
+    bytecode::{self, Op},
     collections::Stack,
     compiler::{Compiler, GlobalContext, Package},
     frame::Frame,
@@ -257,8 +257,8 @@ impl<'gc, const S: usize> Runtime<'gc> for Vm<'gc, S> {
         self.modules[idx].metadata()
     }
 
-    fn frame(&self) -> &Frame<'gc> {
-        &self.frame
+    fn span(&self) -> Span {
+        self.span()
     }
 }
 
@@ -322,16 +322,18 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         })
     }
 
+    fn span(&self) -> Span {
+        self.modules[self.frame.context().module].span_at(self.frame.offset)
+    }
+
     fn unsupported(&self, op: &'static str, left: Type, right: Type) -> Error {
         ErrorKind::UnsupportedOp { left, right, op }
-            .at(self.frame.span())
+            .at(self.span())
             .into()
     }
 
     fn index_out_of_bounds(&self, idx: usize) -> Error {
-        ErrorKind::IndexOutOfBounds(idx)
-            .at(self.frame.span())
-            .into()
+        ErrorKind::IndexOutOfBounds(idx).at(self.span()).into()
     }
 
     fn arg_count_mismatch(&self, func: &Fn, arg_count: u32) -> Error {
@@ -340,7 +342,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             func_arg_count: func.arg_count,
             arg_count,
         }
-        .at(self.frame.span())
+        .at(self.span())
         .into()
     }
 
@@ -373,7 +375,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
     #[inline]
     fn jump(&mut self, pos: u32) {
-        self.frame.offset = pos as usize * 8;
+        self.frame.offset = pos as usize * bytecode::SIZE;
     }
 
     fn load_member(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
@@ -398,7 +400,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             ty: recv.ty(),
             field: member.to_string(),
         }
-        .at(self.frame.span())
+        .at(self.span())
         .into())
     }
 
@@ -424,7 +426,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let member = &self.global_context.atoms[member as usize];
         let module_id = object
             .get_attr(value::MODULE)
-            .ok_or_else(|| ErrorKind::MissingAttribute("module").at(self.frame.span()))?
+            .ok_or_else(|| ErrorKind::MissingAttribute("module").at(self.span()))?
             .as_int();
         let module = &mut self.modules[module_id as usize];
 
@@ -442,7 +444,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             class_name: object.class.name.clone(),
             attribute: member.to_string(),
         }
-        .at(self.frame.span())
+        .at(self.span())
         .into())
     }
 
@@ -478,7 +480,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 class_name: object.class.name.clone(),
                 attribute: name.to_string(),
             }
-            .at(self.frame.span())
+            .at(self.span())
         })?;
 
         let method = Method::new(Handle::clone(&object).into(), func);
@@ -521,7 +523,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
         if right != left {
             return Err(ErrorKind::TypeMismatch { left, right }
-                .at(self.frame.span())
+                .at(self.span())
                 .into());
         }
 
@@ -582,7 +584,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             ErrorKind::UnknownBuiltin {
                 name: name.to_string(),
             }
-            .at(self.frame.span())
+            .at(self.span())
         })?;
 
         let args = self.stack.slice_to_end(arg_count as usize).to_vec();
@@ -607,9 +609,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             Tag::Resumable => self.resumable_call(gc, callee.as_resumable(), arg_count),
             Tag::Method => self.method_call(gc, callee.as_method(), arg_count),
             Tag::Class => self.init_class(gc, callee.as_class(), arg_count),
-            _ => Err(ErrorKind::NotCallable(callee.ty())
-                .at(self.frame.span())
-                .into()),
+            _ => Err(ErrorKind::NotCallable(callee.ty()).at(self.span()).into()),
         }
     }
 
@@ -1124,7 +1124,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                     .map(|(i, frame)| {
                         if i > 0 {
                             if let Some(caller) = self.call_stack.get(i - 1) {
-                                return Call::new(caller.span(), Some(frame.handle.name.clone()));
+                                let module = &self.modules[caller.context().module];
+                                let span = module.span_at(caller.offset);
+
+                                return Call::new(span, Some(frame.handle.name.clone()));
                             }
                         }
 

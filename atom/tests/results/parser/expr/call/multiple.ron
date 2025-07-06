@@ -5,27 +5,32 @@
                 kind: ident("println"),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), [
                 Expr(
                     kind: literal(string("hello")),
                     span: Span(
                         offset: 8,
+                        line_number: 1,
                     ),
                 ),
                 Expr(
                     kind: literal(string("world")),
                     span: Span(
                         offset: 17,
+                        line_number: 1,
                     ),
                 ),
             ]),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

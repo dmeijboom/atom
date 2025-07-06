@@ -6,6 +6,7 @@ use wyhash2::WyHash;
 use crate::collections::IntMap;
 use crate::compiler::Package;
 use crate::gc::{DynHandle, Gc, Handle, Trace};
+use crate::lexer::Span;
 use crate::runtime::{Class, Fn, IntoAtom, Value};
 use crate::vm::Error;
 
@@ -137,6 +138,14 @@ impl<'gc> Module<'gc> {
             ),
             package,
         }
+    }
+
+    pub fn span_at(&self, offset: usize) -> Span {
+        self.package
+            .offsets
+            .get(&offset)
+            .copied()
+            .unwrap_or_default()
     }
 
     pub fn metadata(&self) -> &Metadata {

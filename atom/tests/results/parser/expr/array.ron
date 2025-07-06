@@ -9,41 +9,49 @@
                                 kind: literal(int(10)),
                                 span: Span(
                                     offset: 2,
+                                    line_number: 1,
                                 ),
                             ), add, Expr(
                                 kind: literal(int(3)),
                                 span: Span(
                                     offset: 7,
+                                    line_number: 1,
                                 ),
                             )),
                             span: Span(
                                 offset: 2,
+                                line_number: 1,
                             ),
                         ),
                     ]),
                     span: Span(
                         offset: 1,
+                        line_number: 1,
                     ),
                 ),
                 Expr(
                     kind: literal(string("hello")),
                     span: Span(
                         offset: 11,
+                        line_number: 1,
                     ),
                 ),
                 Expr(
                     kind: ident("ident39"),
                     span: Span(
                         offset: 20,
+                        line_number: 1,
                     ),
                 ),
             ]),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

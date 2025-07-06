@@ -5,19 +5,23 @@
                 kind: ident("name1"),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), Expr(
                 kind: literal(int(10)),
                 span: Span(
                     offset: 8,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

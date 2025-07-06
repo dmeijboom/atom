@@ -4,10 +4,12 @@
             kind: literal(atom("true")),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
     Stmt(
@@ -15,10 +17,12 @@
             kind: literal(atom("false")),
             span: Span(
                 offset: 6,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 6,
+            line_number: 1,
         ),
     ),
 ]

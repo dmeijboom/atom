@@ -4,10 +4,12 @@
             kind: literal(string("hello world\n")),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

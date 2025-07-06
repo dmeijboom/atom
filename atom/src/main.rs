@@ -1,7 +1,7 @@
 use std::{fs, path::PathBuf, process::exit};
 
 use argh::FromArgs;
-use bytecode::{Bytecode, Serializable, Spanned};
+use bytecode::{Bytecode, Serializable};
 use compiler::{Compiler, GlobalContext, Package};
 use error::Error;
 use gc::Gc;
@@ -89,8 +89,8 @@ fn print_func(f: &Fn, indent: usize) {
 
     for (i, opcode) in f
         .body
-        .chunks_exact(8)
-        .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
+        .chunks_exact(bytecode::SIZE)
+        .map(|mut chunk| Bytecode::deserialize(&mut chunk))
         .enumerate()
     {
         print_opcode(i, &opcode, indent + 1);
@@ -131,8 +131,8 @@ fn print_module(package: &Package) {
 
     for (i, opcode) in package
         .body
-        .chunks_exact(8)
-        .map(|mut chunk| Spanned::<Bytecode>::deserialize(&mut chunk))
+        .chunks_exact(bytecode::SIZE)
+        .map(|mut chunk| Bytecode::deserialize(&mut chunk))
         .enumerate()
     {
         print_opcode(i, &opcode, 1);

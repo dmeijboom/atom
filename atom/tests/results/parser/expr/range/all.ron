@@ -5,19 +5,23 @@
                 kind: ident("x"),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), Expr(
                 kind: range(None, None),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

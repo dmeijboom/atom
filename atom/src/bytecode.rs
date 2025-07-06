@@ -1,7 +1,6 @@
 use std::{
     fmt::Display,
     hash::{Hash, Hasher},
-    ops::Deref,
 };
 
 use bytes::{Buf, BufMut};
@@ -9,7 +8,7 @@ use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::{
     gc::Gc,
-    lexer::Span,
+    lexer::{Span, Spanned},
     runtime::{error::RuntimeError, BigInt, IntoAtom, Value},
 };
 
@@ -72,40 +71,11 @@ pub trait Serializable {
     fn deserialize(buff: impl Buf) -> Self;
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct Spanned<T: Serializable + Clone> {
-    pub inner: T,
-    pub span: Span,
-}
-
-impl<T: Serializable + Clone> Deref for Spanned<T> {
-    type Target = T;
-
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
-}
-
-impl<T: Serializable + Clone> Serializable for Spanned<T> {
-    fn serialize(&self, buff: &mut impl BufMut) {
-        self.inner.serialize(buff);
-        buff.put_uint(self.span.offset as u64, 3);
-    }
-
-    fn deserialize(mut buff: impl Buf) -> Self {
-        let inner = T::deserialize(&mut buff);
-        let offset = buff.get_uint(3) as u32;
-
-        Self {
-            inner,
-            span: Span { offset },
-        }
-    }
-}
+pub const SIZE: usize = 5;
 
 /// There are two types of bytecodes:
-/// 1. opcode (8) > code (32) > offset (24)
-/// 2. opcode (8) > code1 (16) > code2 (16) > offset (24)
+/// 1. opcode (8) > code (32)
+/// 2. opcode (8) > code1 (16) > code2 (16)
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bytecode {
     pub op: Op,

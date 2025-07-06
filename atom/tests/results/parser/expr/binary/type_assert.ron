@@ -5,19 +5,23 @@
                 kind: ident("X"),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), typeAssert, Expr(
                 kind: ident("Y"),
                 span: Span(
                     offset: 5,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

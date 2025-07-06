@@ -5,14 +5,17 @@
                 kind: ident("println"),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), []),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

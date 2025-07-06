@@ -4,10 +4,12 @@
             kind: literal(bigInt("13223372036854775807")),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

@@ -7,40 +7,48 @@
                         kind: literal(int(1)),
                         span: Span(
                             offset: 1,
+                            line_number: 1,
                         ),
                     ),
                     Expr(
                         kind: literal(int(2)),
                         span: Span(
                             offset: 4,
+                            line_number: 1,
                         ),
                     ),
                 ]),
                 span: Span(
                     offset: 0,
+                    line_number: 1,
                 ),
             ), Expr(
                 kind: binary(Expr(
                     kind: literal(int(4)),
                     span: Span(
                         offset: 7,
+                        line_number: 1,
                     ),
                 ), add, Expr(
                     kind: literal(int(10)),
                     span: Span(
                         offset: 11,
+                        line_number: 1,
                     ),
                 )),
                 span: Span(
                     offset: 7,
+                    line_number: 1,
                 ),
             )),
             span: Span(
                 offset: 0,
+                line_number: 1,
             ),
         )),
         span: Span(
             offset: 0,
+            line_number: 1,
         ),
     ),
 ]

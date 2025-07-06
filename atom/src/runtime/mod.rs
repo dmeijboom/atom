@@ -1,6 +1,6 @@
 use error::RuntimeError;
 
-use crate::{frame::Frame, module::Metadata};
+use crate::{lexer::Span, module::Metadata};
 
 pub mod array;
 pub mod bigint;
@@ -33,7 +33,7 @@ impl Context {
 }
 
 pub trait Runtime<'gc> {
-    fn frame(&self) -> &Frame<'gc>;
+    fn span(&self) -> Span;
     fn get_atom(&self, idx: u32) -> &str;
     fn get_module(&self, idx: usize) -> &Metadata;
 }

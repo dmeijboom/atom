@@ -1,12 +1,9 @@
 use std::mem;
 
-use bytes::Buf;
-
 use crate::{
-    bytecode::{Bytecode, Op},
+    bytecode::{self, Bytecode, Op},
     compiler::Package,
     gc::{Gc, Handle, Trace},
-    lexer::Span,
     runtime::{error::RuntimeError, function::Resumable, Context, Fn, Value},
 };
 
@@ -62,14 +59,6 @@ impl<'gc> Frame<'gc> {
     pub fn context(&self) -> &Context {
         &self.handle.context
     }
-
-    /// Get the span given the assumption that we're already at the next bytecode
-    pub fn span(&self) -> Span {
-        let mut tail = &self.handle.body[self.offset - 3..self.offset];
-        Span {
-            offset: tail.get_uint(3) as u32,
-        }
-    }
 }
 
 impl Iterator for Frame<'_> {
@@ -79,13 +68,13 @@ impl Iterator for Frame<'_> {
         if self.offset < self.handle.body.len() {
             let op: Op = self.handle.body[self.offset].into();
             let code = u32::from_be_bytes(
-                self.handle.body[self.offset + 1..self.offset + 5]
+                self.handle.body[self.offset + 1..self.offset + bytecode::SIZE]
                     .try_into()
                     .unwrap(),
             );
 
             let bc = Bytecode { op, code };
-            self.offset += 8;
+            self.offset += bytecode::SIZE;
 
             return Some(bc);
         }

@@ -1,6 +1,7 @@
 use std::{
     fmt::Display,
     num::{IntErrorKind, ParseFloatError, ParseIntError},
+    ops::Deref,
 };
 
 use serde::Serialize;
@@ -11,14 +12,38 @@ use crate::{
     runtime::BigInt,
 };
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 pub struct Span {
     pub offset: u32,
+    pub line_number: u32,
+}
+
+impl Default for Span {
+    fn default() -> Self {
+        Self {
+            offset: 0,
+            line_number: 1,
+        }
+    }
 }
 
 impl Display for Span {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "@{}", self.offset)
+        write!(f, "{}:{}", self.line_number, self.offset)
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct Spanned<T> {
+    pub inner: T,
+    pub span: Span,
+}
+
+impl<T> Deref for Spanned<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
 
@@ -115,13 +140,18 @@ pub enum ErrorKind {
 pub type TokenError = SpannedError<ErrorKind>;
 
 pub struct Lexer<'a> {
+    span: Span,
     offset: usize,
     source: &'a [char],
 }
 
 impl<'a> Lexer<'a> {
     pub fn new(source: &'a [char]) -> Self {
-        Self { offset: 0, source }
+        Self {
+            span: Span::default(),
+            offset: 0,
+            source,
+        }
     }
 
     fn cur(&self) -> Option<char> {
@@ -142,18 +172,18 @@ impl<'a> Lexer<'a> {
     }
 
     fn advance(&mut self) {
+        if self.cur() == Some('\n') {
+            self.span.line_number += 1;
+            self.span.offset = 0;
+        }
+
         self.offset += 1;
+        self.span.offset += 1;
     }
 
     fn next(&mut self) -> Option<char> {
         self.advance();
         self.source.get(self.offset - 1).copied()
-    }
-
-    fn span(&self) -> Span {
-        Span {
-            offset: self.offset as u32,
-        }
     }
 
     fn term(&mut self) -> String {
@@ -172,13 +202,13 @@ impl<'a> Lexer<'a> {
     }
 
     fn atom(&mut self) -> Token {
-        let span = self.span();
+        let span = self.span;
         self.advance();
         TokenKind::Atom(self.term()).at(span)
     }
 
     fn ident_or_keyword(&mut self) -> Token {
-        let span = self.span();
+        let span = self.span;
         let term = self.term();
 
         if is_keyword(&term) {
@@ -191,7 +221,7 @@ impl<'a> Lexer<'a> {
 
     fn number(&mut self) -> Result<Token, TokenError> {
         let mut dot = false;
-        let span = self.span();
+        let span = self.span;
         let mut num = String::new();
 
         if self.accept('-') {
@@ -243,9 +273,9 @@ impl<'a> Lexer<'a> {
                         't' => s.push('\t'),
                         '0' => s.push('\0'),
                         '\\' => s.push('\\'),
-                        c => return Err(ErrorKind::InvalidEscapeSequence(c).at(self.span())),
+                        c => return Err(ErrorKind::InvalidEscapeSequence(c).at(self.span)),
                     },
-                    None => return Err(ErrorKind::UnexpectedEof.at(self.span())),
+                    None => return Err(ErrorKind::UnexpectedEof.at(self.span)),
                 },
                 c => s.push(c),
             }
@@ -258,7 +288,7 @@ impl<'a> Lexer<'a> {
         let mut tokens = vec![];
 
         while let Some(cur) = self.cur() {
-            let span = self.span();
+            let span = self.span;
             let next = self.peek();
             let last_is_ident = tokens.last().is_some_and(|t: &Token| t.kind.is_ident());
 
