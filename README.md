@@ -17,12 +17,6 @@ data.set("name", "Atom");
 std.println(data.get("name"));
 ```
 
-## Features
+## Documentation
 
-- NaN tagging
-- Tail call optimization
-- Arbitrary precision integers
-- Arrays with (cheap) slices
-- Mark and sweep garbage collector
-- Basic types: Int, BigInt, Float, Array, Str, Class, Atom
-- Hand-written lexer/recursive descent parser with precedence climbing
+Documentation is available at [atom-lang.gitbook.io](https://atom-lang.gitbook.io/).
