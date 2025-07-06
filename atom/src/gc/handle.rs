@@ -26,6 +26,7 @@ impl<'gc, T: Trace + Hash> Hash for Handle<'gc, T> {
 }
 
 impl<'gc, T: ?Sized + Trace> Handle<'gc, T> {
+    #[inline(always)]
     pub fn new(ptr: NonNull<T>) -> Self {
         Self {
             ptr,

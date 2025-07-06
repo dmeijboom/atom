@@ -35,8 +35,8 @@ impl<T: Clone + Default, const N: usize> Stack<T, N> {
         mem::take(&mut self.data[self.sp])
     }
 
-    pub fn push(&mut self, item: T) {
-        self.data[self.sp] = item;
+    pub fn push(&mut self, item: impl Into<T>) {
+        self.data[self.sp] = item.into();
         self.sp += 1;
     }
 

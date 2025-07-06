@@ -389,8 +389,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             self.modules[self.std.module].load_class_by_name(gc, recv.ty().name())?
         {
             if let Some(func) = class.load_method(gc, member)? {
-                let handle = gc.alloc(Method::new(recv, func))?;
-                self.stack.push(handle.into());
+                self.stack.push(gc.alloc(Method::new(recv, func))?);
                 return Ok(());
             }
         }
@@ -430,12 +429,12 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let module = &mut self.modules[module_id as usize];
 
         if let Some(handle) = module.load_fn_by_name(gc, member)? {
-            self.stack.push(handle.into());
+            self.stack.push(handle);
             return Ok(());
         }
 
         if let Some(handle) = module.load_class_by_name(gc, member)? {
-            self.stack.push(handle.into());
+            self.stack.push(handle);
             return Ok(());
         }
 
@@ -486,20 +485,20 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let handle = gc.alloc(method)?;
 
         object.set_attr(member, Handle::clone(&handle).into());
-        self.stack.push(handle.into());
+        self.stack.push(handle);
 
         Ok(())
     }
 
     fn load_class(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
         let class = self.module().load_class(gc, idx as usize)?;
-        self.stack.push(class.into());
+        self.stack.push(class);
         Ok(())
     }
 
     fn load_fn(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
         let f = self.module().load_fn(gc, idx as usize)?;
-        self.stack.push(f.into());
+        self.stack.push(f);
         Ok(())
     }
 
@@ -544,7 +543,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let value = self.stack.pop();
 
         if value.as_atom() == cond {
-            self.stack.push(cond.into());
+            self.stack.push(cond);
             self.jump(idx);
         }
 
@@ -561,11 +560,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let handle = gc.alloc(Object::new(class))?;
 
         if let Some(f) = init {
-            let handle = gc.alloc(Method::new(handle.into(), f))?;
-            self.stack.push(handle.into());
+            self.stack.push(gc.alloc(Method::new(handle.into(), f))?);
             self.call(gc, arg_count)?;
         } else {
-            self.stack.push(handle.into());
+            self.stack.push(handle);
         }
 
         self.gc_tick(gc);
@@ -683,8 +681,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let locals = self.stack.slice_to_end(arg_count as usize).to_vec();
 
         if func.resumable {
-            let resumable = gc.alloc(Resumable::new(func, locals))?;
-            self.stack.push(resumable.into());
+            self.stack.push(gc.alloc(Resumable::new(func, locals))?);
             return Ok(());
         }
 
@@ -708,9 +705,8 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     fn make_array(&mut self, gc: &mut Gc<'gc>, size: u32) -> Result<(), Error> {
         let array = self.stack.slice_to_end(size as usize);
         let array = Array::copy_from_slice(gc, array)?;
-        let handle = gc.alloc(array)?;
 
-        self.stack.push(handle.into());
+        self.stack.push(gc.alloc(array)?);
         self.gc_tick(gc);
 
         Ok(())
@@ -743,13 +739,13 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             Type::Array => {
                 let array = array.as_array();
                 let new_array = gc.alloc(self.slice_array(&array, from, to)?)?;
-                self.stack.push(new_array.into());
+                self.stack.push(new_array);
             }
             Type::Str => {
                 let array = array.as_str();
                 let new_array = self.slice_array(&array.0, from, to)?;
                 let new_str = gc.alloc(Str(new_array))?;
-                self.stack.push(new_str.into());
+                self.stack.push(new_str);
             }
             ty => self.assert_type(ty, OneOf(Type::Array, Type::Str))?,
         }
@@ -882,7 +878,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
             .insert(name.to_string(), Handle::clone(&object));
 
         // Push package to the stack (it will be stored)
-        self.stack.push(object.into());
+        self.stack.push(object);
 
         // Activate the frame
         self.set_frame(frame);
@@ -895,7 +891,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let name = self.module().load_const(gc, idx as usize)?.as_str();
 
         if let Some(handle) = self.packages.get(name.as_str()) {
-            self.stack.push(Handle::clone(handle).into());
+            self.stack.push(Handle::clone(handle));
             return Ok(());
         }
 
