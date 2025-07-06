@@ -14,13 +14,13 @@ pub struct Report {
 
 pub struct VmProfiler {
     start_time: Instant,
-    counters: [usize; 45],
+    counters: [usize; 50],
 }
 
 impl Default for VmProfiler {
     fn default() -> Self {
         Self {
-            counters: [0; 45],
+            counters: [0; 50],
             start_time: Instant::now(),
         }
     }
