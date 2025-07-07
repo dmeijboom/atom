@@ -172,6 +172,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
+    fn is_eof(&self) -> bool {
+        self.offset >= self.source.len()
+    }
+
     fn cur(&self) -> Option<char> {
         self.source.get(self.offset).copied()
     }
@@ -238,7 +242,7 @@ impl<'a> Lexer<'a> {
     }
 
     fn comment(&mut self) {
-        while !self.accept('\n') {
+        while !self.accept('\n') && !self.is_eof() {
             self.advance();
         }
     }
