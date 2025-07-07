@@ -63,12 +63,7 @@ pub fn read_rest(data) {
 }
 
 fn wyhash_core(bytes, seed) {
-    let total_chunks = bytes.len() / 32;
-
-    for let i = 0; i < total_chunks; i += 1 {
-        let start = i * 32;
-        let chunk = bytes[start:start + 32];
-
+    for chunk in std.chunks(bytes, 32) {
         seed = wymum(
             seed ^ P0,
             wymum(read64(chunk) ^ P1,

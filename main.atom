@@ -1,7 +1,7 @@
 import std;
+import std/map;
 
-let names = ["Alice", "Bob", "Charlie"];
+let x = map.Map();
+x.set("key1", "value1");
 
-for name in std.enum(std.each(names)) {
-    std.println(name);
-}
+std.println(x.get("key1")); // Should print "value1"
