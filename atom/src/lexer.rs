@@ -96,7 +96,7 @@ impl Display for TokenKind {
     }
 }
 
-fn is_term(c: &char) -> bool {
+fn is_term(c: char) -> bool {
     matches!(c, '_' | 'a'..='z' | 'A'..='Z' | '0'..='9')
 }
 
@@ -120,6 +120,23 @@ fn is_keyword(s: &str) -> bool {
             | "break"
             | "continue"
     )
+}
+
+fn is_atom(cur: char, next: Option<char>) -> bool {
+    cur == ':' && matches!(next, Some('a'..='z' | 'A'..='Z'))
+}
+
+fn is_ident(cur: char) -> bool {
+    matches!(cur, '_' | 'a'..='z' | 'A'..='Z')
+}
+
+fn is_number(cur: char, next: Option<char>) -> bool {
+    cur.is_ascii_digit()
+        || (matches!(cur, '.' | '-') && matches!(next, Some(c) if c.is_ascii_digit()))
+}
+
+fn is_comment(cur: char, next: Option<char>) -> bool {
+    cur == '/' && next == Some('/')
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -191,7 +208,7 @@ impl<'a> Lexer<'a> {
         let mut term = String::new();
 
         while let Some(c) = self.cur() {
-            if !is_term(&c) {
+            if !is_term(c) {
                 break;
             }
 
@@ -218,6 +235,12 @@ impl<'a> Lexer<'a> {
             TokenKind::Ident(term)
         }
         .at(span)
+    }
+
+    fn comment(&mut self) {
+        while !self.accept('\n') {
+            self.advance();
+        }
     }
 
     fn number(&mut self) -> Result<Token, TokenError> {
@@ -293,13 +316,13 @@ impl<'a> Lexer<'a> {
             let next = self.peek();
             let last_is_ident = tokens.last().is_some_and(|t: &Token| t.kind.is_ident());
 
-            if cur == ':' && matches!(next, Some('a'..='z' | 'A'..='Z')) && !last_is_ident {
+            if is_comment(cur, next) {
+                self.comment();
+            } else if is_atom(cur, next) && !last_is_ident {
                 tokens.push(self.atom());
-            } else if matches!(cur, '_' | 'a'..='z' | 'A'..='Z') {
+            } else if is_ident(cur) {
                 tokens.push(self.ident_or_keyword());
-            } else if cur.is_ascii_digit()
-                || (matches!(cur, '.' | '-') && matches!(next, Some(c) if c.is_ascii_digit()))
-            {
+            } else if is_number(cur, next) {
                 tokens.push(self.number()?);
             } else {
                 let mut single = false;
