@@ -2,10 +2,10 @@ import std;
 
 if :true {
     let x = 4;
-    std.println(x);
+    println(x);
 } else {
     let x = 10;
-    std.println(x);
+    println(x);
 }
 
-std.println(x);
+println(x);

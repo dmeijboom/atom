@@ -63,7 +63,7 @@ pub fn read_rest(data) {
 }
 
 fn wyhash_core(bytes, seed) {
-    for chunk in std.chunks(bytes, 32) {
+    for chunk in chunks(bytes, 32) {
         seed = wymum(
             seed ^ P0,
             wymum(read64(chunk) ^ P1,
@@ -101,7 +101,7 @@ pub class Entry {
 
 pub class Map {
     fn init(self) {
-        self.buckets = std.repeat(:nil, 25);
+        self.buckets = repeat(:nil, 25);
     }
 
     fn set(self, key, value) {
@@ -125,7 +125,7 @@ pub class Map {
             return :nil;
         }
         
-        for entry in std.each(bucket) {
+        for entry in each(bucket) {
             if entry.key == key {
                 return entry.value;
             }

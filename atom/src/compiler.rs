@@ -20,6 +20,8 @@ use crate::{
     runtime::{value, Fn},
 };
 
+const PRELUDE: [&'static str; 6] = ["enum", "chunks", "each", "range", "repeat", "println"];
+
 lazy_static! {
     static ref BINARY_OPS: HashMap<ast::BinaryOp, Op> = {
         [
@@ -415,46 +417,82 @@ impl Compiler {
         name: &str,
         check_init: bool,
     ) -> Result<Symbol, CompileError> {
-        match self.load_local(name) {
-            Some(local) => {
-                local.used = true;
+        if let Some(local) = self.load_local(name) {
+            local.used = true;
 
-                if check_init && !local.init {
-                    return Err(ErrorKind::NameUninitialized(name.to_string()).at(local.span));
-                }
-
-                Ok(Symbol::Local(local.id as u32))
+            if check_init && !local.init {
+                return Err(ErrorKind::NameUninitialized(name.to_string()).at(local.span));
             }
-            None => match self.load_var(name) {
-                Some(var) => {
-                    var.used = true;
 
-                    if check_init && !var.init {
-                        return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
-                    }
-
-                    Ok(Symbol::Var(var.id as u32))
-                }
-                None => match self.classes.get(name) {
-                    Some(idx) => Ok(Symbol::Class(idx)),
-                    None => match self.funcs.get(name) {
-                        Some(idx) => Ok(Symbol::Fn(idx)),
-                        None => Err(ErrorKind::UnknownName(name.to_string()).at(span)),
-                    },
-                },
-            },
+            return Ok(Symbol::Local(local.id as u32));
         }
+
+        if let Some(var) = self.load_var(name) {
+            var.used = true;
+
+            if check_init && !var.init {
+                return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
+            }
+
+            return Ok(Symbol::Var(var.id as u32));
+        }
+
+        if let Some(idx) = self.classes.get(name) {
+            return Ok(Symbol::Class(idx));
+        }
+
+        if let Some(idx) = self.funcs.get(name) {
+            return Ok(Symbol::Fn(idx));
+        }
+
+        Err(ErrorKind::UnknownName(name.to_string()).at(span))
     }
 
-    fn load_name(&mut self, span: Span, name: &str) -> Result<(), CompileError> {
-        match self.load_symbol(span, name, true)? {
-            Symbol::Local(id) => self.push(Bytecode::with_code(Op::LoadLocal, id).at(span)),
-            Symbol::Var(id) => self.push(Bytecode::with_code(Op::Load, id).at(span)),
-            Symbol::Class(id) => self.push(Bytecode::with_code(Op::LoadClass, id).at(span)),
-            Symbol::Fn(id) => self.push(Bytecode::with_code(Op::LoadFn, id).at(span)),
+    fn load_prelude(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        name: &str,
+    ) -> Result<bool, CompileError> {
+        if !self.imports.contains("std") || !PRELUDE.contains(&name) {
+            return Ok(false);
+        }
+
+        let Some(std) = self.load_var("std") else {
+            return Ok(false);
         };
 
-        Ok(())
+        std.used = true;
+
+        let idx = std.id as u32;
+        self.push(Bytecode::with_code(Op::Load, idx).at(span));
+
+        let member = ctx.atoms.insert(name.to_string());
+        self.push(Bytecode::with_code(Op::LoadMember, member).at(span));
+
+        Ok(true)
+    }
+
+    fn load_name(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        name: &str,
+    ) -> Result<(), CompileError> {
+        match self.load_symbol(span, name, true) {
+            Ok(symbol) => {
+                match symbol {
+                    Symbol::Local(id) => self.push(Bytecode::with_code(Op::LoadLocal, id).at(span)),
+                    Symbol::Var(id) => self.push(Bytecode::with_code(Op::Load, id).at(span)),
+                    Symbol::Class(id) => self.push(Bytecode::with_code(Op::LoadClass, id).at(span)),
+                    Symbol::Fn(id) => self.push(Bytecode::with_code(Op::LoadFn, id).at(span)),
+                };
+
+                Ok(())
+            }
+            Err(_) if self.load_prelude(ctx, span, name)? => Ok(()),
+            Err(e) => Err(e),
+        }
     }
 
     fn assign(
@@ -647,7 +685,7 @@ impl Compiler {
             ExprKind::Array(items) => self.array(ctx, root.span, items),
             ExprKind::Member(object, member) => self.member(ctx, root.span, *object, member),
             ExprKind::CompMember(object, elem) => self.comp_member(ctx, root.span, *object, *elem),
-            ExprKind::Ident(name) => self.load_name(root.span, &name),
+            ExprKind::Ident(name) => self.load_name(ctx, root.span, &name),
             ExprKind::Call(callee, args) => self.call(ctx, root.span, *callee, args),
             ExprKind::Literal(lit) => self.lit(ctx, root.span, lit),
             ExprKind::Match(expr, arms, alt) => self.match_expr(ctx, *expr, arms, alt),
@@ -1004,27 +1042,31 @@ impl Compiler {
         Ok(())
     }
 
+    fn import(&mut self, span: Span, path: Vec<String>) -> Result<(), CompileError> {
+        let name = path.join("/");
+
+        if self.imports.contains(&name) {
+            return Err(ErrorKind::DuplicateImport(name).at(span));
+        }
+
+        self.imports.insert(name.clone());
+
+        let idx = self.consts.insert(Const::Str(name.clone()));
+        self.push(Bytecode::with_code(Op::Import, idx).at(span));
+
+        let var_name = path.last().cloned().unwrap_or_default();
+
+        let idx = self.push_var(span, var_name.clone(), true)?;
+        self.push(Bytecode::with_code(Op::Store, idx as u32).at(span));
+
+        self.names.insert(var_name);
+
+        Ok(())
+    }
+
     fn stmt(&mut self, ctx: &mut GlobalContext, stmt: Stmt) -> Result<(), CompileError> {
         match stmt.kind {
-            StmtKind::Import(path) => {
-                let name = path.join("/");
-
-                if self.imports.contains(&name) {
-                    return Err(ErrorKind::DuplicateImport(name).at(stmt.span));
-                }
-
-                self.imports.insert(name.clone());
-
-                let idx = self.consts.insert(Const::Str(name.clone()));
-                self.push(Bytecode::with_code(Op::Import, idx).at(stmt.span));
-
-                let var_name = path.last().cloned().unwrap_or_default();
-
-                let idx = self.push_var(stmt.span, var_name.clone(), true)?;
-                self.push(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
-
-                self.names.insert(var_name);
-            }
+            StmtKind::Import(path) => self.import(stmt.span, path)?,
             StmtKind::If(if_stmt) => self.if_stmt(ctx, if_stmt)?,
             StmtKind::Let(name, expr) => {
                 if let Some(expr) = expr {

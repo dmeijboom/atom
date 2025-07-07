@@ -11,4 +11,4 @@ class Fib {
 }
 
 let f = Fib();
-std.println(f.run(30));
+println(f.run(30));

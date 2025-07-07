@@ -1,7 +1,5 @@
 import std;
-import std/map;
 
-let x = map.Map();
-x.set("key1", "value1");
-
-std.println(x.get("key1")); // Should print "value1"
+for i in range(0, 10) {
+    println(i);
+}

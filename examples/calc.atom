@@ -4,4 +4,4 @@ fn calc(x, y, z) {
     x + y * z
 }
 
-std.println(calc(1, 5, 22));
+println(calc(1, 5, 22));

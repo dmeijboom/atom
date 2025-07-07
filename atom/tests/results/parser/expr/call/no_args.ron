@@ -1,21 +1,30 @@
 [
     Stmt(
+        kind: import([
+            "std",
+        ]),
+        span: Span(
+            offset: 0,
+            line_number: 1,
+        ),
+    ),
+    Stmt(
         kind: expr(Expr(
             kind: call(Expr(
                 kind: ident("println"),
                 span: Span(
-                    offset: 0,
-                    line_number: 1,
+                    offset: 1,
+                    line_number: 3,
                 ),
             ), []),
             span: Span(
-                offset: 0,
-                line_number: 1,
+                offset: 1,
+                line_number: 3,
             ),
         )),
         span: Span(
-            offset: 0,
-            line_number: 1,
+            offset: 1,
+            line_number: 3,
         ),
     ),
 ]

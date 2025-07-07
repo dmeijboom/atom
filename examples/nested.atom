@@ -120,4 +120,4 @@ for let x = 1; x < 6; x += 1 {
     depth = depth - 1;
 }
 
-std.println([result, depth, totalIterations]);
+println([result, depth, totalIterations]);

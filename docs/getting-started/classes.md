@@ -16,5 +16,5 @@ class User {
 }
 
 let user = User();
-std.println(user.email);
+println(user.email);
 ```

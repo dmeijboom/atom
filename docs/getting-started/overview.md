@@ -9,7 +9,7 @@ Create a new file called `hello.atom` and use the following code to get started:
 ```
 import std;
 
-std.println("hello world");
+println("hello world");
 ```
 
 We're importing the core interface of the standard library while using the exported `println` function to write output to the screen. Each statement has to end with a semicolon (`;`). Run the code by using the `atom` binary:
@@ -91,7 +91,7 @@ for let i = 0; i < 10; i += 1 {
     // do something
 }
 
-for i in std.range(0, 10) {
+for i in range(0, 10) {
     // do something
 }
 

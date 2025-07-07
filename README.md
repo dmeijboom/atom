@@ -14,7 +14,7 @@ import std/map;
 let data = map.Map();
 data.set("name", "Atom");
 
-std.println(data.get("name"));
+println(data.get("name"));
 ```
 
 ## Documentation

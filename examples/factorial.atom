@@ -8,4 +8,4 @@ fn factorial(n, acc) {
     factorial(n - 1, n * acc)
 }
 
-std.println(factorial(15, 1));
+println(factorial(15, 1));
