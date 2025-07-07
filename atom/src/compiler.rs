@@ -20,7 +20,7 @@ use crate::{
     runtime::{value, Fn},
 };
 
-const PRELUDE: [&'static str; 6] = ["enum", "chunks", "each", "range", "repeat", "println"];
+const PRELUDE: [&str; 6] = ["enum", "chunks", "each", "range", "repeat", "println"];
 
 lazy_static! {
     static ref BINARY_OPS: HashMap<ast::BinaryOp, Op> = {
@@ -288,7 +288,7 @@ impl Compiler {
 
         if let Some(scope) = self.scope.front_mut() {
             scope.vars.insert(
-                format!("__{}", id),
+                format!("__{id}"),
                 VarBuilder::new(id, span).init(init).used(true).build(),
             );
         }

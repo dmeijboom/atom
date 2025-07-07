@@ -844,7 +844,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     fn make_path(&self, name: &str) -> PathBuf {
         self.search_path
             .join("stdlib")
-            .join(format!("{}.atom", name))
+            .join(format!("{name}.atom"))
     }
 
     fn set_frame(&mut self, frame: Frame<'gc>) {

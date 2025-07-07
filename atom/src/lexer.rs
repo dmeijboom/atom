@@ -88,9 +88,9 @@ impl Display for TokenKind {
             Self::Keyword(name) => write!(f, "{name}"),
             Self::Punct(punct) => write!(f, "{punct}"),
             Self::Atom(name) => write!(f, ":{name}"),
-            Self::Int(value) => write!(f, "{}", value),
-            Self::BigInt(value) => write!(f, "{}", value),
-            Self::Float(value) => write!(f, "{}", value),
+            Self::Int(value) => write!(f, "{value}"),
+            Self::BigInt(value) => write!(f, "{value}"),
+            Self::Float(value) => write!(f, "{value}"),
             Self::String(value) => write!(f, "\"{value}\""),
         }
     }
