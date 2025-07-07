@@ -81,3 +81,21 @@ let foo;
 
 foo = 10;
 ```
+
+#### Loops
+
+There are three different styles of loops while all of them use the `for` keyword:
+
+```
+for let i = 0; i < 10; i += 1 {
+    // do something
+}
+
+for i in std.range(0, 10) {
+    // do something
+}
+
+for :true {
+    // loops infinitely
+}
+```

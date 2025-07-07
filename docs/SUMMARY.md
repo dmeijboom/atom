@@ -4,3 +4,4 @@
 * [Getting Started](getting-started/README.md)
   * [Overview](getting-started/overview.md)
   * [Classes](getting-started/classes.md)
+  * [Resumables](getting-started/resumables.md)
