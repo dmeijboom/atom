@@ -17,7 +17,7 @@ use crate::{
     collections::{IntMap, OrderedMap, OrderedSet},
     error::{IntoSpanned, SpannedError},
     lexer::{Span, Spanned},
-    runtime::Fn,
+    runtime::{value, Fn},
 };
 
 lazy_static! {
@@ -851,6 +851,34 @@ impl Compiler {
         Ok(())
     }
 
+    fn loop_head(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        expr: Expr,
+        body: Vec<Stmt>,
+    ) -> Result<usize, CompileError> {
+        self.expr(ctx, expr)?;
+        let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
+        self.compile_scoped_body(ctx, body)?;
+
+        Ok(offset)
+    }
+
+    fn loop_tail(
+        &mut self,
+        span: Span,
+        offset: usize,
+        begin: usize,
+        begin_marker: usize,
+    ) -> Result<(), CompileError> {
+        self.push(Bytecode::with_code(Op::Jump, (begin / bytecode::SIZE) as u32).at(span));
+        self.set_offset(offset, self.offset());
+        self.handle_markers(begin_marker, self.offset());
+
+        Ok(())
+    }
+
     fn for_stmt(
         &mut self,
         ctx: &mut GlobalContext,
@@ -859,12 +887,40 @@ impl Compiler {
         body: Vec<Stmt>,
     ) -> Result<(), CompileError> {
         let begin = self.offset();
-        self.expr(ctx, expr)?;
+        let offset = self.loop_head(ctx, span, expr, body)?;
+        self.loop_tail(span, offset, begin, begin)?;
+
+        Ok(())
+    }
+
+    fn for_in(
+        &mut self,
+        ctx: &mut GlobalContext,
+        span: Span,
+        lhs: Expr,
+        rhs: Expr,
+        body: Vec<Stmt>,
+    ) -> Result<(), CompileError> {
+        let item_id = match lhs.kind {
+            ExprKind::Ident(name) => self.push_var(span, name, true)? as u32,
+            _ => unreachable!(),
+        };
+
+        let resumable_id = self.push_hidden_var(span, true)? as u32;
+        self.expr(ctx, rhs)?;
+        self.push(Bytecode::with_code(Op::Store, resumable_id).at(span));
+
+        let begin = self.offset();
+        self.push(Bytecode::with_code(Op::Load, resumable_id).at(span));
+        self.push(Bytecode::with_code(Op::Call, 0).at(span));
+        self.push(Bytecode::with_code(Op::Store, item_id).at(span));
+        self.push(Bytecode::with_code(Op::Load, item_id).at(span));
+        self.push(Bytecode::with_code(Op::LoadAtom, value::NIL).at(span));
+        self.push(Bytecode::new(Op::Ne).at(span));
         let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
+
         self.compile_scoped_body(ctx, body)?;
-        self.push(Bytecode::with_code(Op::Jump, (begin / bytecode::SIZE) as u32).at(span));
-        self.set_offset(offset, self.offset());
-        self.handle_markers(begin, self.offset());
+        self.loop_tail(span, offset, begin, begin)?;
 
         Ok(())
     }
@@ -880,14 +936,10 @@ impl Compiler {
     ) -> Result<(), CompileError> {
         self.stmt(ctx, pre)?;
         let begin = self.offset();
-        self.expr(ctx, expr)?;
-        let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
-        self.compile_scoped_body(ctx, body)?;
+        let offset = self.loop_head(ctx, span, expr, body)?;
         let post_idx = self.offset();
         self.expr(ctx, post)?;
-        self.push(Bytecode::with_code(Op::Jump, (begin / bytecode::SIZE) as u32).at(span));
-        self.set_offset(offset, self.offset());
-        self.handle_markers(post_idx, self.offset());
+        self.loop_tail(span, offset, begin, post_idx)?;
 
         Ok(())
     }
@@ -1005,6 +1057,7 @@ impl Compiler {
                 self.class_stmt(ctx, stmt.span, name, methods, public)?
             }
             StmtKind::Fn(fn_stmt) => self.fn_stmt(ctx, stmt.span, fn_stmt)?,
+            StmtKind::ForIn(lhs, rhs, body) => self.for_in(ctx, stmt.span, lhs, rhs, body)?,
             StmtKind::For(expr, body) => self.for_stmt(ctx, stmt.span, expr, body)?,
             StmtKind::ForCond {
                 init,

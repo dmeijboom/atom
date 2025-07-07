@@ -6,6 +6,21 @@ pub class Array {
     fn cap(self) => @read_usize(@ptr(self), 8);
 }
 
+pub fn* enum(inner) {
+    let i = 0;
+    
+    for elem in inner {
+        yield [i, elem];
+        i += 1;
+    } 
+}
+
+pub fn* each(array) {
+    for let i = 0; i < array.len(); i += 1 {
+        yield array[i];
+    }
+}
+
 pub fn* range(from, to) {
     for let i = from; i < to; i += 1 {
         yield i;

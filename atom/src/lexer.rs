@@ -110,6 +110,7 @@ fn is_keyword(s: &str) -> bool {
             | "let"
             | "fn"
             | "is"
+            | "in"
             | "return"
             | "match"
             | "new"

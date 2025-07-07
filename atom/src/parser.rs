@@ -585,7 +585,7 @@ impl Parser {
 
         loop {
             if self.accept_keyword("elif") {
-                let expr = self.expr(Prec::Range)?;
+                let expr = self.expr(Prec::default())?;
                 let body = self.block()?;
 
                 cur.2 = Some(Box::new(IfStmt(Some(expr), body, None)));
@@ -604,24 +604,6 @@ impl Parser {
         Ok(StmtKind::If(*if_stmt).at(span))
     }
 
-    fn for_cond_stmt(&mut self, span: Span, init: Stmt) -> Result<Stmt, ParseError> {
-        let cond = self.expr(Prec::Range)?;
-        self.semi()?;
-        let step = self.expr(Prec::Assign)?;
-        self.loop_counter += 1;
-        let body = self.block()?;
-        self.loop_counter -= 1;
-        let init = Box::new(init);
-
-        Ok(StmtKind::ForCond {
-            init,
-            cond,
-            step,
-            body,
-        }
-        .at(span))
-    }
-
     fn class_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         let is_public = self.accept_keyword("pub");
@@ -638,6 +620,37 @@ impl Parser {
         Ok(StmtKind::Class(name, methods, is_public).at(span))
     }
 
+    fn loop_block(&mut self) -> Result<Vec<Stmt>, ParseError> {
+        self.loop_counter += 1;
+        let body = self.block()?;
+        self.loop_counter -= 1;
+
+        Ok(body)
+    }
+
+    fn for_cond_stmt(&mut self, span: Span, init: Stmt) -> Result<Stmt, ParseError> {
+        let cond = self.expr(Prec::default())?;
+        self.semi()?;
+        let step = self.expr(Prec::Assign)?;
+        let body = self.loop_block()?;
+        let init = Box::new(init);
+
+        Ok(StmtKind::ForCond {
+            init,
+            cond,
+            step,
+            body,
+        }
+        .at(span))
+    }
+
+    fn for_in_stmt(&mut self, span: Span, lhs: Expr) -> Result<Stmt, ParseError> {
+        let rhs = self.expr(Prec::default())?;
+        let body = self.loop_block()?;
+
+        Ok(StmtKind::ForIn(lhs, rhs, body).at(span))
+    }
+
     fn for_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();
@@ -649,14 +662,16 @@ impl Parser {
 
         let expr = self.expr(Prec::Assign)?;
 
+        if self.accept_keyword("in") && expr.is_ident() {
+            return self.for_in_stmt(span, expr);
+        }
+
         if self.accept(&TokenKind::Punct(";")) {
             let span = expr.span;
             return self.for_cond_stmt(span, StmtKind::Expr(expr).at(span));
         }
 
-        self.loop_counter += 1;
-        let body = self.block()?;
-        self.loop_counter -= 1;
+        let body = self.loop_block()?;
 
         Ok(StmtKind::For(expr, body).at(span))
     }
@@ -682,7 +697,7 @@ impl Parser {
         self.semi()?;
         Ok(StmtKind::Continue.at(span))
     }
-    
+
     fn yield_stmt(&mut self) -> Result<Stmt, ParseError> {
         let span = self.span();
         self.advance();

@@ -104,6 +104,10 @@ impl Expr {
     pub fn is_assign(&self) -> bool {
         matches!(self.kind, ExprKind::Assign(_, _, _))
     }
+    
+    pub fn is_ident(&self) -> bool {
+        matches!(self.kind, ExprKind::Ident(_))
+    }
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -145,16 +149,17 @@ pub enum StmtKind {
     Yield(Expr),
     Return(Expr),
     Import(Path),
-    For(Expr, Vec<Stmt>),
+    Fn(FnStmt),
     Class(String, Vec<Stmt>, bool),
     Let(String, Option<Expr>),
+    For(Expr, Vec<Stmt>),
+    ForIn(Expr, Expr, Vec<Stmt>),
     ForCond {
         init: Box<Stmt>,
         cond: Expr,
         step: Expr,
         body: Vec<Stmt>,
     },
-    Fn(FnStmt),
 }
 
 impl StmtKind {

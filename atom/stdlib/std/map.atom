@@ -129,10 +129,10 @@ pub class Map {
         if bucket == :nil {
             return :nil;
         }
-
-        for let i = 0; i < bucket.len(); i += 1 {
-            if bucket[i].key == key {
-                return bucket[i].value;
+        
+        for entry in std.each(bucket) {
+            if entry.key == key {
+                return entry.value;
             }
         }
 
