@@ -13,3 +13,6 @@ Atom is a dynamically typed interpreted language with a hand-written recursive d
 * Garbage Collector
 * Tail Call Optimization
 
+### What's Next?
+
+Start with the [overview.md](getting-started/overview.md "mention") to get to know the language.

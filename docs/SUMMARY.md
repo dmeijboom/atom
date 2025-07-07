@@ -1,5 +1,6 @@
 # Table of contents
 
 * [atom](README.md)
-* [Overview](overview.md)
-* [Classes](classes.md)
+* [Getting Started](getting-started/README.md)
+  * [Overview](getting-started/overview.md)
+  * [Classes](getting-started/classes.md)
