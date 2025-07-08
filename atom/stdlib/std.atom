@@ -1,15 +1,39 @@
 import std/os;
 
 // Builtin classes
+
+// Layout:
+//  len: usize
+//  cap: usize
+//  data: Handle
 pub class Array {
     fn push(self, elem) => @array_push(self, elem);
     fn len(self) => @read_usize(@ptr(self), 0);
     fn cap(self) => @read_usize(@ptr(self), 8);
 }
 
+// Layout:
+//  len: usize
+//  cap: usize
+//  data: Handle
+pub class Blob {
+    fn push(self, elem) => @array_push(self, elem);
+    fn len(self) => @read_usize(@ptr(self), 0);
+    fn cap(self) => @read_usize(@ptr(self), 8);
+}
+
+// Layout:
+//  len: usize
+//  cap: usize
+//  data: Handle
 pub class Str {
     fn len(self) => @read_usize(@ptr(self), 0);
+    fn cap(self) => @read_usize(@ptr(self), 8);
 }
+
+pub class Int {}
+pub class BigInt {}
+pub class Float {}
 
 // Iteration functions
 pub fn* enum(inner) {
@@ -23,7 +47,7 @@ pub fn* enum(inner) {
 
 pub fn* chunks(array, size) {
     let total_chunks = array.len() / size;
-    
+
     for let i = 0; i < total_chunks; i += 1 {
         let offset = i * size;
         yield array[offset:offset + size];
@@ -64,5 +88,11 @@ pub fn println(val) {
 
     line = line ^ "\n";
 
-    @syscall3(os.SYS_WRITE, os.STDOUT, @data_ptr(line), line.len());
+    // Read the pointer to the GC Handle
+    let handle = @ptr(line);
+
+    // Skip len/cap and get the pointer to the array
+    let raw = @read_usize(handle, 16);
+
+    @syscall3(os.SYS_WRITE, os.STDOUT, raw, line.len());
 }

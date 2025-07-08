@@ -75,14 +75,13 @@ impl<K: Hash + Eq, V> OrderedMap<K, V> {
     where
         K: Clone,
     {
+        self.map.insert(key.clone(), value);
+
         match self.lookup.get(&key) {
             Some(idx) => *idx as u32,
             None => {
                 let idx = self.lookup.len();
-
-                self.map.insert(key.clone(), value);
                 self.lookup.insert(key, idx);
-
                 idx as u32
             }
         }

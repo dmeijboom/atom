@@ -104,7 +104,7 @@ impl Expr {
     pub fn is_assign(&self) -> bool {
         matches!(self.kind, ExprKind::Assign(_, _, _))
     }
-    
+
     pub fn is_ident(&self) -> bool {
         matches!(self.kind, ExprKind::Ident(_))
     }

@@ -161,8 +161,14 @@ impl<'gc> Module<'gc> {
             self.package
                 .classes
                 .iter()
-                .filter(|c| c.public)
-                .position(|c| c.name == name)
+                .enumerate()
+                .find_map(|(i, c)| {
+                    if c.public && c.name == name {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
                 .map(|idx| self.load_class(gc, idx))
                 .transpose()
         })
@@ -201,8 +207,14 @@ impl<'gc> Module<'gc> {
             self.package
                 .functions
                 .iter()
-                .filter(|f| f.public)
-                .position(|f| f.name == name)
+                .enumerate()
+                .find_map(|(i, f)| {
+                    if f.public && f.name == name {
+                        Some(i)
+                    } else {
+                        None
+                    }
+                })
                 .map(|idx| self.load_fn(gc, idx))
                 .transpose()
         })

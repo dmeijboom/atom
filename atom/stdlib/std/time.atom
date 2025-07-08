@@ -1,0 +1,119 @@
+import std/os;
+
+self.SECOND = 1000000;
+
+let DAY = 86400000;
+let YEAR = DAY * 365;
+let MONTHS = [
+    31, // January
+    28, // February
+    31, // March
+    30, // April
+    31, // May
+    30, // June
+    31, // July
+    31, // August
+    30, // September
+    31, // October
+    30, // November
+    31  // December
+];
+
+fn array_ptr(array) {
+    // Read the pointer to the GC Handle
+    let handle = @ptr(array);
+
+    // Skip len/cap and get the pointer to the array
+    @read_usize(handle, 16)
+}
+
+pub class Delta {
+    fn init(self, usecs) {
+        self.usecs = usecs;
+    }
+
+    fn secs(self) => self.usecs / 1000000;
+    fn msecs(self) => self.usecs / 1000;
+    fn days(self) => self.usecs / DAY;
+}
+
+pub class Time {
+    fn init(self, unix) {
+        self._unix = unix;
+        self.ymd = parse_ymd(unix);
+    }
+
+    fn year(self) => self.ymd[0];
+    fn month(self) => self.ymd[1];
+    fn day(self) => self.ymd[2];
+    fn unix(self) => self._unix;
+    fn diff(self, other) => Delta(self._unix - other._unix);
+}
+
+fn div_by(n, div) => n % div == 0;
+
+pub fn is_leap_year(year) => div_by(year, 4) && !(
+    div_by(year, 100) &&
+    !div_by(year, 400)
+);
+
+pub fn days_in_month(year, month) {
+    let days = MONTHS[month - 1];
+
+    if month == 2 && is_leap_year(year) {
+        return days + 1;
+    }
+
+    days
+}
+
+fn parse_ymd(unix) {
+    let year = 1970;
+
+    // Calculate the number of years (taking leap years into account)
+    for unix >= YEAR {
+        unix -= YEAR;
+        year += 1;
+
+        // Leap year
+        if is_leap_year(year) {
+            unix -= DAY;
+        }
+    }
+
+    // Now, let's move on to the month/day
+    let month = 1;
+    let day = 1;
+
+    for unix >= DAY {
+        unix -= DAY;
+        day += 1;
+
+        if day > days_in_month(year, month) {
+            day = 1;
+            month += 1;
+        }
+    }
+
+    [year, month, day]
+}
+
+// Get the current time in microseconds since the Unix epoch
+pub fn unix() {
+    let buff = @blob(16);
+    let raw = array_ptr(buff);
+
+    if @syscall3(os.SYS_GETTIMEOFDAY, raw, 0, 0) != 0 {
+        return :nil;
+    }
+
+    let secs = @read_usize(raw, 0);
+    let usecs = @read_usize(raw, 8);
+
+    (secs * 1000) + (usecs / 1000)
+}
+
+// Get the current date and time in UTC
+pub fn now() {
+    Time(unix())
+}

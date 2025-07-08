@@ -1,10 +1,13 @@
 if @is_darwin() {
     self.SYS_WRITE = 4;
+    self.SYS_GETTIMEOFDAY = 116;
 } else {
     if @is_arm64() {
         self.SYS_WRITE = 64;
+        self.SYS_GETTIMEOFDAY = 169;
     } else {
         self.SYS_WRITE = 1;
+        self.SYS_GETTIMEOFDAY = 96;
     }
 }
 

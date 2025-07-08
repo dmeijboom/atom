@@ -1,6 +1,9 @@
 import std;
+import std/time;
 
-let buff = Blob[16];
-@syscall3(116, @data_ptr(buff), 0, 0);
+let now = time.now();
 
-println(buff[0]);
+println(now.year());
+println(now.month());
+println(now.day());
+println(now.unix());

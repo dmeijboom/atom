@@ -1,13 +1,34 @@
 use std::{
     collections::HashMap,
-    fmt::{self, Write}, ops::Deref,
+    fmt::{self, Write},
 };
 
 use crate::{
-    builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn4},
+    builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn3, Fn4},
     gc::Gc,
-    runtime::{error::RuntimeError, value::Type, IntoAtom, Runtime, Value},
+    runtime::{
+        blob::Blob,
+        error::RuntimeError,
+        value::{self, Type},
+        Array, IntoAtom, Runtime, Value,
+    },
 };
+
+fn write_usize<'gc>(
+    _gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
+    addr: Value<'gc>,
+    offset: Value<'gc>,
+    data: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    unsafe {
+        let ptr = addr.as_bigint().as_usize() as *mut u8;
+        let ptr = ptr.add(offset.as_bigint().as_usize()) as *mut usize;
+        std::ptr::write(ptr, data.as_bigint().as_usize());
+    }
+
+    Ok(value::NIL.into())
+}
 
 fn read_usize<'gc>(
     gc: &mut Gc<'gc>,
@@ -30,6 +51,19 @@ fn str<'gc>(
     (value.to_string()).into_atom(gc)
 }
 
+fn blob<'gc>(
+    gc: &mut Gc<'gc>,
+    _rt: &dyn Runtime,
+    size: Value<'gc>,
+) -> Result<Value<'gc>, RuntimeError> {
+    let mut array = Array::with_capacity(gc, size.as_bigint().as_usize())?;
+
+    // Since `with_capacity` zeroes the array, we can safely set the length
+    array.len = array.cap;
+
+    Ok(gc.alloc(Blob(array))?.into())
+}
+
 fn ptr<'gc>(
     gc: &mut Gc<'gc>,
     _rt: &dyn Runtime,
@@ -47,18 +81,6 @@ fn array_push<'gc>(
     let mut array = array.as_array();
     array.push(gc, element)?;
     Ok(Value::default())
-}
-
-fn data_ptr<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    match value.ty() {
-        Type::Array => value.as_array().deref().addr().unwrap_or(0).into_atom(gc),
-        Type::Str => value.as_str().0.addr().unwrap_or(0).into_atom(gc),
-        _ => unreachable!(),
-    }
 }
 
 #[cfg(target_os = "macos")]
@@ -177,10 +199,11 @@ impl Default for Builtins {
         builtins.insert("is_darwin", Box::new(Fn0(is_darwin)));
         builtins.insert("is_arm64", Box::new(Fn0(is_arm64)));
         builtins.insert("repr", Box::new(Fn1(repr)));
-        builtins.insert("data_ptr", Box::new(Fn1(data_ptr)));
+        builtins.insert("blob", Box::new(Fn1(blob)));
         builtins.insert("ptr", Box::new(Fn1(ptr)));
         builtins.insert("str", Box::new(Fn1(str)));
         builtins.insert("read_usize", Box::new(Fn2(read_usize)));
+        builtins.insert("write_usize", Box::new(Fn3(write_usize)));
         builtins.insert("array_push", Box::new(Fn2(array_push)));
         builtins.insert("syscall3", Box::new(Fn4(syscall3)));
 

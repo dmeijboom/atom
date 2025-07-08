@@ -3,7 +3,7 @@ use crate::gc::{Gc, Trace};
 use super::{array::ArrayLike, error::RuntimeError, Array};
 
 #[derive(Default)]
-pub struct Blob<'gc>(Array<'gc, u8>);
+pub struct Blob<'gc>(pub Array<'gc, u8>);
 
 impl<'gc> Trace for Blob<'gc> {
     fn trace(&self, gc: &mut Gc<'_>) {

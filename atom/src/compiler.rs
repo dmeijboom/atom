@@ -20,7 +20,10 @@ use crate::{
     runtime::{value, Fn},
 };
 
-const PRELUDE: [&str; 6] = ["enum", "chunks", "each", "range", "repeat", "println"];
+const PRELUDE: [&str; 12] = [
+    "enum", "chunks", "each", "range", "repeat", "println", "Array", "Blob", "Str", "Int", "Float",
+    "BigInt",
+];
 
 lazy_static! {
     static ref BINARY_OPS: HashMap<ast::BinaryOp, Op> = {
@@ -826,16 +829,7 @@ impl Compiler {
         }
     }
 
-    fn fn_stmt(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        fn_stmt: FnStmt,
-    ) -> Result<(), CompileError> {
-        if self.funcs.contains_key(&fn_stmt.name) {
-            return Err(ErrorKind::DuplicateFn(fn_stmt.name).at(span));
-        }
-
+    fn fn_stmt(&mut self, ctx: &mut GlobalContext, fn_stmt: FnStmt) -> Result<(), CompileError> {
         self.funcs.insert(
             fn_stmt.name.clone(),
             Fn::builder()
@@ -856,15 +850,10 @@ impl Compiler {
     fn class_stmt(
         &mut self,
         ctx: &mut GlobalContext,
-        span: Span,
         name: String,
         methods: Vec<Stmt>,
         public: bool,
     ) -> Result<(), CompileError> {
-        if self.classes.contains_key(&name) {
-            return Err(ErrorKind::DuplicateClass(name).at(span));
-        }
-
         let mut class = Class::new(name.clone());
         class.public = public;
 
@@ -1096,9 +1085,9 @@ impl Compiler {
                 self.markers.push(Marker::Begin(offset));
             }
             StmtKind::Class(name, methods, public) => {
-                self.class_stmt(ctx, stmt.span, name, methods, public)?
+                self.class_stmt(ctx, name, methods, public)?
             }
-            StmtKind::Fn(fn_stmt) => self.fn_stmt(ctx, stmt.span, fn_stmt)?,
+            StmtKind::Fn(fn_stmt) => self.fn_stmt(ctx, fn_stmt)?,
             StmtKind::ForIn(lhs, rhs, body) => self.for_in(ctx, stmt.span, lhs, rhs, body)?,
             StmtKind::For(expr, body) => self.for_stmt(ctx, stmt.span, expr, body)?,
             StmtKind::ForCond {
@@ -1136,11 +1125,37 @@ impl Compiler {
         Ok(())
     }
 
+    fn register(&mut self, stmts: &[Stmt]) -> Result<(), CompileError> {
+        for stmt in stmts {
+            match &stmt.kind {
+                StmtKind::Fn(fn_stmt) => {
+                    if self.funcs.contains_key(&fn_stmt.name) {
+                        return Err(ErrorKind::DuplicateFn(fn_stmt.name.clone()).at(stmt.span));
+                    }
+
+                    self.funcs.insert(fn_stmt.name.clone(), Fn::default());
+                }
+                StmtKind::Class(name, _, _) => {
+                    if self.classes.contains_key(name.as_str()) {
+                        return Err(ErrorKind::DuplicateClass(name.clone()).at(stmt.span));
+                    }
+
+                    self.classes.insert(name.clone(), Class::default());
+                }
+                _ => {}
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn compile(
         mut self,
         ctx: &mut GlobalContext,
         stmts: Vec<Stmt>,
     ) -> Result<Package, CompileError> {
+        self.register(&stmts)?;
+
         // In the root scope, `self` refers to the current package
         self.push_var(Span::default(), "self".to_string(), true)?;
         self.compile_scoped_body(ctx, stmts)?;
