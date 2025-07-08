@@ -64,5 +64,5 @@ pub fn println(val) {
 
     line = line ^ "\n";
 
-    @syscall4(os.platform.SYS_WRITE, os.STDOUT, @data_ptr(line), line.len());
+    @syscall3(os.SYS_WRITE, os.STDOUT, @data_ptr(line), line.len());
 }

@@ -12,6 +12,7 @@ use crate::gc::{Gc, Handle, Trace};
 use super::{
     array::Array,
     bigint::BigInt,
+    blob::Blob,
     class::Class,
     error::RuntimeError,
     function::{Fn, Method, Resumable},
@@ -25,66 +26,16 @@ pub enum Tag {
     Int,
     BigInt,
     Float,
-    Array,
     Fn,
     Resumable,
     Method,
+    Array,
+    Blob,
     Str,
     #[default]
     Atom,
     Class,
     Object,
-}
-
-#[derive(Debug)]
-pub struct OneOf(pub Type, pub Type);
-
-impl Display for OneOf {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{} | {}", self.0.name(), self.1.name())
-    }
-}
-
-impl PartialEq<Type> for OneOf {
-    fn eq(&self, other: &Type) -> bool {
-        self.0 == *other || self.1 == *other
-    }
-}
-
-#[derive(Debug)]
-pub enum TypeAssert {
-    Type(Type),
-    OneOf(OneOf),
-}
-
-impl From<Type> for TypeAssert {
-    fn from(ty: Type) -> Self {
-        TypeAssert::Type(ty)
-    }
-}
-
-impl From<OneOf> for TypeAssert {
-    fn from(one_of: OneOf) -> Self {
-        TypeAssert::OneOf(one_of)
-    }
-}
-
-impl PartialEq<Type> for TypeAssert {
-    fn eq(&self, other: &Type) -> bool {
-        match self {
-            TypeAssert::Type(ty) => ty.eq(other),
-            TypeAssert::OneOf(one_of) => one_of.eq(other),
-        }
-    }
-}
-
-impl Display for TypeAssert {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            TypeAssert::Type(ty) => write!(f, "{ty}"),
-            TypeAssert::OneOf(one_of) => write!(f, "{one_of}"),
-        }
-    }
 }
 
 #[repr(u64)]
@@ -93,10 +44,11 @@ pub enum Type {
     Int,
     BigInt,
     Float,
-    Array,
     Fn,
     Resumable,
     Method,
+    Array,
+    Blob,
     Str,
     #[default]
     Atom,
@@ -110,10 +62,11 @@ impl Type {
             Type::Int => "Int",
             Type::BigInt => "BigInt",
             Type::Float => "Float",
-            Type::Array => "Array",
             Type::Fn => "Fn",
             Type::Resumable => "Resumable",
             Type::Method => "Method",
+            Type::Array => "Array",
+            Type::Blob => "Blob",
             Type::Str => "Str",
             Type::Atom => "Atom",
             Type::Class => "Class",
@@ -146,6 +99,7 @@ macro_rules! impl_value_handle {
 impl_value_handle!(
     (Fn: Fn),
     (Str: Str<'_>),
+    (Blob: Blob<'_>),
     (BigInt: BigInt),
     (Class: Class<'_>),
     (Object: Object<'_>),
@@ -245,9 +199,10 @@ impl<'gc> Value<'gc> {
             Tag::Int => Type::Int,
             Tag::BigInt => Type::BigInt,
             Tag::Float => Type::Float,
-            Tag::Array => Type::Array,
             Tag::Fn => Type::Fn,
             Tag::Method => Type::Method,
+            Tag::Array => Type::Array,
+            Tag::Blob => Type::Blob,
             Tag::Str => Type::Str,
             Tag::Atom => Type::Atom,
             Tag::Class => Type::Class,
@@ -323,6 +278,11 @@ impl<'gc> Value<'gc> {
     }
 
     #[inline]
+    pub fn as_blob(&self) -> Handle<'gc, Blob<'gc>> {
+        self.as_handle()
+    }
+
+    #[inline]
     pub fn as_resumable(&self) -> Handle<'gc, Resumable<'gc>> {
         self.as_handle()
     }
@@ -336,6 +296,7 @@ impl<'gc> Value<'gc> {
 impl<'gc> Trace for Value<'gc> {
     fn trace(&self, gc: &mut Gc) {
         match self.tag() {
+            Tag::Blob => gc.mark(&self.as_blob()),
             Tag::Array => gc.mark(&self.as_array()),
             Tag::Str => gc.mark(&self.as_str()),
             Tag::Object => gc.mark(&self.as_object()),
@@ -402,6 +363,16 @@ impl<'gc> From<Value<'gc>> for i64 {
         match value.tag() {
             Tag::Int => value.as_int(),
             Tag::BigInt => value.as_bigint().as_i64(),
+            _ => unreachable!(),
+        }
+    }
+}
+
+impl<'gc> From<Value<'gc>> for u8 {
+    fn from(value: Value<'gc>) -> Self {
+        match value.tag() {
+            Tag::Int => value.as_int() as u8,
+            Tag::BigInt => value.as_bigint().as_usize() as u8,
             _ => unreachable!(),
         }
     }

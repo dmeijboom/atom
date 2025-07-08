@@ -100,8 +100,8 @@ pub class Entry {
 }
 
 pub class Map {
-    fn init(self) {
-        self.buckets = repeat(:nil, 25);
+    fn init(self, size) {
+        self.buckets = repeat(:nil, size);
     }
 
     fn set(self, key, value) {

@@ -1,5 +1,6 @@
 import std;
 
-for i in range(0, 10) {
-    println(i);
-}
+let buff = Blob[16];
+@syscall3(116, @data_ptr(buff), 0, 0);
+
+println(buff[0]);

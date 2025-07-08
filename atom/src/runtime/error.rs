@@ -5,12 +5,16 @@ use std::{
 
 use crate::lexer::Span;
 
-use super::value::{Type, TypeAssert};
+use super::value::Type;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {
+    #[error("type '{0}' is not IntLike (expected: Int | BigInt)")]
+    TypeNotInt(Type),
+    #[error("type '{0}' is not ArrayLike (expected: Array | Blob | Str)")]
+    TypeNotArray(Type),
     #[error("type mismatch: {left} != {right}")]
-    TypeMismatch { left: Type, right: TypeAssert },
+    TypeMismatch { left: Type, right: Type },
     #[error("index out of bounds: {0}")]
     IndexOutOfBounds(usize),
     #[error("cannot call non-function: {0}")]

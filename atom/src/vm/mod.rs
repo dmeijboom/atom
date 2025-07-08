@@ -1,17 +1,20 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    fmt::{self, Write},
     fs, mem,
-    ops::*,
+    ops::{Deref, DerefMut, *},
     path::{Path, PathBuf},
 };
+
+mod array;
+mod builtins;
+
+pub use builtins::Builtins;
 
 use wyhash2::WyHash;
 
 use crate::{
     ast::Stmt,
-    builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn4},
     bytecode::{self, Op},
     collections::Stack,
     compiler::{Compiler, GlobalContext, Package},
@@ -23,8 +26,8 @@ use crate::{
     runtime::{
         error::{Call, ErrorKind, RuntimeError},
         function::{Resumable, ResumableState},
-        value::{self, IntoAtom, OneOf, Tag, Type, TypeAssert, Value},
-        Array, BigInt, Class, Context, Fn, Method, Object, Runtime, Str,
+        value::{self, IntoAtom, Tag, Type, Value},
+        Array, BigInt, Class, Context, Fn, Method, Object, Runtime,
     },
 };
 
@@ -105,149 +108,6 @@ pub struct Vm<'gc, const S: usize> {
     packages: HashMap<String, Handle<'gc, Object<'gc>>, WyHash>,
 }
 
-fn read_usize<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    addr: Value<'gc>,
-    offset: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    unsafe {
-        let ptr = addr.as_bigint().as_usize() as *mut u8;
-        let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const usize;
-        std::ptr::read(ptr).into_atom(gc)
-    }
-}
-
-fn str<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    (value.to_string()).into_atom(gc)
-}
-
-fn ptr<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    (value.as_raw_ptr() as usize).into_atom(gc)
-}
-
-fn array_push<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    array: Value<'gc>,
-    element: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    let mut array = array.as_array();
-    array.push(gc, element)?;
-    Ok(Value::default())
-}
-
-fn data_ptr<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    match value.ty() {
-        Type::Array => value.as_array().deref().addr().unwrap_or(0).into_atom(gc),
-        Type::Str => value.as_str().0.addr().unwrap_or(0).into_atom(gc),
-        _ => unreachable!(),
-    }
-}
-
-fn syscall4<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    arg1: Value<'gc>,
-    arg2: Value<'gc>,
-    arg3: Value<'gc>,
-    arg4: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    unsafe {
-        libc::syscall(
-            arg1.as_int() as i32,
-            arg2.as_int(),
-            arg3.as_int(),
-            arg4.as_int(),
-        )
-    }
-    .into_atom(gc)
-}
-
-fn format_type(module: &str, name: &str) -> String {
-    if module == "__root__" {
-        name.to_string()
-    } else {
-        format!(
-            "{}.{}",
-            module.split('/').next_back().unwrap_or_default(),
-            name
-        )
-    }
-}
-
-fn format_repr<'gc>(rt: &dyn Runtime, w: &mut impl Write, value: &Value<'gc>) -> fmt::Result {
-    match value.ty() {
-        Type::Array => {
-            write!(w, "[")?;
-
-            for (i, elem) in value.as_array().iter().enumerate() {
-                if i > 0 {
-                    write!(w, ", ")?;
-                }
-
-                format_repr(rt, w, elem)?;
-            }
-
-            write!(w, "]")
-        }
-        Type::Str => write!(w, "'{}'", value.as_str().as_str()),
-        Type::Int => write!(w, "{}", value.as_int()),
-        Type::BigInt => write!(w, "{}", value.as_bigint()),
-        Type::Float => write!(w, "{}", value.as_float()),
-        Type::Atom => write!(w, ":{}", rt.get_atom(value.as_atom())),
-        Type::Resumable | Type::Fn => {
-            let func = value.as_fn();
-            let module = rt.get_module(func.context.module);
-
-            if value.ty() == Type::Resumable {
-                write!(w, "*")?;
-            }
-
-            write!(w, "{}(..)", format_type(&module.name, &func.name))
-        }
-        Type::Method => {
-            let func = &value.as_method().func;
-            let module = rt.get_module(func.context.module);
-
-            write!(w, "{}(..)", format_type(&module.name, &func.name))
-        }
-        Type::Class => write!(w, "{}", value.as_class().name),
-        Type::Object => {
-            let object = value.as_object();
-            let module = rt.get_module(object.class.context.module);
-
-            write!(w, "{}{{..}}", format_type(&module.name, &object.class.name))
-        }
-    }
-}
-
-pub fn repr<'gc>(
-    gc: &mut Gc<'gc>,
-    rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    let mut s = String::new();
-    let _ = format_repr(rt, &mut s, &value);
-    s.into_atom(gc)
-}
-
-fn is_darwin<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
-    cfg!(target_os = "macos").into_atom(gc)
-}
-
 impl<'gc, const S: usize> Runtime<'gc> for Vm<'gc, S> {
     fn get_atom(&self, idx: u32) -> &str {
         self.global_context.atoms[idx as usize].as_str()
@@ -259,40 +119,6 @@ impl<'gc, const S: usize> Runtime<'gc> for Vm<'gc, S> {
 
     fn span(&self) -> Span {
         self.span()
-    }
-}
-
-pub struct Builtins(HashMap<&'static str, Box<dyn BuiltinFunction>>);
-
-impl Builtins {
-    #[allow(dead_code)]
-    pub fn register(&mut self, name: &'static str, f: Box<dyn BuiltinFunction>) {
-        self.0.insert(name, f);
-    }
-}
-
-impl Default for Builtins {
-    fn default() -> Self {
-        let mut builtins: HashMap<&'static str, Box<dyn BuiltinFunction>> = HashMap::default();
-        builtins.insert("is_darwin", Box::new(Fn0(is_darwin)));
-        builtins.insert("repr", Box::new(Fn1(repr)));
-        builtins.insert("data_ptr", Box::new(Fn1(data_ptr)));
-        builtins.insert("ptr", Box::new(Fn1(ptr)));
-        builtins.insert("str", Box::new(Fn1(str)));
-        builtins.insert("read_usize", Box::new(Fn2(read_usize)));
-        builtins.insert("array_push", Box::new(Fn2(array_push)));
-        builtins.insert("syscall4", Box::new(Fn4(syscall4)));
-
-        Self(builtins)
-    }
-}
-
-fn array_idx(elem: Value, len: usize) -> usize {
-    let i = elem.as_bigint();
-
-    match i.as_i64() {
-        n if n < 0 => (len as i64 + n) as usize,
-        _ => i.as_usize(),
     }
 }
 
@@ -330,10 +156,6 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         ErrorKind::UnsupportedOp { left, right, op }
             .at(self.span())
             .into()
-    }
-
-    fn index_out_of_bounds(&self, idx: usize) -> Error {
-        ErrorKind::IndexOutOfBounds(idx).at(self.span()).into()
     }
 
     fn arg_count_mismatch(&self, func: &Fn, arg_count: u32) -> Error {
@@ -518,9 +340,23 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         self.frame.locals[idx as usize] = self.stack.pop();
     }
 
-    fn assert_type(&self, left: Type, right: impl Into<TypeAssert>) -> Result<(), Error> {
-        let right = right.into();
+    fn assert_int(&self, ty: Type) -> Result<(), Error> {
+        if matches!(ty, Type::Int | Type::BigInt) {
+            return Ok(());
+        }
 
+        Err(ErrorKind::TypeNotInt(ty).at(self.span()).into())
+    }
+
+    fn assert_array(&self, ty: Type) -> Result<(), Error> {
+        if matches!(ty, Type::Array | Type::Blob | Type::Str) {
+            return Ok(());
+        }
+
+        Err(ErrorKind::TypeNotArray(ty).at(self.span()).into())
+    }
+
+    fn assert_type(&self, left: Type, right: Type) -> Result<(), Error> {
         if right != left {
             return Err(ErrorKind::TypeMismatch { left, right }
                 .at(self.span())
@@ -726,53 +562,25 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         };
 
         if let Some(from) = from.as_ref() {
-            self.assert_type(from.ty(), OneOf(Type::Int, Type::BigInt))?;
+            self.assert_int(from.ty())?;
         }
 
         if let Some(to) = to.as_ref() {
-            self.assert_type(to.ty(), OneOf(Type::Int, Type::BigInt))?;
+            self.assert_int(to.ty())?;
         }
 
         let array = self.stack.pop();
+        let new_array = match array.tag() {
+            Tag::Array => array::slice(gc, array.as_array().deref(), from, to),
+            Tag::Str => array::slice(gc, array.as_str().deref(), from, to),
+            Tag::Blob => array::slice(gc, array.as_blob().deref(), from, to),
+            _ => return self.assert_array(array.ty()),
+        }?;
 
-        match array.ty() {
-            Type::Array => {
-                let array = array.as_array();
-                let new_array = gc.alloc(self.slice_array(&array, from, to)?)?;
-                self.stack.push(new_array);
-            }
-            Type::Str => {
-                let array = array.as_str();
-                let new_array = self.slice_array(&array.0, from, to)?;
-                let new_str = gc.alloc(Str(new_array))?;
-                self.stack.push(new_str);
-            }
-            ty => self.assert_type(ty, OneOf(Type::Array, Type::Str))?,
-        }
-
+        self.stack.push(new_array);
         self.gc_tick(gc);
 
         Ok(())
-    }
-
-    fn slice_array<T: Trace>(
-        &mut self,
-        array: &Array<'gc, T>,
-        from: Option<Value<'gc>>,
-        to: Option<Value<'gc>>,
-    ) -> Result<Array<'gc, T>, Error> {
-        let from = from.map(|v| array_idx(v, array.len())).unwrap_or(0);
-        let mut to = to.map(|v| array_idx(v, array.len())).unwrap_or(array.len());
-
-        if from > array.len() {
-            return Ok(Array::default());
-        }
-
-        if to > array.len() {
-            to = array.len();
-        }
-
-        Ok(array.slice(from, to))
     }
 
     fn store_elem(&mut self) -> Result<(), Error> {
@@ -780,61 +588,30 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
-        self.assert_type(elem.ty(), OneOf(Type::Int, Type::BigInt))?;
+        self.assert_int(elem.ty())?;
 
-        match array.ty() {
-            Type::Array => {
-                let mut array = array.as_array();
-                let idx = array_idx(elem, array.len());
-                let elem = array
-                    .get_mut(idx)
-                    .ok_or_else(|| self.index_out_of_bounds(idx))?;
-
-                *elem = value;
-            }
-            Type::Str => {
-                self.assert_type(value.ty(), OneOf(Type::Int, Type::BigInt))?;
-
-                let array = &mut array.as_str().0;
-                let idx = array_idx(elem, array.len());
-                let elem = array
-                    .get_mut(idx)
-                    .ok_or_else(|| self.index_out_of_bounds(idx))?;
-
-                *elem = value.as_bigint().as_usize() as u8;
-            }
-            _ => self.assert_type(array.ty(), OneOf(Type::Array, Type::Str))?,
+        match array.tag() {
+            Tag::Array => array::set_elem(array.as_array().deref_mut(), elem, value),
+            Tag::Str => array::set_elem(array.as_str().deref_mut(), elem, value),
+            Tag::Blob => array::set_elem(array.as_blob().deref_mut(), elem, value),
+            _ => return self.assert_array(array.ty()),
         }
-
-        Ok(())
+        .map_err(|e| e.at(self.span()).into())
     }
 
     fn load_elem(&mut self) -> Result<(), Error> {
         let elem = self.stack.pop();
         let array = self.stack.pop();
 
-        self.assert_type(elem.ty(), OneOf(Type::Int, Type::BigInt))?;
+        self.assert_int(elem.ty())?;
 
-        let elem = match array.ty() {
-            Type::Array => {
-                let handle = array.as_array();
-                let idx = array_idx(elem, handle.len());
-                handle
-                    .get(idx)
-                    .cloned()
-                    .ok_or_else(|| self.index_out_of_bounds(idx))?
-            }
-            Type::Str => {
-                let handle = &array.as_str().0;
-                let idx = array_idx(elem, handle.len());
-                handle
-                    .get(idx)
-                    .copied()
-                    .map(Value::from)
-                    .ok_or_else(|| self.index_out_of_bounds(idx))?
-            }
-            _ => return self.assert_type(array.ty(), OneOf(Type::Array, Type::Str)),
-        };
+        let elem = match array.tag() {
+            Tag::Array => array::get_elem(array.as_array().deref(), elem),
+            Tag::Str => array::get_elem(array.as_str().deref(), elem),
+            Tag::Blob => array::get_elem(array.as_blob().deref(), elem),
+            _ => return self.assert_array(array.ty()),
+        }
+        .map_err(|e| e.at(self.span()))?;
 
         self.stack.push(elem);
 
@@ -842,9 +619,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn make_path(&self, name: &str) -> PathBuf {
-        self.search_path
-            .join("stdlib")
-            .join(format!("{name}.atom"))
+        self.search_path.join("stdlib").join(format!("{name}.atom"))
     }
 
     fn set_frame(&mut self, frame: Frame<'gc>) {
@@ -947,23 +722,15 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn concat(&mut self, gc: &mut Gc<'gc>, lhs: Value<'gc>, rhs: Value<'gc>) -> Result<(), Error> {
-        let value = match lhs.ty() {
-            Type::Array => {
-                let lhs = lhs.as_array();
-                let rhs = rhs.as_array();
-
-                [lhs.as_slice(), rhs.as_slice()].concat().into_atom(gc)
-            }
-            Type::Str => {
-                let lhs = lhs.as_str();
-                let rhs = rhs.as_str();
-
-                [lhs.as_str(), rhs.as_str()].concat().into_atom(gc)
-            }
+        let value: Value<'gc> = match lhs.tag() {
+            Tag::Array => array::concat(gc, lhs.as_array().deref(), rhs.as_array().deref()),
+            Tag::Blob => array::concat(gc, lhs.as_blob().deref(), rhs.as_blob().deref()),
+            Tag::Str => array::concat(gc, lhs.as_str().deref(), rhs.as_str().deref()),
             _ => unreachable!(),
         }?;
 
         self.stack.push(value);
+
         Ok(())
     }
 

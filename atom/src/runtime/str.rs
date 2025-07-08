@@ -3,10 +3,42 @@ use std::hash::Hash;
 
 use crate::gc::{Gc, Trace};
 
-use super::array::Array;
+use super::array::{Array, ArrayLike};
 use super::error::RuntimeError;
 
+#[derive(Default)]
 pub struct Str<'gc>(pub Array<'gc, u8>);
+
+impl<'gc> ArrayLike<'gc> for Str<'gc> {
+    type Item = u8;
+
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn get(&self, idx: usize) -> Option<&Self::Item> {
+        self.0.get(idx)
+    }
+
+    fn get_mut(&mut self, idx: usize) -> Option<&mut Self::Item> {
+        self.0.get_mut(idx)
+    }
+
+    fn slice(&self, from: usize, to: usize) -> Self
+    where
+        Self: Sized,
+    {
+        Self(self.0.slice(from, to))
+    }
+
+    fn concat(&self, gc: &mut Gc<'gc>, other: &Self) -> Result<Self, RuntimeError>
+    where
+        Self::Item: Clone,
+        Self: Sized,
+    {
+        self.0.concat(gc, &other.0).map(Self)
+    }
+}
 
 impl<'gc> Str<'gc> {
     pub fn as_str(&self) -> &str {

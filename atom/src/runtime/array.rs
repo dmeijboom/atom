@@ -32,12 +32,95 @@ unsafe fn copy_from_slice<T: Clone>(ptr: *mut T, slice: &[T]) {
     }
 }
 
+#[allow(clippy::len_without_is_empty)]
+pub trait ArrayLike<'gc> {
+    type Item;
+
+    fn len(&self) -> usize;
+    fn get(&self, idx: usize) -> Option<&Self::Item>;
+    fn get_mut(&mut self, idx: usize) -> Option<&mut Self::Item>;
+    fn slice(&self, from: usize, to: usize) -> Self
+    where
+        Self: Sized;
+    fn concat(&self, gc: &mut Gc<'gc>, other: &Self) -> Result<Self, RuntimeError>
+    where
+        Self::Item: Clone,
+        Self: Sized;
+}
+
 #[repr(C)]
 pub struct Array<'gc, T: Trace> {
     pub len: usize,
     pub cap: usize,
     data: MaybeUninit<Handle<'gc, T>>,
     _marker: PhantomData<[T]>,
+}
+
+impl<'gc, T: Trace> ArrayLike<'gc> for Array<'gc, T> {
+    type Item = T;
+
+    fn len(&self) -> usize {
+        self.len
+    }
+
+    fn get(&self, idx: usize) -> Option<&Self::Item> {
+        if idx >= self.len {
+            return None;
+        }
+
+        unsafe {
+            let ptr = self.data.assume_init_ref().as_ptr().add(idx);
+            Some(&*ptr)
+        }
+    }
+
+    fn get_mut(&mut self, idx: usize) -> Option<&mut Self::Item> {
+        if idx >= self.len {
+            return None;
+        }
+
+        unsafe {
+            let ptr = self.data.assume_init_mut().as_ptr().add(idx);
+            Some(&mut *ptr)
+        }
+    }
+
+    fn slice(&self, from: usize, to: usize) -> Self
+    where
+        Self: Sized,
+    {
+        if self.is_empty() {
+            return Array::default();
+        }
+
+        unsafe {
+            let ptr = self.data.assume_init_ref().as_ptr().add(from);
+            let handle = Handle::new(NonNull::new_unchecked(ptr));
+
+            Array {
+                data: MaybeUninit::new(handle),
+                cap: self.cap - from,
+                len: to - from,
+                _marker: PhantomData,
+            }
+        }
+    }
+
+    fn concat(&self, gc: &mut Gc<'gc>, other: &Self) -> Result<Self, RuntimeError>
+    where
+        Self::Item: Clone,
+        Self: Sized,
+    {
+        let new_len = self.len + other.len;
+        let handle: Handle<T> = gc.alloc_array(new_len)?;
+        let raw = handle.as_ptr();
+
+        unsafe {
+            copy_from_slice(raw, self.as_slice());
+            copy_from_slice(raw.add(self.len), other.as_slice());
+            Ok(Self::from_raw_parts(handle, new_len, new_len))
+        }
+    }
 }
 
 impl<'gc, T: Trace> Default for Array<'gc, T> {
@@ -66,30 +149,21 @@ impl<'gc, T: Trace> Trace for Array<'gc, T> {
 }
 
 impl<'gc, T: Trace> Array<'gc, T> {
+    pub fn with_capacity(gc: &mut Gc<'gc>, capacity: usize) -> Result<Self, RuntimeError> {
+        if capacity == 0 {
+            return Ok(Self::default());
+        }
+
+        let handle: Handle<T> = gc.alloc_array(capacity)?;
+        Ok(unsafe { Self::from_raw_parts(handle, 0, capacity) })
+    }
+
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
 
     pub fn len(&self) -> usize {
         self.len
-    }
-
-    pub fn slice(&self, from: usize, to: usize) -> Array<'gc, T> {
-        if self.is_empty() {
-            return Array::default();
-        }
-
-        unsafe {
-            let ptr = self.data.assume_init_ref().as_ptr().add(from);
-            let handle = Handle::new(NonNull::new_unchecked(ptr));
-
-            Array {
-                data: MaybeUninit::new(handle),
-                cap: self.cap - from,
-                len: to - from,
-                _marker: PhantomData,
-            }
-        }
     }
 
     pub fn addr(&self) -> Option<usize> {
@@ -119,28 +193,6 @@ impl<'gc, T: Trace> Array<'gc, T> {
 
         unsafe {
             std::slice::from_raw_parts(self.data.assume_init_ref().as_ptr().cast_const(), self.len)
-        }
-    }
-
-    pub fn get(&self, idx: usize) -> Option<&T> {
-        if idx >= self.len {
-            return None;
-        }
-
-        unsafe {
-            let ptr = self.data.assume_init_ref().as_ptr().add(idx);
-            Some(&*ptr)
-        }
-    }
-
-    pub fn get_mut(&mut self, idx: usize) -> Option<&mut T> {
-        if idx >= self.len {
-            return None;
-        }
-
-        unsafe {
-            let ptr = self.data.assume_init_mut().as_ptr().add(idx);
-            Some(&mut *ptr)
         }
     }
 
