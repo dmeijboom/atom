@@ -14,34 +14,47 @@ use crate::{
     },
 };
 
-fn write_usize<'gc>(
-    _gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    addr: Value<'gc>,
-    offset: Value<'gc>,
-    data: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    unsafe {
-        let ptr = addr.as_bigint().as_usize() as *mut u8;
-        let ptr = ptr.add(offset.as_bigint().as_usize()) as *mut usize;
-        std::ptr::write(ptr, data.as_bigint().as_usize());
-    }
+macro_rules! impl_read_write {
+    ($($ty:ty: [$read_name:ident, $write_name:ident]),+) => {
+        $(
+            #[allow(dead_code)]
+            fn $read_name<'gc>(
+                gc: &mut Gc<'gc>,
+                _rt: &dyn Runtime,
+                addr: Value<'gc>,
+                offset: Value<'gc>,
+            ) -> Result<Value<'gc>, RuntimeError> {
+                unsafe {
+                    let ptr = addr.as_bigint().as_usize() as *mut u8;
+                    let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const $ty;
+                    std::ptr::read::<$ty>(ptr).into_atom(gc)
+                }
+            }
 
-    Ok(value::NIL.into())
+            #[allow(dead_code)]
+            fn $write_name<'gc>(
+                _gc: &mut Gc<'gc>,
+                _rt: &dyn Runtime,
+                addr: Value<'gc>,
+                offset: Value<'gc>,
+                data: Value<'gc>,
+            ) -> Result<Value<'gc>, RuntimeError> {
+                unsafe {
+                    let ptr = addr.as_bigint().as_usize() as *mut u8;
+                    let ptr = ptr.add(offset.as_bigint().as_usize()) as *mut $ty;
+                    std::ptr::write(ptr, data.as_bigint().as_usize() as $ty);
+                }
+
+                Ok(value::NIL.into())
+            }
+        )+
+    };
 }
 
-fn read_usize<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    addr: Value<'gc>,
-    offset: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    unsafe {
-        let ptr = addr.as_bigint().as_usize() as *mut u8;
-        let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const usize;
-        std::ptr::read(ptr).into_atom(gc)
-    }
-}
+impl_read_write!(
+    usize: [read_usize, write_usize],
+    u32:   [read_u32, write_u32]
+);
 
 fn str<'gc>(
     gc: &mut Gc<'gc>,
@@ -184,6 +197,41 @@ fn is_arm64<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, Runt
     cfg!(target_arch = "aarch64").into_atom(gc)
 }
 
+#[cfg(target_os = "macos")]
+mod mac {
+    use super::*;
+
+    pub fn mach_timebase_info<'gc>(
+        _gc: &mut Gc<'gc>,
+        _rt: &dyn Runtime,
+        timebase_info: Value<'gc>,
+    ) -> Result<Value<'gc>, RuntimeError> {
+        unsafe {
+            let addr = timebase_info.as_bigint().as_usize();
+            let timebase_info = addr as *mut mach2::mach_time::mach_timebase_info;
+
+            mach2::mach_time::mach_timebase_info(timebase_info);
+
+            Ok(Value::default())
+        }
+    }
+
+    pub fn mach_wait_until<'gc>(
+        gc: &mut Gc<'gc>,
+        _rt: &dyn Runtime,
+        deadline: Value<'gc>,
+    ) -> Result<Value<'gc>, RuntimeError> {
+        unsafe { mach2::mach_time::mach_wait_until(deadline.as_bigint().as_u64()).into_atom(gc) }
+    }
+
+    pub fn mach_absolute_time<'gc>(
+        gc: &mut Gc<'gc>,
+        _rt: &dyn Runtime,
+    ) -> Result<Value<'gc>, RuntimeError> {
+        unsafe { mach2::mach_time::mach_absolute_time().into_atom(gc) }
+    }
+}
+
 pub struct Builtins(pub HashMap<&'static str, Box<dyn BuiltinFunction>>);
 
 impl Builtins {
@@ -203,9 +251,18 @@ impl Default for Builtins {
         builtins.insert("ptr", Box::new(Fn1(ptr)));
         builtins.insert("str", Box::new(Fn1(str)));
         builtins.insert("read_usize", Box::new(Fn2(read_usize)));
+        builtins.insert("read_u32", Box::new(Fn2(read_u32)));
         builtins.insert("write_usize", Box::new(Fn3(write_usize)));
+        builtins.insert("write_u32", Box::new(Fn3(write_u32)));
         builtins.insert("array_push", Box::new(Fn2(array_push)));
         builtins.insert("syscall3", Box::new(Fn4(syscall3)));
+
+        #[cfg(target_os = "macos")]
+        {
+            builtins.insert("mach_wait_until", Box::new(Fn1(mac::mach_wait_until)));
+            builtins.insert("mach_timebase_info", Box::new(Fn1(mac::mach_timebase_info)));
+            builtins.insert("mach_absolute_time", Box::new(Fn0(mac::mach_absolute_time)));
+        }
 
         Self(builtins)
     }

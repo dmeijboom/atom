@@ -1,9 +1,19 @@
 import std/os;
 
-self.SECOND = 1000000;
-
-let DAY = 86400000;
+let MICROSECOND = 1000;
+let MILLISECOND = MICROSECOND * 1000;
+let SECOND = MILLISECOND * 1000;
+let HOUR = SECOND * 3600;
+let DAY = HOUR * 24;
 let YEAR = DAY * 365;
+
+self.MICROSECOND = MICROSECOND;
+self.MILLISECOND = MILLISECOND;
+self.SECOND = SECOND;
+self.HOUR = HOUR;
+self.DAY = DAY;
+self.YEAR = YEAR;
+
 let MONTHS = [
     31, // January
     28, // February
@@ -19,14 +29,24 @@ let MONTHS = [
     31  // December
 ];
 
-pub class Delta {
-    fn init(self, usecs) {
-        self.usecs = usecs;
+fn to_delta(delta) {
+    if delta is Delta {
+        return delta;
     }
 
-    fn secs(self) => self.usecs / 1000000;
-    fn msecs(self) => self.usecs / 1000;
-    fn days(self) => self.usecs / DAY;
+    Delta(delta)
+}
+
+pub class Delta {
+    fn init(self, nsecs) {
+        self.nsecs = nsecs;
+    }
+
+    fn secs(self) => self.nsecs / SECOND;
+    fn usecs(self) => self.nsecs / MICROSECOND;
+    fn msecs(self) => self.nsecs / MILLISECOND;
+    fn hours(self) => self.nsecs / HOUR;
+    fn days(self) => self.nsecs / DAY;
 }
 
 pub class Time {
@@ -90,11 +110,14 @@ fn parse_ymd(unix) {
     [year, month, day]
 }
 
-// Get the current time in microseconds since the Unix epoch
+// Get the current time in nanoseconds since the Unix epoch
 pub fn unix() {
     let td = os.gettimeofday();
-    (td.secs * 1000) + (td.usecs / 1000)
+    (td.secs * SECOND) + (td.usecs * 1000)
 }
+
+// Sleep for a given duration
+pub fn sleep(input) => os.nanosleep(to_delta(input).nsecs);
 
 // Get the current date and time in UTC
 pub fn now() {

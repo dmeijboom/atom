@@ -10,9 +10,11 @@ if @is_darwin() {
     if @is_arm64() {
         sys.WRITE = 64;
         sys.GETTIMEOFDAY = 169;
+        sys.NANOSLEEP = 101;
     } else {
         sys.WRITE = 1;
         sys.GETTIMEOFDAY = 96;
+        sys.NANOSLEEP = 35;
     }
 }
 
@@ -34,6 +36,29 @@ class TimeOfDay {
     fn init(self, secs, usecs) {
         self.secs = secs;
         self.usecs = usecs;
+    }
+}
+
+pub fn nanosleep(nsecs) {
+    // On darwin there is no nanosleep syscall
+    if @is_darwin() {
+        let buff = @blob(16);
+        let raw = array_ptr(buff);
+
+        @mach_timebase_info(raw);
+
+        let numer = @read_u32(raw, 0);
+        let denom = @read_u32(raw, 4);
+        let now = @mach_absolute_time();
+
+        @mach_wait_until(now + (nsecs * denom / numer));
+    } else {
+        let buff = @blob(16);
+        let raw = array_ptr(buff);
+
+        @write_usize(raw, 0, nsecs / 1000000000);
+        @write_usize(raw, 8, nsecs % 1000000000);
+        @syscall3(sys.NANOSLEEP, raw, 0, 0);
     }
 }
 

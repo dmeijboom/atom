@@ -56,6 +56,10 @@ impl BigInt {
         unsafe { mpz_get_ui(&self.get()) as usize }
     }
 
+    pub fn as_u64(&self) -> u64 {
+        unsafe { mpz_get_ui(&self.get()) }
+    }
+
     pub fn as_i64(&self) -> i64 {
         match self {
             BigInt::Small { size, limbs } => {
@@ -185,7 +189,14 @@ impl Default for BigInt {
 impl From<usize> for BigInt {
     #[inline]
     fn from(value: usize) -> Self {
-        if value < i64::MAX as usize {
+        (value as u64).into()
+    }
+}
+
+impl From<u64> for BigInt {
+    #[inline]
+    fn from(value: u64) -> Self {
+        if value < i64::MAX as u64 {
             return BigInt::from(value as i64);
         }
 
@@ -250,7 +261,7 @@ macro_rules! impl_shift_op {
                     let mut result = Self::default();
 
                     unsafe {
-                        gmp::$mpz_fn(result.get_mut(), &self.get(), rhs.as_usize() as u64);
+                        gmp::$mpz_fn(result.get_mut(), &self.get(), rhs.as_u64());
                     }
 
                     result

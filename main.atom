@@ -3,7 +3,8 @@ import std/time;
 
 let now = time.now();
 
-println(now.year());
-println(now.month());
-println(now.day());
-println(now.unix());
+time.sleep(time.SECOND * 2);
+
+let then = time.now();
+
+println(then.diff(now).secs());

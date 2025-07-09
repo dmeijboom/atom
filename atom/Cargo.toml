@@ -9,6 +9,9 @@ default = ["mimalloc"]
 mimalloc = ["dep:mimalloc", "dep:libmimalloc-sys"]
 tracing = ["dep:tracing", "dep:tracing-subscriber"]
 
+[target.'cfg(target_os = "macos")'.dependencies]
+mach2 = { version = "0.4.3" }
+
 [dependencies]
 ron = "0.10.1"
 wyhash2 = "0.2.1"

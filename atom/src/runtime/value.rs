@@ -470,6 +470,13 @@ impl<'gc> IntoAtom<'gc> for i64 {
     }
 }
 
+impl<'gc> IntoAtom<'gc> for u64 {
+    #[inline]
+    fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
+        BigInt::from(self).into_atom(gc)
+    }
+}
+
 impl<'gc> IntoAtom<'gc> for usize {
     #[inline]
     fn into_atom(self, gc: &mut Gc<'gc>) -> Result<Value<'gc>, RuntimeError> {
