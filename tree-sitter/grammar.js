@@ -31,37 +31,18 @@ module.exports = grammar({
       ),
 
     function_declaration: ($) =>
-      choice(
-        // Arrow function: [pub] fn[*] name() => expr;
-        seq(
-          optional("pub"),
-          "fn",
-          optional("*"),
-          field("name", $.identifier),
-          field("parameters", $.parameter_list),
-          "=>",
-          field("body", $._expression),
-          ";",
-        ),
-        // Expression block function: [pub] fn[*] name() { expr };
-        seq(
-          optional("pub"),
-          "fn",
-          optional("*"),
-          field("name", $.identifier),
-          field("parameters", $.parameter_list),
-          "{",
-          field("body", $._expression),
-          "}",
-          ";",
-        ),
-        // Regular block function: [pub] fn[*] name() { statements }
-        seq(
-          optional("pub"),
-          "fn",
-          optional("*"),
-          field("name", $.identifier),
-          field("parameters", $.parameter_list),
+      seq(
+        optional("pub"),
+        "fn",
+        optional("*"),
+        field("name", $.identifier),
+        field("parameters", $.parameter_list),
+        choice(
+          // Arrow function: => expr;
+          seq("=>", field("body", $._expression), ";"),
+          // Expression block: { expr };
+          seq("{", field("body", $._expression), "}", ";"),
+          // Statement block: { statements }
           field("body", $.block),
         ),
       ),
