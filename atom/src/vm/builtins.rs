@@ -6,94 +6,35 @@ use std::{
 use crate::{
     builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn3, Fn4},
     gc::Gc,
-    runtime::{
-        blob::Blob,
-        error::RuntimeError,
-        value::{self, Type},
-        Array, IntoAtom, Runtime, Value,
-    },
+    runtime::{blob::Blob, error::RuntimeError, value::Type, Array, IntoAtom, Runtime, Value},
 };
 
-macro_rules! impl_read_write {
-    ($($ty:ty: [$read_name:ident, $write_name:ident]),+) => {
+macro_rules! builtins {
+    ($($name:ident ( $gc:ident, $rt:ident $(, $arg_name:ident)* ) $body:block),+) => {
         $(
-            #[allow(dead_code)]
-            fn $read_name<'gc>(
-                gc: &mut Gc<'gc>,
-                _rt: &dyn Runtime,
-                addr: Value<'gc>,
-                offset: Value<'gc>,
-            ) -> Result<Value<'gc>, RuntimeError> {
-                unsafe {
-                    let ptr = addr.as_bigint().as_usize() as *mut u8;
-                    let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const $ty;
-                    std::ptr::read::<$ty>(ptr).into_atom(gc)
-                }
-            }
-
-            #[allow(dead_code)]
-            fn $write_name<'gc>(
-                _gc: &mut Gc<'gc>,
-                _rt: &dyn Runtime,
-                addr: Value<'gc>,
-                offset: Value<'gc>,
-                data: Value<'gc>,
-            ) -> Result<Value<'gc>, RuntimeError> {
-                unsafe {
-                    let ptr = addr.as_bigint().as_usize() as *mut u8;
-                    let ptr = ptr.add(offset.as_bigint().as_usize()) as *mut $ty;
-                    std::ptr::write(ptr, data.as_bigint().as_usize() as $ty);
-                }
-
-                Ok(value::NIL.into())
+            pub fn $name<'gc>($gc: &mut Gc<'gc>, $rt: &dyn Runtime, $($arg_name: Value<'gc>),*) -> Result<Value<'gc>, RuntimeError> {
+                $body.into_atom($gc)
             }
         )+
     };
 }
 
-impl_read_write!(
-    usize: [read_usize, write_usize],
-    u32:   [read_u32, write_u32]
-);
+pub(crate) use builtins;
 
-fn str<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    (value.to_string()).into_atom(gc)
+fn read<'gc, T>(addr: Value<'gc>, offset: Value<'gc>) -> T {
+    unsafe {
+        let ptr = addr.as_bigint().as_usize() as *mut u8;
+        let ptr = ptr.byte_add(offset.as_bigint().as_usize()) as *const T;
+        std::ptr::read(ptr)
+    }
 }
 
-fn blob<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    size: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    let mut array = Array::with_capacity(gc, size.as_bigint().as_usize())?;
-
-    // Since `with_capacity` zeroes the array, we can safely set the length
-    array.len = array.cap;
-
-    Ok(gc.alloc(Blob(array))?.into())
-}
-
-fn ptr<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    (value.as_raw_ptr() as usize).into_atom(gc)
-}
-
-fn array_push<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    array: Value<'gc>,
-    element: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    let mut array = array.as_array();
-    array.push(gc, element)?;
-    Ok(Value::default())
+fn write<'gc, T>(addr: Value<'gc>, offset: Value<'gc>, data: T) {
+    unsafe {
+        let ptr = addr.as_bigint().as_usize() as *mut u8;
+        let ptr = ptr.add(offset.as_bigint().as_usize()) as *mut T;
+        std::ptr::write(ptr, data);
+    }
 }
 
 #[cfg(target_os = "macos")]
@@ -104,18 +45,6 @@ fn sys_code(code: Value) -> i32 {
 #[cfg(target_os = "linux")]
 fn sys_code(code: Value) -> i64 {
     code.as_int()
-}
-
-fn syscall3<'gc>(
-    gc: &mut Gc<'gc>,
-    _rt: &dyn Runtime,
-    code: Value<'gc>,
-    arg1: Value<'gc>,
-    arg2: Value<'gc>,
-    arg3: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    unsafe { libc::syscall(sys_code(code), arg1.as_int(), arg2.as_int(), arg3.as_int()) }
-        .into_atom(gc)
 }
 
 fn format_type(module: &str, name: &str) -> String {
@@ -179,57 +108,28 @@ fn format_repr<'gc>(rt: &dyn Runtime, w: &mut impl Write, value: &Value<'gc>) ->
     }
 }
 
-pub fn repr<'gc>(
-    gc: &mut Gc<'gc>,
-    rt: &dyn Runtime,
-    value: Value<'gc>,
-) -> Result<Value<'gc>, RuntimeError> {
-    let mut s = String::new();
-    let _ = format_repr(rt, &mut s, &value);
-    s.into_atom(gc)
-}
-
-fn is_darwin<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
-    cfg!(target_os = "macos").into_atom(gc)
-}
-
-fn is_arm64<'gc>(gc: &mut Gc<'gc>, _rt: &dyn Runtime) -> Result<Value<'gc>, RuntimeError> {
-    cfg!(target_arch = "aarch64").into_atom(gc)
-}
-
 #[cfg(target_os = "macos")]
 mod mac {
     use super::*;
 
-    pub fn mach_timebase_info<'gc>(
-        _gc: &mut Gc<'gc>,
-        _rt: &dyn Runtime,
-        timebase_info: Value<'gc>,
-    ) -> Result<Value<'gc>, RuntimeError> {
-        unsafe {
-            let addr = timebase_info.as_bigint().as_usize();
-            let timebase_info = addr as *mut mach2::mach_time::mach_timebase_info;
+    builtins!(
+        mach_timebase_info(gc, _rt, timebase_info) {
+            unsafe {
+                let addr = timebase_info.as_bigint().as_usize();
+                let timebase_info = addr as *mut mach2::mach_time::mach_timebase_info;
 
-            mach2::mach_time::mach_timebase_info(timebase_info);
+                mach2::mach_time::mach_timebase_info(timebase_info);
+            }
+        },
 
-            Ok(Value::default())
+        mach_wait_until(_gc, _rt, deadline) {
+            unsafe { mach2::mach_time::mach_wait_until(deadline.as_bigint().as_u64()) }
+        },
+
+        mach_absolute_time(_gc, _rt) {
+            unsafe { mach2::mach_time::mach_absolute_time() }
         }
-    }
-
-    pub fn mach_wait_until<'gc>(
-        gc: &mut Gc<'gc>,
-        _rt: &dyn Runtime,
-        deadline: Value<'gc>,
-    ) -> Result<Value<'gc>, RuntimeError> {
-        unsafe { mach2::mach_time::mach_wait_until(deadline.as_bigint().as_u64()).into_atom(gc) }
-    }
-
-    pub fn mach_absolute_time<'gc>(
-        gc: &mut Gc<'gc>,
-        _rt: &dyn Runtime,
-    ) -> Result<Value<'gc>, RuntimeError> {
-        unsafe { mach2::mach_time::mach_absolute_time().into_atom(gc) }
-    }
+    );
 }
 
 pub struct Builtins(pub HashMap<&'static str, Box<dyn BuiltinFunction>>);
@@ -240,6 +140,60 @@ impl Builtins {
         self.0.insert(name, f);
     }
 }
+
+builtins!(
+    is_darwin(gc, _rt) {
+        cfg!(target_os = "macos")
+    },
+
+    is_arm64(gc, _rt) {
+        cfg!(target_arch = "aarch64")
+    },
+
+    repr(gc, rt, value) {
+        let mut s = String::new();
+        let _ = format_repr(rt, &mut s, &value);
+        s
+    },
+
+    syscall3(gc, _rt, code, arg1, arg2, arg3) {
+        unsafe { libc::syscall(sys_code(code), arg1.as_int(), arg2.as_int(), arg3.as_int()) }
+    },
+
+    array_push(gc, _rt, array, elem) {
+        let mut array = array.as_array();
+        array.push(gc, elem)?;
+    },
+
+    ptr(gc, _rt, value) {
+       value.as_raw_ptr() as usize
+    },
+
+    str(gc, _rt, value) {
+        value.to_string()
+    },
+
+    blob(gc, _rt, size) {
+        let mut array = Array::with_capacity(gc, size.as_bigint().as_usize())?;
+
+        // Since `with_capacity` zeroes the array, we can safely set the length
+        array.len = array.cap;
+
+        gc.alloc(Blob(array))?
+    },
+
+    write_usize(gc, _rt, addr, offset, data) {
+        write::<usize>(addr, offset, data.as_bigint().as_usize())
+    },
+
+    read_usize(gc, _rt, addr, offset) {
+        read::<usize>(addr, offset)
+    },
+
+    read_u32(gc, _rt, addr, offset) {
+        read::<u32>(addr, offset)
+    }
+);
 
 impl Default for Builtins {
     fn default() -> Self {
@@ -253,7 +207,6 @@ impl Default for Builtins {
         builtins.insert("read_usize", Box::new(Fn2(read_usize)));
         builtins.insert("read_u32", Box::new(Fn2(read_u32)));
         builtins.insert("write_usize", Box::new(Fn3(write_usize)));
-        builtins.insert("write_u32", Box::new(Fn3(write_u32)));
         builtins.insert("array_push", Box::new(Fn2(array_push)));
         builtins.insert("syscall3", Box::new(Fn4(syscall3)));
 
