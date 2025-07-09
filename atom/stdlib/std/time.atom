@@ -19,14 +19,6 @@ let MONTHS = [
     31  // December
 ];
 
-fn array_ptr(array) {
-    // Read the pointer to the GC Handle
-    let handle = @ptr(array);
-
-    // Skip len/cap and get the pointer to the array
-    @read_usize(handle, 16)
-}
-
 pub class Delta {
     fn init(self, usecs) {
         self.usecs = usecs;
@@ -100,17 +92,8 @@ fn parse_ymd(unix) {
 
 // Get the current time in microseconds since the Unix epoch
 pub fn unix() {
-    let buff = @blob(16);
-    let raw = array_ptr(buff);
-
-    if @syscall3(os.SYS_GETTIMEOFDAY, raw, 0, 0) != 0 {
-        return :nil;
-    }
-
-    let secs = @read_usize(raw, 0);
-    let usecs = @read_usize(raw, 8);
-
-    (secs * 1000) + (usecs / 1000)
+    let td = os.gettimeofday();
+    (td.secs * 1000) + (td.usecs / 1000)
 }
 
 // Get the current date and time in UTC

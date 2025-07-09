@@ -88,11 +88,5 @@ pub fn println(val) {
 
     line = line ^ "\n";
 
-    // Read the pointer to the GC Handle
-    let handle = @ptr(line);
-
-    // Skip len/cap and get the pointer to the array
-    let raw = @read_usize(handle, 16);
-
-    @syscall3(os.SYS_WRITE, os.STDOUT, raw, line.len());
+    os.write(os.STDOUT, line);
 }
