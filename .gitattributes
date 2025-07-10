@@ -1,0 +1,2 @@
+tree-sitter/** linguist-vendored
+*.atom linguest-language=Atom
