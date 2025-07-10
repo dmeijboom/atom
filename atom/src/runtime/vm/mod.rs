@@ -1,35 +1,32 @@
 use std::{
     borrow::Cow,
     collections::HashMap,
-    fs, mem,
+    mem,
     ops::{Deref, DerefMut, *},
-    path::{Path, PathBuf},
+    path::PathBuf,
 };
 
 mod array;
 mod builtins;
+mod frame;
 
 pub use builtins::Builtins;
 
+use frame::Frame;
 use wyhash2::WyHash;
 
 use crate::{
-    ast::Stmt,
-    bytecode::{self, Op},
+    backend::{self, GlobalContext, Op, Package},
     collections::Stack,
-    compiler::{Compiler, GlobalContext, Package},
-    frame::Frame,
-    gc::{Gc, Handle, Trace},
-    lexer::{Lexer, Span},
-    module::{Metadata, Module},
-    parser::{self},
+    frontend::Span,
     runtime::{
-        error::{Call, ErrorKind, RuntimeError},
-        function::{Resumable, ResumableState},
-        value::{self, IntoAtom, Tag, Type, Value},
-        Array, BigInt, Class, Context, Fn, Method, Object, Runtime,
+        errors::{Call, ErrorKind, RuntimeError},
+        Array, BigInt, Class, Context, Fn, Gc, Handle, IntoAtom, Method, Object, Resumable,
+        ResumableState, Runtime, Tag, Trace, Type, Value,
     },
 };
+
+use super::{consts, Metadata, Module};
 
 #[derive(Debug, thiserror::Error)]
 pub enum Error {
@@ -37,26 +34,6 @@ pub enum Error {
     Import(#[from] Box<crate::error::Error>),
     #[error("RuntimeError: {0}")]
     Runtime(#[from] RuntimeError),
-}
-
-pub fn parse(source: &str) -> Result<Vec<Stmt>, crate::error::Error> {
-    let chars = source.chars().collect::<Vec<_>>();
-    let mut lexer = Lexer::new(&chars);
-    let tokens = lexer.lex()?;
-    let parser = parser::Parser::new(tokens);
-
-    Ok(parser.parse()?)
-}
-
-pub fn compile(
-    source: impl AsRef<Path>,
-    ctx: &mut GlobalContext,
-) -> Result<Package, crate::error::Error> {
-    let source = fs::read_to_string(source)?;
-    let program = parse(&source)?;
-    let compiler = Compiler::default();
-
-    Ok(compiler.compile(ctx, program)?)
 }
 
 macro_rules! impl_binary {
@@ -197,7 +174,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
     #[inline]
     fn jump(&mut self, pos: u32) {
-        self.frame.offset = pos as usize * bytecode::SIZE;
+        self.frame.offset = pos as usize * backend::BYTECODE_SIZE;
     }
 
     fn load_member(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
@@ -247,7 +224,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     ) -> Result<(), Error> {
         let member = &self.global_context.atoms[member as usize];
         let module_id = object
-            .get_attr(value::MODULE)
+            .get_attr(consts::MODULE)
             .ok_or_else(|| ErrorKind::MissingAttribute("module").at(self.span()))?
             .as_int();
         let module = &mut self.modules[module_id as usize];
@@ -369,7 +346,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     fn jump_if_false(&mut self, idx: u32) -> Result<(), Error> {
         let value = self.stack.pop();
 
-        if value.as_atom() == value::FALSE {
+        if value.as_atom() == consts::FALSE {
             self.jump(idx);
             return Ok(());
         }
@@ -475,7 +452,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 self.gc_tick(gc);
             }
             ResumableState::Completed => {
-                self.stack.push(Value::new(Tag::Atom, value::NIL as u64));
+                self.stack.push(Value::new(Tag::Atom, consts::NIL as u64));
             }
         };
 
@@ -630,7 +607,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let id = self.modules.len();
 
         // Parse and compile module
-        let mut package = compile(self.make_path(name), &mut self.global_context)
+        let mut package = backend::compile(self.make_path(name), &mut self.global_context)
             .map_err(Box::new)
             .map_err(Error::Import)?;
 
@@ -643,7 +620,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         // Setup package class
         let class = Handle::clone(&self.package);
         let mut object = gc.alloc(Object::new(class))?;
-        object.set_attr(value::MODULE, BigInt::from(id).into_atom(gc)?);
+        object.set_attr(consts::MODULE, BigInt::from(id).into_atom(gc)?);
 
         // Insert the package object as the first variable (which is `self`)
         self.modules[id]
@@ -678,10 +655,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     fn not(&mut self) -> Result<(), Error> {
         let value = self.stack.pop();
 
-        self.stack.push(if value.as_atom() == value::TRUE {
-            Value::new(Tag::Atom, value::FALSE as u64)
+        self.stack.push(if value.as_atom() == consts::TRUE {
+            Value::new(Tag::Atom, consts::FALSE as u64)
         } else {
-            Value::new(Tag::Atom, value::TRUE as u64)
+            Value::new(Tag::Atom, consts::TRUE as u64)
         });
 
         Ok(())
@@ -862,8 +839,8 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::TailCall => self.tail_call(gc, bc.code)?,
                 Op::Jump => self.jump(bc.code),
                 Op::JumpIfFalse => self.jump_if_false(bc.code)?,
-                Op::PushJumpIfTrue => self.jump_cond(bc.code, value::TRUE)?,
-                Op::PushJumpIfFalse => self.jump_cond(bc.code, value::FALSE)?,
+                Op::PushJumpIfTrue => self.jump_cond(bc.code, consts::TRUE)?,
+                Op::PushJumpIfFalse => self.jump_cond(bc.code, consts::FALSE)?,
                 Op::MakeArray => self.make_array(gc, bc.code)?,
                 Op::MakeSlice => self.make_slice(gc, bc.code)?,
                 Op::LoadElement => self.load_elem()?,

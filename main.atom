@@ -1,10 +1,6 @@
 import std;
-import std/time;
 
-let now = time.now();
+let x = 5;
+let y = x * 3;
 
-time.sleep(time.SECOND * 2);
-
-let then = time.now();
-
-println(then.diff(now).secs());
+println(y);

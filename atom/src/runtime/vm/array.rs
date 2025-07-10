@@ -1,8 +1,5 @@
 /// Contains generic functions for working with ArrayLike types in the VM
-use crate::{
-    gc::{Gc, Handle, Trace},
-    runtime::{array::ArrayLike, error::ErrorKind, Value},
-};
+use crate::runtime::{errors::ErrorKind, ArrayLike, Gc, Handle, Trace, Value};
 
 use super::Error;
 
@@ -77,9 +74,7 @@ where
     T: Trace + From<Value<'gc>>,
 {
     let idx = resolve_index(elem, array.len());
-    let elem = array
-        .get_mut(idx)
-        .ok_or(ErrorKind::IndexOutOfBounds(idx))?;
+    let elem = array.get_mut(idx).ok_or(ErrorKind::IndexOutOfBounds(idx))?;
 
     *elem = value.into();
 

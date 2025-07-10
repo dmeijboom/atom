@@ -1,6 +1,6 @@
-use crate::gc::{Gc, Trace};
+use crate::runtime::{errors::RuntimeError, Gc, Trace};
 
-use super::{array::ArrayLike, error::RuntimeError, Array};
+use super::{array::ArrayLike, Array};
 
 #[derive(Default)]
 pub struct Blob<'gc>(pub Array<'gc, u8>);

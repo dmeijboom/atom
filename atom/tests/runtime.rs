@@ -1,7 +1,6 @@
 use atom::{
-    compiler::GlobalContext,
-    gc::Gc,
-    runtime::{value::Type, IntoAtom, Value},
+    backend::GlobalContext,
+    runtime::{Gc, IntoAtom, Type, Value},
 };
 use test_case::test_case;
 

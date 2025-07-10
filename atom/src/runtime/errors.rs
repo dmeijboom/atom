@@ -3,9 +3,9 @@ use std::{
     fmt::{Debug, Display},
 };
 
-use crate::lexer::Span;
+use crate::frontend::Span;
 
-use super::value::Type;
+use super::Type;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ErrorKind {

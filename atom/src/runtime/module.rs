@@ -3,12 +3,10 @@ use std::collections::HashMap;
 
 use wyhash2::WyHash;
 
+use crate::backend::Package;
 use crate::collections::IntMap;
-use crate::compiler::Package;
-use crate::gc::{DynHandle, Gc, Handle, Trace};
-use crate::lexer::Span;
-use crate::runtime::{Class, Fn, IntoAtom, Value};
-use crate::vm::Error;
+use crate::frontend::Span;
+use crate::runtime::{Class, DynHandle, Error, Fn, Gc, Handle, IntoAtom, Trace, Value};
 
 fn get_cached<T, E, F>(vec: &mut OptVec<T>, idx: usize, f: F) -> Result<T, Error>
 where

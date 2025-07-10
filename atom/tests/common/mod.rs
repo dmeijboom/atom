@@ -4,15 +4,10 @@ mod tests {
     use std::{fs, sync::mpsc::Sender};
 
     use atom::{
-        ast::Stmt,
-        builtins::BuiltinFunction,
-        compiler::{Compiler, GlobalContext, Package},
+        backend::{Compiler, GlobalContext, Package},
         error::Error,
-        gc::Gc,
-        lexer::Lexer,
-        parser::Parser,
-        runtime::{error::RuntimeError, Runtime, Value},
-        vm::{Builtins, Vm},
+        frontend::{self, ast::Stmt},
+        runtime::{errors::RuntimeError, BuiltinFunction, Builtins, Gc, Runtime, Value, Vm},
     };
 
     pub struct TestRuntime<'gc> {
@@ -31,24 +26,15 @@ mod tests {
         }
     }
 
-    fn _parse(source: &str) -> Result<Vec<Stmt>, Error> {
-        let chars = source.chars().collect::<Vec<_>>();
-        let mut lexer = Lexer::new(&chars);
-        let tokens = lexer.lex()?;
-        let parser = Parser::new(tokens);
-
-        Ok(parser.parse()?)
-    }
-
     pub fn parse(name: &str) -> Result<Vec<Stmt>, Error> {
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
-        let program = _parse(&source)?;
+        let program = frontend::parse(&source)?;
         Ok(program)
     }
 
     pub fn compile(ctx: &mut GlobalContext, name: &str) -> Result<Package, Error> {
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
-        let program = _parse(&source)?;
+        let program = frontend::parse(&source)?;
         let compiler = Compiler::default();
 
         Ok(compiler.compile(ctx, program)?)

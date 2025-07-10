@@ -1,34 +1,22 @@
 use std::{fs, path::PathBuf, process::exit};
 
 use argh::FromArgs;
-use bytecode::{Bytecode, Serializable};
-use compiler::{Compiler, GlobalContext, Package};
+use backend::{Bytecode, Compiler, GlobalContext, Package, Serializable};
 use error::Error;
-use gc::Gc;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use ron::ser::PrettyConfig;
-use runtime::{Fn, Value};
+use runtime::{Builtins, Fn, Gc, Value, Vm};
 #[cfg(feature = "tracing")]
 use tracing_subscriber::EnvFilter;
 
-use vm::{Builtins, Vm};
-
-mod ast;
-mod builtins;
-mod bytecode;
+mod backend;
 mod collections;
-mod compiler;
 mod error;
-mod frame;
-mod gc;
-mod lexer;
-mod module;
-mod parser;
+mod frontend;
 #[cfg(feature = "profiler")]
 mod profiler;
 mod runtime;
-mod vm;
 
 #[cfg(feature = "mimalloc")]
 #[global_allocator]
@@ -89,7 +77,7 @@ fn print_func(f: &Fn, indent: usize) {
 
     for (i, opcode) in f
         .body
-        .chunks_exact(bytecode::SIZE)
+        .chunks_exact(backend::BYTECODE_SIZE)
         .map(|mut chunk| Bytecode::deserialize(&mut chunk))
         .enumerate()
     {
@@ -131,7 +119,7 @@ fn print_module(package: &Package) {
 
     for (i, opcode) in package
         .body
-        .chunks_exact(bytecode::SIZE)
+        .chunks_exact(backend::BYTECODE_SIZE)
         .map(|mut chunk| Bytecode::deserialize(&mut chunk))
         .enumerate()
     {
@@ -151,7 +139,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run(RunCmd { source }) => {
             let mut ctx = GlobalContext::default();
-            let module = vm::compile(source, &mut ctx)?;
+            let module = backend::compile(source, &mut ctx)?;
             let mut gc = Gc::default();
             let mut builtins = Builtins::default();
             let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module)?;
@@ -185,7 +173,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
         }) => {
             let mut ctx = GlobalContext::default();
             let source = fs::read_to_string(source)?;
-            let tree = vm::parse(&source)?;
+            let tree = frontend::parse(&source)?;
 
             if ast {
                 println!(
@@ -226,7 +214,7 @@ fn main() {
     if let Err(e) = cmd(opts) {
         eprintln!("{e} at {}", e.span());
 
-        if let Error::Runtime(vm::Error::Runtime(e)) = e {
+        if let Error::Runtime(runtime::Error::Runtime(e)) = e {
             if let Some(trace) = e.trace {
                 for call in trace {
                     eprintln!("{} at {}", call, call.span);

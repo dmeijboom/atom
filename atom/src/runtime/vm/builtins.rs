@@ -3,10 +3,9 @@ use std::{
     fmt::{self, Write},
 };
 
-use crate::{
-    builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn3, Fn4},
-    gc::Gc,
-    runtime::{blob::Blob, error::RuntimeError, value::Type, Array, IntoAtom, Runtime, Value},
+use crate::runtime::{
+    errors::RuntimeError, Array, Blob, BuiltinFunction, Fn0, Fn1, Fn2, Fn3, Fn4, Gc, IntoAtom,
+    Runtime, Type, Value,
 };
 
 macro_rules! builtins {

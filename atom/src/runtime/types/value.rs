@@ -7,14 +7,13 @@ use std::{
 use num_enum::{FromPrimitive, IntoPrimitive};
 use serde::Serialize;
 
-use crate::gc::{Gc, Handle, Trace};
+use crate::runtime::{errors::RuntimeError, Gc, Handle, Trace};
 
 use super::{
     array::Array,
     bigint::BigInt,
     blob::Blob,
     class::Class,
-    error::RuntimeError,
     function::{Fn, Method, Resumable},
     object::Object,
     str::Str,
@@ -509,7 +508,7 @@ impl<'gc, T: IntoAtom<'gc>> IntoAtom<'gc> for Vec<T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::gc::Gc;
+    use crate::runtime::Gc;
 
     use super::*;
 

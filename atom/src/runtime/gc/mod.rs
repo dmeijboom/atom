@@ -7,8 +7,8 @@ pub use handle::{DynHandle, Handle};
 
 use crate::{
     collections::IntSet,
-    lexer::Span,
-    runtime::error::{ErrorKind, RuntimeError},
+    frontend::Span,
+    runtime::errors::{ErrorKind, RuntimeError},
 };
 
 macro_rules! impl_trace {

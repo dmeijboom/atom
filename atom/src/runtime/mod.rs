@@ -1,25 +1,19 @@
-use error::RuntimeError;
+use crate::frontend::Span;
 
-use crate::{lexer::Span, module::Metadata};
+mod builtins;
+pub mod errors;
+mod gc;
+mod module;
+mod types;
+mod vm;
 
-pub mod array;
-pub mod bigint;
-pub mod blob;
-pub mod class;
-pub mod error;
-pub mod function;
-pub mod object;
-pub mod str;
-pub mod value;
+pub use builtins::{BuiltinFunction, Fn0, Fn1, Fn2, Fn3, Fn4};
+pub use gc::{DynHandle, Gc, Handle, Trace};
+pub use module::{Metadata, Module};
+pub use types::*;
+pub use vm::{Builtins, Error, Vm};
 
-pub use array::Array;
-pub use bigint::BigInt;
-pub use class::Class;
-pub use function::{Fn, Method};
-pub use object::Object;
-pub use value::{IntoAtom, Value};
-
-pub type Result<T> = std::result::Result<T, RuntimeError>;
+pub type Result<T> = std::result::Result<T, errors::RuntimeError>;
 
 #[derive(Debug, Default, Clone, PartialEq)]
 pub struct Context {

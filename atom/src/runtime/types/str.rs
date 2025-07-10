@@ -1,10 +1,8 @@
 use std::fmt::{Debug, Display};
 use std::hash::Hash;
 
-use crate::gc::{Gc, Trace};
-
 use super::array::{Array, ArrayLike};
-use super::error::RuntimeError;
+use crate::runtime::{errors::RuntimeError, Gc, Trace};
 
 #[derive(Default)]
 pub struct Str<'gc>(pub Array<'gc, u8>);

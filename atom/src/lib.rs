@@ -1,15 +1,7 @@
-pub mod ast;
-pub mod builtins;
-pub mod bytecode;
+pub mod backend;
 pub mod collections;
-pub mod compiler;
 pub mod error;
-pub mod frame;
-pub mod gc;
-pub mod lexer;
-pub mod module;
-pub mod parser;
+pub mod frontend;
 #[cfg(feature = "profiler")]
 mod profiler;
 pub mod runtime;
-pub mod vm;

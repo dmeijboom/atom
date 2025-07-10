@@ -1,6 +1,6 @@
 use crate::{
     collections::IntMap,
-    gc::{Handle, Trace},
+    runtime::{Gc, Handle, Trace},
 };
 
 use super::{class::Class, value::Value};
@@ -11,7 +11,7 @@ pub struct Object<'gc> {
 }
 
 impl<'gc> Trace for Object<'gc> {
-    fn trace(&self, gc: &mut crate::gc::Gc) {
+    fn trace(&self, gc: &mut Gc) {
         gc.mark(&self.class);
 
         for value in self.attrs.values() {

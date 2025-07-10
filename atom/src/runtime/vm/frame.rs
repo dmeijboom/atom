@@ -1,10 +1,8 @@
 use std::mem;
 
 use crate::{
-    bytecode::{self, Bytecode, Op},
-    compiler::Package,
-    gc::{Gc, Handle, Trace},
-    runtime::{error::RuntimeError, function::Resumable, Context, Fn, Value},
+    backend::{self, Bytecode, Op, Package},
+    runtime::{errors::RuntimeError, Context, Fn, Gc, Handle, Resumable, Trace, Value},
 };
 
 pub struct Frame<'gc> {
@@ -68,13 +66,13 @@ impl Iterator for Frame<'_> {
         if self.offset < self.handle.body.len() {
             let op: Op = self.handle.body[self.offset].into();
             let code = u32::from_be_bytes(
-                self.handle.body[self.offset + 1..self.offset + bytecode::SIZE]
+                self.handle.body[self.offset + 1..self.offset + backend::BYTECODE_SIZE]
                     .try_into()
                     .unwrap(),
             );
 
             let bc = Bytecode { op, code };
-            self.offset += bytecode::SIZE;
+            self.offset += backend::BYTECODE_SIZE;
 
             return Some(bc);
         }

@@ -2,9 +2,9 @@ use std::borrow::Cow;
 
 use linear_map::LinearMap;
 
-use crate::gc::{Gc, Handle, Trace};
+use crate::runtime::{errors::RuntimeError, Context, Gc, Handle, Trace};
 
-use super::{error::RuntimeError, function::Fn, Context};
+use super::function::Fn;
 
 #[derive(Debug, Default, Clone)]
 pub struct Cache<'gc> {
@@ -12,7 +12,7 @@ pub struct Cache<'gc> {
 }
 
 impl<'gc> Trace for Cache<'gc> {
-    fn trace(&self, gc: &mut crate::gc::Gc) {
+    fn trace(&self, gc: &mut Gc) {
         for handle in self.methods.values() {
             gc.mark(handle);
         }
@@ -36,7 +36,7 @@ impl<'gc> PartialEq for Class<'gc> {
 }
 
 impl<'gc> Trace for Class<'gc> {
-    fn trace(&self, gc: &mut crate::gc::Gc) {
+    fn trace(&self, gc: &mut Gc) {
         self.cache.trace(gc);
 
         if let Some(init) = &self.init {

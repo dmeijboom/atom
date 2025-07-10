@@ -2,9 +2,9 @@ use std::{borrow::Cow, fmt::Debug};
 
 use bytes::Bytes;
 
-use crate::gc::{Handle, Trace};
+use crate::runtime::{Context, Gc, Handle, Trace};
 
-use super::{value::Value, Context};
+use super::value::Value;
 
 #[derive(Default)]
 pub struct FnBuilder {
@@ -64,7 +64,7 @@ pub struct Fn {
 }
 
 impl Trace for Fn {
-    fn trace(&self, _gc: &mut crate::gc::Gc) {}
+    fn trace(&self, _gc: &mut Gc) {}
 }
 
 impl Fn {
@@ -99,7 +99,7 @@ impl<'gc> Resumable<'gc> {
 }
 
 impl<'gc> Trace for Resumable<'gc> {
-    fn trace(&self, gc: &mut crate::gc::Gc) {
+    fn trace(&self, gc: &mut Gc) {
         gc.mark(&self.func);
         self.locals.iter().for_each(|v| v.trace(gc));
     }
@@ -117,7 +117,7 @@ impl<'gc> Method<'gc> {
 }
 
 impl<'gc> Trace for Method<'gc> {
-    fn trace(&self, gc: &mut crate::gc::Gc) {
+    fn trace(&self, gc: &mut Gc) {
         gc.mark(&self.func);
         self.recv.trace(gc);
     }

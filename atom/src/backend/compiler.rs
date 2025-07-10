@@ -10,15 +10,14 @@ use lazy_static::lazy_static;
 use wyhash2::WyHash;
 
 use crate::{
-    ast::{
-        self, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, MatchArm, Stmt, StmtKind,
-    },
-    bytecode::{self, Bytecode, Const, Op, Serializable},
     collections::{IntMap, OrderedMap, OrderedSet},
     error::{IntoSpanned, SpannedError},
-    lexer::{Span, Spanned},
-    runtime::{value, Fn},
+    frontend::ast::{self, *},
+    frontend::{Span, Spanned},
+    runtime::{consts, Fn},
 };
+
+use super::{Bytecode, Const, Op, Serializable};
 
 const PRELUDE: [&str; 12] = [
     "enum", "chunks", "each", "range", "repeat", "println", "Array", "Blob", "Str", "Int", "Float",
@@ -116,9 +115,9 @@ pub type CompileError = SpannedError<ErrorKind>;
 #[derive(Debug, Default, PartialEq)]
 struct Var {
     id: usize,
+    span: Span,
     init: bool,
     used: bool,
-    span: Span,
 }
 
 struct VarBuilder {
@@ -130,9 +129,9 @@ impl VarBuilder {
         Self {
             var: Var {
                 id,
+                span,
                 init: false,
                 used: false,
-                span,
             },
         }
     }
@@ -264,8 +263,8 @@ impl Compiler {
     }
 
     fn set_offset(&mut self, offset: usize, new_offset: usize) {
-        let orig = Bytecode::deserialize(&mut &self.body[offset..offset + bytecode::SIZE]);
-        Bytecode::with_code(orig.op, (new_offset / bytecode::SIZE) as u32)
+        let orig = Bytecode::deserialize(&mut &self.body[offset..offset + super::BYTECODE_SIZE]);
+        Bytecode::with_code(orig.op, (new_offset / super::BYTECODE_SIZE) as u32)
             .serialize(&mut &mut self.body[offset..]);
     }
 
@@ -274,7 +273,7 @@ impl Compiler {
             return None;
         }
 
-        let offset = self.body.len() - bytecode::SIZE;
+        let offset = self.body.len() - super::BYTECODE_SIZE;
         let span = self.offsets.get(&offset).copied().unwrap_or_default();
         let bc = Bytecode::deserialize(&mut &self.body[offset..]);
 
@@ -391,12 +390,12 @@ impl Compiler {
         Ok(())
     }
 
-    fn set_init(&mut self, sym: Symbol) {
+    fn var_mut(&mut self, sym: Symbol) -> Option<&mut Var> {
         match sym {
             Symbol::Local(id) => {
                 if let Some(locals) = self.locals.front_mut() {
                     if let Some(var) = locals.values_mut().find(|local| local.id == id as usize) {
-                        var.init = true;
+                        return Some(var);
                     }
                 }
             }
@@ -406,11 +405,13 @@ impl Compiler {
                     .iter_mut()
                     .find_map(|scope| scope.vars.values_mut().find(|var| var.id == id as usize))
                 {
-                    var.init = true;
+                    return Some(var);
                 }
             }
             Symbol::Class(_) | Symbol::Fn(_) => {}
-        }
+        };
+
+        None
     }
 
     // Load a symbol based on the following order: local > var > class > func
@@ -520,7 +521,11 @@ impl Compiler {
                 };
 
                 self.expr(ctx, rhs)?;
-                self.set_init(sym);
+
+                if let Some(var) = self.var_mut(sym) {
+                    var.init = true;
+                }
+
                 self.push(bc);
             }
             ExprKind::Member(object, member) => {
@@ -899,7 +904,7 @@ impl Compiler {
         begin: usize,
         begin_marker: usize,
     ) -> Result<(), CompileError> {
-        self.push(Bytecode::with_code(Op::Jump, (begin / bytecode::SIZE) as u32).at(span));
+        self.push(Bytecode::with_code(Op::Jump, (begin / super::BYTECODE_SIZE) as u32).at(span));
         self.set_offset(offset, self.offset());
         self.handle_markers(begin_marker, self.offset());
 
@@ -942,7 +947,7 @@ impl Compiler {
         self.push(Bytecode::with_code(Op::Call, 0).at(span));
         self.push(Bytecode::with_code(Op::Store, item_id).at(span));
         self.push(Bytecode::with_code(Op::Load, item_id).at(span));
-        self.push(Bytecode::with_code(Op::LoadAtom, value::NIL).at(span));
+        self.push(Bytecode::with_code(Op::LoadAtom, consts::NIL).at(span));
         self.push(Bytecode::new(Op::Ne).at(span));
         let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
 
@@ -1173,6 +1178,8 @@ impl Compiler {
 
 #[cfg(test)]
 mod tests {
+    use crate::backend;
+
     use super::*;
 
     #[test]
@@ -1182,7 +1189,7 @@ mod tests {
         let offset = compiler.push(bc.clone());
 
         assert_eq!(0, offset);
-        assert_eq!(bytecode::SIZE, compiler.body.len());
+        assert_eq!(backend::BYTECODE_SIZE, compiler.body.len());
         assert_eq!(Some(bc), compiler.accept(Op::Load));
         assert_eq!(0, compiler.body.len());
 
@@ -1191,7 +1198,7 @@ mod tests {
 
         assert_eq!(0, offset);
         assert_eq!(None, compiler.accept(Op::Gt));
-        assert_eq!(bytecode::SIZE, compiler.body.len());
+        assert_eq!(backend::BYTECODE_SIZE, compiler.body.len());
     }
 
     #[test]
@@ -1203,7 +1210,7 @@ mod tests {
         compiler.push(Bytecode::new(Op::Lt).at(Span::default()));
         compiler.set_offset(offset, 500);
 
-        let code = Bytecode::deserialize(&mut &compiler.body[..bytecode::SIZE]);
+        let code = Bytecode::deserialize(&mut &compiler.body[..backend::BYTECODE_SIZE]);
         assert_eq!(Op::Load, code.op);
         assert_eq!(100, code.code);
     }

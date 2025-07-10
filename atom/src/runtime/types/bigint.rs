@@ -14,7 +14,7 @@ use gmp_mpfr_sys::gmp::{
 };
 use serde::Serialize;
 
-use crate::gc::{Gc, Trace};
+use crate::runtime::{Gc, Trace};
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseIntError {
@@ -202,7 +202,7 @@ impl From<u64> for BigInt {
 
         let mut int = BigInt::default();
         unsafe {
-            mpz_set_ui(int.get_mut(), value as u64);
+            mpz_set_ui(int.get_mut(), value);
         }
 
         int

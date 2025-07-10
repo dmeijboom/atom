@@ -1,6 +1,6 @@
 use serde::Serialize;
 
-use crate::{lexer::Span, runtime::BigInt};
+use crate::{frontend::Span, runtime::BigInt};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

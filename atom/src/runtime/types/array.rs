@@ -1,9 +1,6 @@
 use std::{marker::PhantomData, mem::MaybeUninit, ptr::NonNull};
 
-use crate::{
-    gc::{Gc, Handle, Trace},
-    runtime::error::RuntimeError,
-};
+use crate::runtime::{errors::RuntimeError, Gc, Handle, Trace};
 
 pub struct Iter<'gc, 'a, T: Trace> {
     idx: usize,
@@ -267,7 +264,7 @@ impl<'gc, T: Trace> Array<'gc, T> {
 
 #[cfg(test)]
 mod tests {
-    use crate::runtime::{value::Type, IntoAtom, Value};
+    use crate::runtime::{IntoAtom, Type, Value};
 
     use super::*;
 

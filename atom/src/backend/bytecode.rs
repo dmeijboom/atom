@@ -7,9 +7,8 @@ use bytes::{Buf, BufMut};
 use num_enum::{FromPrimitive, IntoPrimitive};
 
 use crate::{
-    gc::Gc,
-    lexer::{Span, Spanned},
-    runtime::{error::RuntimeError, BigInt, IntoAtom, Value},
+    frontend::{Span, Spanned},
+    runtime::{errors::RuntimeError, BigInt, Gc, IntoAtom, Value},
 };
 
 #[derive(FromPrimitive, IntoPrimitive)]
@@ -71,7 +70,7 @@ pub trait Serializable {
     fn deserialize(buff: impl Buf) -> Self;
 }
 
-pub const SIZE: usize = 5;
+pub const BYTECODE_SIZE: usize = 5;
 
 /// There are two types of bytecodes:
 /// 1. opcode (8) > code (32)

@@ -1,4 +1,4 @@
-use atom::compiler::GlobalContext;
+use atom::backend::GlobalContext;
 use test_case::test_case;
 
 mod common;

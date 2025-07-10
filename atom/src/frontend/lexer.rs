@@ -8,8 +8,7 @@ use serde::Serialize;
 
 use crate::{
     error::{IntoSpanned, SpannedError},
-    runtime::bigint,
-    runtime::BigInt,
+    runtime::{self, BigInt},
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize)]
@@ -146,7 +145,7 @@ pub enum ErrorKind {
     #[error("failed to parse int: {0}")]
     ParseInt(#[from] ParseIntError),
     #[error("failed to parse bigint: {0}")]
-    ParseBigInt(#[from] bigint::ParseIntError),
+    ParseBigInt(#[from] runtime::ParseIntError),
     #[error("invalid escape sequence at: {0}")]
     InvalidEscapeSequence(char),
     #[error("unexpected EOF")]

@@ -6,13 +6,13 @@ use std::{
 
 use lazy_static::lazy_static;
 
+use super::lexer::{Span, Token, TokenKind};
 use crate::{
-    ast::{
+    error::{IntoSpanned, SpannedError},
+    frontend::ast::{
         AssignOp, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, MatchArm, Path, Stmt,
         StmtKind, UnaryOp,
     },
-    error::{IntoSpanned, SpannedError},
-    lexer::{Span, Token, TokenKind},
 };
 
 lazy_static! {

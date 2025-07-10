@@ -1,10 +1,9 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    compiler::CompileError,
-    lexer::{Span, TokenError},
-    parser::ParseError,
-    vm,
+    backend::CompileError,
+    frontend::{ParseError, Span, TokenError},
+    runtime,
 };
 
 pub trait IntoSpanned {
@@ -50,7 +49,7 @@ pub enum Error {
     #[error("SerializeError: {0}")]
     Serialize(#[from] ron::Error),
     #[error("{0}")]
-    Runtime(#[from] vm::Error),
+    Runtime(#[from] runtime::Error),
 }
 
 impl Error {
@@ -62,8 +61,8 @@ impl Error {
             Error::Compile(e) => e.span,
             Error::Serialize(_) => Span::default(),
             Error::Runtime(e) => match e {
-                vm::Error::Runtime(e) => e.span,
-                vm::Error::Import(e) => e.span(),
+                runtime::Error::Runtime(e) => e.span,
+                runtime::Error::Import(e) => e.span(),
             },
         }
     }
