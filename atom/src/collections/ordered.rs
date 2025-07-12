@@ -8,7 +8,7 @@ use std::{
 use wyhash2::WyHash;
 
 pub struct OrderedSet<T: Hash + PartialEq> {
-    items: Vec<T>,
+    pub items: Vec<T>,
 }
 
 impl<T: Hash + PartialEq> Default for OrderedSet<T> {
@@ -31,6 +31,10 @@ impl<T: Hash + PartialEq> OrderedSet<T> {
             .iter()
             .position(|elem| elem == value)
             .map(|idx| idx as u32)
+    }
+
+    pub fn contains(&self, value: &T) -> bool {
+        self.items.iter().any(|elem| elem == value)
     }
 
     pub fn insert(&mut self, value: T) -> u32 {

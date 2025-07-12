@@ -3,6 +3,7 @@ use std::{fs, path::PathBuf, process::exit};
 use argh::FromArgs;
 use backend::{Bytecode, Compiler, GlobalContext, Package, Serializable};
 use error::Error;
+use frontend::IR;
 #[cfg(feature = "mimalloc")]
 use mimalloc::MiMalloc;
 use ron::ser::PrettyConfig;
@@ -139,32 +140,46 @@ fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run(RunCmd { source }) => {
             let mut ctx = GlobalContext::default();
-            let module = backend::compile(source, &mut ctx)?;
-            let mut gc = Gc::default();
-            let mut builtins = Builtins::default();
-            let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module)?;
 
-            vm.run(&mut gc, &mut builtins)?;
-            gc.sweep();
+            let source = fs::read_to_string(source)?;
+            let ast = frontend::parse(&source)?;
+            let block = IR::new(&mut ctx).compile(ast).unwrap();
 
-            #[cfg(feature = "profiler")]
-            {
-                let stats = gc.stats();
-                let report = vm.profiler().report();
+            println!(
+                "{}",
+                ron::ser::to_string_pretty(
+                    &block,
+                    PrettyConfig::default().struct_names(true).indentor("  ")
+                )
+                .unwrap()
+            );
 
-                println!(
-                    "\n-- REPORT (took {:?}, {} allocations) --",
-                    report.exec_time, stats.alloc_count
-                );
+            // let module = backend::compile(source, &mut ctx)?;
+            // let mut gc = Gc::default();
+            // let mut builtins = Builtins::default();
+            // let mut vm = AtomVm::new(&mut gc, ctx, "atom".into(), module)?;
 
-                for record in report.records {
-                    println!(
-                        "{} {}",
-                        format_col!(15, "{:?}", record.op),
-                        format_col!(15, "{} calls", record.call_count),
-                    );
-                }
-            }
+            // vm.run(&mut gc, &mut builtins)?;
+            // gc.sweep();
+
+            // #[cfg(feature = "profiler")]
+            // {
+            //     let stats = gc.stats();
+            //     let report = vm.profiler().report();
+
+            //     println!(
+            //         "\n-- REPORT (took {:?}, {} allocations) --",
+            //         report.exec_time, stats.alloc_count
+            //     );
+
+            //     for record in report.records {
+            //         println!(
+            //             "{} {}",
+            //             format_col!(15, "{:?}", record.op),
+            //             format_col!(15, "{} calls", record.call_count),
+            //         );
+            //     }
+            // }
         }
         Cmd::Compile(CompileCmd {
             ast,

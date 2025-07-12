@@ -4,6 +4,7 @@ mod builtins;
 pub mod errors;
 mod gc;
 mod module;
+pub mod ops;
 mod types;
 mod vm;
 
