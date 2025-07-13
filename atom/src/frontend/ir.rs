@@ -15,7 +15,9 @@ use crate::{
 };
 
 use super::{
-    ast::{BinaryOp, Expr, ExprKind, FnArg, FnStmt, Literal, Path, Stmt, UnaryOp},
+    ast::{
+        AssignOp, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, Path, Stmt, UnaryOp,
+    },
     Span,
 };
 
@@ -146,6 +148,10 @@ impl Block {
     pub fn push(&mut self, node: IRNode) {
         self.children.push(node);
     }
+
+    pub fn merge(&mut self, other: &mut Block) {
+        self.children.append(&mut other.children);
+    }
 }
 
 #[derive(Debug, Serialize)]
@@ -158,29 +164,45 @@ impl IRNode {
     pub fn new(span: Span, kind: NodeKind) -> Self {
         Self { kind, span }
     }
+
+    fn is_noop(&self) -> bool {
+        matches!(self.kind, NodeKind::Noop)
+    }
 }
 
 #[derive(Debug, Clone, Copy, Serialize)]
 pub enum VariableKind {
     Local,
-    Variable,
+    Global,
+}
+
+#[derive(Debug, Serialize)]
+pub struct Loop {
+    pub pre: Option<IRNode>,
+    pub cond: IRNode,
+    pub post: Option<IRNode>,
+    pub body: Block,
 }
 
 #[derive(Debug, Serialize)]
 pub enum NodeKind {
+    Noop,
     FnRef(u32),
     ClassRef(u32),
     ImportRef(u32),
     BuiltinRef(u32),
     Const(IRValue),
+    Loop(Box<Loop>),
     Array(Vec<IRNode>),
     Return(Box<IRNode>),
+    Yield(Box<IRNode>),
     Discard(Box<IRNode>),
     Unary(UnaryOp, Box<IRNode>),
     Member(Box<IRNode>, String),
     Call(Box<IRNode>, Vec<IRNode>),
     Branch(Box<IRNode>, Block, Block),
     CompMember(Box<IRNode>, Box<IRNode>),
+    Range(Option<Box<IRNode>>, Option<Box<IRNode>>),
     Binary(Box<IRNode>, BinaryOp, Box<IRNode>),
     Load(VariableKind, usize),
     Store(VariableKind, usize, Box<IRNode>),
@@ -220,9 +242,56 @@ impl Variable {
     }
 }
 
+#[must_use]
+struct VariableBuilder<'a> {
+    inner: Variable,
+    scope: &'a mut Scope,
+}
+
+impl<'a> VariableBuilder<'a> {
+    fn new(scope: &'a mut Scope, inner: Variable) -> Self {
+        Self { scope, inner }
+    }
+
+    fn used(mut self) -> Self {
+        self.inner.used = true;
+        self
+    }
+
+    fn value(mut self, value: IRValue) -> Self {
+        self.inner.value = Some(value);
+        self
+    }
+
+    fn initialized(mut self) -> Self {
+        self.inner.initialized = true;
+        self
+    }
+
+    fn finish(self) -> usize {
+        let id = self.inner.id;
+        self.scope.vars.push(self.inner);
+        id
+    }
+}
+
 #[derive(Default)]
 struct Scope {
     vars: Vec<Variable>,
+}
+
+impl Scope {
+    fn declare(&mut self, kind: VariableKind, id: usize, name: String) -> VariableBuilder<'_> {
+        VariableBuilder::new(self, Variable::new(kind, id, name))
+    }
+
+    fn declare_var(&mut self, id: usize, name: String) -> VariableBuilder<'_> {
+        self.declare(VariableKind::Global, id, name)
+    }
+
+    fn declare_local(&mut self, id: usize, name: String) -> VariableBuilder<'_> {
+        self.declare(VariableKind::Local, id, name)
+    }
 }
 
 #[derive(Default, Serialize)]
@@ -258,15 +327,22 @@ fn is_const_compat(lhs: &IRValue, op: BinaryOp, rhs: &IRValue) -> bool {
 #[derive(Serialize)]
 pub struct Program {
     body: Block,
-    imports: Vec<String>,
+    imports: Vec<Path>,
     funcs: Vec<IRFn>,
     classes: Vec<IRClass>,
     consts: Vec<IRValue>,
 }
 
+fn ident(expr: Expr) -> String {
+    match expr.kind {
+        ExprKind::Ident(name) => name,
+        _ => unreachable!(),
+    }
+}
+
 pub struct IR<'a> {
     vars: usize,
-    imports: OrderedSet<String>,
+    imports: OrderedMap<String, Path>,
     funcs: OrderedMap<String, IRFn>,
     classes: OrderedMap<String, IRClass>,
     scope: VecDeque<Scope>,
@@ -278,13 +354,19 @@ impl<'a> IR<'a> {
     pub fn new(ctx: &'a mut GlobalContext) -> Self {
         Self {
             vars: 0,
-            imports: OrderedSet::default(),
+            imports: OrderedMap::default(),
             funcs: OrderedMap::default(),
             classes: OrderedMap::default(),
             scope: VecDeque::new(),
             consts: OrderedSet::default(),
             ctx,
         }
+    }
+
+    fn next_var(&mut self) -> usize {
+        let id = self.vars;
+        self.vars += 1;
+        id
     }
 
     fn register(&mut self, stmts: &[Stmt]) -> Result<(), IRError> {
@@ -318,36 +400,24 @@ impl<'a> IR<'a> {
             .find_map(|scope| scope.vars.iter_mut().rev().find(|var| var.name == name))
     }
 
-    fn declare_var(
-        &mut self,
-        span: Span,
-        name: String,
-        initialized: bool,
-    ) -> Result<usize, IRError> {
-        let id = self.vars;
-        self.vars += 1;
-
+    fn declare_var(&mut self, span: Span, name: String) -> Result<VariableBuilder<'_>, IRError> {
+        let id = self.next_var();
         let scope = self
             .scope
             .front_mut()
             .ok_or(ErrorKind::InvalidScope.at(span))?;
 
-        let mut var = Variable::new(VariableKind::Variable, id, name);
-        var.initialized = initialized;
-
-        scope.vars.push(var);
-
-        Ok(id)
+        Ok(scope.declare_var(id, name))
     }
 
     fn import(&mut self, span: Span, path: Path) -> Result<(), IRError> {
-        let name = path.join("/");
+        let name = path.last().map(ToOwned::to_owned).unwrap_or_default();
 
-        if self.imports.contains(&name) {
+        if self.imports.contains_key(&name) {
             return Err(ErrorKind::DuplicateImport(name).at(span));
         }
 
-        self.imports.insert(name);
+        self.imports.insert(name, path);
 
         Ok(())
     }
@@ -415,7 +485,7 @@ impl<'a> IR<'a> {
     fn prelude(&mut self, span: Span, name: String) -> Result<IRNode, IRError> {
         let std_name = "std".to_string();
 
-        if !self.imports.contains(&std_name) {
+        if !self.imports.contains_key(&std_name) {
             self.import(span, vec![std_name.clone()])?;
         }
 
@@ -453,7 +523,7 @@ impl<'a> IR<'a> {
         }
 
         // Imports
-        if let Some(id) = self.imports.find(&name) {
+        if let Some(id) = self.imports.get(&name) {
             return Ok(IRNode::new(span, NodeKind::ImportRef(id)));
         }
 
@@ -461,7 +531,26 @@ impl<'a> IR<'a> {
             return self.prelude(span, name);
         }
 
-        todo!("{name}")
+        Err(ErrorKind::UnknownName(name).at(span))
+    }
+
+    fn comp_member(&mut self, span: Span, lhs: Expr, rhs: Expr) -> Result<IRNode, IRError> {
+        let lhs = self.expr(lhs)?;
+        let rhs = match rhs.kind {
+            ExprKind::Range(begin, end) => IRNode::new(
+                span,
+                NodeKind::Range(
+                    begin.map(|b| self.expr(*b)).transpose()?.map(Box::new),
+                    end.map(|e| self.expr(*e)).transpose()?.map(Box::new),
+                ),
+            ),
+            _ => self.expr(rhs)?,
+        };
+
+        Ok(IRNode::new(
+            span,
+            NodeKind::CompMember(Box::new(lhs), Box::new(rhs)),
+        ))
     }
 
     fn member(&mut self, span: Span, expr: Expr, name: String) -> Result<IRNode, IRError> {
@@ -484,19 +573,56 @@ impl<'a> IR<'a> {
             .collect::<Result<Vec<_>, _>>()
     }
 
+    fn array(&mut self, span: Span, items: Vec<Expr>) -> Result<IRNode, IRError> {
+        Ok(IRNode::new(span, NodeKind::Array(self.expr_list(items)?)))
+    }
+
+    fn assign(
+        &mut self,
+        span: Span,
+        op: Option<AssignOp>,
+        lhs: Expr,
+        mut rhs: Expr,
+    ) -> Result<IRNode, IRError> {
+        if let Some(op) = op {
+            rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
+        }
+
+        let name = ident(lhs);
+        let node = self.expr(rhs)?;
+
+        if let Some(var) = self.lookup_var(&name) {
+            if !var.initialized {
+                var.initialized = true;
+
+                if let NodeKind::Const(value) = node.kind {
+                    var.value = Some(value);
+                    return Ok(IRNode::new(span, NodeKind::Noop));
+                }
+            }
+
+            return Ok(IRNode::new(
+                span,
+                NodeKind::Store(var.kind, var.id, Box::new(node)),
+            ));
+        }
+
+        Err(ErrorKind::UnknownName(name).at(span))
+    }
+
     fn expr(&mut self, expr: Expr) -> Result<IRNode, IRError> {
         match expr.kind {
             ExprKind::Ident(name) => self.ident(expr.span, name),
-            ExprKind::Array(exprs) => todo!(),
+            ExprKind::Array(items) => self.array(expr.span, items),
             ExprKind::Literal(literal) => self.lit(expr.span, literal),
             ExprKind::Unary(unary_op, expr) => todo!(),
             ExprKind::Member(expr, name) => self.member(expr.span, *expr, name),
             ExprKind::Call(expr, args) => self.call(expr.span, *expr, args),
-            ExprKind::CompMember(expr, expr1) => todo!(),
-            ExprKind::Range(expr, expr1) => todo!(),
+            ExprKind::CompMember(lhs, rhs) => self.comp_member(lhs.span, *lhs, *rhs),
             ExprKind::Binary(lhs, binary_op, rhs) => self.binary(expr.span, *lhs, binary_op, *rhs),
-            ExprKind::Assign(assign_op, expr, expr1) => todo!(),
+            ExprKind::Assign(assign_op, lhs, rhs) => self.assign(lhs.span, assign_op, *lhs, *rhs),
             ExprKind::Match(expr, match_arms, expr1) => todo!(),
+            ExprKind::Range(_, _) => unreachable!(),
         }
     }
 
@@ -507,25 +633,41 @@ impl<'a> IR<'a> {
         name: String,
         expr: Option<Expr>,
     ) -> Result<(), IRError> {
-        let id = self.declare_var(span, name, expr.is_some())?;
-
         if let Some(expr) = expr {
             let node = self.expr(expr)?;
 
+            if let NodeKind::Const(value) = node.kind {
+                self.declare_var(span, name)?
+                    .initialized()
+                    .value(value)
+                    .finish();
+
+                return Ok(());
+            }
+
             block.push(IRNode::new(
                 span,
-                NodeKind::Store(VariableKind::Variable, id, Box::new(node)),
+                NodeKind::Store(
+                    VariableKind::Global,
+                    self.declare_var(span, name)?.initialized().finish(),
+                    Box::new(node),
+                ),
             ));
+        } else {
+            self.declare_var(span, name)?.initialized().finish();
         }
 
         Ok(())
     }
 
     fn expr_stmt(&mut self, block: &mut Block, span: Span, expr: Expr) -> Result<(), IRError> {
-        block.push(IRNode::new(
-            span,
-            NodeKind::Discard(Box::new(self.expr(expr)?)),
-        ));
+        let node = self.expr(expr)?;
+
+        if node.is_noop() {
+            return Ok(());
+        }
+
+        block.push(IRNode::new(span, NodeKind::Discard(Box::new(node))));
 
         Ok(())
     }
@@ -556,22 +698,27 @@ impl<'a> IR<'a> {
         Ok(())
     }
 
-    fn fn_scoped_block(&mut self, args: Vec<FnArg>, body: Vec<Stmt>) -> Result<Block, IRError> {
+    fn fn_scoped_block(
+        &mut self,
+        span: Span,
+        method: bool,
+        args: Vec<FnArg>,
+        body: Vec<Stmt>,
+    ) -> Result<Block, IRError> {
         let mut scope = Scope::default();
-        scope.vars = args
-            .into_iter()
-            .map(|arg| {
-                let id = self.vars;
-                self.vars += 1;
 
-                let mut var = Variable::new(VariableKind::Local, id, arg.name);
-                var.initialized = true;
+        for (i, arg) in args.into_iter().enumerate() {
+            let mut builder = scope.declare_local(i, arg.name).initialized();
 
-                var
-            })
-            .collect();
+            if method && i == 0 {
+                // The first argument is `self` in methods
+                builder = builder.used();
+            }
 
-        self.scoped_block(scope, body)
+            builder.finish();
+        }
+
+        self.scoped_block(span, scope, body)
     }
 
     fn method(&mut self, span: Span, fn_stmt: FnStmt) -> Result<IRFn, IRError> {
@@ -579,7 +726,7 @@ impl<'a> IR<'a> {
             return Err(ErrorKind::MethodMissingSelf(fn_stmt.name.clone()).at(span));
         }
 
-        let body = self.fn_scoped_block(fn_stmt.args, fn_stmt.body)?;
+        let body = self.fn_scoped_block(span, true, fn_stmt.args, fn_stmt.body)?;
 
         Ok(IRFn {
             name: fn_stmt.name,
@@ -589,8 +736,8 @@ impl<'a> IR<'a> {
         })
     }
 
-    fn fn_stmt(&mut self, fn_stmt: FnStmt) -> Result<(), IRError> {
-        let body = self.fn_scoped_block(fn_stmt.args, fn_stmt.body)?;
+    fn fn_stmt(&mut self, span: Span, fn_stmt: FnStmt) -> Result<(), IRError> {
+        let body = self.fn_scoped_block(span, false, fn_stmt.args, fn_stmt.body)?;
 
         self.funcs.insert(
             fn_stmt.name.clone(),
@@ -605,9 +752,146 @@ impl<'a> IR<'a> {
         Ok(())
     }
 
+    fn yield_stmt(&mut self, block: &mut Block, span: Span, expr: Expr) -> Result<(), IRError> {
+        let node = self.expr(expr)?;
+        block.push(IRNode::new(span, NodeKind::Yield(Box::new(node))));
+
+        Ok(())
+    }
+
     fn ret(&mut self, block: &mut Block, span: Span, expr: Expr) -> Result<(), IRError> {
         let node = self.expr(expr)?;
         block.push(IRNode::new(span, NodeKind::Return(Box::new(node))));
+
+        Ok(())
+    }
+
+    fn for_cond(
+        &mut self,
+        block: &mut Block,
+        span: Span,
+        init: Stmt,
+        cond: Expr,
+        post: Expr,
+        body: Vec<Stmt>,
+    ) -> Result<(), IRError> {
+        self.enter_scope(Scope::default());
+        self.stmt(block, init)?;
+
+        block.push(IRNode::new(
+            span,
+            NodeKind::Loop(Box::new(Loop {
+                pre: None,
+                cond: self.expr(cond)?,
+                post: Some(self.expr(post)?),
+                body: self.block(body)?,
+            })),
+        ));
+
+        self.exit_scope(span)?;
+
+        Ok(())
+    }
+
+    fn for_in(
+        &mut self,
+        block: &mut Block,
+        span: Span,
+        lhs: Expr,
+        rhs: Expr,
+        body: Vec<Stmt>,
+    ) -> Result<(), IRError> {
+        let mut scope = Scope::default();
+        let item_id = scope
+            .declare_var(self.next_var(), ident(lhs))
+            .initialized()
+            .finish();
+        let resumable_id = self.next_var();
+
+        // Prepare resumable
+        block.push(IRNode::new(
+            span,
+            NodeKind::Store(
+                VariableKind::Global,
+                resumable_id,
+                Box::new(self.expr(rhs)?),
+            ),
+        ));
+
+        // For every iteration, we load the resumable and store the current item
+        let pre = IRNode::new(
+            span,
+            NodeKind::Store(
+                VariableKind::Global,
+                item_id,
+                Box::new(IRNode::new(
+                    span,
+                    NodeKind::Call(
+                        Box::new(IRNode::new(
+                            span,
+                            NodeKind::Load(VariableKind::Global, resumable_id),
+                        )),
+                        vec![],
+                    ),
+                )),
+            ),
+        );
+
+        // Check if the resumable is completed
+        let cond = IRNode::new(
+            span,
+            NodeKind::Binary(
+                Box::new(IRNode::new(
+                    span,
+                    NodeKind::Load(VariableKind::Global, item_id),
+                )),
+                BinaryOp::Ne,
+                Box::new(IRNode::new(
+                    span,
+                    NodeKind::Const(IRValue::Atom(consts::NIL)),
+                )),
+            ),
+        );
+
+        block.push(IRNode::new(
+            span,
+            NodeKind::Loop(Box::new(Loop {
+                pre: Some(pre),
+                cond,
+                post: None,
+                body: self.scoped_block(span, scope, body)?,
+            })),
+        ));
+
+        Ok(())
+    }
+
+    fn if_stmt(
+        &mut self,
+        block: &mut Block,
+        span: Span,
+        IfStmt(cond, body, alt): IfStmt,
+    ) -> Result<(), IRError> {
+        match cond {
+            Some(cond) => {
+                let cond = self.expr(cond)?;
+                let left = self.scoped_block(span, Scope::default(), body)?;
+                let mut right = Block::default();
+
+                if let Some(if_stmt) = alt {
+                    self.if_stmt(&mut right, span, *if_stmt)?;
+                }
+
+                block.push(IRNode::new(
+                    span,
+                    NodeKind::Branch(Box::new(cond), left, right),
+                ));
+            }
+            None => {
+                let mut body = self.scoped_block(span, Scope::default(), body)?;
+                block.merge(&mut body);
+            }
+        };
 
         Ok(())
     }
@@ -616,29 +900,49 @@ impl<'a> IR<'a> {
         match stmt.kind {
             StmtKind::Break => todo!(),
             StmtKind::Continue => todo!(),
-            StmtKind::If(if_stmt) => todo!(),
+            StmtKind::If(if_stmt) => self.if_stmt(block, stmt.span, if_stmt),
             StmtKind::Expr(expr) => self.expr_stmt(block, stmt.span, expr),
-            StmtKind::Yield(expr) => todo!(),
+            StmtKind::Yield(expr) => self.yield_stmt(block, stmt.span, expr),
             StmtKind::Return(expr) => self.ret(block, stmt.span, expr),
             StmtKind::Import(path) => self.import(stmt.span, path),
-            StmtKind::Fn(fn_stmt) => self.fn_stmt(fn_stmt),
+            StmtKind::Fn(fn_stmt) => self.fn_stmt(stmt.span, fn_stmt),
             StmtKind::Class(name, body, public) => self.class(name, body, public),
             StmtKind::Let(name, expr) => self.let_stmt(block, stmt.span, name, expr),
             StmtKind::For(expr, stmts) => todo!(),
-            StmtKind::ForIn(expr, expr1, stmts) => todo!(),
+            StmtKind::ForIn(lhs, rhs, body) => self.for_in(block, stmt.span, lhs, rhs, body),
             StmtKind::ForCond {
                 init,
                 cond,
                 step,
                 body,
-            } => todo!(),
+            } => self.for_cond(block, stmt.span, *init, cond, step, body),
         }
     }
 
-    fn scoped_block(&mut self, scope: Scope, tree: Vec<Stmt>) -> Result<Block, IRError> {
+    fn enter_scope(&mut self, scope: Scope) {
         self.scope.push_front(scope);
+    }
+
+    fn exit_scope(&mut self, span: Span) -> Result<(), IRError> {
+        if let Some(scope) = self.scope.pop_front() {
+            if let Some(var) = scope.vars.iter().find(|v| !v.used) {
+                return Err(ErrorKind::NameUnused(var.name.clone()).at(span));
+            }
+        }
+
+        Ok(())
+    }
+
+    fn scoped_block(
+        &mut self,
+        span: Span,
+        scope: Scope,
+        tree: Vec<Stmt>,
+    ) -> Result<Block, IRError> {
+        self.enter_scope(scope);
         let block = self.block(tree)?;
-        self.scope.pop_front();
+        self.exit_scope(span)?;
+
         Ok(block)
     }
 
@@ -654,9 +958,16 @@ impl<'a> IR<'a> {
 
     pub fn compile(mut self, tree: Vec<Stmt>) -> Result<Program, IRError> {
         self.register(&tree)?;
-        let block = self.scoped_block(Scope::default(), tree)?;
 
         // In the root scope, `self` refers to the current package
+        let mut scope = Scope::default();
+        scope
+            .declare_var(self.next_var(), "self".to_string())
+            .initialized()
+            .used()
+            .finish();
+
+        let block = self.scoped_block(Span::default(), scope, tree)?;
 
         Ok(Program {
             body: block,

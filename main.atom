@@ -1,7 +1,0 @@
-import std;
-
-class Test {
-    fn example(self) {
-        self.test
-    }
-}
