@@ -1,3 +1,7 @@
 import std;
 
-println(10 + 5);
+class Test {
+    fn example(self) {
+        self.test
+    }
+}

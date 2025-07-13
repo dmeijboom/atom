@@ -1,5 +1,5 @@
 use std::{
-    collections::VecDeque,
+    collections::{HashMap, VecDeque},
     hash::{Hash, Hasher},
     ops::*,
 };
@@ -15,7 +15,7 @@ use crate::{
 };
 
 use super::{
-    ast::{BinaryOp, Expr, ExprKind, Literal, Path, Stmt, UnaryOp},
+    ast::{BinaryOp, Expr, ExprKind, FnArg, FnStmt, Literal, Path, Stmt, UnaryOp},
     Span,
 };
 
@@ -28,18 +28,20 @@ const PRELUDE: [&str; 12] = [
 pub enum ErrorKind {
     #[error("unknown name '{0}'")]
     UnknownName(String),
-    #[error("missing scope")]
-    MissingScope,
+    #[error("invalid/missing scope")]
+    InvalidScope,
     #[error("name '{0}' is already defined")]
     DuplicateName(String),
     #[error("package '{0}' already imported")]
     DuplicateImport(String),
     #[error("fn '{0}' already exists")]
     DuplicateFn(String),
-    // #[error("method '{0}' already exists")]
-    // DuplicateMethod(String),
+    #[error("method '{0}' already exists")]
+    DuplicateMethod(String),
     #[error("class '{0}' already exists")]
     DuplicateClass(String),
+    #[error("method '{0}' is missing 'self' as the first argument")]
+    MethodMissingSelf(String),
     #[error("name '{0}' is not initialized")]
     NameUninitialized(String),
     #[error("name '{0}' is not used")]
@@ -169,8 +171,10 @@ pub enum NodeKind {
     FnRef(u32),
     ClassRef(u32),
     ImportRef(u32),
+    BuiltinRef(u32),
     Const(IRValue),
     Array(Vec<IRNode>),
+    Return(Box<IRNode>),
     Discard(Box<IRNode>),
     Unary(UnaryOp, Box<IRNode>),
     Member(Box<IRNode>, String),
@@ -221,14 +225,19 @@ struct Scope {
     vars: Vec<Variable>,
 }
 
-#[derive(Default)]
-pub struct Fn {
+#[derive(Default, Serialize)]
+pub struct IRFn {
     name: String,
+    body: Block,
+    public: bool,
+    resumable: bool,
 }
 
-#[derive(Default)]
-pub struct Class {
+#[derive(Default, Serialize)]
+pub struct IRClass {
     name: String,
+    public: bool,
+    methods: HashMap<String, IRFn>,
 }
 
 fn is_const_compat(lhs: &IRValue, op: BinaryOp, rhs: &IRValue) -> bool {
@@ -246,11 +255,20 @@ fn is_const_compat(lhs: &IRValue, op: BinaryOp, rhs: &IRValue) -> bool {
     }
 }
 
+#[derive(Serialize)]
+pub struct Program {
+    body: Block,
+    imports: Vec<String>,
+    funcs: Vec<IRFn>,
+    classes: Vec<IRClass>,
+    consts: Vec<IRValue>,
+}
+
 pub struct IR<'a> {
     vars: usize,
     imports: OrderedSet<String>,
-    funcs: OrderedMap<String, Fn>,
-    classes: OrderedMap<String, Class>,
+    funcs: OrderedMap<String, IRFn>,
+    classes: OrderedMap<String, IRClass>,
     scope: VecDeque<Scope>,
     consts: OrderedSet<IRValue>,
     ctx: &'a mut GlobalContext,
@@ -277,14 +295,14 @@ impl<'a> IR<'a> {
                         return Err(ErrorKind::DuplicateFn(fn_stmt.name.clone()).at(stmt.span));
                     }
 
-                    self.funcs.insert(fn_stmt.name.clone(), Fn::default());
+                    self.funcs.insert(fn_stmt.name.clone(), IRFn::default());
                 }
                 StmtKind::Class(name, _, _) => {
                     if self.classes.contains_key(name.as_str()) {
                         return Err(ErrorKind::DuplicateClass(name.clone()).at(stmt.span));
                     }
 
-                    self.classes.insert(name.clone(), Class::default());
+                    self.classes.insert(name.clone(), IRClass::default());
                 }
                 _ => {}
             }
@@ -312,7 +330,7 @@ impl<'a> IR<'a> {
         let scope = self
             .scope
             .front_mut()
-            .ok_or(ErrorKind::MissingScope.at(span))?;
+            .ok_or(ErrorKind::InvalidScope.at(span))?;
 
         let mut var = Variable::new(VariableKind::Variable, id, name);
         var.initialized = initialized;
@@ -404,8 +422,16 @@ impl<'a> IR<'a> {
         return self.member(span, ExprKind::Ident(std_name).at(span), name);
     }
 
-    // Loads a symbol based on the following order: local/var > class > fn > import
-    fn ident(&mut self, span: Span, name: String) -> Result<IRNode, IRError> {
+    // Loads a symbol based on the following order: builtin > local/var > class > fn > import
+    fn ident(&mut self, span: Span, mut name: String) -> Result<IRNode, IRError> {
+        // Builtins
+        if name.starts_with('@') {
+            name.remove(0);
+            let id = self.ctx.atoms.insert(name);
+
+            return Ok(IRNode::new(span, NodeKind::BuiltinRef(id)));
+        }
+
         // Locals / variables
         if let Some(var) = self.lookup_var(&name) {
             if !var.initialized {
@@ -504,6 +530,88 @@ impl<'a> IR<'a> {
         Ok(())
     }
 
+    fn class(&mut self, name: String, body: Vec<Stmt>, public: bool) -> Result<(), IRError> {
+        let mut methods = HashMap::default();
+
+        for stmt in body {
+            if let StmtKind::Fn(fn_stmt) = stmt.kind {
+                if methods.contains_key(&fn_stmt.name) {
+                    return Err(ErrorKind::DuplicateMethod(fn_stmt.name).at(stmt.span));
+                }
+
+                let name = fn_stmt.name.clone();
+                methods.insert(name, self.method(stmt.span, fn_stmt)?);
+            }
+        }
+
+        self.classes.insert(
+            name.clone(),
+            IRClass {
+                name,
+                methods,
+                public,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn fn_scoped_block(&mut self, args: Vec<FnArg>, body: Vec<Stmt>) -> Result<Block, IRError> {
+        let mut scope = Scope::default();
+        scope.vars = args
+            .into_iter()
+            .map(|arg| {
+                let id = self.vars;
+                self.vars += 1;
+
+                let mut var = Variable::new(VariableKind::Local, id, arg.name);
+                var.initialized = true;
+
+                var
+            })
+            .collect();
+
+        self.scoped_block(scope, body)
+    }
+
+    fn method(&mut self, span: Span, fn_stmt: FnStmt) -> Result<IRFn, IRError> {
+        if fn_stmt.args.first().map(|arg| arg.name.as_str()) != Some("self") {
+            return Err(ErrorKind::MethodMissingSelf(fn_stmt.name.clone()).at(span));
+        }
+
+        let body = self.fn_scoped_block(fn_stmt.args, fn_stmt.body)?;
+
+        Ok(IRFn {
+            name: fn_stmt.name,
+            body,
+            public: fn_stmt.public,
+            resumable: false,
+        })
+    }
+
+    fn fn_stmt(&mut self, fn_stmt: FnStmt) -> Result<(), IRError> {
+        let body = self.fn_scoped_block(fn_stmt.args, fn_stmt.body)?;
+
+        self.funcs.insert(
+            fn_stmt.name.clone(),
+            IRFn {
+                name: fn_stmt.name,
+                body,
+                public: fn_stmt.public,
+                resumable: fn_stmt.resumable,
+            },
+        );
+
+        Ok(())
+    }
+
+    fn ret(&mut self, block: &mut Block, span: Span, expr: Expr) -> Result<(), IRError> {
+        let node = self.expr(expr)?;
+        block.push(IRNode::new(span, NodeKind::Return(Box::new(node))));
+
+        Ok(())
+    }
+
     fn stmt(&mut self, block: &mut Block, stmt: Stmt) -> Result<(), IRError> {
         match stmt.kind {
             StmtKind::Break => todo!(),
@@ -511,10 +619,10 @@ impl<'a> IR<'a> {
             StmtKind::If(if_stmt) => todo!(),
             StmtKind::Expr(expr) => self.expr_stmt(block, stmt.span, expr),
             StmtKind::Yield(expr) => todo!(),
-            StmtKind::Return(expr) => todo!(),
+            StmtKind::Return(expr) => self.ret(block, stmt.span, expr),
             StmtKind::Import(path) => self.import(stmt.span, path),
-            StmtKind::Fn(fn_stmt) => todo!(),
-            StmtKind::Class(_, stmts, _) => todo!(),
+            StmtKind::Fn(fn_stmt) => self.fn_stmt(fn_stmt),
+            StmtKind::Class(name, body, public) => self.class(name, body, public),
             StmtKind::Let(name, expr) => self.let_stmt(block, stmt.span, name, expr),
             StmtKind::For(expr, stmts) => todo!(),
             StmtKind::ForIn(expr, expr1, stmts) => todo!(),
@@ -527,8 +635,8 @@ impl<'a> IR<'a> {
         }
     }
 
-    fn scoped_block(&mut self, tree: Vec<Stmt>) -> Result<Block, IRError> {
-        self.scope.push_front(Scope::default());
+    fn scoped_block(&mut self, scope: Scope, tree: Vec<Stmt>) -> Result<Block, IRError> {
+        self.scope.push_front(scope);
         let block = self.block(tree)?;
         self.scope.pop_front();
         Ok(block)
@@ -544,12 +652,18 @@ impl<'a> IR<'a> {
         Ok(block)
     }
 
-    pub fn compile(mut self, tree: Vec<Stmt>) -> Result<Block, IRError> {
+    pub fn compile(mut self, tree: Vec<Stmt>) -> Result<Program, IRError> {
         self.register(&tree)?;
-        let block = self.scoped_block(tree)?;
+        let block = self.scoped_block(Scope::default(), tree)?;
 
         // In the root scope, `self` refers to the current package
 
-        Ok(block)
+        Ok(Program {
+            body: block,
+            imports: self.imports.into_vec(),
+            funcs: self.funcs.into_vec(),
+            classes: self.classes.into_vec(),
+            consts: self.consts.into_vec(),
+        })
     }
 }
