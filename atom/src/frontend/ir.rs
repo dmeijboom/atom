@@ -2,6 +2,7 @@ use std::{
     collections::{HashMap, VecDeque},
     hash::{Hash, Hasher},
     ops::*,
+    vec::IntoIter,
 };
 
 use serde::Serialize;
@@ -16,7 +17,8 @@ use crate::{
 
 use super::{
     ast::{
-        AssignOp, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, Path, Stmt, UnaryOp,
+        AssignOp, BinaryOp, Expr, ExprKind, FnArg, FnStmt, IfStmt, Literal, MatchArm, Path, Stmt,
+        UnaryOp,
     },
     Span,
 };
@@ -178,6 +180,7 @@ pub enum VariableKind {
 
 #[derive(Debug, Serialize)]
 pub struct Loop {
+    pub id: usize,
     pub pre: Option<IRNode>,
     pub cond: IRNode,
     pub post: Option<IRNode>,
@@ -191,21 +194,25 @@ pub enum NodeKind {
     ClassRef(u32),
     ImportRef(u32),
     BuiltinRef(u32),
+    Break(usize),
+    Continue(usize),
     Const(IRValue),
     Loop(Box<Loop>),
     Array(Vec<IRNode>),
     Return(Box<IRNode>),
     Yield(Box<IRNode>),
     Discard(Box<IRNode>),
+    Compound(Block, Box<IRNode>),
     Unary(UnaryOp, Box<IRNode>),
     Member(Box<IRNode>, String),
     Call(Box<IRNode>, Vec<IRNode>),
+    Store(Box<IRNode>, Box<IRNode>),
     Branch(Box<IRNode>, Block, Block),
     CompMember(Box<IRNode>, Box<IRNode>),
     Range(Option<Box<IRNode>>, Option<Box<IRNode>>),
     Binary(Box<IRNode>, BinaryOp, Box<IRNode>),
-    Load(VariableKind, usize),
-    Store(VariableKind, usize, Box<IRNode>),
+    LoadVariable(VariableKind, usize),
+    StoreVariable(VariableKind, usize, Box<IRNode>),
 }
 
 impl From<(Span, IRValue)> for IRNode {
@@ -342,6 +349,7 @@ fn ident(expr: Expr) -> String {
 
 pub struct IR<'a> {
     vars: usize,
+    loops: usize,
     imports: OrderedMap<String, Path>,
     funcs: OrderedMap<String, IRFn>,
     classes: OrderedMap<String, IRClass>,
@@ -354,6 +362,7 @@ impl<'a> IR<'a> {
     pub fn new(ctx: &'a mut GlobalContext) -> Self {
         Self {
             vars: 0,
+            loops: 0,
             imports: OrderedMap::default(),
             funcs: OrderedMap::default(),
             classes: OrderedMap::default(),
@@ -366,6 +375,12 @@ impl<'a> IR<'a> {
     fn next_var(&mut self) -> usize {
         let id = self.vars;
         self.vars += 1;
+        id
+    }
+
+    fn next_loop(&mut self) -> usize {
+        let id = self.loops;
+        self.loops += 1;
         id
     }
 
@@ -492,7 +507,7 @@ impl<'a> IR<'a> {
         return self.member(span, ExprKind::Ident(std_name).at(span), name);
     }
 
-    // Loads a symbol based on the following order: builtin > local/var > class > fn > import
+    // Loads a symbol based on the following order: builtin > local/var > class > fn > import > prelude
     fn ident(&mut self, span: Span, mut name: String) -> Result<IRNode, IRError> {
         // Builtins
         if name.starts_with('@') {
@@ -514,7 +529,12 @@ impl<'a> IR<'a> {
                 return Ok(IRNode::new(span, NodeKind::Const(value)));
             }
 
-            return Ok(IRNode::new(span, NodeKind::Load(var.kind, var.id)));
+            return Ok(IRNode::new(span, NodeKind::LoadVariable(var.kind, var.id)));
+        }
+
+        // Classes
+        if let Some(id) = self.classes.get(&name) {
+            return Ok(IRNode::new(span, NodeKind::ClassRef(id)));
         }
 
         // Functions
@@ -527,6 +547,7 @@ impl<'a> IR<'a> {
             return Ok(IRNode::new(span, NodeKind::ImportRef(id)));
         }
 
+        // Prelude
         if PRELUDE.contains(&name.as_str()) {
             return self.prelude(span, name);
         }
@@ -577,25 +598,12 @@ impl<'a> IR<'a> {
         Ok(IRNode::new(span, NodeKind::Array(self.expr_list(items)?)))
     }
 
-    fn assign(
-        &mut self,
-        span: Span,
-        op: Option<AssignOp>,
-        lhs: Expr,
-        mut rhs: Expr,
-    ) -> Result<IRNode, IRError> {
-        if let Some(op) = op {
-            rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
-        }
-
-        let name = ident(lhs);
-        let node = self.expr(rhs)?;
-
+    fn assign_name(&mut self, span: Span, name: String, value: IRNode) -> Result<IRNode, IRError> {
         if let Some(var) = self.lookup_var(&name) {
             if !var.initialized {
                 var.initialized = true;
 
-                if let NodeKind::Const(value) = node.kind {
+                if let NodeKind::Const(value) = value.kind {
                     var.value = Some(value);
                     return Ok(IRNode::new(span, NodeKind::Noop));
                 }
@@ -603,11 +611,156 @@ impl<'a> IR<'a> {
 
             return Ok(IRNode::new(
                 span,
-                NodeKind::Store(var.kind, var.id, Box::new(node)),
+                NodeKind::StoreVariable(var.kind, var.id, Box::new(value)),
             ));
         }
 
         Err(ErrorKind::UnknownName(name).at(span))
+    }
+
+    fn assign_member(
+        &mut self,
+        span: Span,
+        object: Expr,
+        member: String,
+        value: IRNode,
+    ) -> Result<IRNode, IRError> {
+        let object = self.expr(object)?;
+        let member = IRNode::new(span, NodeKind::Member(Box::new(object), member));
+
+        Ok(IRNode::new(
+            span,
+            NodeKind::Store(Box::new(member), Box::new(value)),
+        ))
+    }
+
+    fn assign_comp_member(
+        &mut self,
+        span: Span,
+        object: Expr,
+        index: Expr,
+        value: IRNode,
+    ) -> Result<IRNode, IRError> {
+        let object = self.expr(object)?;
+        let index = self.expr(index)?;
+        let member = IRNode::new(
+            span,
+            NodeKind::CompMember(Box::new(object), Box::new(index)),
+        );
+
+        Ok(IRNode::new(
+            span,
+            NodeKind::Store(Box::new(member), Box::new(value)),
+        ))
+    }
+
+    fn assign(
+        &mut self,
+        span: Span,
+        op: Option<AssignOp>,
+        lhs: Expr,
+        mut rhs: Expr,
+    ) -> Result<IRNode, IRError> {
+        // @TODO: refactor
+        if let Some(op) = op {
+            rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
+        }
+
+        let value = self.expr(rhs)?;
+
+        match lhs.kind {
+            ExprKind::Ident(name) => self.assign_name(span, name, value),
+            ExprKind::Member(object, member) => self.assign_member(span, *object, member, value),
+            ExprKind::CompMember(object, index) => {
+                self.assign_comp_member(span, *object, *index, value)
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    fn match_arm(
+        &mut self,
+        span: Span,
+        var_id: usize,
+        arm: MatchArm,
+        mut next_arms: IntoIter<MatchArm>,
+    ) -> Result<IRNode, IRError> {
+        let cond = IRNode::new(
+            span,
+            NodeKind::Binary(
+                Box::new(IRNode::new(
+                    span,
+                    NodeKind::LoadVariable(VariableKind::Global, var_id),
+                )),
+                BinaryOp::Eq,
+                Box::new(self.expr(arm.pat)?),
+            ),
+        );
+
+        let body = self.scoped_expr(span, Scope::default(), arm.expr)?;
+        let mut block = Block::default();
+
+        if let Some(arm) = next_arms.next() {
+            block.push(self.match_arm(span, var_id, arm, next_arms)?);
+        }
+
+        Ok(IRNode::new(
+            span,
+            NodeKind::Branch(
+                Box::new(cond),
+                Block {
+                    children: vec![body],
+                },
+                block,
+            ),
+        ))
+    }
+
+    fn match_expr(
+        &mut self,
+        span: Span,
+        expr: Expr,
+        arms: Vec<MatchArm>,
+        alt: Option<Expr>,
+    ) -> Result<IRNode, IRError> {
+        let id = self.next_var();
+        let node = self.expr(expr)?;
+        let block = Block {
+            children: vec![IRNode::new(
+                span,
+                NodeKind::StoreVariable(VariableKind::Global, id, Box::new(node)),
+            )],
+        };
+
+        let mut arms = arms.into_iter();
+
+        if let Some(arm) = arms.next() {
+            let mut node = self.match_arm(span, id, arm, arms)?;
+            let branch = match alt {
+                Some(expr) => {
+                    if let NodeKind::Branch(_, _, alt) = &mut node.kind {
+                        alt.push(self.scoped_expr(span, Scope::default(), expr)?);
+                    }
+
+                    node
+                }
+                None => node,
+            };
+
+            return Ok(IRNode::new(
+                span,
+                NodeKind::Compound(block, Box::new(branch)),
+            ));
+        }
+
+        unreachable!()
+    }
+
+    fn unary(&mut self, op: UnaryOp, expr: Expr) -> Result<IRNode, IRError> {
+        Ok(IRNode::new(
+            expr.span,
+            NodeKind::Unary(op, Box::new(self.expr(expr)?)),
+        ))
     }
 
     fn expr(&mut self, expr: Expr) -> Result<IRNode, IRError> {
@@ -615,13 +768,15 @@ impl<'a> IR<'a> {
             ExprKind::Ident(name) => self.ident(expr.span, name),
             ExprKind::Array(items) => self.array(expr.span, items),
             ExprKind::Literal(literal) => self.lit(expr.span, literal),
-            ExprKind::Unary(unary_op, expr) => todo!(),
+            ExprKind::Unary(op, expr) => self.unary(op, *expr),
             ExprKind::Member(expr, name) => self.member(expr.span, *expr, name),
             ExprKind::Call(expr, args) => self.call(expr.span, *expr, args),
             ExprKind::CompMember(lhs, rhs) => self.comp_member(lhs.span, *lhs, *rhs),
             ExprKind::Binary(lhs, binary_op, rhs) => self.binary(expr.span, *lhs, binary_op, *rhs),
-            ExprKind::Assign(assign_op, lhs, rhs) => self.assign(lhs.span, assign_op, *lhs, *rhs),
-            ExprKind::Match(expr, match_arms, expr1) => todo!(),
+            ExprKind::Assign(assign_op, lhs, rhs) => self.assign(expr.span, assign_op, *lhs, *rhs),
+            ExprKind::Match(expr, arms, alt) => {
+                self.match_expr(expr.span, *expr, arms, alt.map(|e| *e))
+            }
             ExprKind::Range(_, _) => unreachable!(),
         }
     }
@@ -647,7 +802,7 @@ impl<'a> IR<'a> {
 
             block.push(IRNode::new(
                 span,
-                NodeKind::Store(
+                NodeKind::StoreVariable(
                     VariableKind::Global,
                     self.declare_var(span, name)?.initialized().finish(),
                     Box::new(node),
@@ -775,20 +930,19 @@ impl<'a> IR<'a> {
         post: Expr,
         body: Vec<Stmt>,
     ) -> Result<(), IRError> {
-        self.enter_scope(Scope::default());
-        self.stmt(block, init)?;
+        let mut init = self.scoped_block(span, Scope::default(), vec![init])?;
 
+        block.merge(&mut init);
         block.push(IRNode::new(
             span,
             NodeKind::Loop(Box::new(Loop {
+                id: self.next_loop(),
                 pre: None,
                 cond: self.expr(cond)?,
                 post: Some(self.expr(post)?),
                 body: self.block(body)?,
             })),
         ));
-
-        self.exit_scope(span)?;
 
         Ok(())
     }
@@ -811,7 +965,7 @@ impl<'a> IR<'a> {
         // Prepare resumable
         block.push(IRNode::new(
             span,
-            NodeKind::Store(
+            NodeKind::StoreVariable(
                 VariableKind::Global,
                 resumable_id,
                 Box::new(self.expr(rhs)?),
@@ -821,7 +975,7 @@ impl<'a> IR<'a> {
         // For every iteration, we load the resumable and store the current item
         let pre = IRNode::new(
             span,
-            NodeKind::Store(
+            NodeKind::StoreVariable(
                 VariableKind::Global,
                 item_id,
                 Box::new(IRNode::new(
@@ -829,7 +983,7 @@ impl<'a> IR<'a> {
                     NodeKind::Call(
                         Box::new(IRNode::new(
                             span,
-                            NodeKind::Load(VariableKind::Global, resumable_id),
+                            NodeKind::LoadVariable(VariableKind::Global, resumable_id),
                         )),
                         vec![],
                     ),
@@ -843,7 +997,7 @@ impl<'a> IR<'a> {
             NodeKind::Binary(
                 Box::new(IRNode::new(
                     span,
-                    NodeKind::Load(VariableKind::Global, item_id),
+                    NodeKind::LoadVariable(VariableKind::Global, item_id),
                 )),
                 BinaryOp::Ne,
                 Box::new(IRNode::new(
@@ -856,10 +1010,34 @@ impl<'a> IR<'a> {
         block.push(IRNode::new(
             span,
             NodeKind::Loop(Box::new(Loop {
+                id: self.next_loop(),
                 pre: Some(pre),
                 cond,
                 post: None,
                 body: self.scoped_block(span, scope, body)?,
+            })),
+        ));
+
+        Ok(())
+    }
+
+    fn for_stmt(
+        &mut self,
+        block: &mut Block,
+        span: Span,
+        expr: Expr,
+        tree: Vec<Stmt>,
+    ) -> Result<(), IRError> {
+        let cond = self.expr(expr)?;
+
+        block.push(IRNode::new(
+            span,
+            NodeKind::Loop(Box::new(Loop {
+                id: self.next_loop(),
+                pre: None,
+                cond,
+                post: None,
+                body: self.scoped_block(span, Scope::default(), tree)?,
             })),
         ));
 
@@ -896,10 +1074,20 @@ impl<'a> IR<'a> {
         Ok(())
     }
 
+    fn break_stmt(&mut self, block: &mut Block, span: Span) -> Result<(), IRError> {
+        block.push(IRNode::new(span, NodeKind::Break(self.loops - 1)));
+        Ok(())
+    }
+
+    fn continue_stmt(&mut self, block: &mut Block, span: Span) -> Result<(), IRError> {
+        block.push(IRNode::new(span, NodeKind::Continue(self.loops - 1)));
+        Ok(())
+    }
+
     fn stmt(&mut self, block: &mut Block, stmt: Stmt) -> Result<(), IRError> {
         match stmt.kind {
-            StmtKind::Break => todo!(),
-            StmtKind::Continue => todo!(),
+            StmtKind::Break => self.break_stmt(block, stmt.span),
+            StmtKind::Continue => self.continue_stmt(block, stmt.span),
             StmtKind::If(if_stmt) => self.if_stmt(block, stmt.span, if_stmt),
             StmtKind::Expr(expr) => self.expr_stmt(block, stmt.span, expr),
             StmtKind::Yield(expr) => self.yield_stmt(block, stmt.span, expr),
@@ -908,7 +1096,7 @@ impl<'a> IR<'a> {
             StmtKind::Fn(fn_stmt) => self.fn_stmt(stmt.span, fn_stmt),
             StmtKind::Class(name, body, public) => self.class(name, body, public),
             StmtKind::Let(name, expr) => self.let_stmt(block, stmt.span, name, expr),
-            StmtKind::For(expr, stmts) => todo!(),
+            StmtKind::For(expr, stmts) => self.for_stmt(block, stmt.span, expr, stmts),
             StmtKind::ForIn(lhs, rhs, body) => self.for_in(block, stmt.span, lhs, rhs, body),
             StmtKind::ForCond {
                 init,
@@ -931,6 +1119,14 @@ impl<'a> IR<'a> {
         }
 
         Ok(())
+    }
+
+    fn scoped_expr(&mut self, span: Span, scope: Scope, expr: Expr) -> Result<IRNode, IRError> {
+        self.enter_scope(scope);
+        let node = self.expr(expr)?;
+        self.exit_scope(span)?;
+
+        Ok(node)
     }
 
     fn scoped_block(
