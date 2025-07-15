@@ -9,7 +9,7 @@ use serde::Serialize;
 
 use crate::{
     backend::GlobalContext,
-    collections::{OrderedMap, OrderedSet},
+    collections::OrderedMap,
     error::{IntoSpanned, SpannedError},
     frontend::ast::StmtKind,
     runtime::{consts, ops, BigInt},
@@ -143,7 +143,7 @@ impl Hash for IRValue {
 
 #[derive(Debug, Default, Serialize)]
 pub struct Block {
-    children: Vec<IRNode>,
+    pub children: Vec<IRNode>,
 }
 
 impl Block {
@@ -158,8 +158,8 @@ impl Block {
 
 #[derive(Debug, Serialize)]
 pub struct IRNode {
-    kind: NodeKind,
-    span: Span,
+    pub kind: NodeKind,
+    pub span: Span,
 }
 
 impl IRNode {
@@ -303,17 +303,18 @@ impl Scope {
 
 #[derive(Default, Serialize)]
 pub struct IRFn {
-    name: String,
-    body: Block,
-    public: bool,
-    resumable: bool,
+    pub name: String,
+    pub arg_count: usize,
+    pub body: Block,
+    pub public: bool,
+    pub resumable: bool,
 }
 
 #[derive(Default, Serialize)]
 pub struct IRClass {
-    name: String,
-    public: bool,
-    methods: HashMap<String, IRFn>,
+    pub name: String,
+    pub public: bool,
+    pub methods: HashMap<String, IRFn>,
 }
 
 fn is_const_compat(lhs: &IRValue, op: BinaryOp, rhs: &IRValue) -> bool {
@@ -333,11 +334,10 @@ fn is_const_compat(lhs: &IRValue, op: BinaryOp, rhs: &IRValue) -> bool {
 
 #[derive(Serialize)]
 pub struct Program {
-    body: Block,
-    imports: Vec<Path>,
-    funcs: Vec<IRFn>,
-    classes: Vec<IRClass>,
-    consts: Vec<IRValue>,
+    pub body: Block,
+    pub imports: Vec<Path>,
+    pub funcs: Vec<IRFn>,
+    pub classes: Vec<IRClass>,
 }
 
 fn ident(expr: Expr) -> String {
@@ -354,7 +354,6 @@ pub struct IR<'a> {
     funcs: OrderedMap<String, IRFn>,
     classes: OrderedMap<String, IRClass>,
     scope: VecDeque<Scope>,
-    consts: OrderedSet<IRValue>,
     ctx: &'a mut GlobalContext,
 }
 
@@ -367,7 +366,6 @@ impl<'a> IR<'a> {
             funcs: OrderedMap::default(),
             classes: OrderedMap::default(),
             scope: VecDeque::new(),
-            consts: OrderedSet::default(),
             ctx,
         }
     }
@@ -411,7 +409,6 @@ impl<'a> IR<'a> {
     fn lookup_var(&mut self, name: &str) -> Option<&mut Variable> {
         self.scope
             .iter_mut()
-            .rev()
             .find_map(|scope| scope.vars.iter_mut().rev().find(|var| var.name == name))
     }
 
@@ -501,7 +498,7 @@ impl<'a> IR<'a> {
         let std_name = "std".to_string();
 
         if !self.imports.contains_key(&std_name) {
-            self.import(span, vec![std_name.clone()])?;
+            self.import(span, std_name.clone().into())?;
         }
 
         return self.member(span, ExprKind::Ident(std_name).at(span), name);
@@ -601,13 +598,15 @@ impl<'a> IR<'a> {
     fn assign_name(&mut self, span: Span, name: String, value: IRNode) -> Result<IRNode, IRError> {
         if let Some(var) = self.lookup_var(&name) {
             if !var.initialized {
-                var.initialized = true;
-
                 if let NodeKind::Const(value) = value.kind {
+                    var.initialized = true;
                     var.value = Some(value);
+
                     return Ok(IRNode::new(span, NodeKind::Noop));
                 }
             }
+
+            var.initialized = true;
 
             return Ok(IRNode::new(
                 span,
@@ -822,7 +821,11 @@ impl<'a> IR<'a> {
             return Ok(());
         }
 
-        block.push(IRNode::new(span, NodeKind::Discard(Box::new(node))));
+        match &node.kind {
+            // Assignments are not actually expressions, so we don't discard them
+            NodeKind::Store(_, _) | NodeKind::StoreVariable(_, _, _) => block.push(node),
+            _ => block.push(IRNode::new(span, NodeKind::Discard(Box::new(node)))),
+        }
 
         Ok(())
     }
@@ -881,23 +884,27 @@ impl<'a> IR<'a> {
             return Err(ErrorKind::MethodMissingSelf(fn_stmt.name.clone()).at(span));
         }
 
+        let arg_count = fn_stmt.args.len();
         let body = self.fn_scoped_block(span, true, fn_stmt.args, fn_stmt.body)?;
 
         Ok(IRFn {
             name: fn_stmt.name,
             body,
+            arg_count,
             public: fn_stmt.public,
             resumable: false,
         })
     }
 
     fn fn_stmt(&mut self, span: Span, fn_stmt: FnStmt) -> Result<(), IRError> {
+        let arg_count = fn_stmt.args.len();
         let body = self.fn_scoped_block(span, false, fn_stmt.args, fn_stmt.body)?;
 
         self.funcs.insert(
             fn_stmt.name.clone(),
             IRFn {
                 name: fn_stmt.name,
+                arg_count,
                 body,
                 public: fn_stmt.public,
                 resumable: fn_stmt.resumable,
@@ -930,7 +937,7 @@ impl<'a> IR<'a> {
         post: Expr,
         body: Vec<Stmt>,
     ) -> Result<(), IRError> {
-        let mut init = self.scoped_block(span, Scope::default(), vec![init])?;
+        let mut init = self.block(vec![init])?;
 
         block.merge(&mut init);
         block.push(IRNode::new(
@@ -1170,7 +1177,6 @@ impl<'a> IR<'a> {
             imports: self.imports.into_vec(),
             funcs: self.funcs.into_vec(),
             classes: self.classes.into_vec(),
-            consts: self.consts.into_vec(),
         })
     }
 }

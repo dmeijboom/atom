@@ -2,7 +2,7 @@ use std::fmt::{Debug, Display};
 
 use crate::{
     backend::CompileError,
-    frontend::{ParseError, Span, TokenError},
+    frontend::{IRError, ParseError, Span, TokenError},
     runtime,
 };
 
@@ -42,6 +42,8 @@ pub enum Error {
     IO(#[from] std::io::Error),
     #[error("ParseError: {0}")]
     Parse(#[from] ParseError),
+    #[error("IRError: {0}")]
+    IR(#[from] IRError),
     #[error("TokenError: {0}")]
     Lex(#[from] TokenError),
     #[error("CompileError: {0}")]
@@ -56,6 +58,7 @@ impl Error {
     pub fn span(&self) -> Span {
         match self {
             Error::IO(_) => Span::default(),
+            Error::IR(e) => e.span,
             Error::Parse(e) => e.span,
             Error::Lex(e) => e.span,
             Error::Compile(e) => e.span,

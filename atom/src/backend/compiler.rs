@@ -85,6 +85,7 @@ pub struct Package {
     pub consts: Vec<Const>,
     pub classes: Vec<Class>,
     pub functions: Vec<Fn>,
+    pub imports: Vec<Path>,
     pub offsets: IntMap<usize, Span>,
 }
 
@@ -1036,8 +1037,8 @@ impl Compiler {
         Ok(())
     }
 
-    fn import(&mut self, span: Span, path: Vec<String>) -> Result<(), CompileError> {
-        let name = path.join("/");
+    fn import(&mut self, span: Span, path: Path) -> Result<(), CompileError> {
+        let name = path.full_name();
 
         if self.imports.contains(&name) {
             return Err(ErrorKind::DuplicateImport(name).at(span));
@@ -1045,8 +1046,8 @@ impl Compiler {
 
         self.imports.insert(name.clone());
 
-        let idx = self.consts.insert(Const::Str(name.clone()));
-        self.push(Bytecode::with_code(Op::Import, idx).at(span));
+        // let idx = self.consts.insert(Const::Str(name.clone()));
+        // self.push(Bytecode::with_code(Op::Import, idx).at(span));
 
         let var_name = path.last().cloned().unwrap_or_default();
 
@@ -1165,14 +1166,17 @@ impl Compiler {
         self.push_var(Span::default(), "self".to_string(), true)?;
         self.compile_scoped_body(ctx, stmts)?;
         self.pop_scope()?;
+        
+        todo!()
 
-        Ok(Package {
-            body: self.body.freeze(),
-            offsets: self.offsets,
-            consts: self.consts.into_vec(),
-            functions: self.funcs.into_vec(),
-            classes: self.classes.into_vec(),
-        })
+        // Ok(Package {
+        //     body: self.body.freeze(),
+        //     offsets: self.offsets,
+        //     // imports: self.imports,
+        //     consts: self.consts.into_vec(),
+        //     functions: self.funcs.into_vec(),
+        //     classes: self.classes.into_vec(),
+        // })
     }
 }
 

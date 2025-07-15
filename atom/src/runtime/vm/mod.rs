@@ -157,6 +157,10 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         class.name == "Package" && class.context.module == self.std.module
     }
 
+    fn module_ref(&self) -> &Module<'gc> {
+        &self.modules[self.frame.context().module]
+    }
+
     fn module(&mut self) -> &mut Module<'gc> {
         &mut self.modules[self.frame.context().module]
     }
@@ -392,7 +396,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         Builtins(builtins): &mut Builtins,
         (idx, arg_count): (u16, u16),
     ) -> Result<(), Error> {
-        let name = self.module().load_const(gc, idx as usize)?.as_str();
+        let name = &self.global_context.atoms[idx as usize];
         let f = builtins.get_mut(name.as_str()).ok_or_else(|| {
             ErrorKind::UnknownBuiltin {
                 name: name.to_string(),
@@ -607,7 +611,8 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         let id = self.modules.len();
 
         // Parse and compile module
-        let mut package = backend::compile(self.make_path(name), &mut self.global_context)
+        let path = self.make_path(name);
+        let mut package = backend::compile2(&mut self.global_context, path)
             .map_err(Box::new)
             .map_err(Error::Import)?;
 
@@ -639,15 +644,15 @@ impl<'gc, const S: usize> Vm<'gc, S> {
         Ok(id)
     }
 
-    fn import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
-        let name = self.module().load_const(gc, idx as usize)?.as_str();
+    fn load_import(&mut self, gc: &mut Gc<'gc>, idx: u32) -> Result<(), Error> {
+        let path = self.module_ref().get_import_path(idx as usize);
 
-        if let Some(handle) = self.packages.get(name.as_str()) {
+        if let Some(handle) = self.packages.get(path.name()) {
             self.stack.push(Handle::clone(handle));
             return Ok(());
         }
 
-        self.import_path(gc, name.as_str())?;
+        self.import_path(gc, &path.full_name())?;
 
         Ok(())
     }
@@ -733,7 +738,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
     }
 
     fn load(&mut self, idx: u32) {
-        let value = Value::clone(&self.module().vars[&idx]);
+        let value = Value::clone(&self.module_ref().vars[&idx]);
         self.stack.push(value);
     }
 
@@ -828,6 +833,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::StoreMember => self.store_member(bc.code)?,
                 Op::LoadFn => self.load_fn(gc, bc.code)?,
                 Op::LoadClass => self.load_class(gc, bc.code)?,
+                Op::LoadImport => self.load_import(gc, bc.code)?,
                 Op::Store => self.store(bc.code)?,
                 Op::Load => self.load(bc.code),
                 Op::LoadLocal => self.load_local(bc.code),
@@ -846,7 +852,6 @@ impl<'gc, const S: usize> Vm<'gc, S> {
                 Op::LoadElement => self.load_elem()?,
                 Op::StoreElement => self.store_elem()?,
                 Op::UnaryNot => self.not()?,
-                Op::Import => self.import(gc, bc.code)?,
                 Op::Yield => self.ret(true)?,
                 Op::Return => self.ret(false)?,
                 Op::ReturnLocal => self.return_local(bc.code)?,

@@ -1,3 +1,5 @@
+use std::ops::{Deref, DerefMut};
+
 use serde::Serialize;
 
 use crate::{frontend::Span, runtime::BigInt};
@@ -114,7 +116,38 @@ impl Expr {
 #[serde(rename_all = "camelCase")]
 pub struct IfStmt(pub Option<Expr>, pub Vec<Stmt>, pub Option<Box<IfStmt>>);
 
-pub type Path = Vec<String>;
+#[derive(Debug, Clone, Default, Serialize)]
+pub struct Path(pub Vec<String>);
+
+impl Deref for Path {
+    type Target = Vec<String>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for Path {
+    fn deref_mut(&mut self) -> &mut Vec<String> {
+        &mut self.0
+    }
+}
+
+impl From<String> for Path {
+    fn from(name: String) -> Self {
+        Self(vec![name])
+    }
+}
+
+impl Path {
+    pub fn name(&self) -> &str {
+        self.0[self.0.len() - 1].as_str()
+    }
+
+    pub fn full_name(&self) -> String {
+        self.0.join("/")
+    }
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

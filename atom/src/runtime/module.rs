@@ -5,6 +5,7 @@ use wyhash2::WyHash;
 
 use crate::backend::Package;
 use crate::collections::IntMap;
+use crate::frontend::ast::Path;
 use crate::frontend::Span;
 use crate::runtime::{Class, DynHandle, Error, Fn, Gc, Handle, IntoAtom, Trace, Value};
 
@@ -230,5 +231,9 @@ impl<'gc> Module<'gc> {
         get_cached(&mut self.cache.consts, idx, || {
             self.package.consts[idx].clone().into_atom(gc)
         })
+    }
+
+    pub fn get_import_path(&self, idx: usize) -> &Path {
+        &self.package.imports[idx]
     }
 }

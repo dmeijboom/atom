@@ -41,6 +41,7 @@ pub enum Op {
     LoadFn,
     LoadClass,
     LoadAtom,
+    LoadImport,
     Discard,
     Yield,
     Return,
@@ -62,7 +63,6 @@ pub enum Op {
     StoreMember,
     LoadLocal,
     StoreLocal,
-    Import,
 }
 
 pub trait Serializable {
