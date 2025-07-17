@@ -158,7 +158,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
     match opts.cmd {
         Cmd::Run(RunCmd { source }) => {
             let mut ctx = GlobalContext::default();
-            let module = backend::compile2(&mut ctx, source)?;
+            let module = backend::compile(&mut ctx, source)?;
 
             let mut gc = Gc::default();
             let mut builtins = Builtins::default();
@@ -206,7 +206,7 @@ fn cmd(opts: Opts) -> Result<(), Error> {
                 return print_ron(&program);
             }
 
-            let module = backend::compiler2::Compiler::new(&mut ctx).compile(program)?;
+            let module = Compiler::new(&mut ctx).compile(program);
 
             if bytecode {
                 print_atoms(ctx);

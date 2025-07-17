@@ -2,7 +2,6 @@ use std::{
     collections::{HashMap, VecDeque},
     hash::{Hash, Hasher},
     ops::*,
-    vec::IntoIter,
 };
 
 use serde::Serialize;
@@ -34,8 +33,10 @@ pub enum ErrorKind {
     UnknownName(String),
     #[error("invalid/missing scope")]
     InvalidScope,
-    #[error("name '{0}' is already defined")]
-    DuplicateName(String),
+    // @TODO: re-implement this
+    //
+    // #[error("name '{0}' is already defined")]
+    // DuplicateName(String),
     #[error("package '{0}' already imported")]
     DuplicateImport(String),
     #[error("fn '{0}' already exists")]
@@ -50,8 +51,6 @@ pub enum ErrorKind {
     NameUninitialized(String),
     #[error("name '{0}' is not used")]
     NameUnused(String),
-    // #[error("failed to write bytecode(s): {0}")]
-    // FailedWriteBytecode(#[from] io::Error),
 }
 
 pub type IRError = SpannedError<ErrorKind>;
@@ -147,12 +146,22 @@ pub struct Block {
 }
 
 impl Block {
-    pub fn push(&mut self, node: IRNode) {
-        self.children.push(node);
-    }
-
     pub fn merge(&mut self, other: &mut Block) {
         self.children.append(&mut other.children);
+    }
+}
+
+impl Deref for Block {
+    type Target = Vec<IRNode>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.children
+    }
+}
+
+impl DerefMut for Block {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.children
     }
 }
 
@@ -207,8 +216,8 @@ pub enum NodeKind {
     Member(Box<IRNode>, String),
     Call(Box<IRNode>, Vec<IRNode>),
     Store(Box<IRNode>, Box<IRNode>),
-    Branch(Box<IRNode>, Block, Block),
     CompMember(Box<IRNode>, Box<IRNode>),
+    Condition(Vec<(IRNode, Block)>, Option<Block>),
     Range(Option<Box<IRNode>>, Option<Box<IRNode>>),
     Binary(Box<IRNode>, BinaryOp, Box<IRNode>),
     LoadVariable(VariableKind, usize),
@@ -501,7 +510,7 @@ impl<'a> IR<'a> {
             self.import(span, std_name.clone().into())?;
         }
 
-        return self.member(span, ExprKind::Ident(std_name).at(span), name);
+        self.member(span, ExprKind::Ident(std_name).at(span), name)
     }
 
     // Loads a symbol based on the following order: builtin > local/var > class > fn > import > prelude
@@ -597,21 +606,24 @@ impl<'a> IR<'a> {
 
     fn assign_name(&mut self, span: Span, name: String, value: IRNode) -> Result<IRNode, IRError> {
         if let Some(var) = self.lookup_var(&name) {
-            if !var.initialized {
-                if let NodeKind::Const(value) = value.kind {
+            match value.kind {
+                NodeKind::Const(value) if !var.initialized => {
                     var.initialized = true;
                     var.value = Some(value);
 
                     return Ok(IRNode::new(span, NodeKind::Noop));
                 }
+                _ => {
+                    // De-optimize variable if it was previously a constant
+                    var.value = None;
+                    var.initialized = true;
+
+                    return Ok(IRNode::new(
+                        span,
+                        NodeKind::StoreVariable(var.kind, var.id, Box::new(value)),
+                    ));
+                }
             }
-
-            var.initialized = true;
-
-            return Ok(IRNode::new(
-                span,
-                NodeKind::StoreVariable(var.kind, var.id, Box::new(value)),
-            ));
         }
 
         Err(ErrorKind::UnknownName(name).at(span))
@@ -677,44 +689,6 @@ impl<'a> IR<'a> {
         }
     }
 
-    fn match_arm(
-        &mut self,
-        span: Span,
-        var_id: usize,
-        arm: MatchArm,
-        mut next_arms: IntoIter<MatchArm>,
-    ) -> Result<IRNode, IRError> {
-        let cond = IRNode::new(
-            span,
-            NodeKind::Binary(
-                Box::new(IRNode::new(
-                    span,
-                    NodeKind::LoadVariable(VariableKind::Global, var_id),
-                )),
-                BinaryOp::Eq,
-                Box::new(self.expr(arm.pat)?),
-            ),
-        );
-
-        let body = self.scoped_expr(span, Scope::default(), arm.expr)?;
-        let mut block = Block::default();
-
-        if let Some(arm) = next_arms.next() {
-            block.push(self.match_arm(span, var_id, arm, next_arms)?);
-        }
-
-        Ok(IRNode::new(
-            span,
-            NodeKind::Branch(
-                Box::new(cond),
-                Block {
-                    children: vec![body],
-                },
-                block,
-            ),
-        ))
-    }
-
     fn match_expr(
         &mut self,
         span: Span,
@@ -731,28 +705,43 @@ impl<'a> IR<'a> {
             )],
         };
 
-        let mut arms = arms.into_iter();
+        let mut cases = vec![];
 
-        if let Some(arm) = arms.next() {
-            let mut node = self.match_arm(span, id, arm, arms)?;
-            let branch = match alt {
-                Some(expr) => {
-                    if let NodeKind::Branch(_, _, alt) = &mut node.kind {
-                        alt.push(self.scoped_expr(span, Scope::default(), expr)?);
-                    }
-
-                    node
-                }
-                None => node,
-            };
-
-            return Ok(IRNode::new(
+        for arm in arms {
+            let cond = IRNode::new(
                 span,
-                NodeKind::Compound(block, Box::new(branch)),
+                NodeKind::Binary(
+                    Box::new(IRNode::new(
+                        span,
+                        NodeKind::LoadVariable(VariableKind::Global, id),
+                    )),
+                    BinaryOp::Eq,
+                    Box::new(self.expr(arm.pat)?),
+                ),
+            );
+
+            let body = self.scoped_expr(span, Scope::default(), arm.expr)?;
+
+            cases.push((
+                cond,
+                Block {
+                    children: vec![body],
+                },
             ));
         }
 
-        unreachable!()
+        let node = match alt {
+            Some(expr) => {
+                let block = Block {
+                    children: vec![self.scoped_expr(span, Scope::default(), expr)?],
+                };
+
+                IRNode::new(span, NodeKind::Condition(cases, Some(block)))
+            }
+            None => IRNode::new(span, NodeKind::Condition(cases, None)),
+        };
+
+        Ok(IRNode::new(span, NodeKind::Compound(block, Box::new(node))))
     }
 
     fn unary(&mut self, op: UnaryOp, expr: Expr) -> Result<IRNode, IRError> {
@@ -780,6 +769,25 @@ impl<'a> IR<'a> {
         }
     }
 
+    fn let_with_value(
+        &mut self,
+        block: &mut Block,
+        span: Span,
+        name: String,
+        value: IRNode,
+    ) -> Result<(), IRError> {
+        block.push(IRNode::new(
+            span,
+            NodeKind::StoreVariable(
+                VariableKind::Global,
+                self.declare_var(span, name)?.initialized().finish(),
+                Box::new(value),
+            ),
+        ));
+
+        Ok(())
+    }
+
     fn let_stmt(
         &mut self,
         block: &mut Block,
@@ -799,19 +807,11 @@ impl<'a> IR<'a> {
                 return Ok(());
             }
 
-            block.push(IRNode::new(
-                span,
-                NodeKind::StoreVariable(
-                    VariableKind::Global,
-                    self.declare_var(span, name)?.initialized().finish(),
-                    Box::new(node),
-                ),
-            ));
+            self.let_with_value(block, span, name, node)
         } else {
             self.declare_var(span, name)?.initialized().finish();
+            Ok(())
         }
-
-        Ok(())
     }
 
     fn expr_stmt(&mut self, block: &mut Block, span: Span, expr: Expr) -> Result<(), IRError> {
@@ -885,7 +885,18 @@ impl<'a> IR<'a> {
         }
 
         let arg_count = fn_stmt.args.len();
-        let body = self.fn_scoped_block(span, true, fn_stmt.args, fn_stmt.body)?;
+        let mut body = self.fn_scoped_block(span, true, fn_stmt.args, fn_stmt.body)?;
+
+        // Methods always return `self`
+        body.merge(&mut Block {
+            children: vec![IRNode::new(
+                span,
+                NodeKind::Return(Box::new(IRNode::new(
+                    span,
+                    NodeKind::LoadVariable(VariableKind::Local, 0),
+                ))),
+            )],
+        });
 
         Ok(IRFn {
             name: fn_stmt.name,
@@ -937,9 +948,15 @@ impl<'a> IR<'a> {
         post: Expr,
         body: Vec<Stmt>,
     ) -> Result<(), IRError> {
-        let mut init = self.block(vec![init])?;
+        match init.kind {
+            // We need to make sure variable assignments aren't optimized
+            StmtKind::Let(name, Some(expr)) => {
+                let value = self.expr(expr)?;
+                self.let_with_value(block, span, name, value)?;
+            }
+            _ => self.stmt(block, init)?,
+        }
 
-        block.merge(&mut init);
         block.push(IRNode::new(
             span,
             NodeKind::Loop(Box::new(Loop {
@@ -1055,30 +1072,42 @@ impl<'a> IR<'a> {
         &mut self,
         block: &mut Block,
         span: Span,
-        IfStmt(cond, body, alt): IfStmt,
+        mut if_stmt: IfStmt,
     ) -> Result<(), IRError> {
-        match cond {
-            Some(cond) => {
-                let cond = self.expr(cond)?;
-                let left = self.scoped_block(span, Scope::default(), body)?;
-                let mut right = Block::default();
+        let mut cases = vec![];
 
-                if let Some(if_stmt) = alt {
-                    self.if_stmt(&mut right, span, *if_stmt)?;
+        loop {
+            let IfStmt(cond, body, alt) = if_stmt;
+
+            match cond {
+                Some(cond) => {
+                    let cond = self.expr(cond)?;
+                    let body = self.scoped_block(span, Scope::default(), body)?;
+
+                    cases.push((cond, body));
+
+                    if let Some(alt) = alt {
+                        if_stmt = *alt;
+                        continue;
+                    }
+
+                    block.push(IRNode::new(span, NodeKind::Condition(cases, None)));
+
+                    return Ok(());
                 }
+                None => {
+                    let mut body = self.scoped_block(span, Scope::default(), body)?;
 
-                block.push(IRNode::new(
-                    span,
-                    NodeKind::Branch(Box::new(cond), left, right),
-                ));
-            }
-            None => {
-                let mut body = self.scoped_block(span, Scope::default(), body)?;
-                block.merge(&mut body);
-            }
-        };
+                    if cases.is_empty() {
+                        block.merge(&mut body);
+                    } else {
+                        block.push(IRNode::new(span, NodeKind::Condition(cases, Some(body))));
+                    }
 
-        Ok(())
+                    return Ok(());
+                }
+            };
+        }
     }
 
     fn break_stmt(&mut self, block: &mut Block, span: Span) -> Result<(), IRError> {

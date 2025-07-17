@@ -34,10 +34,10 @@ mod tests {
 
     pub fn compile(ctx: &mut GlobalContext, name: &str) -> Result<Package, Error> {
         let source = fs::read_to_string(format!("tests/source/{name}"))?;
-        let program = frontend::parse(&source)?;
-        let compiler = Compiler::default();
+        let program = frontend::compile(ctx, &source)?;
+        let compiler = Compiler::new(ctx);
 
-        Ok(compiler.compile(ctx, program)?)
+        Ok(compiler.compile(program))
     }
 
     pub type TestVm<'gc> = Vm<'gc, 1000>;

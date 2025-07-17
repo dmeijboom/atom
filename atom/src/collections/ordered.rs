@@ -33,10 +33,6 @@ impl<T: Hash + PartialEq> OrderedSet<T> {
             .map(|idx| idx as u32)
     }
 
-    pub fn contains(&self, value: &T) -> bool {
-        self.items.iter().any(|elem| elem == value)
-    }
-
     pub fn insert(&mut self, value: T) -> u32 {
         if let Some(index) = self.find(&value) {
             index

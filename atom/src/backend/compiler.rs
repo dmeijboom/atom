@@ -1,28 +1,23 @@
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet, VecDeque},
+    collections::HashMap,
     hash::{Hash, Hasher},
-    io, mem,
 };
 
 use bytes::{Bytes, BytesMut};
 use lazy_static::lazy_static;
-use wyhash2::WyHash;
 
 use crate::{
-    collections::{IntMap, OrderedMap, OrderedSet},
-    error::{IntoSpanned, SpannedError},
-    frontend::ast::{self, *},
-    frontend::{Span, Spanned},
-    runtime::{consts, Fn},
+    collections::{IntMap, OrderedSet},
+    frontend::{
+        ast::{self, BinaryOp, Path, UnaryOp},
+        Block, IRClass, IRFn, IRNode, IRValue, Loop, NodeKind, Program, Span, Spanned,
+        VariableKind,
+    },
+    runtime::{Context, Fn},
 };
 
 use super::{Bytecode, Const, Op, Serializable};
-
-const PRELUDE: [&str; 12] = [
-    "enum", "chunks", "each", "range", "repeat", "println", "Array", "Blob", "Str", "Int", "Float",
-    "BigInt",
-];
 
 lazy_static! {
     static ref BINARY_OPS: HashMap<ast::BinaryOp, Op> = {
@@ -51,6 +46,41 @@ lazy_static! {
     };
 }
 
+pub struct GlobalContext {
+    pub atoms: OrderedSet<String>,
+}
+
+impl Default for GlobalContext {
+    fn default() -> Self {
+        Self {
+            atoms: OrderedSet::new([
+                "false".to_string(),
+                "true".to_string(),
+                "nil".to_string(),
+                "module".to_string(),
+            ]),
+        }
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Package {
+    pub body: Bytes,
+    pub imports: Vec<Path>,
+    pub consts: Vec<Const>,
+    pub classes: Vec<Class>,
+    pub functions: Vec<Fn>,
+    pub offsets: IntMap<usize, Span>,
+}
+
+// #[derive(Debug, thiserror::Error)]
+// pub enum ErrorKind {
+//     #[error("failed to write bytecode(s): {0}")]
+//     FailedWriteBytecode(#[from] io::Error),
+// }
+
+// pub type CompileError = SpannedError<ErrorKind>;
+
 #[derive(Debug, Default)]
 pub struct Class {
     pub name: Cow<'static, str>,
@@ -70,764 +100,54 @@ impl PartialEq for Class {
     }
 }
 
-impl Class {
-    pub fn new(name: impl Into<Cow<'static, str>>) -> Self {
-        Self {
-            name: name.into(),
-            ..Self::default()
-        }
-    }
-}
-
-#[derive(Debug, Default)]
-pub struct Package {
-    pub body: Bytes,
-    pub consts: Vec<Const>,
-    pub classes: Vec<Class>,
-    pub functions: Vec<Fn>,
-    pub imports: Vec<Path>,
-    pub offsets: IntMap<usize, Span>,
-}
-
-#[derive(Debug, thiserror::Error)]
-pub enum ErrorKind {
-    #[error("unknown name '{0}'")]
-    UnknownName(String),
-    #[error("name '{0}' is already defined")]
-    DuplicateName(String),
-    #[error("package '{0}' already imported")]
-    DuplicateImport(String),
-    #[error("fn '{0}' already exists")]
-    DuplicateFn(String),
-    #[error("method '{0}' already exists")]
-    DuplicateMethod(String),
-    #[error("class '{0}' already exists")]
-    DuplicateClass(String),
-    #[error("name '{0}' is not initialized")]
-    NameUninitialized(String),
-    #[error("name '{0}' is not used")]
-    NameUnused(String),
-    #[error("failed to write bytecode(s): {0}")]
-    FailedWriteBytecode(#[from] io::Error),
-}
-
-pub type CompileError = SpannedError<ErrorKind>;
-
-#[derive(Debug, Default, PartialEq)]
-struct Var {
-    id: usize,
-    span: Span,
-    init: bool,
-    used: bool,
-}
-
-struct VarBuilder {
-    var: Var,
-}
-
-impl VarBuilder {
-    fn new(id: usize, span: Span) -> Self {
-        Self {
-            var: Var {
-                id,
-                span,
-                init: false,
-                used: false,
-            },
-        }
-    }
-
-    pub fn init(mut self, init: bool) -> Self {
-        self.var.init = init;
-        self
-    }
-
-    pub fn used(mut self, used: bool) -> Self {
-        self.var.used = used;
-        self
-    }
-
-    pub fn build(self) -> Var {
-        self.var
-    }
-}
-
-#[derive(Default)]
-struct Scope {
-    vars: HashMap<String, Var, WyHash>,
-}
-
 enum Marker {
     Begin(usize),
     End(usize),
 }
 
-fn check_unused(vars: &HashMap<String, Var, WyHash>) -> Result<(), CompileError> {
-    if let Some((name, var)) = vars
-        .iter()
-        .filter(|(name, _)| name.as_str() != "self" && !name.starts_with("_"))
-        .find(|(_, var)| !var.used)
-    {
-        return Err(ErrorKind::NameUnused(name.to_string()).at(var.span));
-    }
-
-    Ok(())
-}
-
-#[derive(Clone, Copy)]
-enum Symbol {
-    Local(u32),
-    Var(u32),
-    Class(u32),
-    Fn(u32),
-}
-
-pub struct GlobalContext {
-    pub atoms: OrderedSet<String>,
-}
-
-impl Default for GlobalContext {
-    fn default() -> Self {
-        Self {
-            atoms: OrderedSet::new([
-                "false".to_string(),
-                "true".to_string(),
-                "nil".to_string(),
-                "module".to_string(),
-            ]),
-        }
-    }
-}
-
-#[derive(Default)]
-struct Seq(usize);
-
-impl Seq {
-    fn next(&mut self) -> usize {
-        let id = self.0;
-        self.0 += 1;
-        id
-    }
-}
-
-pub struct Compiler {
-    vars: Seq,
-    body: BytesMut,
-    offsets: IntMap<usize, Span>,
-    markers: Vec<Marker>,
-    names: HashSet<String>,
-    scope: VecDeque<Scope>,
-    imports: HashSet<String>,
+pub struct Compiler<'a> {
+    functions: Vec<Fn>,
+    classes: Vec<Class>,
+    block: Vec<BytesMut>,
+    imports: Vec<Path>,
     consts: OrderedSet<Const>,
-    funcs: OrderedMap<String, Fn>,
-    classes: OrderedMap<String, Class>,
-    locals: VecDeque<HashMap<String, Var, WyHash>>,
+    offsets: IntMap<usize, Span>,
+    loops: IntMap<usize, Vec<Marker>>,
+    ctx: &'a mut GlobalContext,
 }
 
-impl Default for Compiler {
-    fn default() -> Self {
+impl<'a> Compiler<'a> {
+    pub fn new(ctx: &'a mut GlobalContext) -> Self {
         Self {
-            vars: Seq::default(),
-            body: BytesMut::new(),
+            ctx,
+            block: vec![],
+            classes: vec![],
+            imports: vec![],
+            functions: vec![],
+            loops: IntMap::default(),
             offsets: IntMap::default(),
-            markers: vec![],
-            names: HashSet::default(),
-            funcs: OrderedMap::default(),
             consts: OrderedSet::default(),
-            classes: OrderedMap::default(),
-            imports: HashSet::default(),
-            locals: VecDeque::default(),
-            scope: VecDeque::from(vec![Scope::default()]),
         }
     }
-}
 
-impl Compiler {
+    fn body(&mut self) -> &mut BytesMut {
+        self.block.last_mut().expect("missing block")
+    }
+
     fn offset(&self) -> usize {
-        self.body.len()
-    }
-
-    fn pop_scope(&mut self) -> Result<Option<Scope>, CompileError> {
-        if let Some(scope) = self.scope.pop_front() {
-            check_unused(&scope.vars)?;
-            return Ok(Some(scope));
-        }
-
-        Ok(None)
-    }
-
-    fn push(&mut self, bytecode: Spanned<Bytecode>) -> usize {
-        let offset = self.body.len();
-        bytecode.inner.serialize(&mut self.body);
-        self.offsets.insert(offset, bytecode.span);
-        offset
+        self.block.last().expect("missing block").len()
     }
 
     fn set_offset(&mut self, offset: usize, new_offset: usize) {
-        let orig = Bytecode::deserialize(&mut &self.body[offset..offset + super::BYTECODE_SIZE]);
+        let orig = Bytecode::deserialize(&mut &self.body()[offset..offset + super::BYTECODE_SIZE]);
         Bytecode::with_code(orig.op, (new_offset / super::BYTECODE_SIZE) as u32)
-            .serialize(&mut &mut self.body[offset..]);
+            .serialize(&mut &mut self.body()[offset..]);
     }
 
-    fn accept(&mut self, op: Op) -> Option<Spanned<Bytecode>> {
-        if self.body.is_empty() {
-            return None;
-        }
+    fn exit_loop(&mut self, loop_id: usize, begin: usize, end: usize) {
+        let mut markers = self.loops.remove(&loop_id).unwrap_or_default();
 
-        let offset = self.body.len() - super::BYTECODE_SIZE;
-        let span = self.offsets.get(&offset).copied().unwrap_or_default();
-        let bc = Bytecode::deserialize(&mut &self.body[offset..]);
-
-        if bc.op == op {
-            self.body.truncate(offset);
-            return Some(bc.at(span));
-        }
-
-        None
-    }
-
-    fn push_hidden_var(&mut self, span: Span, init: bool) -> Result<usize, CompileError> {
-        let id = self.vars.next();
-
-        if let Some(scope) = self.scope.front_mut() {
-            scope.vars.insert(
-                format!("__{id}"),
-                VarBuilder::new(id, span).init(init).used(true).build(),
-            );
-        }
-
-        Ok(id)
-    }
-
-    fn push_var(&mut self, span: Span, name: String, init: bool) -> Result<usize, CompileError> {
-        if self.names.contains(&name) {
-            return Err(ErrorKind::DuplicateName(name).at(span));
-        }
-
-        let id = self.vars.next();
-
-        if let Some(scope) = self.scope.front_mut() {
-            scope
-                .vars
-                .insert(name, VarBuilder::new(id, span).init(init).build());
-        }
-
-        Ok(id)
-    }
-
-    fn call(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        callee: Expr,
-        args: Vec<Expr>,
-    ) -> Result<(), CompileError> {
-        let arg_count = args.len();
-        self.expr_list(ctx, args)?;
-
-        match callee.kind {
-            ExprKind::Ident(name) if name.starts_with('@') => {
-                let s = self
-                    .consts
-                    .insert(Const::Str(name.trim_start_matches('@').to_string()));
-
-                self.push(
-                    Bytecode::with_code2(Op::CallBuiltin, s as u16, arg_count as u16).at(span),
-                )
-            }
-            _ => {
-                self.expr(ctx, callee)?;
-
-                match self.accept(Op::LoadFn) {
-                    Some(bc) => self.push(
-                        Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16)
-                            .at(bc.span),
-                    ),
-                    None => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
-                }
-            }
-        };
-
-        Ok(())
-    }
-
-    fn load_local(&mut self, name: &str) -> Option<&mut Var> {
-        if let Some(locals) = self.locals.front_mut() {
-            return locals.get_mut(name);
-        }
-
-        None
-    }
-
-    fn load_var(&mut self, name: &str) -> Option<&mut Var> {
-        self.scope
-            .iter_mut()
-            .find_map(|scope| scope.vars.get_mut(name))
-    }
-
-    fn logical(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        rhs: Expr,
-        cond: bool,
-    ) -> Result<(), CompileError> {
-        let offset = self.push(match cond {
-            true => Bytecode::new(Op::PushJumpIfTrue).at(span),
-            false => Bytecode::new(Op::PushJumpIfFalse).at(span),
-        });
-
-        self.expr(ctx, rhs)?;
-        self.set_offset(offset, self.offset());
-
-        Ok(())
-    }
-
-    fn expr_list(&mut self, ctx: &mut GlobalContext, exprs: Vec<Expr>) -> Result<(), CompileError> {
-        for expr in exprs {
-            self.expr(ctx, expr)?;
-        }
-
-        Ok(())
-    }
-
-    fn var_mut(&mut self, sym: Symbol) -> Option<&mut Var> {
-        match sym {
-            Symbol::Local(id) => {
-                if let Some(locals) = self.locals.front_mut() {
-                    if let Some(var) = locals.values_mut().find(|local| local.id == id as usize) {
-                        return Some(var);
-                    }
-                }
-            }
-            Symbol::Var(id) => {
-                if let Some(var) = self
-                    .scope
-                    .iter_mut()
-                    .find_map(|scope| scope.vars.values_mut().find(|var| var.id == id as usize))
-                {
-                    return Some(var);
-                }
-            }
-            Symbol::Class(_) | Symbol::Fn(_) => {}
-        };
-
-        None
-    }
-
-    // Load a symbol based on the following order: local > var > class > func
-    fn load_symbol(
-        &mut self,
-        span: Span,
-        name: &str,
-        check_init: bool,
-    ) -> Result<Symbol, CompileError> {
-        if let Some(local) = self.load_local(name) {
-            local.used = true;
-
-            if check_init && !local.init {
-                return Err(ErrorKind::NameUninitialized(name.to_string()).at(local.span));
-            }
-
-            return Ok(Symbol::Local(local.id as u32));
-        }
-
-        if let Some(var) = self.load_var(name) {
-            var.used = true;
-
-            if check_init && !var.init {
-                return Err(ErrorKind::NameUninitialized(name.to_string()).at(var.span));
-            }
-
-            return Ok(Symbol::Var(var.id as u32));
-        }
-
-        if let Some(idx) = self.classes.get(name) {
-            return Ok(Symbol::Class(idx));
-        }
-
-        if let Some(idx) = self.funcs.get(name) {
-            return Ok(Symbol::Fn(idx));
-        }
-
-        Err(ErrorKind::UnknownName(name.to_string()).at(span))
-    }
-
-    fn load_prelude(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        name: &str,
-    ) -> Result<bool, CompileError> {
-        if !self.imports.contains("std") || !PRELUDE.contains(&name) {
-            return Ok(false);
-        }
-
-        let Some(std) = self.load_var("std") else {
-            return Ok(false);
-        };
-
-        std.used = true;
-
-        let idx = std.id as u32;
-        self.push(Bytecode::with_code(Op::Load, idx).at(span));
-
-        let member = ctx.atoms.insert(name.to_string());
-        self.push(Bytecode::with_code(Op::LoadMember, member).at(span));
-
-        Ok(true)
-    }
-
-    fn load_name(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        name: &str,
-    ) -> Result<(), CompileError> {
-        match self.load_symbol(span, name, true) {
-            Ok(symbol) => {
-                match symbol {
-                    Symbol::Local(id) => self.push(Bytecode::with_code(Op::LoadLocal, id).at(span)),
-                    Symbol::Var(id) => self.push(Bytecode::with_code(Op::Load, id).at(span)),
-                    Symbol::Class(id) => self.push(Bytecode::with_code(Op::LoadClass, id).at(span)),
-                    Symbol::Fn(id) => self.push(Bytecode::with_code(Op::LoadFn, id).at(span)),
-                };
-
-                Ok(())
-            }
-            Err(_) if self.load_prelude(ctx, span, name)? => Ok(()),
-            Err(e) => Err(e),
-        }
-    }
-
-    fn assign(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        op: Option<ast::AssignOp>,
-        lhs: Expr,
-        mut rhs: Expr,
-    ) -> Result<(), CompileError> {
-        if let Some(op) = op {
-            rhs = ExprKind::Binary(Box::new(lhs.clone()), op.into(), Box::new(rhs)).at(span);
-        }
-
-        match lhs.kind {
-            ExprKind::Ident(name) => {
-                let sym = self.load_symbol(span, &name, false)?;
-                let bc = match sym {
-                    Symbol::Local(id) => Bytecode::with_code(Op::StoreLocal, id).at(span),
-                    Symbol::Var(id) => Bytecode::with_code(Op::Store, id).at(span),
-                    _ => return Err(ErrorKind::UnknownName(name).at(span)),
-                };
-
-                self.expr(ctx, rhs)?;
-
-                if let Some(var) = self.var_mut(sym) {
-                    var.init = true;
-                }
-
-                self.push(bc);
-            }
-            ExprKind::Member(object, member) => {
-                self.expr(ctx, *object)?;
-                self.expr(ctx, rhs)?;
-                let idx = ctx.atoms.insert(member);
-                self.push(Bytecode::with_code(Op::StoreMember, idx).at(span));
-            }
-            ExprKind::CompMember(object, index) => {
-                self.expr(ctx, *object)?;
-                self.expr(ctx, *index)?;
-                self.expr(ctx, rhs)?;
-                self.push(Bytecode::new(Op::StoreElement).at(span));
-            }
-            _ => unimplemented!(),
-        };
-
-        Ok(())
-    }
-
-    fn slice(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        begin: Option<Box<Expr>>,
-        end: Option<Box<Expr>>,
-    ) -> Result<(), CompileError> {
-        let mut code = 0;
-
-        if let Some(begin) = begin {
-            code += 1;
-            self.expr(ctx, *begin)?;
-        }
-
-        if let Some(end) = end {
-            code += 2;
-            self.expr(ctx, *end)?;
-        }
-
-        self.push(Bytecode::with_code(Op::MakeSlice, code).at(span));
-
-        Ok(())
-    }
-
-    fn not(&mut self, ctx: &mut GlobalContext, span: Span, expr: Expr) -> Result<(), CompileError> {
-        self.expr(ctx, expr)?;
-        self.push(Bytecode::new(Op::UnaryNot).at(span));
-
-        Ok(())
-    }
-
-    fn binary(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        lhs: Expr,
-        op: BinaryOp,
-        rhs: Expr,
-    ) -> Result<(), CompileError> {
-        self.expr(ctx, lhs)?;
-
-        match BINARY_OPS.get(&op).copied() {
-            Some(op) => {
-                self.expr(ctx, rhs)?;
-                self.push(Bytecode::new(op).at(span));
-            }
-            None => match op {
-                ast::BinaryOp::Or => self.logical(ctx, span, rhs, true)?,
-                ast::BinaryOp::And => self.logical(ctx, span, rhs, false)?,
-                _ => unreachable!(),
-            },
-        };
-
-        Ok(())
-    }
-
-    fn array(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        items: Vec<Expr>,
-    ) -> Result<(), CompileError> {
-        let len = items.len();
-        self.expr_list(ctx, items)?;
-        self.push(Bytecode::with_code(Op::MakeArray, len as u32).at(span));
-
-        Ok(())
-    }
-
-    fn member(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        object: Expr,
-        member: String,
-    ) -> Result<(), CompileError> {
-        self.expr(ctx, object)?;
-        self.push(Bytecode::with_code(Op::LoadMember, ctx.atoms.insert(member)).at(span));
-
-        Ok(())
-    }
-
-    fn comp_member(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        object: Expr,
-        elem: Expr,
-    ) -> Result<(), CompileError> {
-        self.expr(ctx, object)?;
-
-        match elem.kind {
-            ExprKind::Range(begin, end) => self.slice(ctx, span, begin, end)?,
-            kind => {
-                self.expr(ctx, kind.at(elem.span))?;
-                self.push(Bytecode::new(Op::LoadElement).at(elem.span));
-            }
-        };
-
-        Ok(())
-    }
-
-    fn atom(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        name: String,
-    ) -> Result<(), CompileError> {
-        self.push(Bytecode::with_code(Op::LoadAtom, ctx.atoms.insert(name)).at(span));
-        Ok(())
-    }
-
-    fn load_const(&mut self, span: Span, c: Const) -> Result<(), CompileError> {
-        let code = self.consts.insert(c);
-        self.push(Bytecode::with_code(Op::LoadConst, code).at(span));
-        Ok(())
-    }
-
-    fn lit(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        lit: Literal,
-    ) -> Result<(), CompileError> {
-        match lit {
-            Literal::Atom(name) => self.atom(ctx, span, name),
-            Literal::Int(i) if i > 0 && u32::try_from(i).is_ok() => {
-                self.push(Bytecode::with_code(Op::LoadConstInt, i as u32).at(span));
-                Ok(())
-            }
-            Literal::Int(i) => self.load_const(span, Const::Int(i)),
-            Literal::BigInt(i) => self.load_const(span, Const::BigInt(i)),
-            Literal::Float(f) => self.load_const(span, Const::Float(f)),
-            Literal::String(s) => self.load_const(span, Const::Str(s)),
-        }
-    }
-
-    fn expr(&mut self, ctx: &mut GlobalContext, root: Expr) -> Result<(), CompileError> {
-        match root.kind {
-            ExprKind::Unary(op, unary_expr) => match op {
-                ast::UnaryOp::Not => self.not(ctx, root.span, *unary_expr),
-            },
-            ExprKind::Assign(op, lhs, rhs) => self.assign(ctx, root.span, op, *lhs, *rhs),
-            ExprKind::Binary(lhs, op, rhs) => self.binary(ctx, root.span, *lhs, op, *rhs),
-            ExprKind::Array(items) => self.array(ctx, root.span, items),
-            ExprKind::Member(object, member) => self.member(ctx, root.span, *object, member),
-            ExprKind::CompMember(object, elem) => self.comp_member(ctx, root.span, *object, *elem),
-            ExprKind::Ident(name) => self.load_name(ctx, root.span, &name),
-            ExprKind::Call(callee, args) => self.call(ctx, root.span, *callee, args),
-            ExprKind::Literal(lit) => self.lit(ctx, root.span, lit),
-            ExprKind::Match(expr, arms, alt) => self.match_expr(ctx, *expr, arms, alt),
-            ExprKind::Range(_, _) => unreachable!(),
-        }
-    }
-
-    fn match_expr(
-        &mut self,
-        ctx: &mut GlobalContext,
-        expr: Expr,
-        arms: Vec<MatchArm>,
-        alt: Option<Box<Expr>>,
-    ) -> Result<(), CompileError> {
-        let span = expr.span;
-        let id = self.push_hidden_var(expr.span, true)?;
-
-        self.expr(ctx, expr)?;
-        self.push(Bytecode::with_code(Op::Store, id as u32).at(span));
-
-        let mut offsets = vec![];
-
-        for arm in arms {
-            let span = arm.pat.span;
-
-            self.push(Bytecode::with_code(Op::Load, id as u32).at(span));
-            self.expr(ctx, arm.pat)?;
-            self.push(Bytecode::new(Op::Eq).at(span));
-            let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
-            self.expr(ctx, arm.expr)?;
-            offsets.push(self.push(Bytecode::new(Op::Jump).at(span)));
-            self.set_offset(offset, self.offset());
-        }
-
-        if let Some(expr) = alt {
-            self.expr(ctx, *expr)?;
-        }
-
-        let end_offset = self.offset();
-
-        for offset in offsets {
-            self.set_offset(offset, end_offset);
-        }
-
-        Ok(())
-    }
-
-    fn optim_tail_call(&mut self) -> Result<(), CompileError> {
-        let discard = self.accept(Op::Discard);
-
-        match self.accept(Op::CallFn) {
-            Some(bc) => {
-                let (idx, argc) = bc.code2();
-                self.push(Bytecode::with_code(Op::LoadFn, idx as u32).at(bc.span));
-                self.push(Bytecode::with_code(Op::TailCall, argc as u32).at(bc.span));
-
-                Ok(())
-            }
-            None => {
-                if let Some(bc) = discard {
-                    self.push(bc);
-                }
-
-                Ok(())
-            }
-        }
-    }
-
-    fn compile_fn_body(
-        &mut self,
-        ctx: &mut GlobalContext,
-        scope: Scope,
-        args: Vec<FnArg>,
-        body: Vec<Stmt>,
-    ) -> Result<BytesMut, CompileError> {
-        self.scope.push_front(scope);
-        self.locals.push_front(
-            args.into_iter()
-                .enumerate()
-                .map(|(i, n)| (n.name, VarBuilder::new(i, n.span).init(true).build()))
-                .collect(),
-        );
-
-        let global = mem::take(&mut self.body);
-
-        self.compile_body(ctx, body)?;
-        self.optim_tail_call()?;
-        self.pop_scope()?;
-
-        if let Some(locals) = self.locals.pop_front() {
-            check_unused(&locals)?;
-        }
-
-        let body = mem::replace(&mut self.body, global);
-
-        Ok(body)
-    }
-
-    fn method(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        methods: &mut HashMap<String, Fn, WyHash>,
-        fn_stmt: FnStmt,
-    ) -> Result<(), CompileError> {
-        if methods.contains_key(fn_stmt.name.as_str()) {
-            return Err(ErrorKind::DuplicateMethod(fn_stmt.name).at(span));
-        }
-
-        methods.insert(
-            fn_stmt.name.clone(),
-            Fn::builder()
-                .name(fn_stmt.name.clone())
-                .arg_count(fn_stmt.args.len() as u32)
-                .public(fn_stmt.public)
-                .build(),
-        );
-
-        let mut body = self.compile_fn_body(ctx, Scope::default(), fn_stmt.args, fn_stmt.body)?;
-
-        if fn_stmt.name == "init" {
-            Bytecode::with_code(Op::ReturnLocal, 0).serialize(&mut body);
-        }
-
-        if let Some(method) = methods.get_mut(&fn_stmt.name) {
-            method.body = body.freeze();
-        }
-
-        Ok(())
-    }
-
-    fn handle_markers(&mut self, begin: usize, end: usize) {
-        while let Some(marker) = self.markers.pop() {
+        while let Some(marker) = markers.pop() {
             match marker {
                 Marker::Begin(idx) => self.set_offset(idx, begin),
                 Marker::End(idx) => self.set_offset(idx, end),
@@ -835,426 +155,399 @@ impl Compiler {
         }
     }
 
-    fn fn_stmt(&mut self, ctx: &mut GlobalContext, fn_stmt: FnStmt) -> Result<(), CompileError> {
-        self.funcs.insert(
-            fn_stmt.name.clone(),
-            Fn::builder()
-                .name(fn_stmt.name.clone())
-                .public(fn_stmt.public)
-                .resumable(fn_stmt.resumable)
-                .arg_count(fn_stmt.args.len() as u32)
-                .build(),
-        );
-
-        self.funcs[&fn_stmt.name].body = self
-            .compile_fn_body(ctx, Scope::default(), fn_stmt.args, fn_stmt.body)?
-            .freeze();
-
-        Ok(())
-    }
-
-    fn class_stmt(
-        &mut self,
-        ctx: &mut GlobalContext,
-        name: String,
-        methods: Vec<Stmt>,
-        public: bool,
-    ) -> Result<(), CompileError> {
-        let mut class = Class::new(name.clone());
-        class.public = public;
-
-        self.classes.insert(name.clone(), class);
-
-        let mut funcs = HashMap::with_hasher(WyHash::default());
-
-        for method in methods {
-            let span = method.span;
-
-            match method.kind {
-                StmtKind::Fn(fn_stmt) => self.method(ctx, span, &mut funcs, fn_stmt)?,
-                _ => unreachable!(),
-            };
+    fn accept(&mut self, op: Op) -> Option<Spanned<Bytecode>> {
+        if self.body().is_empty() {
+            return None;
         }
 
-        self.classes[&name].methods = funcs
-            .into_iter()
-            .map(|(method, func)| (Cow::Owned(method), func))
-            .collect();
+        let offset = self.body().len() - super::BYTECODE_SIZE;
+        let span = self.offsets.get(&offset).copied().unwrap_or_default();
+        let bc = Bytecode::deserialize(&mut &self.body()[offset..]);
 
-        Ok(())
+        if bc.op == op {
+            self.body().truncate(offset);
+            return Some(bc.at(span));
+        }
+
+        None
     }
 
-    fn loop_head(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        expr: Expr,
-        body: Vec<Stmt>,
-    ) -> Result<usize, CompileError> {
-        self.expr(ctx, expr)?;
-        let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
-        self.compile_scoped_body(ctx, body)?;
-
-        Ok(offset)
+    fn push(&mut self, bytecode: Spanned<Bytecode>) -> usize {
+        let offset = self.body().len();
+        bytecode.inner.serialize(&mut self.body());
+        self.offsets.insert(offset, bytecode.span);
+        offset
     }
 
-    fn loop_tail(
-        &mut self,
-        span: Span,
-        offset: usize,
-        begin: usize,
-        begin_marker: usize,
-    ) -> Result<(), CompileError> {
-        self.push(Bytecode::with_code(Op::Jump, (begin / super::BYTECODE_SIZE) as u32).at(span));
-        self.set_offset(offset, self.offset());
-        self.handle_markers(begin_marker, self.offset());
+    fn optim_tail_call(&mut self) {
+        let discard = self.accept(Op::Discard);
 
-        Ok(())
+        match self.accept(Op::CallFn) {
+            Some(bc) => {
+                let (idx, argc) = bc.code2();
+                self.push(Bytecode::with_code(Op::LoadFn, idx as u32).at(bc.span));
+                self.push(Bytecode::with_code(Op::TailCall, argc as u32).at(bc.span));
+            }
+            None => {
+                if let Some(bc) = discard {
+                    self.push(bc);
+                }
+            }
+        }
     }
 
-    fn for_stmt(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        expr: Expr,
-        body: Vec<Stmt>,
-    ) -> Result<(), CompileError> {
-        let begin = self.offset();
-        let offset = self.loop_head(ctx, span, expr, body)?;
-        self.loop_tail(span, offset, begin, begin)?;
-
-        Ok(())
+    fn enter_block(&mut self) {
+        self.block.push(BytesMut::default());
     }
 
-    fn for_in(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        lhs: Expr,
-        rhs: Expr,
-        body: Vec<Stmt>,
-    ) -> Result<(), CompileError> {
-        let item_id = match lhs.kind {
-            ExprKind::Ident(name) => self.push_var(span, name, true)? as u32,
-            _ => unreachable!(),
+    fn exit_block(&mut self) -> BytesMut {
+        self.optim_tail_call();
+        self.block.pop().unwrap_or_default()
+    }
+
+    fn call(&mut self, span: Span, callee: IRNode, args: Vec<IRNode>) {
+        let arg_count = args.len();
+
+        for arg in args {
+            self.node(arg);
+        }
+
+        if let NodeKind::BuiltinRef(id) = callee.kind {
+            self.push(Bytecode::with_code2(Op::CallBuiltin, id as u16, arg_count as u16).at(span));
+            return;
+        }
+
+        self.node(callee);
+
+        match self.accept(Op::LoadFn) {
+            Some(bc) => self.push(
+                Bytecode::with_code2(Op::CallFn, bc.code as u16, arg_count as u16).at(bc.span),
+            ),
+            None => self.push(Bytecode::with_code(Op::Call, arg_count as u32).at(span)),
+        };
+    }
+
+    fn constant(&mut self, span: Span, value: IRValue) {
+        let constant = match value {
+            IRValue::Int(i) if i > 0 && u32::try_from(i).is_ok() => {
+                self.push(Bytecode::with_code(Op::LoadConstInt, i as u32).at(span));
+                return;
+            }
+            IRValue::Int(i) => Const::Int(i),
+            IRValue::BigInt(i) => Const::BigInt(i),
+            IRValue::Float(f) => Const::Float(f),
+            IRValue::String(s) => Const::Str(s),
+            IRValue::Atom(id) => {
+                self.push(Bytecode::with_code(Op::LoadAtom, id).at(span));
+                return;
+            }
         };
 
-        let resumable_id = self.push_hidden_var(span, true)? as u32;
-        self.expr(ctx, rhs)?;
-        self.push(Bytecode::with_code(Op::Store, resumable_id).at(span));
+        let id = self.consts.insert(constant);
+        self.push(Bytecode::with_code(Op::LoadConst, id).at(span));
+    }
 
+    fn member(&mut self, span: Span, object: IRNode, name: String) {
+        self.node(object);
+
+        let code = self.ctx.atoms.insert(name);
+        self.push(Bytecode::with_code(Op::LoadMember, code).at(span));
+    }
+
+    fn unary(&mut self, span: Span, op: UnaryOp, node: IRNode) {
+        self.node(node);
+
+        match op {
+            UnaryOp::Not => self.push(Bytecode::new(Op::UnaryNot).at(span)),
+        };
+    }
+
+    fn load_variable(&mut self, span: Span, kind: VariableKind, id: usize) {
+        self.push(
+            Bytecode::with_code(
+                match kind {
+                    VariableKind::Local => Op::LoadLocal,
+                    VariableKind::Global => Op::Load,
+                },
+                id as u32,
+            )
+            .at(span),
+        );
+    }
+
+    fn store_variable(&mut self, span: Span, kind: VariableKind, id: usize, value: IRNode) {
+        self.node(value);
+        self.push(
+            Bytecode::with_code(
+                match kind {
+                    VariableKind::Local => Op::StoreLocal,
+                    VariableKind::Global => Op::Store,
+                },
+                id as u32,
+            )
+            .at(span),
+        );
+    }
+
+    fn for_loop(&mut self, span: Span, for_loop: Loop) {
         let begin = self.offset();
-        self.push(Bytecode::with_code(Op::Load, resumable_id).at(span));
-        self.push(Bytecode::with_code(Op::Call, 0).at(span));
-        self.push(Bytecode::with_code(Op::Store, item_id).at(span));
-        self.push(Bytecode::with_code(Op::Load, item_id).at(span));
-        self.push(Bytecode::with_code(Op::LoadAtom, consts::NIL).at(span));
-        self.push(Bytecode::new(Op::Ne).at(span));
+
+        if let Some(node) = for_loop.pre {
+            self.node(node);
+        }
+
+        self.node(for_loop.cond);
         let offset = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
+        self.block(for_loop.body);
+        let end = self.offset();
 
-        self.compile_scoped_body(ctx, body)?;
-        self.loop_tail(span, offset, begin, begin)?;
+        if let Some(node) = for_loop.post {
+            self.node(node);
+        }
 
-        Ok(())
+        self.push(Bytecode::with_code(Op::Jump, (begin / super::BYTECODE_SIZE) as u32).at(span));
+        self.set_offset(offset, self.offset());
+        self.exit_loop(for_loop.id, end, self.offset());
     }
 
-    fn for_cond_stmt(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        pre: Stmt,
-        expr: Expr,
-        post: Expr,
-        body: Vec<Stmt>,
-    ) -> Result<(), CompileError> {
-        self.stmt(ctx, pre)?;
-        let begin = self.offset();
-        let offset = self.loop_head(ctx, span, expr, body)?;
-        let post_idx = self.offset();
-        self.expr(ctx, post)?;
-        self.loop_tail(span, offset, begin, post_idx)?;
+    fn logical(&mut self, span: Span, rhs: IRNode, cond: bool) {
+        let offset = self.push(match cond {
+            true => Bytecode::new(Op::PushJumpIfTrue).at(span),
+            false => Bytecode::new(Op::PushJumpIfFalse).at(span),
+        });
 
-        Ok(())
+        self.node(rhs);
+        self.set_offset(offset, self.offset());
     }
 
-    fn yield_stmt(
-        &mut self,
-        ctx: &mut GlobalContext,
-        span: Span,
-        expr: Expr,
-    ) -> Result<(), CompileError> {
-        self.expr(ctx, expr)?;
-        self.push(Bytecode::new(Op::Yield).at(span));
+    fn binary(&mut self, span: Span, lhs: IRNode, op: BinaryOp, rhs: IRNode) {
+        self.node(lhs);
 
-        Ok(())
+        match BINARY_OPS.get(&op).copied() {
+            Some(op) => {
+                self.node(rhs);
+                self.push(Bytecode::new(op).at(span));
+            }
+            None => match op {
+                ast::BinaryOp::Or => self.logical(span, rhs, true),
+                ast::BinaryOp::And => self.logical(span, rhs, false),
+                _ => unreachable!(),
+            },
+        };
     }
 
-    fn ret(&mut self, ctx: &mut GlobalContext, span: Span, expr: Expr) -> Result<(), CompileError> {
-        self.expr(ctx, expr)?;
-        self.optim_tail_call()?;
+    fn array(&mut self, span: Span, items: Vec<IRNode>) {
+        let item_count = items.len();
+
+        for item in items {
+            self.node(item);
+        }
+
+        self.push(Bytecode::with_code(Op::MakeArray, item_count as u32).at(span));
+    }
+
+    fn slice(&mut self, span: Span, begin: Option<IRNode>, end: Option<IRNode>) {
+        let mut code = 0;
+
+        if let Some(begin) = begin {
+            code += 1;
+            self.node(begin);
+        }
+
+        if let Some(end) = end {
+            code += 2;
+            self.node(end);
+        }
+
+        self.push(Bytecode::with_code(Op::MakeSlice, code).at(span));
+    }
+
+    fn comp_member(&mut self, span: Span, object: IRNode, index: IRNode) {
+        self.node(object);
+
+        match index.kind {
+            NodeKind::Range(begin, end) => self.slice(span, begin.map(|n| *n), end.map(|n| *n)),
+            _ => {
+                self.node(index);
+                self.push(Bytecode::new(Op::LoadElement).at(span));
+            }
+        }
+    }
+
+    fn ret(&mut self, span: Span, node: IRNode) {
+        self.node(node);
 
         match self.accept(Op::LoadLocal) {
             Some(bc) => self.push(Bytecode::with_code(Op::ReturnLocal, bc.code).at(bc.span)),
             _ => self.push(Bytecode::new(Op::Return).at(span)),
         };
-
-        Ok(())
     }
 
-    fn if_stmt(
-        &mut self,
-        ctx: &mut GlobalContext,
-        IfStmt(expr, stmts, alt): IfStmt,
-    ) -> Result<(), CompileError> {
-        let span = expr.as_ref().map(|e| e.span).unwrap_or_default();
-        let end_block_offset = if let Some(expr) = expr {
-            self.expr(ctx, expr)?;
-            Some(self.push(Bytecode::new(Op::JumpIfFalse).at(span)))
-        } else {
-            None
+    fn condition(&mut self, span: Span, cases: Vec<(IRNode, Block)>, default: Option<Block>) {
+        let mut offsets = vec![];
+
+        for (cond, block) in cases {
+            self.node(cond);
+            let transition = self.push(Bytecode::new(Op::JumpIfFalse).at(span));
+            self.block(block);
+            offsets.push(self.push(Bytecode::new(Op::Jump).at(span)));
+            self.set_offset(transition, self.offset());
+        }
+
+        if let Some(block) = default {
+            self.block(block);
+        }
+
+        for offset in offsets {
+            self.set_offset(offset, self.offset());
+        }
+    }
+
+    fn store(&mut self, span: Span, lhs: IRNode, rhs: IRNode) {
+        match lhs.kind {
+            NodeKind::Member(object, name) => {
+                self.node(*object);
+                self.node(rhs);
+                let idx = self.ctx.atoms.insert(name);
+                self.push(Bytecode::with_code(Op::StoreMember, idx).at(span));
+            }
+            NodeKind::CompMember(object, index) => {
+                self.node(*object);
+                self.node(*index);
+                self.node(rhs);
+                self.push(Bytecode::new(Op::StoreElement).at(span));
+            }
+            _ => unreachable!(),
+        };
+    }
+
+    fn node(&mut self, root: IRNode) {
+        match root.kind {
+            NodeKind::FnRef(id) => {
+                self.push(Bytecode::with_code(Op::LoadFn, id).at(root.span));
+            }
+            NodeKind::ClassRef(id) => {
+                self.push(Bytecode::with_code(Op::LoadClass, id).at(root.span));
+            }
+            NodeKind::ImportRef(id) => {
+                self.push(Bytecode::with_code(Op::LoadImport, id).at(root.span));
+            }
+            NodeKind::Break(loop_id) => {
+                let offset = self.push(Bytecode::new(Op::Jump).at(root.span));
+
+                if let Some(markers) = self.loops.get_mut(&loop_id) {
+                    markers.push(Marker::End(offset));
+                }
+            }
+            NodeKind::Continue(loop_id) => {
+                let offset = self.push(Bytecode::new(Op::Jump).at(root.span));
+
+                if let Some(markers) = self.loops.get_mut(&loop_id) {
+                    markers.push(Marker::Begin(offset));
+                }
+            }
+            NodeKind::Const(value) => self.constant(root.span, value),
+            NodeKind::Loop(for_loop) => self.for_loop(root.span, *for_loop),
+            NodeKind::Array(items) => self.array(root.span, items),
+            NodeKind::Return(node) => self.ret(root.span, *node),
+            NodeKind::Yield(node) => {
+                self.node(*node);
+                self.push(Bytecode::new(Op::Yield).at(root.span));
+            }
+            NodeKind::Discard(node) => {
+                self.node(*node);
+                self.push(Bytecode::new(Op::Discard).at(root.span));
+            }
+            NodeKind::Compound(block, node) => {
+                self.block(block);
+                self.node(*node);
+            }
+            NodeKind::Unary(op, node) => self.unary(root.span, op, *node),
+            NodeKind::Member(object, name) => self.member(root.span, *object, name),
+            NodeKind::Call(node, args) => self.call(root.span, *node, args),
+            NodeKind::Store(lhs, rhs) => self.store(root.span, *lhs, *rhs),
+            NodeKind::Condition(cases, default) => self.condition(root.span, cases, default),
+            NodeKind::CompMember(object, index) => self.comp_member(root.span, *object, *index),
+            NodeKind::Binary(lhs, op, rhs) => self.binary(root.span, *lhs, op, *rhs),
+            NodeKind::LoadVariable(kind, id) => self.load_variable(root.span, kind, id),
+            NodeKind::StoreVariable(kind, id, value) => {
+                self.store_variable(root.span, kind, id, *value)
+            }
+            NodeKind::Noop | NodeKind::BuiltinRef(_) | NodeKind::Range(_, _) => unreachable!(),
+        };
+    }
+
+    fn block(&mut self, body: Block) {
+        for node in body.children {
+            self.node(node);
+        }
+    }
+
+    fn compile_block(&mut self, body: Block) -> BytesMut {
+        self.enter_block();
+        self.block(body);
+        self.exit_block()
+    }
+
+    fn func(&mut self, func: IRFn) {
+        let body = self.compile_block(func.body);
+
+        self.functions.push(Fn {
+            name: Cow::Owned(func.name),
+            body: body.freeze(),
+            public: func.public,
+            resumable: func.resumable,
+            arg_count: func.arg_count as u32,
+            context: Context::default(),
+        });
+    }
+
+    fn class(&mut self, class: IRClass) {
+        let mut output = Class {
+            name: Cow::Owned(class.name),
+            public: class.public,
+            methods: HashMap::default(),
         };
 
-        self.compile_scoped_body(ctx, stmts)?;
+        for (name, func) in class.methods {
+            let body = self.compile_block(func.body);
 
-        match alt {
-            Some(alt) => {
-                let end_stmt_offset = self.push(Bytecode::new(Op::Jump).at(span));
-
-                if let Some(offset) = end_block_offset {
-                    self.set_offset(offset, self.offset());
-                }
-
-                self.if_stmt(ctx, *alt)?;
-                self.set_offset(end_stmt_offset, self.offset());
-            }
-            None => {
-                if let Some(idx) = end_block_offset {
-                    self.set_offset(idx, self.offset());
-                }
-            }
+            output.methods.insert(
+                Cow::Owned(name),
+                Fn {
+                    name: Cow::Owned(func.name),
+                    body: body.freeze(),
+                    public: func.public,
+                    resumable: false,
+                    arg_count: func.arg_count as u32,
+                    context: Context::default(),
+                },
+            );
         }
 
-        Ok(())
+        self.classes.push(output);
     }
 
-    fn import(&mut self, span: Span, path: Path) -> Result<(), CompileError> {
-        let name = path.full_name();
+    pub fn compile(mut self, program: Program) -> Package {
+        self.imports = program.imports;
 
-        if self.imports.contains(&name) {
-            return Err(ErrorKind::DuplicateImport(name).at(span));
+        for func in program.funcs {
+            self.func(func);
         }
 
-        self.imports.insert(name.clone());
-
-        // let idx = self.consts.insert(Const::Str(name.clone()));
-        // self.push(Bytecode::with_code(Op::Import, idx).at(span));
-
-        let var_name = path.last().cloned().unwrap_or_default();
-
-        let idx = self.push_var(span, var_name.clone(), true)?;
-        self.push(Bytecode::with_code(Op::Store, idx as u32).at(span));
-
-        self.names.insert(var_name);
-
-        Ok(())
-    }
-
-    fn stmt(&mut self, ctx: &mut GlobalContext, stmt: Stmt) -> Result<(), CompileError> {
-        match stmt.kind {
-            StmtKind::Import(path) => self.import(stmt.span, path)?,
-            StmtKind::If(if_stmt) => self.if_stmt(ctx, if_stmt)?,
-            StmtKind::Let(name, expr) => {
-                if let Some(expr) = expr {
-                    let idx = self.push_var(expr.span, name, true)?;
-                    self.expr(ctx, expr)?;
-                    self.push(Bytecode::with_code(Op::Store, idx as u32).at(stmt.span));
-                } else {
-                    self.push_var(stmt.span, name, false)?;
-                }
-            }
-            StmtKind::Expr(expr) => {
-                let assignment = expr.is_assign();
-                self.expr(ctx, expr)?;
-
-                if !assignment {
-                    self.push(Bytecode::new(Op::Discard).at(stmt.span));
-                }
-            }
-            StmtKind::Yield(expr) => self.yield_stmt(ctx, stmt.span, expr)?,
-            StmtKind::Return(expr) => self.ret(ctx, stmt.span, expr)?,
-            StmtKind::Break => {
-                let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));
-                self.markers.push(Marker::End(offset));
-            }
-            StmtKind::Continue => {
-                let offset = self.push(Bytecode::new(Op::Jump).at(stmt.span));
-                self.markers.push(Marker::Begin(offset));
-            }
-            StmtKind::Class(name, methods, public) => {
-                self.class_stmt(ctx, name, methods, public)?
-            }
-            StmtKind::Fn(fn_stmt) => self.fn_stmt(ctx, fn_stmt)?,
-            StmtKind::ForIn(lhs, rhs, body) => self.for_in(ctx, stmt.span, lhs, rhs, body)?,
-            StmtKind::For(expr, body) => self.for_stmt(ctx, stmt.span, expr, body)?,
-            StmtKind::ForCond {
-                init,
-                cond,
-                step,
-                body,
-            } => self.for_cond_stmt(ctx, stmt.span, *init, cond, step, body)?,
+        for class in program.classes {
+            self.class(class);
         }
 
-        Ok(())
-    }
+        let body = self.compile_block(program.body);
 
-    fn compile_body(
-        &mut self,
-        ctx: &mut GlobalContext,
-        stmts: Vec<Stmt>,
-    ) -> Result<(), CompileError> {
-        for stmt in stmts {
-            self.stmt(ctx, stmt)?;
+        Package {
+            body: body.freeze(),
+            consts: self.consts.into_vec(),
+            imports: self.imports,
+            classes: self.classes,
+            functions: self.functions,
+            offsets: self.offsets,
         }
-
-        Ok(())
-    }
-
-    fn compile_scoped_body(
-        &mut self,
-        ctx: &mut GlobalContext,
-        stmts: Vec<Stmt>,
-    ) -> Result<(), CompileError> {
-        self.scope.push_front(Scope::default());
-        self.compile_body(ctx, stmts)?;
-        self.pop_scope()?;
-
-        Ok(())
-    }
-
-    fn register(&mut self, stmts: &[Stmt]) -> Result<(), CompileError> {
-        for stmt in stmts {
-            match &stmt.kind {
-                StmtKind::Fn(fn_stmt) => {
-                    if self.funcs.contains_key(&fn_stmt.name) {
-                        return Err(ErrorKind::DuplicateFn(fn_stmt.name.clone()).at(stmt.span));
-                    }
-
-                    self.funcs.insert(fn_stmt.name.clone(), Fn::default());
-                }
-                StmtKind::Class(name, _, _) => {
-                    if self.classes.contains_key(name.as_str()) {
-                        return Err(ErrorKind::DuplicateClass(name.clone()).at(stmt.span));
-                    }
-
-                    self.classes.insert(name.clone(), Class::default());
-                }
-                _ => {}
-            }
-        }
-
-        Ok(())
-    }
-
-    pub fn compile(
-        mut self,
-        ctx: &mut GlobalContext,
-        stmts: Vec<Stmt>,
-    ) -> Result<Package, CompileError> {
-        self.register(&stmts)?;
-
-        // In the root scope, `self` refers to the current package
-        self.push_var(Span::default(), "self".to_string(), true)?;
-        self.compile_scoped_body(ctx, stmts)?;
-        self.pop_scope()?;
-        
-        todo!()
-
-        // Ok(Package {
-        //     body: self.body.freeze(),
-        //     offsets: self.offsets,
-        //     // imports: self.imports,
-        //     consts: self.consts.into_vec(),
-        //     functions: self.funcs.into_vec(),
-        //     classes: self.classes.into_vec(),
-        // })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::backend;
-
-    use super::*;
-
-    #[test]
-    fn test_push_code() {
-        let mut compiler = Compiler::default();
-        let bc = Bytecode::new(Op::Load).at(Span::default());
-        let offset = compiler.push(bc.clone());
-
-        assert_eq!(0, offset);
-        assert_eq!(backend::BYTECODE_SIZE, compiler.body.len());
-        assert_eq!(Some(bc), compiler.accept(Op::Load));
-        assert_eq!(0, compiler.body.len());
-
-        let bc = Bytecode::new(Op::Lt).at(Span::default());
-        let offset = compiler.push(bc.clone());
-
-        assert_eq!(0, offset);
-        assert_eq!(None, compiler.accept(Op::Gt));
-        assert_eq!(backend::BYTECODE_SIZE, compiler.body.len());
-    }
-
-    #[test]
-    fn test_replace_code() {
-        let mut compiler = Compiler::default();
-        let code = Bytecode::new(Op::Load).at(Span::default());
-        let offset = compiler.push(code.clone());
-
-        compiler.push(Bytecode::new(Op::Lt).at(Span::default()));
-        compiler.set_offset(offset, 500);
-
-        let code = Bytecode::deserialize(&mut &compiler.body[..backend::BYTECODE_SIZE]);
-        assert_eq!(Op::Load, code.op);
-        assert_eq!(100, code.code);
-    }
-
-    #[test]
-    fn test_scope() {
-        let mut compiler = Compiler::default();
-        let top = compiler
-            .push_var(Span::default(), "n".to_string(), true)
-            .unwrap();
-        compiler.scope.push_front(Scope::default());
-
-        let expected = compiler
-            .push_var(Span::default(), "n".to_string(), true)
-            .unwrap();
-        let actual = compiler.load_var("n").unwrap();
-
-        assert_eq!(expected, actual.id);
-        assert_ne!(top, actual.id);
-    }
-
-    #[test]
-    fn test_assign() {
-        let mut ctx = GlobalContext::default();
-        let mut compiler = Compiler::default();
-        let ident = |name: &str| ExprKind::Ident(name.to_string()).at(Span::default());
-
-        let expr = ExprKind::Literal(Literal::Int(100)).at(Span::default());
-        let idx = compiler
-            .push_var(Span::default(), "n".to_string(), true)
-            .unwrap();
-        compiler
-            .assign(&mut ctx, Span::default(), None, ident("n"), expr.clone())
-            .unwrap();
-        let code = compiler.accept(Op::Store).unwrap();
-
-        assert_eq!(Op::Store, code.op);
-        assert_eq!(idx, code.code as usize);
-
-        let result = compiler.assign(&mut ctx, Span::default(), None, ident("y"), expr);
-        assert!(result.is_err());
     }
 }

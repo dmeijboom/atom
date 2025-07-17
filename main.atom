@@ -1,1 +1,13 @@
-println("hello world");
+let string = "";
+
+for let i = 0; i < 101; i += 1 {
+    if i % 3 == 0 {
+        string = string ^ "Fizz";
+    }
+
+    if i % 4 == 0 {
+        string = string ^ "Buzz";
+    }
+}
+
+println(string);

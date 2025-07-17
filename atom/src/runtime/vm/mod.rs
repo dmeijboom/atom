@@ -612,7 +612,7 @@ impl<'gc, const S: usize> Vm<'gc, S> {
 
         // Parse and compile module
         let path = self.make_path(name);
-        let mut package = backend::compile2(&mut self.global_context, path)
+        let mut package = backend::compile(&mut self.global_context, path)
             .map_err(Box::new)
             .map_err(Error::Import)?;
 
