@@ -1,7 +1,7 @@
 use std::fmt::{Debug, Display};
 
 use crate::{
-    frontend::{IRError, ParseError, Span, TokenError},
+    frontend::{CompileError, ParseError, Span, TokenError},
     runtime,
 };
 
@@ -41,8 +41,8 @@ pub enum Error {
     IO(#[from] std::io::Error),
     #[error("ParseError: {0}")]
     Parse(#[from] ParseError),
-    #[error("IRError: {0}")]
-    IR(#[from] IRError),
+    #[error("CompileError: {0}")]
+    IR(#[from] CompileError),
     #[error("TokenError: {0}")]
     Lex(#[from] TokenError),
     #[error("SerializeError: {0}")]

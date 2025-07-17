@@ -1,13 +1,6 @@
-let string = "";
+import std/map;
 
-for let i = 0; i < 101; i += 1 {
-    if i % 3 == 0 {
-        string = string ^ "Fizz";
-    }
+let x = map.Map(10);
+x.set("key1", "value1");
 
-    if i % 4 == 0 {
-        string = string ^ "Buzz";
-    }
-}
-
-println(string);
+println(x.get("key1")); // Should print "value1"

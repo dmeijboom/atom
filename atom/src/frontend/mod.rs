@@ -4,7 +4,7 @@ mod lexer;
 mod parser;
 
 pub use ir::{
-    Block, IRClass, IRError, IRFn, IRNode, IRValue, Loop, NodeKind, Program, VariableKind, IR,
+    Block, IRClass, CompileError, IRFn, IRNode, IRValue, Loop, NodeKind, Program, VariableKind, IR,
 };
 pub use lexer::{Lexer, Span, Spanned, TokenError};
 pub use parser::{ParseError, Parser};

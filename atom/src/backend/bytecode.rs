@@ -131,6 +131,7 @@ impl Display for Bytecode {
             | Op::LoadClass
             | Op::LoadConst
             | Op::LoadConstInt
+            | Op::LoadImport
             | Op::LoadAtom
             | Op::Jump
             | Op::JumpIfFalse

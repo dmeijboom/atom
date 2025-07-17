@@ -1,4 +1,4 @@
 class Foo {
-    fn bar() {}
-    fn bar() {}
+    fn bar(self) {}
+    fn bar(self) {}
 }
